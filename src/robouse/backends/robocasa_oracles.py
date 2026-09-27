@@ -30,12 +30,16 @@ def act(d, g: float) -> dict:
 
 
 def goto(p, g: float, tol: float = .006, n: int = 150, speed: float = .5) -> dict:
+    """Move the commanded target to p at up to `speed` x 2 cm per step, then wait for the hand to arrive."""
     st = obs()
+    p = np.asarray(p, dtype=float)
     for _ in range(n):
-        d = np.asarray(p, dtype=float) - np.asarray(st["hand_pos"])
-        if np.linalg.norm(d) < tol:
+        d = p - np.asarray(st["hand_target"])
+        if np.linalg.norm(d) < 1e-4 and np.linalg.norm(p - np.asarray(st["hand_pos"])) < tol:
             break
-        st = act(np.clip(d / STEP_M, -speed, speed), g)
+        u = d / STEP_M
+        m = float(np.max(np.abs(u)))
+        st = act(u * (speed / m) if m > speed else u, g)
     return st
 
 
@@ -58,9 +62,16 @@ def close_drawer() -> None:
             break
         tgt = np.asarray(st["drawer_handle_pos"]) - n * .03
         tgt[2] = hdl[2]
-        act(np.clip((tgt - np.asarray(st["hand_pos"])) / STEP_M, -.4, .4), 1.0)
+        act(np.clip((tgt - np.asarray(st["hand_target"])) / STEP_M, -.4, .4), 1.0)
     h = np.asarray(obs()["hand_pos"])
     goto(h + n * .12 + [0, 0, .05], 1.0)
+
+
+def _dbg(msg):
+    import os
+    if os.environ.get("ORACLE_DEBUG"):
+        st = obs()
+        print("DBG", msg, {k: st[k] for k in ("hand_pos", "hand_target", "object_pos", "gripper_open") if k in st}, flush=True)
 
 
 def pick_place() -> None:
@@ -68,10 +79,13 @@ def pick_place() -> None:
     o = np.asarray(st["object_pos"])
     hz = float(st["object_size"][2]) / 2
     goto(o + [0, 0, hz + .10], -1.0)
+    _dbg("above")
     goto(o + [0, 0, max(0.0, hz - .03)], -1.0, tol=.004, speed=.3)
+    _dbg("at grasp")
     hold(15, 1.0)
     h = np.asarray(obs()["hand_pos"])
     goto(h + [0, 0, .15], 1.0)
+    _dbg("lifted")
     st = obs()
     if "sink_basin_center" in st:
         c = np.asarray(st["sink_basin_center"])
@@ -82,6 +96,7 @@ def pick_place() -> None:
     h = np.asarray(st["hand_pos"])
     goto([c[0], c[1], h[2]], 1.0)
     goto([c[0], c[1], drop], 1.0)
+    _dbg("over target")
     hold(15, -1.0)
     h = np.asarray(obs()["hand_pos"])
     goto(h + [0, 0, .2], -1.0)

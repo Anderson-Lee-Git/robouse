@@ -11,7 +11,7 @@ tasks/<suite>/<task-id>/
 
 `benchflow/export.py` adds the `environment/` folder (Dockerfile and compose file) when packaging tasks for `bench eval run`; see [benchflow.md](benchflow.md). Adapters write task folders with `robouse.tasks.write_task`, directly or through `robouse.tasks.to_native`.
 
-The loader (`robouse.tasks.load_task`) also reads the older layout (`task.toml` + `instruction.md` + `solution/solve.sh` + `tests/test.sh`) until every folder is migrated. As of 2026-09-27 the committed task folders outside `tasks/hard/` are still in that older layout; re-running each suite's adapter rewrites them in the layout above.
+The loader (`robouse.tasks.load_task`) also reads the older layout (`task.toml` + `instruction.md` + `solution/solve.sh` + `tests/test.sh`) until every folder is migrated. As of 2026-09-27 every folder under `tasks/` is in the layout above; the older-layout reader is kept for external task folders.
 
 ## task.md
 

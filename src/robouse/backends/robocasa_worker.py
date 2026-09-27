@@ -17,6 +17,7 @@ import numpy as np  # noqa: E402
 
 STEP_M = .02        # metres per action unit per step (world frame)
 OSC_MAX = .05       # robosuite OSC_POSE output_max for position (m per step at input 1)
+LEAD_M = .05
 
 
 def _rotvec(R):
@@ -96,8 +97,10 @@ class Worker:
             self.target_R = _rot(left, -np.pi / 2) @ R0 if R0[:, 2] @ fwd < .5 else R0
         else:
             self.target_R = R0
+        self.target_p = np.asarray(self.obs["robot0_eef_pos"], dtype=float).copy()
         for _ in range(60):  # part of the reset: turn to the tool orientation, then hold it
-            self._send(np.zeros(3))
+            self._send()
+        self.target_p = np.asarray(self.obs["robot0_eef_pos"], dtype=float).copy()
         return {"lang": self.env.get_ep_meta().get("lang", ""), "cameras": list(self.env.sim.model.camera_names)}
 
     def ep_meta(self) -> dict:
@@ -129,7 +132,9 @@ class Worker:
     def _eef_R(self):
         return _quat_to_mat(self.obs["robot0_eef_quat"])
 
-    def _send(self, d_world) -> None:
+    def _send(self) -> None:
+        """One control step toward the commanded gripper target (position self.target_p, orientation self.target_R)."""
+        d_world = self.target_p - np.asarray(self.obs["robot0_eef_pos"], dtype=float)
         R_err = self.target_R @ self._eef_R().T  # world-frame rotation from current to target
         w_world = _rotvec(R_err)
         Rb = self._base_R()
@@ -152,18 +157,15 @@ class Worker:
             self.grip = 1.0
         elif g < -1e-3:
             self.grip = float(1.0 - 2.0 * min(1.0, -g))
-        self._send(d_world)
+        hand = np.asarray(self.obs["robot0_eef_pos"], dtype=float)
+        tgt = self.target_p + d_world
+        off = tgt - hand
+        n = float(np.linalg.norm(off))
+        if n > LEAD_M:  # the target stays within 5 cm of the hand so a blocked arm does not wind up
+            tgt = hand + off * (LEAD_M / n)
+        self.target_p = tgt
+        self._send()
         return {"success": bool(self.env._check_success())}
-
-    def drive(self, v, steps: int, mode: float = 1.0) -> dict:
-        """Debug/setup helper: base velocity command [forward, left, yaw] for a number of steps."""
-        for _ in range(int(steps)):
-            full = np.zeros(self.adim)
-            full[6] = self.grip
-            full[7:10] = np.asarray(v, dtype=float)
-            full[-1] = mode
-            self.obs, _, _, _ = self.env.step(full)
-        return {"base": [float(x) for x in self.obs["robot0_base_pos"]], "hand": [float(x) for x in self.obs["robot0_eef_pos"]]}
 
     def success(self) -> dict:
         return {"success": bool(self.env._check_success())}
@@ -172,6 +174,7 @@ class Worker:
     def observe(self, features: list[str]) -> dict:
         o, env = self.obs, self.env
         st = {"hand_pos": [round(float(v), 4) for v in o["robot0_eef_pos"]],
+              "hand_target": [round(float(v), 4) for v in self.target_p],
               "gripper_open": round(float(np.clip(np.mean(np.abs(o["robot0_gripper_qpos"])) / .04, 0, 1)), 3),
               "robot_base_pos": [round(float(v), 4) for v in o["robot0_base_pos"]],
               "robot_forward": [round(float(v), 4) for v in self._base_R()[:, 0]]}
