@@ -40,8 +40,10 @@ TASKS: dict[str, dict] = {
                                                          features=["object", "sink"], max_steps=800),
     "robocasa-pick-place-counter-to-sink-kitchen2b": dict(env="PickPlaceCounterToSink", layout=2, style=2, seed=2,
                                                           features=["object", "sink"], max_steps=800),
-    "robocasa-pick-place-counter-to-stove": dict(env="PickPlaceCounterToStove", layout=1, style=1, seed=3,
-                                                 features=["object", "container"], max_steps=800),
+    "robocasa-pick-place-counter-to-sink-kitchen3": dict(env="PickPlaceCounterToSink", layout=3, style=3, seed=6,
+                                                         features=["object", "sink"], max_steps=800),
+    "robocasa-pick-place-counter-to-sink-kitchen4": dict(env="PickPlaceCounterToSink", layout=4, style=4, seed=0,
+                                                         features=["object", "sink"], max_steps=800),
 }
 
 
@@ -93,7 +95,8 @@ class RobocasaBackend(Backend):
         # task replays a recorded episode layout (RoboCasa's ep_meta, the mechanism its demo replay uses).
         ep = EPISODES / f"{self.task_id}.json"
         ep_meta = json.loads(ep.read_text()) if ep.exists() else None
-        self.meta = self._call("make", env_name=t["env"], layout=t["layout"], style=t["style"], seed=int(t.get("seed", seed)),
+        seed = int((ep_meta or {}).get("robouse_seed", t.get("seed", seed)))
+        self.meta = self._call("make", env_name=t["env"], layout=t["layout"], style=t["style"], seed=seed,
                                tool=t.get("tool", "down"), ep_meta=ep_meta)
         self._state = None
 
@@ -138,12 +141,14 @@ def oracle_main(env: str) -> None:
     run(env)
 
 
-def record_episode(task_id: str) -> Path:
+def record_episode(task_id: str, seed: int | None = None) -> Path:
     """Create the task's scene once and store its ep_meta so every later reset replays the same layout."""
     b = RobocasaBackend({"env": task_id})
     t = b.task
-    b._call("make", env_name=t["env"], layout=t["layout"], style=t["style"], seed=int(t["seed"]), tool=t.get("tool", "down"))
+    seed = int(t["seed"] if seed is None else seed)
+    b._call("make", env_name=t["env"], layout=t["layout"], style=t["style"], seed=seed, tool=t.get("tool", "down"))
     meta = b._call("ep_meta")
+    meta["robouse_seed"] = seed
     b.close()
     EPISODES.mkdir(exist_ok=True)
     out = EPISODES / f"{task_id}.json"

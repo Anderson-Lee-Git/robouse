@@ -189,9 +189,6 @@ class Worker:
                         cat = c.get("info", {}).get("cat", "")
                 st["object_category"] = cat
                 st["object_size"] = r(getattr(ob, "size", [0, 0, 0]))
-            elif f == "container":
-                st["container_pos"] = r(o["container_pos"]) if "container_pos" in o else r(self._pos(env.objects["container"].root_body))
-                st["container_size"] = r(getattr(env.objects["container"], "size", [0, 0, 0]))
             elif f == "sink":
                 ints = env.sink.get_int_sites(relative=False)
                 p0, px, py, pz = (np.asarray(v, dtype=float) for v in list(ints.values())[0][:4])

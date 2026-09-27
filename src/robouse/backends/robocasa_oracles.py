@@ -87,12 +87,8 @@ def pick_place() -> None:
     goto(h + [0, 0, .15], 1.0)
     _dbg("lifted")
     st = obs()
-    if "sink_basin_center" in st:
-        c = np.asarray(st["sink_basin_center"])
-        drop = float(st["sink_basin_bottom_z"]) + .12
-    else:
-        c = np.asarray(st["container_pos"])
-        drop = c[2] + float(st["container_size"][2]) / 2 + .08
+    c = np.asarray(st["sink_basin_center"])
+    drop = float(st["sink_basin_bottom_z"]) + .12
     h = np.asarray(st["hand_pos"])
     goto([c[0], c[1], h[2]], 1.0)
     goto([c[0], c[1], drop], 1.0)
@@ -107,7 +103,7 @@ def run(env: str) -> None:
 
     kind = TASKS[env]["env"]
     try:
-        {"CloseDrawer": close_drawer, "PickPlaceCounterToSink": pick_place, "PickPlaceCounterToStove": pick_place}[kind]()
+        {"CloseDrawer": close_drawer, "PickPlaceCounterToSink": pick_place}[kind]()
         hold(5, 0.0)
         _send({"op": "done", "text": "oracle finished"})
     except Finished:
