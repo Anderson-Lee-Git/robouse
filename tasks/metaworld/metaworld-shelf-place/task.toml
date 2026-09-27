@@ -1,0 +1,29 @@
+version = "1.0"
+
+[task]
+name = "robouse/metaworld-shelf-place"
+description = "Pick up the block and place it on the shelf at the goal."
+
+[metadata]
+source_benchmark = "Meta-World MT50 (Farama, v3)"
+source_task = "shelf-place-v3"
+suite = "metaworld"
+category = "manipulation"
+difficulty = "hard"
+tags = ["sawyer", "mujoco", "single-arm"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "metaworld-shelf-place"
+backend = "metaworld"
+env = "shelf-place-v3"
+seed = 0
+max_steps = 500
+camera = "corner"
+skills = true
+success_mode = "first"  # Meta-World protocol: solved the first time the success signal fires

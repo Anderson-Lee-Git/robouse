@@ -1,0 +1,284 @@
+"""Trusted episode server.
+
+`robouse serve` loads one task, owns the simulator, and answers one JSON request per Unix-socket
+connection (the `robo` CLI is the client). It enforces the step and wall-clock budgets, records every
+frame with a timestamp, and decides success itself when the episode ends. The agent only sees what
+`observe` returns.
+
+Episode files written to the run directory:
+  result.json            success, outcome, steps used, agent's final message
+  trace.jsonl            every request and response (images referenced by path)
+  frames.jsonl           wall-clock time and env step for each video frame
+  recording.mp4          the episode video
+"""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import time
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+from .backends import make_backend
+
+SETTLE_STEPS = 10  # after `done`, hold still this many steps before judging success
+MAX_REPEAT = 50
+MAX_SKILL_STEPS = 150
+FPS = 30
+
+
+class Episode:
+    def __init__(self, spec: dict, run_dir: Path, workspace: Path | None = None, seed: int | None = None):
+        self.spec = spec
+        self.run_dir = Path(run_dir)
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.workspace = Path(workspace) if workspace else None
+        self.backend = make_backend(spec)
+        self.seed = int(spec.get("seed", 0) if seed is None else seed)
+        self.max_steps = int(spec.get("max_steps", getattr(self.backend, "max_steps", 500)))
+        self.frame_every = int(spec.get("frame_every", 2))
+        self.skills_enabled = bool(spec.get("skills", True))
+        # "final": judged after `robo done` and a settle period (default).
+        # "first": the episode ends as solved the first time the task's own success signal fires
+        #          (Meta-World's evaluation protocol).
+        self.success_mode = str(spec.get("success_mode", "final"))
+        self.backend.reset(self.seed)
+        self.steps = 0
+        self.requests = 0
+        self.success_ever = False
+        self.finished = False
+        self.outcome = None
+        self.agent_text = ""
+        self.t0 = time.time()
+        self._frames: list[np.ndarray] = []
+        self._frame_meta: list[dict] = []
+        self._trace = open(self.run_dir / "trace.jsonl", "w")
+        self._obs_count = 0
+        self._record_frame(force=True)
+
+    # ---- recording -------------------------------------------------------------------------
+    def _record_frame(self, force: bool = False) -> None:
+        if force or self.steps % self.frame_every == 0:
+            img = self.backend.render()
+            self._frames.append(np.asarray(img, dtype=np.uint8))
+            self._frame_meta.append({"i": len(self._frames) - 1, "t": round(time.time() - self.t0, 3), "step": self.steps})
+
+    def _env_step(self, action) -> Any:
+        info = self.backend.step(action)
+        self.steps += 1
+        self.success_ever = self.success_ever or info.success
+        self._record_frame()
+        if info.success and self.success_mode == "first" and not self.finished:
+            self.finish("success_reached", "", settle=False)
+        return info
+
+    # ---- request handling ------------------------------------------------------------------
+    def handle(self, req: dict) -> dict:
+        self.requests += 1
+        op = req.get("op")
+        t = round(time.time() - self.t0, 3)
+        try:
+            if self.finished and op not in ("info", "status"):
+                resp = {"ok": False, "error": f"episode finished ({self.outcome})"}
+            elif op == "info":
+                resp = {"ok": True, "result": self.info()}
+            elif op == "status":
+                resp = {"ok": True, "result": {"finished": self.finished, "outcome": self.outcome, "steps": self.steps}}
+            elif op == "observe":
+                resp = {"ok": True, "result": self.observe(bool(req.get("image", False)))}
+            elif op == "act":
+                resp = self.act(req.get("action"), int(req.get("repeat", 1)))
+            elif op == "move_to":
+                resp = self.move_to(req.get("pos"), req.get("grip"), int(req.get("max_steps", 100)), float(req.get("tol", 0.01)))
+            elif op == "grip":
+                resp = self.grip(float(req.get("value", 1.0)), int(req.get("steps", 15)))
+            elif op in ("done", "give_up"):
+                resp = {"ok": True, "result": self.finish("done" if op == "done" else "gave_up", str(req.get("text", ""))[:4000])}
+            else:
+                resp = {"ok": False, "error": f"unknown op {op!r}"}
+        except Exception as e:  # bounded error back to the agent
+            resp = {"ok": False, "error": f"{type(e).__name__}: {e}"[:500]}
+        if not self.finished and self.steps >= self.max_steps:
+            self.finish("budget_exhausted", "")
+        if self.finished and op in ("act", "move_to", "grip") and resp.get("ok") and isinstance(resp.get("result"), dict):
+            msg = {"budget_exhausted": "step budget exhausted", "success_reached": "goal reached, episode scored as solved",
+                   "wall_time_exhausted": "wall-clock budget exhausted"}.get(self.outcome, self.outcome)
+            resp["result"]["episode"] = f"finished: {msg}"
+        self._trace.write(json.dumps({"t": t, "steps": self.steps, "req": req, "resp": _strip(resp)}) + "\n")
+        self._trace.flush()
+        return resp
+
+    def info(self) -> dict:
+        s = self.backend.action_spec
+        return {
+            "task": self.spec.get("id"), "backend": self.backend.name,
+            "action": {"names": s.names, "low": s.low, "high": s.high, "doc": s.doc},
+            "skills": self.backend.skills() if self.skills_enabled else [],
+            "steps_used": self.steps, "max_steps": self.max_steps,
+        }
+
+    def observe(self, image: bool) -> dict:
+        out = {"state": self.backend.observe(), "steps_used": self.steps, "max_steps": self.max_steps}
+        if image:
+            self._obs_count += 1
+            from PIL import Image
+
+            img = Image.fromarray(np.asarray(self.backend.render(), dtype=np.uint8))
+            name = f"obs_{self._obs_count:03d}.png"
+            (self.run_dir / "observations").mkdir(exist_ok=True)
+            img.save(self.run_dir / "observations" / name)
+            if self.workspace:
+                (self.workspace / "observations").mkdir(exist_ok=True)
+                img.save(self.workspace / "observations" / name)
+                out["image_path"] = str(self.workspace / "observations" / name)
+            else:
+                out["image_path"] = str(self.run_dir / "observations" / name)
+        return out
+
+    def act(self, action, repeat: int) -> dict:
+        spec = self.backend.action_spec
+        if not isinstance(action, list) or len(action) != spec.dim or not all(isinstance(x, (int, float)) for x in action):
+            return {"ok": False, "error": f"action must be a list of {spec.dim} numbers {spec.names}"}
+        repeat = max(1, min(MAX_REPEAT, repeat))
+        n = 0
+        for _ in range(repeat):
+            if self.steps >= self.max_steps or self.finished:
+                break
+            self._env_step(action)
+            n += 1
+        return {"ok": True, "result": {"executed_steps": n, "state": self.backend.observe(), "steps_used": self.steps}}
+
+    def move_to(self, pos, grip, max_steps: int, tol: float) -> dict:
+        if not self.skills_enabled or "move_to" not in self.backend.skills():
+            return {"ok": False, "error": "move_to is not available for this task; use act"}
+        if not isinstance(pos, list) or len(pos) != 3:
+            return {"ok": False, "error": "pos must be [x, y, z]"}
+        target = np.asarray(pos, dtype=float)
+        g = float(getattr(self.backend, "_grip", -1.0) if grip is None else grip)
+        n, dist = 0, float("inf")
+        for _ in range(max(1, min(MAX_SKILL_STEPS, max_steps))):
+            if self.steps >= self.max_steps or self.finished:
+                break
+            d = target - self.backend.hand_pos()
+            dist = float(np.linalg.norm(d))
+            if dist < tol:
+                break
+            self._env_step(list(np.clip(d * 10.0, -1, 1)) + [g])
+            n += 1
+        dist = float(np.linalg.norm(target - self.backend.hand_pos()))
+        return {"ok": True, "result": {"reached": dist < tol * 1.5, "distance": round(dist, 4), "executed_steps": n,
+                                       "state": self.backend.observe(), "steps_used": self.steps}}
+
+    def grip(self, value: float, steps: int) -> dict:
+        if not self.skills_enabled or "grip" not in self.backend.skills():
+            return {"ok": False, "error": "grip is not available for this task; use act"}
+        n = 0
+        for _ in range(max(1, min(MAX_REPEAT, steps))):
+            if self.steps >= self.max_steps or self.finished:
+                break
+            self._env_step([0.0, 0.0, 0.0, max(-1.0, min(1.0, value))])
+            n += 1
+        return {"ok": True, "result": {"executed_steps": n, "state": self.backend.observe(), "steps_used": self.steps}}
+
+    def finish(self, outcome: str, text: str, settle: bool = True) -> dict:
+        if self.finished:
+            return {"outcome": self.outcome}
+        g = float(getattr(self.backend, "_grip", 0.0))
+        dim = self.backend.action_spec.dim
+        hold = [0.0] * (dim - 1) + [g] if dim >= 1 else []
+        for _ in range(SETTLE_STEPS if settle else 0):  # settle; success must still hold afterwards
+            self.backend.step(hold)
+            self._record_frame(force=True)
+        success = bool(self.success_ever) if self.success_mode == "first" else bool(self.backend.success())
+        self.finished, self.outcome, self.agent_text = True, outcome, text
+        self.result = {
+            "task": self.spec.get("id"), "seed": self.seed, "success": success, "success_ever": self.success_ever,
+            "success_mode": self.success_mode,
+            "outcome": outcome, "steps_used": self.steps, "max_steps": self.max_steps, "requests": self.requests,
+            "agent_text": text, "wall_time_s": round(time.time() - self.t0, 2),
+        }
+        (self.run_dir / "result.json").write_text(json.dumps(self.result, indent=2))
+        self._write_video()
+        return {"outcome": outcome, "episode": "finished"}
+
+    def _write_video(self) -> None:
+        with open(self.run_dir / "frames.jsonl", "w") as f:
+            for m in self._frame_meta:
+                f.write(json.dumps(m) + "\n")
+        if not self._frames:
+            return
+        import imageio.v2 as imageio
+
+        with imageio.get_writer(self.run_dir / "recording.mp4", fps=FPS, codec="libx264", quality=7,
+                                macro_block_size=16, ffmpeg_log_level="error") as w:
+            for fr in self._frames:
+                w.append_data(fr)
+        self._frames = []
+
+    def close(self) -> None:
+        if not self.finished:
+            self.finish("agent_exited", "")
+        self._trace.close()
+        self.backend.close()
+
+
+def _strip(resp: dict) -> dict:
+    """Drop the raw obs vector from the trace to keep it readable."""
+    r = json.loads(json.dumps(resp))
+    st = (r.get("result") or {}).get("state") if isinstance(r.get("result"), dict) else None
+    if isinstance(st, dict):
+        st.pop("obs_vector", None)
+    return r
+
+
+def serve(spec: dict, run_dir: Path, sock_path: str, workspace: Path | None = None, max_wall_s: float = 1800,
+          ready_file: Path | None = None) -> dict:
+    ep = Episode(spec, run_dir, workspace)
+    if os.path.exists(sock_path):
+        os.unlink(sock_path)
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    srv.bind(sock_path)
+    srv.listen(8)
+    srv.settimeout(1.0)
+    if ready_file:
+        Path(ready_file).write_text(sock_path)
+    deadline = time.time() + max_wall_s
+    stop_after_finish = None
+    try:
+        while True:
+            if time.time() > deadline and not ep.finished:
+                ep.finish("wall_time_exhausted", "")
+            if ep.finished and stop_after_finish is None:
+                stop_after_finish = time.time() + float(spec.get("linger_s", 5))
+            if stop_after_finish and time.time() > stop_after_finish:
+                break
+            try:
+                conn, _ = srv.accept()
+            except socket.timeout:
+                continue
+            with conn:
+                conn.settimeout(10)
+                buf = b""
+                try:
+                    while not buf.endswith(b"\n") and len(buf) < 1_000_000:
+                        chunk = conn.recv(65536)
+                        if not chunk:
+                            break
+                        buf += chunk
+                    req = json.loads(buf.decode() or "{}")
+                    if req.get("op") == "shutdown":
+                        conn.sendall(b'{"ok": true}\n')
+                        break
+                    resp = ep.handle(req)
+                except Exception as e:
+                    resp = {"ok": False, "error": f"bad request: {e}"[:300]}
+                conn.sendall((json.dumps(resp) + "\n").encode())
+    finally:
+        ep.close()
+        srv.close()
+        if os.path.exists(sock_path):
+            os.unlink(sock_path)
+    return ep.result

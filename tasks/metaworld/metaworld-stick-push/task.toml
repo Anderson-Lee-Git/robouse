@@ -1,0 +1,29 @@
+version = "1.0"
+
+[task]
+name = "robouse/metaworld-stick-push"
+description = "Pick up the stick and use it to push the thermos to the goal."
+
+[metadata]
+source_benchmark = "Meta-World MT50 (Farama, v3)"
+source_task = "stick-push-v3"
+suite = "metaworld"
+category = "manipulation"
+difficulty = "hard"
+tags = ["sawyer", "mujoco", "single-arm"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "metaworld-stick-push"
+backend = "metaworld"
+env = "stick-push-v3"
+seed = 0
+max_steps = 500
+camera = "corner"
+skills = true
+success_mode = "first"  # Meta-World protocol: solved the first time the success signal fires

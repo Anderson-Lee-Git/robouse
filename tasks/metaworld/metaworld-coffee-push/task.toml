@@ -1,0 +1,29 @@
+version = "1.0"
+
+[task]
+name = "robouse/metaworld-coffee-push"
+description = "Push the mug under the coffee machine to the target."
+
+[metadata]
+source_benchmark = "Meta-World MT50 (Farama, v3)"
+source_task = "coffee-push-v3"
+suite = "metaworld"
+category = "manipulation"
+difficulty = "medium"
+tags = ["sawyer", "mujoco", "single-arm"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "metaworld-coffee-push"
+backend = "metaworld"
+env = "coffee-push-v3"
+seed = 0
+max_steps = 500
+camera = "corner"
+skills = true
+success_mode = "first"  # Meta-World protocol: solved the first time the success signal fires

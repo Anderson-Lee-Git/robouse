@@ -1,0 +1,29 @@
+version = "1.0"
+
+[task]
+name = "robouse/metaworld-plate-slide-back-side"
+description = "Slide the plate sideways out of the net to the goal."
+
+[metadata]
+source_benchmark = "Meta-World MT50 (Farama, v3)"
+source_task = "plate-slide-back-side-v3"
+suite = "metaworld"
+category = "manipulation"
+difficulty = "medium"
+tags = ["sawyer", "mujoco", "single-arm"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "metaworld-plate-slide-back-side"
+backend = "metaworld"
+env = "plate-slide-back-side-v3"
+seed = 0
+max_steps = 500
+camera = "corner"
+skills = true
+success_mode = "first"  # Meta-World protocol: solved the first time the success signal fires

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "robouse"
+version = "0.1.0.dev0"
+description = "robo-use: agent as a policy for embodied agents. BenchFlow extension for robot tasks, harnesses and trajectory viewing."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Xiangyi Li", email = "xiangyi@benchflow.ai" }]
+dependencies = ["numpy>=1.24", "mujoco>=3.3", "imageio>=2.34", "imageio-ffmpeg>=0.5", "pillow>=10"]
+
+[project.optional-dependencies]
+metaworld = ["metaworld>=3.1", "packaging"]
+
+[project.scripts]
+robouse = "robouse.cli:main"
+robo = "robouse.agent_cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/robouse"]

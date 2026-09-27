@@ -1,0 +1,29 @@
+version = "1.0"
+
+[task]
+name = "robouse/metaworld-handle-press-side"
+description = "Press the handle down, approaching from the side."
+
+[metadata]
+source_benchmark = "Meta-World MT50 (Farama, v3)"
+source_task = "handle-press-side-v3"
+suite = "metaworld"
+category = "manipulation"
+difficulty = "medium"
+tags = ["sawyer", "mujoco", "single-arm"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "metaworld-handle-press-side"
+backend = "metaworld"
+env = "handle-press-side-v3"
+seed = 0
+max_steps = 500
+camera = "corner"
+skills = true
+success_mode = "first"  # Meta-World protocol: solved the first time the success signal fires
