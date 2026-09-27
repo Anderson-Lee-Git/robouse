@@ -45,6 +45,7 @@ def main(argv=None) -> int:
     m.add_argument("--limit", type=int, default=0)
     m.add_argument("--concurrency", type=int, default=1)
     m.add_argument("--timeout", type=float)
+    m.add_argument("--task-list", help="file with one task id per line (subset of --tasks)")
 
     t = sub.add_parser("tasks")
     t.add_argument("root")
@@ -70,8 +71,9 @@ def main(argv=None) -> int:
     if a.cmd == "run-many":
         from .runner import run_many
 
+        ids = [l.strip() for l in open(a.task_list) if l.strip() and not l.startswith("#")] if a.task_list else None
         run_many(Path(a.tasks), a.harness, a.model, Path(a.out), filt=a.filter, limit=a.limit,
-                 concurrency=a.concurrency, timeout=a.timeout)
+                 concurrency=a.concurrency, timeout=a.timeout, ids=ids)
         return 0
     if a.cmd == "tasks":
         for task in find_tasks(a.root):

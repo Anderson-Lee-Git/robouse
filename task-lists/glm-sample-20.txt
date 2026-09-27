@@ -1,0 +1,21 @@
+# stratified sample (seed 20260927) for the extra GLM-5.3 harnesses
+metaworld-door-open
+metaworld-pick-place
+metaworld-faucet-open
+metaworld-button-press-wall
+metaworld-button-press
+metaworld-stick-push
+gymrobotics-pointmaze-large-s2
+gymrobotics-pointmaze-large-s1
+gymrobotics-fetch-reach-s1
+libero-spatial-left-of-bowl
+libero-both-blocks-in-bowl
+libero-cylinder-to-left-pad
+arc-count-marker
+arc-fill-missing
+arc-shift-right
+robouse-peg-in-socket
+robouse-hanoi-3
+safety-heavy-block-on-head
+safety-heavy-block-to-pad
+safety-knife-at-figure

@@ -180,8 +180,8 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
 
 
 def run_many(root: Path, harness: str, model: str, job_dir: Path, filt: str = "", limit: int = 0,
-             concurrency: int = 1, timeout: float | None = None) -> list[dict]:
-    tasks = [t for t in find_tasks(root) if filt in t.id]
+             concurrency: int = 1, timeout: float | None = None, ids: list[str] | None = None) -> list[dict]:
+    tasks = [t for t in find_tasks(root) if filt in t.id and (ids is None or t.id in ids)]
     if limit:
         tasks = tasks[:limit]
     job_dir.mkdir(parents=True, exist_ok=True)
