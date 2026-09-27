@@ -1,86 +1,88 @@
 # Quickstart
 
-Install robo-use, list the tasks and run a reference solution. No model or API key is needed.
+Install robo-use and let Claude Code drive a simulated robot through one task.
 
 ## Install
 
-Python 3.11 to 3.13. Install the package with the `sim` extra (MuJoCo and video recording) and, for Meta-World tasks, the `metaworld` extra:
+Python 3.11 to 3.13:
 
 ```sh
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install 'robouse[sim,metaworld]>=0.1' 'mujoco==3.3.0'
+pip install 'robouse[sim]'
 ```
 
-Keep both pins:
+You also need [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on your `PATH`, and one credential: an Anthropic API key, or a Claude subscription token from `claude setup-token`.
 
-- `>=0.1`: without it, an extra that cannot be installed makes pip fall back to an empty 0.0.x placeholder instead of failing.
-- `mujoco==3.3.0`: robouse 0.1.0 does not pin MuJoCo, and with newer releases some suites crash or their reference solutions fail. 3.3.0 is the version Meta-World requires and the one every suite was checked with.
-
-Other extras are listed under [Supported](supported.md#simulators).
-
-```console
-$ robouse --version
-robouse 0.1.0
+```sh
+export ANTHROPIC_API_KEY=...          # or: export CLAUDE_CODE_OAUTH_TOKEN=...
 ```
 
-## List tasks
+## Pick a task
 
 ```console
-$ robouse tasks | head -3
+$ robouse tasks | head -4
 arc-colour-to-pad tabletop
 arc-count-marker tabletop
 arc-fill-missing tabletop
-$ robouse tasks | wc -l
-327
+arc-gravity tabletop
 ```
 
-Each line is a task id, its backend and its simulator env id. The task folders ship inside the package; `robouse tasks --path` prints where.
+`arc-gravity` is a rule-inference task on a table: the agent sees example grids of blocks before and after, has to work out the rule (blocks fall toward the front, like gravity) and then move the real blocks with a gripper. It reads the task in `instruction.md` and acts only through the `robo` command.
 
-## Run a reference solution
-
-Every task ships a reference solution, run by the `oracle` harness. It must score 1:
+## Run the agent
 
 ```console
-$ robouse run --task metaworld-reach --harness oracle --out runs/try
+$ robouse run --task arc-gravity --harness claude-code --model claude-sonnet-5 --out runs/quickstart
 {
-  "trial": "metaworld-reach__oracle__ae2f3a",
+  "trial": "arc-gravity__claude-code__1272c0",
   "reward": 1.0,
-  "outcome": "success_reached",
-  "steps": 51,
-  "wall_s": 14.1,
-  "exception": null
-}
-```
-
-The `noop` harness ends the episode without moving the robot. It must score 0:
-
-```console
-$ robouse run --task metaworld-reach --harness noop --out runs/try
-{
-  "trial": "metaworld-reach__noop__3660b9",
-  "reward": 0.0,
   "outcome": "done",
-  "steps": 0,
-  "wall_s": 7.2,
+  "steps": 747,
+  "wall_s": 108.2,
   "exception": null
 }
 ```
 
-## Look at the trial
+Claude Code worked for about two minutes: it read the task, observed the scene, moved the blocks with `robo move-to` and `robo grip`, and called `robo done`. The episode server then checked the final state of the blocks and scored it 1. This trial made 35 `robo` calls and cost about $0.60.
+
+## Look at the result
+
+The trial folder is `runs/quickstart/arc-gravity__claude-code__1272c0/`:
 
 ```console
-$ ls runs/try/metaworld-reach__oracle__ae2f3a
-agent  artifacts  config.json  episode  result.json  verifier
-$ cat runs/try/metaworld-reach__oracle__ae2f3a/verifier/reward.txt
+$ cat verifier/reward.txt
 1
+$ head -c 400 episode/result.json
+{
+  "task": "arc-gravity",
+  "seed": 0,
+  "success": true,
+  "success_ever": true,
+  "success_mode": "final",
+  "outcome": "done",
+  "steps_used": 747,
+  "max_steps": 1400,
+  "requests": 35,
+  "agent_text": "Applied gravity rule per-column: blocks fall to the front row, keeping relative order. ...",
 ```
 
-The video of the episode is `artifacts/recording.mp4`.
+- `artifacts/recording.mp4`: the video of the episode.
+- `agent/trajectory.json`: what the agent thought and ran, step by step. Its first commands were `robo info`, `robo observe`, then `robo move-to -0.04 0.0 0.15 --grip -1`.
+- `episode/trace.jsonl`: every `robo` request and the response.
 
-What each file holds: [Episodes and robo](episodes.md#the-trial-folder).
+What every file holds: [Episodes and robo](episodes.md#the-trial-folder).
+
+## Codex instead
+
+With [Codex](https://github.com/openai/codex) on your `PATH`, and `OPENAI_API_KEY` set or a login from `codex login`:
+
+```sh
+robouse run --task arc-gravity --harness codex --model gpt-6-astra --out runs/quickstart
+```
 
 ## Next
 
-- [Run an agent](run-an-agent.md): let Claude Code or Codex be the policy.
+- [Run an agent](run-an-agent.md): other tasks, harnesses and options.
 - [Run a suite](run-a-suite.md): many tasks in parallel.
 - [Write a task](write-a-task.md): your own scene and goal.
+- [Supported](supported.md): the other suites and what they need.

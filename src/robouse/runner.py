@@ -35,13 +35,14 @@ AGENT_CLI = Path(__file__).with_name("agent_cli.py")
 
 
 def sandbox_profile() -> str:
-    """macOS Seatbelt profile for agent processes: everything is allowed except reading or writing the
-    robouse repo, runs and episode data (all under ~/benchflow) and the owner's credential files.
+    """macOS Seatbelt profile for agent processes: everything is allowed except reading or writing the paths in
+    ROBOUSE_SANDBOX_DENY (colon-separated), plus the maintainers' workspace and credential folders when they exist.
     The agent still reaches the episode socket (/tmp) and the network (model APIs). Set ROBOUSE_SANDBOX=0 to disable."""
-    home = str(Path.home())
-    denied = [f"{home}/benchflow", f"{home}/.config/bf-agents"] + [p for p in os.environ.get("ROBOUSE_SANDBOX_DENY", "").split(":") if p]
+    home = Path.home()
+    builtin = [str(p) for p in (home / "benchflow", home / ".config" / "bf-agents") if p.exists()]
+    denied = builtin + [p for p in os.environ.get("ROBOUSE_SANDBOX_DENY", "").split(":") if p]
     denied = [os.path.realpath(os.path.expanduser(d)) for d in denied]  # Seatbelt matches resolved paths (/tmp -> /private/tmp)
-    rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in denied)
+    rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in dict.fromkeys(denied))
     return "(version 1)(allow default)" + rules
 
 
@@ -105,7 +106,7 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
     agent_rc = None
     timed_out = False
     try:
-        _wait_ready(ready, server, log=tdir / "episode" / "server.log")
+        _wait_ready(ready, server, timeout=float(task.spec.get("ready_timeout_s", 300)), log=tdir / "episode" / "server.log")
         (ws / ".robouse" / "socket").write_text(sock)
         base_env = {k: v for k, v in os.environ.items() if not k.startswith(("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN"))}
         base_env["PATH"] = f"{ws / '.robouse' / 'bin'}:{Path(py).parent}:{base_env.get('PATH', '')}" if harness == "oracle" \
@@ -119,7 +120,7 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
         sandboxed = harness not in ("oracle", "noop") and sys.platform == "darwin" and os.environ.get("ROBOUSE_SANDBOX", "1") != "0"
         if sandboxed:
             launch.cmd = ["sandbox-exec", "-p", sandbox_profile(), *launch.cmd]
-        cfg["sandbox"] = "macos-seatbelt: deny ~/benchflow, ~/.config/bf-agents" if sandboxed else "none"
+        cfg["sandbox"] = "macos-seatbelt" if sandboxed else "none"
         (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
         with open(tdir / "agent" / "stdout.jsonl", "w") as out, open(tdir / "agent" / "stderr.txt", "w") as err:
             agent = subprocess.Popen(launch.cmd, cwd=ws, env=launch.env, stdout=out, stderr=err, stdin=subprocess.DEVNULL,

@@ -3,11 +3,11 @@
 **robo-use: agent as a policy for embodied agents.** robo-use turns robot benchmarks into tasks that an agent harness, such as Claude Code or Codex, solves by driving a simulated robot from its shell, one `robo` command at a time. A trusted episode server runs the simulator, enforces the step budget, records a video and scores the final physical state.
 
 ```sh
-pip install 'robouse[sim]>=0.1' 'mujoco==3.3.0'
-robouse run --task arc-gravity --harness oracle --out runs/try
+pip install 'robouse[sim]'
+robouse run --task arc-gravity --harness claude-code --model claude-sonnet-5 --out runs/quickstart
 ```
 
-Keep the `>=0.1`: older 0.0.x versions on PyPI are empty placeholders, and pip falls back to them when an extra cannot be installed. Pin MuJoCo 3.3.0: robouse 0.1.0 does not, and newer MuJoCo releases break several suites.
+Python 3.11 to 3.13. Other extras add more simulators: `metaworld`, `gymrobotics`, `robosuite`, `dexjoco`, `all`.
 
 Docs: [robouse.ai/docs](https://robouse.ai/docs/). Results and videos: [robouse.ai/runs](https://robouse.ai/runs/).
 

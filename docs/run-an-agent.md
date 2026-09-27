@@ -2,20 +2,22 @@
 
 Let Claude Code or Codex be the robot's policy on one task.
 
-The commands on this page call paid model APIs, so they were not run for these docs. Their flags were checked against `robouse run --help` and the harness code, and the same harnesses produced the [v1 runs](/runs/).
+The commands on this page call paid model APIs. The Claude Code command was run for these docs (the [Quickstart](quickstart.md) shows the trial); the Codex command was checked against `robouse run --help` and the harness code, and the same harness produced the [v1 runs](/runs/).
 
 ## Claude Code
 
-Install Claude Code so that `claude` is on your `PATH`, then create a token with `claude setup-token`:
+Install Claude Code so that `claude` is on your `PATH`. Set an Anthropic API key, or a subscription token from `claude setup-token`:
 
 ```sh
-export CLAUDE_CODE_OAUTH_TOKEN=...
-robouse run --task metaworld-push --harness claude-code --model claude-opus-5-5 --out runs/try
+export ANTHROPIC_API_KEY=...          # or: export CLAUDE_CODE_OAUTH_TOKEN=...
+robouse run --task metaworld-push --harness claude-code --model claude-sonnet-5 --out runs/try
 ```
+
+`metaworld-push` needs the Meta-World extra: `pip install 'robouse[metaworld]>=0.1.1'`.
 
 ## Codex
 
-Install Codex so that `codex` is on your `PATH`, and log in once with `codex login`:
+Install Codex so that `codex` is on your `PATH`. Set `OPENAI_API_KEY`, or log in once with `codex login`:
 
 ```sh
 robouse run --task metaworld-push --harness codex --model gpt-6-astra --out runs/try
@@ -29,7 +31,7 @@ The command prints the same summary as the reference solution in the [Quickstart
 - `episode/trace.jsonl`: every `robo` request it made and the response.
 - `artifacts/recording.mp4`: the video.
 
-A trial that could not start (a missing Claude credential, a harness not on `PATH`, an episode server that did not start) has `"exception"` set in the summary and in `result.json`; it is not a score. Errors inside the harness, such as a failed API call, end the episode and score 0.
+A trial that could not start (a missing credential, a harness not on `PATH`, an episode server that did not start) has `"exception"` set in the summary and in `result.json`; it is not a score. Errors inside the harness, such as a failed API call, end the episode and score 0.
 
 ## Options
 

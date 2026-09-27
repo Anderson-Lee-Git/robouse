@@ -1,6 +1,6 @@
 # Suites
 
-The 0.1.0 package bundles 327 tasks in 13 suites; each is a subfolder of `robouse tasks --path`. The last two columns are the results of running every reference solution and the no-op control from the 0.1.0 package, with MuJoCo 3.3.0.
+The package bundles 341 tasks in 14 suites; each is a subfolder of `robouse tasks --path`. The last two columns are the results of running every reference solution and the no-op control, with MuJoCo 3.3.0.
 
 | Suite | From | Tasks | Needs | Oracle | No-op |
 |---|---|---|---|---|---|
@@ -17,8 +17,9 @@ The 0.1.0 package bundles 327 tasks in 13 suites; each is a subfolder of `robous
 | `menagerie` | dual Franka Panda, ALOHA 2 | 15 | `[sim]`, assets | 15/15 | 0/15 |
 | `roboharm` | 10 harm scenarios, 4 configurations | 80 | `[sim]`, assets | 80/80 | 0/80 |
 | `drone` | Skydio X2 over a small town | 10 | `[sim]`, assets | 10/10 | 0/10 |
+| `dexjoco` | DexJoCo: Allegro hand tool use | 14 | `[dexjoco]` + DexJoCo, [see below](#dexjoco) | 14/14 | 0/14 |
 
-"Assets" means `robouse fetch-assets`, which downloads the MuJoCo Menagerie robot models once. Install each extra with MuJoCo pinned, for example `pip install 'robouse[robosuite]>=0.1' 'mujoco==3.3.0'`: with MuJoCo 3.14, many robosuite, menagerie, gymrobotics and drone episodes crash.
+"Assets" means `robouse fetch-assets`, which downloads the MuJoCo Menagerie robot models once.
 
 Solve rates of agents on these suites are on the [Results](/runs/) page.
 
@@ -37,6 +38,20 @@ robouse run --task libero-object-0 --harness oracle --out runs/try
 
 The first episode downloads LIBERO's scene assets (about 400 MB) into `~/.cache/libero/assets`. In a new environment the first start can take more than two minutes while Python compiles the new packages, and `robouse run` may stop with `TimeoutError: episode server did not start`; run it again.
 
-## Not in 0.1.0
+## DexJoCo
 
-DexJoCo (14 dexterous tool-use tasks with an Allegro hand) and RoboCasa (7 kitchen tasks) were added after the 0.1.0 release. They need a checkout of the robo-use repository, which is private for now, and simulators installed in environments of their own.
+DexJoCo pins its own Python and MuJoCo, so it runs in a separate virtual environment that the episode server starts as a subprocess. Run once (about 300 MB):
+
+```sh
+pip install 'robouse[dexjoco]>=0.1.1'
+git clone --depth 1 https://github.com/brave-eai/dexjoco.git ~/.cache/robouse/dexjoco
+uv venv -p 3.11 ~/.cache/robouse/dexjoco-venv
+VIRTUAL_ENV=~/.cache/robouse/dexjoco-venv uv pip install -e ~/.cache/robouse/dexjoco/dexjoco "numcodecs<0.16"
+robouse run --task dexjoco-photograph --harness oracle --out runs/try
+```
+
+The episode server looks for DexJoCo's Python at `~/.cache/robouse/dexjoco-venv/bin/python`; set `ROBOUSE_DEXJOCO_PYTHON` to use another.
+
+## Not in the package
+
+RoboCasa (7 kitchen tasks) needs recorded scene layouts that are not distributed yet, so it runs only from a checkout of the robo-use repository, which is private for now.

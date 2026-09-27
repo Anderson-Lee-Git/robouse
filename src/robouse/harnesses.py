@@ -1,14 +1,20 @@
 """Harness launchers. Each returns the command, environment and any helper process for one trial.
 
 The agent process gets: cwd = an isolated workspace (instruction.md, observations/), PATH with a
-standard-library `robo` shim first, and ROBOUSE_SOCKET. Credentials are read from the owner's env files
-into this process only and passed to the harness child (never printed or written to the trial dir).
+standard-library `robo` shim first, and ROBOUSE_SOCKET. Credentials come from the environment (see below) and are
+passed to the harness child only (never printed or written to the trial dir).
+
+Credentials
+  claude-code            ANTHROPIC_API_KEY, else CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`)
+  codex                  OPENAI_API_KEY, else a private copy of ~/.codex/auth.json (from `codex login`)
+  *-glm                  BASETEN_API_KEY
+Optional maintainer fallback: token and key files under ~/.config/bf-agents (oauth.env, baseten.env) when present.
 
 Harnesses
   oracle                 the task's reference solution (oracle/solve.sh)
   noop                   calls `robo done` immediately (negative control)
-  claude-code            Claude Code CLI; model e.g. claude-opus-5-5 (OAuth token pool)
-  codex                  Codex CLI; model e.g. gpt-6-astra (the owner's Codex login)
+  claude-code            Claude Code CLI; model e.g. claude-sonnet-5
+  codex                  Codex CLI; model e.g. gpt-6-astra
   claude-code-glm        Claude Code CLI against GLM-5.3 on Baseten via a local image-capping proxy
   codex-glm              Codex CLI with a custom OpenAI-compatible provider (Baseten GLM-5.3)
   mini-swe-agent-glm     mini-swe-agent (litellm) with GLM-5.3 on Baseten
@@ -19,6 +25,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -65,37 +72,54 @@ def _clean_claude_home() -> str:
     return str(d)
 
 
-def _clean_codex_home(extra_config: str = "") -> str:
+def _clean_codex_home(extra_config: str = "", api_key: str = "") -> str:
     """Codex home with a minimal config: no personal MCP servers or skills.
 
-    The OpenAI home gets a private copy of the owner's login (never a link, so nothing a trial does can overwrite
-    ~/.codex/auth.json). The GLM home gets no login at all: it authenticates to Baseten through env_key."""
+    The OpenAI home is logged in with OPENAI_API_KEY when it is set (`codex login --with-api-key`, written into this
+    home only), else it gets a private copy of the user's ~/.codex/auth.json (never a link, and never written to).
+    The GLM home gets no login at all: it authenticates to Baseten through env_key."""
     d = CACHE / ("codex-home-glm" if extra_config else "codex-home")
     d.mkdir(parents=True, exist_ok=True)
     auth, dst = HOME / ".codex" / "auth.json", d / "auth.json"
-    if dst.is_symlink() or (extra_config and dst.exists()):
+    if dst.is_symlink() or dst.exists():
         dst.unlink()
-    if not extra_config and auth.exists():
-        shutil.copyfile(auth, dst)
-        dst.chmod(0o600)
     (d / "config.toml").write_text('model_reasoning_effort = "medium"\n' + extra_config)
+    if extra_config:
+        return str(d)
+    if api_key:
+        exe = shutil.which("codex")
+        if not exe:
+            raise RuntimeError("codex is not on PATH (install the Codex CLI)")
+        r = subprocess.run([exe, "login", "--with-api-key"], input=api_key, text=True, capture_output=True,
+                           env={**os.environ, "CODEX_HOME": str(d)})
+        if r.returncode != 0 or not dst.exists():
+            raise RuntimeError("codex login --with-api-key failed for OPENAI_API_KEY")
+    elif auth.exists():
+        shutil.copyfile(auth, dst)
+    else:
+        raise RuntimeError("no Codex credentials: set OPENAI_API_KEY, or log in once with `codex login`")
+    dst.chmod(0o600)
     return str(d)
 
 
-def _claude_oauth() -> str:
-    env = _read_env(OAUTH_ENV)
-    toks = [v for k, v in sorted(env.items()) if k.startswith("BF_REVIEW_TOKEN") and v]
+def _claude_auth() -> dict[str, str]:
+    """Environment for Claude Code: ANTHROPIC_API_KEY, else CLAUDE_CODE_OAUTH_TOKEN, else the maintainers' optional
+    token file (rotating over its BF_REVIEW_TOKEN_* entries)."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return {"ANTHROPIC_API_KEY": os.environ["ANTHROPIC_API_KEY"]}
     if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-        toks.insert(0, os.environ["CLAUDE_CODE_OAUTH_TOKEN"])
+        return {"CLAUDE_CODE_OAUTH_TOKEN": os.environ["CLAUDE_CODE_OAUTH_TOKEN"]}
+    toks = [v for k, v in sorted(_read_env(OAUTH_ENV).items()) if k.startswith("BF_REVIEW_TOKEN") and v]
     if not toks:
-        raise RuntimeError("no Claude token: set CLAUDE_CODE_OAUTH_TOKEN (create one with `claude setup-token`)")
+        raise RuntimeError("no Claude credentials: set ANTHROPIC_API_KEY, or CLAUDE_CODE_OAUTH_TOKEN "
+                           "(create one with `claude setup-token`)")
     t = toks[_token_rr["i"] % len(toks)]
     _token_rr["i"] += 1
-    return t
+    return {"CLAUDE_CODE_OAUTH_TOKEN": t}
 
 
 def _baseten_key() -> str:
-    k = _read_env(BASETEN_ENV).get("BASETEN_API_KEY") or os.environ.get("BASETEN_API_KEY")
+    k = os.environ.get("BASETEN_API_KEY") or _read_env(BASETEN_ENV).get("BASETEN_API_KEY")
     if not k:
         raise RuntimeError("no Baseten key: set BASETEN_API_KEY")
     return k
@@ -109,9 +133,9 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
         return Launch(["robo", "done", "noop control"], env, notes={"model": "none"})
 
     if harness == "claude-code":
-        env["CLAUDE_CODE_OAUTH_TOKEN"] = _claude_oauth()
+        env.update(_claude_auth())
         env["CLAUDE_CONFIG_DIR"] = _clean_claude_home()
-        m = model or "claude-opus-5-5"
+        m = model or "claude-sonnet-5"
         return Launch(["claude", "-p", PROMPT_PREFIX + prompt, "--model", m, "--output-format", "stream-json", "--verbose",
                        "--dangerously-skip-permissions", "--max-turns", "400", "--disallowedTools", "WebFetch,WebSearch,Task"],
                       env, notes={"model": m})
@@ -132,7 +156,10 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
 
     if harness == "codex":
         m = model or "gpt-6-astra"
-        env["CODEX_HOME"] = _clean_codex_home()
+        key = os.environ.get("OPENAI_API_KEY", "")
+        env["CODEX_HOME"] = _clean_codex_home(api_key=key)
+        if key:
+            env["CODEX_API_KEY"] = key
         return Launch(["codex", "exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox",
                        "-m", m, "-C", str(workspace), PROMPT_PREFIX + prompt], env, notes={"model": m})
 

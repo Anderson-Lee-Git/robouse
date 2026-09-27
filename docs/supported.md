@@ -1,12 +1,12 @@
 # Supported
 
-What robo-use 0.1.0 supports, and how each item was tested. "Docs check": run from the PyPI package for these docs. "v1 runs": used in the final v1 runs published under [Results](/runs/); trial counts are scored trials.
+What robo-use 0.1.1 supports, and how each item was tested. "Docs check": run from the PyPI package for these docs. "v1 runs": used in the final v1 runs published under [Results](/runs/); trial counts are scored trials.
 
 ## Models
 
 | Model | Harness | Status |
 |---|---|---|
-| `claude-opus-5-5` | `claude-code` | v1 runs: 62 trials, Meta-World and Gymnasium-Robotics only |
+| `claude-sonnet-5` | `claude-code` | docs check: the [Quickstart](quickstart.md) trial |
 | `gpt-6-astra` | `codex` | v1 runs: 222 trials |
 | `zai-org/GLM-5.3` on Baseten | `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` | v1 runs: 221, 122 and 222 trials |
 | `allenai/MolmoAct2-LIBERO-LeRobot` | `molmoact2` | v1 runs: 30 trials; needs a GPU policy server |
@@ -17,8 +17,9 @@ Other models work wherever the harness accepts them through `--model`; they were
 
 | Harness | Status |
 |---|---|
-| `oracle`, `noop` | docs check: 327 of 327 reference solutions score 1, 327 of 327 no-op runs score 0 |
-| `claude-code`, `codex` | v1 runs; command lines checked against Claude Code 2.1.280 and Codex 0.155.1 |
+| `oracle`, `noop` | docs check: 341 of 341 reference solutions score 1, 341 of 341 no-op runs score 0 |
+| `claude-code` | docs check (Quickstart trial, with `CLAUDE_CODE_OAUTH_TOKEN`); v1 runs |
+| `codex` | v1 runs; command line checked against Codex 0.155.1, not re-run for these docs |
 | `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` | v1 runs |
 | `molmoact2` | v1 runs on LIBERO; needs a GPU policy server |
 
@@ -36,8 +37,8 @@ What each needs: [Harnesses](harnesses.md).
 | MuJoCo Menagerie | `menagerie` | 15 | `[sim]` + `robouse fetch-assets` | docs check |
 | RoboHarm scenes | `roboharm` | 80 | `[sim]` + `robouse fetch-assets` | docs check |
 | Skydio X2 drone | `drone` | 10 | `[sim]` + `robouse fetch-assets` | docs check |
-| DexJoCo | `dexjoco` | 14 | checkout | not in 0.1.0 |
-| RoboCasa | `robocasa` | 7 | checkout | not in 0.1.0 |
+| DexJoCo | `dexjoco` | 14 | `[sim]` + DexJoCo, [see Suites](suites.md#dexjoco) | docs check |
+| RoboCasa | `robocasa` | 7 | checkout | not in the package |
 
 Per-suite results: [Suites](suites.md).
 
