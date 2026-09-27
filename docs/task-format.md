@@ -1,6 +1,6 @@
 # Task format
 
-A robouse task is a folder in BenchFlow's native task format:
+A robo-use task is a folder in BenchFlow's native task format:
 
 ```
 tasks/<suite>/<task-id>/
@@ -9,7 +9,9 @@ tasks/<suite>/<task-id>/
   verifier/test.sh     turns the episode server's verdict into reward.txt
 ```
 
-`benchflow/export.py` adds the `environment/` folder (Dockerfile and compose file) when packaging tasks for `bench eval run`; see [benchflow.md](benchflow.md). Adapters write task folders with `robouse.tasks.write_task`.
+`benchflow/export.py` adds the `environment/` folder (Dockerfile and compose file) when packaging tasks for `bench eval run`; see [benchflow.md](benchflow.md). Adapters write task folders with `robouse.tasks.write_task`, directly or through `robouse.tasks.to_native`.
+
+The loader (`robouse.tasks.load_task`) also reads the older layout (`task.toml` + `instruction.md` + `solution/solve.sh` + `tests/test.sh`) until every folder is migrated. As of 2026-09-27 the committed task folders outside `tasks/hard/` are still in that older layout; re-running each suite's adapter rewrites them in the layout above.
 
 ## task.md
 
@@ -37,8 +39,8 @@ robouse:
   seed: 0                   # picks the object/goal layout
   max_steps: 500            # simulated step budget; every step counts, including skills
   camera: corner
-  skills: true              # allow the move_to / grip helpers
-  success_mode: first       # "first" or "final" (below)
+  skills: true              # allow the move_to / grip helpers (default true)
+  success_mode: first       # "first" or "final" (default; below)
   obs_mode: state           # "state" (default) or "vision" (below)
 ---
 
@@ -67,8 +69,8 @@ Other endings: `robo give-up`, the step budget running out, the wall-clock budge
 
 ## Reference solutions
 
-`oracle/solve.sh` drives the robot through the same socket interface an agent uses (`python -m robouse.oracle ...`). For Meta-World it is Meta-World's own scripted expert reading `obs_vector`. Running every task's reference solution through the real runner is the first audit step: a task whose reference solution does not score 1 is broken. The no-op control (`--harness noop`) must score 0 on every task.
+`oracle/solve.sh` drives the robot through the same socket interface an agent uses (`python -m robouse.oracle --backend ... --env ...`). For Meta-World it is Meta-World's own scripted expert reading `obs_vector`; for the other backends it is the backend module's `oracle_main`. Running every task's reference solution through the real runner is the first audit step: a task whose reference solution does not score 1 is broken. The no-op control (`--harness noop`) must score 0 on every task.
 
 ## Adding a suite
 
-Write an adapter under `adapters/<suite>/generate.py` that writes task folders with `robouse.tasks.write_task`, and, if the scene is new, a backend under `src/robouse/backends/` implementing `reset`, `step`, `observe`, `render`, `success`, and optionally `hand_pos` and `skills` for the `move_to`/`grip` helpers and `mj_model_data` for vision mode (see `backends/base.py`). Then run the suite with `--harness oracle` (must be 100%) and `--harness noop` (must be 0%).
+Write an adapter under `adapters/<suite>/generate.py` that writes task folders with `robouse.tasks.write_task`, and, if the scene is new, a backend under `src/robouse/backends/` (registered in `backends/__init__.py`). `backends/base.py` defines the required methods: `reset`, `step`, `observe`, `render` and `success`. `session.py` also uses these optional ones when a backend has them: `skills` and `hand_pos` for the `move_to`/`grip` helpers, `mj_model_data` for the camera projection matrices of vision mode, and `judge(outcome, text)` for a verdict that depends on how the episode ended (the safety tasks use it). Then run the suite with `--harness oracle` (must be 100%) and `--harness noop` (must be 0%).

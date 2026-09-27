@@ -1,4 +1,4 @@
-"""Backend registry. A task's [robouse] table names a backend and its parameters."""
+"""Backend registry. The `robouse:` block of a task's task.md names a backend and its parameters."""
 from __future__ import annotations
 
 from .base import Backend

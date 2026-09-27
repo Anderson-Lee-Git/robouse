@@ -1,11 +1,12 @@
 """Run trials: task x harness x model -> a BenchFlow trial directory (what the BenchFlow viewer reads).
 
-<job>/<task>__<harness>__<n>/
+<job>/<task>__<harness>__<id>/     (<id>: 6 random hex characters)
   config.json                 task, harness, model, seed, timeouts
   result.json                 result (reward, timing, agent info, exception)
   agent/stdout.jsonl          raw harness output (stream-json / codex --json / text)
   agent/stderr.txt
   agent/trajectory.json       ATIF trajectory converted from the raw output (see atif.py)
+  agent/mini_traj.json        mini-swe-agent's own trajectory (mini-swe-agent-glm only)
   episode/                    trusted episode server output (result.json, trace.jsonl, frames.jsonl)
   verifier/reward.txt         0 or 1, written by the task's verifier/test.sh
   verifier/test-stdout.txt

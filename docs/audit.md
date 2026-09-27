@@ -37,9 +37,9 @@ A flag is a lead for a human or AI reviewer, not a verdict. The heuristics are r
 |---|---|---|
 | sim_import | high | `import`/`from` mujoco, metaworld, gymnasium_robotics, dm_control, robosuite, robouse |
 | robouse_module | high | `python -m robouse`, `robouse.oracle/session/backends/runner` |
-| oracle | high | `solution/solve.sh`, `robouse/oracle.py`, `metaworld.policies` (the scripted experts) |
-| robouse_source | high | paths under `benchflow/robouse/{src,tasks,.venv,runs,scripts}`, `site-packages/{metaworld,mujoco,...}` |
-| reward_write | high | `reward.txt`, `reward.json`, `verifier/`, `ROBOUSE_EPISODE_DIR`, `ROBOUSE_VERIFIER_DIR` |
+| oracle | high | `solution/solve.sh`, `robouse/oracle.py`, `robouse.oracle`, `metaworld.policies`, `policies.sawyer` (the scripted experts) |
+| robouse_source | high | paths under `benchflow/robouse/{src,tasks,.venv,runs,scripts}`, `/robouse/.venv/`, `site-packages/{metaworld,mujoco,gymnasium_robotics,robouse}` |
+| reward_write | high | `reward.txt`, `reward.json`, `/logs/verifier`, `verifier/`, `ROBOUSE_EPISODE_DIR`, `ROBOUSE_VERIFIER_DIR` |
 | episode_files | high | `episode/result.json`, `trace.jsonl`, `frames.jsonl`, `recording.mp4` |
 | kill_server | high | `pkill`, `killall`, `kill <pid>`, `robouse.cli serve`, `lsof -U` |
 | socket_direct | medium | `nc -U`, `socat`, `AF_UNIX`, `socket.socket`, `/tmp/robouse-*.sock`, `.robouse/socket` |
@@ -64,7 +64,7 @@ An **infra failure** is a trial that did not measure the agent. That means one o
 
 ## What the first audits found (2026-09-27, 229 to 288 trials while jobs were running)
 
-- **Episode-server bug.** Meta-World raises "You must reset the env manually once truncate==True" when an episode reaches the env's `max_path_length` (500). The server answers `bad request` and never finishes the episode, so the trial has no episode result, no video and no reward. This happened in 9 trials across Opus, Astra and GLM, all near the 500-step budget, and it is the cause of every Codex/Astra failure so far. The fix belongs in `session.py`/the Meta-World backend: finish the episode when the env truncates, or keep `max_steps` below `max_path_length`.
-- **Agents reading robouse internals.** After hitting that bug, two GLM-5.3 (claude-code-glm) trials sent raw JSON to the episode socket with their own Python client (door-lock, assembly). One of them (assembly) also read `~/benchflow/robouse/src` (session.py, runner.py, the backends, even atif.py) and the Meta-World source in `.venv`. They were debugging, not faking a reward, and the trials did not score. Still, this shows the workspace is not isolated: the agent can read the whole repository and connect to the socket directly. Fixed afterwards: model harnesses now run under a macOS sandbox profile that denies reading ~/benchflow and the credential files (see harnesses.md).
-- **Oracle.** `solve.sh` exits 1 on Meta-World after success, because it keeps sending requests to a finished episode. The reward is unaffected.
+- **Episode-server bug.** Meta-World raises "You must reset the env manually once truncate==True" when an episode reaches the env's `max_path_length` (500). The server answers `bad request` and never finishes the episode, so the trial has no episode result, no video and no reward. This happened in 9 trials across Opus, Astra and GLM, all near the 500-step budget, and at the time it was the cause of every Codex/Astra failure. Fixed afterwards (commit 136cde6): the Meta-World backend lifts the env's own `max_path_length`, since the episode server enforces the step budget, and the settle period after `robo done` stops early if a backend cannot step further.
+- **Agents reading `robouse` internals.** After hitting that bug, two GLM-5.3 (claude-code-glm) trials sent raw JSON to the episode socket with their own Python client (door-lock, assembly). One of them (assembly) also read `~/benchflow/robouse/src` (session.py, runner.py, the backends, even atif.py) and the Meta-World source in `.venv`. They were debugging, not faking a reward, and the trials did not score. Still, this shows the workspace is not isolated: the agent can read the whole repository and connect to the socket directly. Fixed afterwards: model harnesses now run under a macOS sandbox profile that denies reading ~/benchflow and the credential files (see harnesses.md).
+- **Oracle.** `solve.sh` exited 1 on Meta-World after success, because it kept sending requests to a finished episode. The reward was unaffected. Fixed afterwards (commit 136cde6): the Meta-World oracle stops when the episode reports that it has finished.
 - One codex-glm smoke trial produced no output (return code 1); it is an infra failure.

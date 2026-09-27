@@ -9,7 +9,7 @@ scripts/view.sh               # http://127.0.0.1:8768
 scripts/view.sh --port 8770
 ```
 
-It runs the existing BenchFlow viewer (`~/benchflow/data/viewer`) with `--root robouse=<repo>/runs --tasks robotics=<repo>/tasks/*`. The viewer needs no changes: robouse writes the formats it already reads. The default port is 8768 because 8765 and 8766 usually serve the 3D/CUA runs on this Mac; set `VIEWER=/path/to/viewer` to use another checkout. The viewer is read-only and binds to 127.0.0.1.
+It runs the existing BenchFlow viewer (`~/benchflow/data/viewer`) with `--root robouse=<repo>/runs --tasks robotics=<repo>/tasks/*`. The viewer needs no changes for trials: robo-use writes the trial formats it already reads (task folders are another matter; see open issues). The default port is 8768 because 8765 and 8766 usually serve the 3D/CUA runs on this Mac; set `VIEWER=/path/to/viewer` to use another checkout. The viewer is read-only and binds to 127.0.0.1.
 
 What you get:
 
@@ -21,7 +21,7 @@ What you get:
   - **Config**: `config.json` (task, harness, model, seed, timeouts, task metadata). **Agent** and **Log**: raw `agent/stdout.jsonl` and `stderr.txt`.
 - **Tasks** (home page): every task under `tasks/<suite>/`, with its description, difficulty, the oracle result and the latest Opus and Astra trial. Robot tasks are labelled `3D · <suite>` (the viewer knows only the 3D and CUA areas), and the GLM runs have no model column there (the viewer's columns are Opus, Astra and Fable); both show fully on the job and trial pages.
 
-## Formats robouse writes for the viewer
+## Formats robo-use writes for the viewer
 
 `src/robouse/atif.py` runs at the end of every trial (`runner.py`) and writes two files. To rebuild them for existing trials:
 
@@ -31,9 +31,9 @@ What you get:
 
 ### `agent/trajectory.json`: ATIF-v1.7
 
-the Agent Trajectory Interchange Format that the BenchFlow viewer and trainer read (validated against the viewer's trajectory models). Steps:
+ATIF is the Agent Trajectory Interchange Format that the BenchFlow viewer and trainer read (validated against the viewer's trajectory models). Steps:
 
-1. `source: user`: the prompt the harness received (the harness prefix from `harnesses.PROMPT_PREFIX` plus the task's `instruction.md`).
+1. `source: user`: the prompt the harness received (the harness prefix from `harnesses.PROMPT_PREFIX` plus the task's instruction, the body of `task.md`).
 2. One `source: agent` step per model turn:
    - **claude-code, claude-code-glm** (Claude Code `--output-format stream-json`): one step per assistant message id. `text` blocks become `message`, `thinking` blocks `reasoning_content`, `tool_use` blocks `tool_calls` (`function_name` = the tool, `arguments` = its input), and the matching `tool_result` blocks from the following user events become `observation.results` (by `tool_use_id`). Per-message usage becomes `metrics`; the final `result` event gives `final_metrics` (tokens, cost, turns).
    - **codex, codex-glm** (`codex exec --json`): one step per item. `agent_message` is a message step; `command_execution` a step with one `shell` tool call (the `/bin/zsh -lc '...'` wrapper removed) and its `aggregated_output` and exit code; `reasoning` items attach to the next step as `reasoning_content`; `file_change`, `mcp_tool_call`, `web_search` and `todo_list` are kept too. `turn.completed` usage gives `final_metrics`.
@@ -83,6 +83,7 @@ A single self-contained HTML file (white background, system font, no network). T
 ## Open issues
 
 - The Recording tab's caption and the tasks page's area label are CUA/3D wording from the viewer; changing them would need a viewer change (not done).
+- The Tasks page recognises a task folder only by the older layout's files (`instruction.md`, `task.toml`, `tests/`, `solution/` or `environment/`; see `PACKAGE_MARKERS` in the viewer's `benchviewer/tasks.py`). Folders in the current layout (`task.md`, `oracle/`, `verifier/`), such as `tasks/hard/`, are not listed there until the viewer learns to read `task.md`. Trial pages are unaffected.
 - The Outcome card shows "No timing data": `result.json` has `started_at`/`finished_at`/`wall_time_s` but not the per-phase timing the viewer's Timing card expects.
 - Videos are small and short (320×320, frames every 2 env steps at 30 fps: a 150-step episode is about 2.5 s). Slow playback may be preferable for review.
 - A runner process imports `robouse.atif` once at start, so jobs started before a change to `atif.py` keep the old converter. Rebuild with `python -m robouse.atif` (the audit and the gallery build a missing trajectory in memory).

@@ -6,22 +6,22 @@
 |---|---|
 | `robo info` | Action space (names, bounds, meaning), available skills, steps used and budget |
 | `robo observe` | Robot and object state as numbers |
-| `robo observe --image` | Also saves a camera image into `observations/` in the workspace and prints its path |
-| `robo act A1 A2 ... [--repeat N]` | Apply one low-level action N times (N ≤ 50) |
-| `robo move-to X Y Z [--grip G] [--max-steps N] [--tol T]` | Skill: move the gripper toward a point with a proportional controller (up to 150 steps) |
-| `robo grip G [--steps N]` | Skill: hold position and set the gripper (+1 close, -1 open) |
+| `robo observe --image [--camera C]` | Also saves a camera image into `observations/` in the workspace and prints its path; `--camera` picks one of the task's cameras |
+| `robo act A1 A2 ... [--repeat N]` | Apply one low-level action N times (N ≤ 50, or the task's `max_repeat`) |
+| `robo move-to X Y Z [--grip G] [--max-steps N] [--tol T]` | Skill: move the gripper toward a point with a proportional controller; stops within `--tol` metres (default 0.01) or after `--max-steps` steps (default 100, at most 150) |
+| `robo grip G [--steps N]` | Skill: hold position and set the gripper (+1 close, -1 open) for N steps (default 15) |
 | `robo done "summary"` | End the episode and ask for scoring |
 | `robo give-up "reason"` | End the episode without claiming success |
 
-Add `--json` to any command for the raw response.
+Add `--json` to any command for the raw response. `robo help` prints the command list.
 
-Skills are ordinary sequences of low-level actions executed by the server; each simulated step counts against the budget. A task can disable them (`skills = false`), in which case only `robo act` moves the robot.
+Skills are ordinary sequences of low-level actions executed by the server; each simulated step counts against the budget. A task can disable them (`skills: false` in the `robouse:` block of `task.md`), in which case only `robo act` moves the robot. A task can also lower the limit on `--repeat` (and on `grip --steps`) with `max_repeat`; larger values are clipped to the limit, not rejected.
 
 ## Protocol
 
 Request: one JSON object per connection, newline-terminated, e.g. `{"op": "act", "action": [0, 0, -1, 1], "repeat": 5}`. Response: `{"ok": true, "result": {...}}` or `{"ok": false, "error": "..."}`. When an action ends the episode (goal reached in `first` mode, budget exhausted), the result carries `"episode": "finished: ..."` and further motion requests are rejected.
 
-Operations: `info`, `status`, `observe`, `act`, `move_to`, `grip`, `done`, `give_up`. There is no reset, teleport, state-setting or code-evaluation operation.
+Operations: `info`, `status`, `observe`, `act`, `move_to`, `grip`, `done`, `give_up`, and `shutdown`, which `robo` does not expose: it stops the server, which closes an unfinished episode as `agent_exited` and judges it like any other ending (the BenchFlow verifier uses it). There is no reset, teleport, state-setting or code-evaluation operation.
 
 ## Example session
 

@@ -1,6 +1,6 @@
 # Gymnasium-Robotics suite
 
-12 tasks adapted from Farama's [Gymnasium-Robotics](https://robotics.farama.org/) (gymnasium-robotics 1.4.2, gymnasium 1.3.0, MuJoCo 3.14): 6 Fetch manipulation tasks and 6 PointMaze navigation tasks. Backend: `src/robouse/backends/gymrobotics.py`. Generator: `python adapters/gymrobotics/generate.py --out tasks/gymrobotics`. The task list (id -> env id, seed) lives in `TASKS` in the backend module.
+12 tasks adapted from Farama's [Gymnasium-Robotics](https://robotics.farama.org/) (gymnasium-robotics 1.4.2, gymnasium 1.3.0, MuJoCo 3.3.0): 6 Fetch manipulation tasks and 6 PointMaze navigation tasks. Backend: `src/robouse/backends/gymrobotics.py`. Generator: `python adapters/gymrobotics/generate.py --out tasks/gymrobotics`. The task list (id -> env id, seed) lives in `TASKS` in the backend module.
 
 ## Tasks
 
@@ -43,7 +43,7 @@ Success is Fetch's own `_is_success`: the block (the gripper for Reach) within 5
 
 ## PointMaze: action and observation
 
-Action `robo act FX FY`, each in [-1, 1]: a force on the ball along world x and y (one step is 10 ms; the ball's speed is capped at 5 m/s). The ball keeps its momentum. Skills are disabled (`skills = false`): the session's `move_to` assumes a 3-D hand position, and a straight-line mover would run into walls, so the agent drives the ball with `robo act ... --repeat N`.
+Action `robo act FX FY`, each in [-1, 1]: a force on the ball along world x and y (one step is 10 ms; the ball's speed is capped at 5 m/s). The ball keeps its momentum. Skills are disabled (`skills: false`): the session's `move_to` assumes a 3-D hand position, and a straight-line mover would run into walls, so the agent drives the ball with `robo act ... --repeat N`.
 
 Observation fields:
 

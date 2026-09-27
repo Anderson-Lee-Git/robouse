@@ -4,6 +4,6 @@
 
 Same scene, goal, budget and scoring as the base task. The difference is what `robo observe` returns: only the robot's own state (plus task feedback fields such as ARC examples, the grid definition and constraint violations) and two camera images, `corner` and `topview` for Meta-World, `front` and `top` for tabletop. `robo info` gives each camera's projection matrix; the projection was checked by drawing projected object and goal positions onto the rendered images.
 
-Why: with exact coordinates and the `move_to` skill, frontier agents solved nearly every base task on the first overnight run (Claude Code + Opus 5.5: 46/50 Meta-World, 12/12 Gymnasium-Robotics, 39/39 tabletop). The vision tier removes the coordinate crutch, so the agent has to perceive the scene from images, as a real robot would.
+Why: with exact coordinates and the `move_to` skill, frontier agents solved nearly every base task on the first overnight run (current numbers per suite: [results.md](../results.md)). The vision tier removes the coordinate crutch, so the agent has to perceive the scene from images, as a real robot would.
 
 Validation: reference solutions (with the oracle token) 55/55; no-op control 0/55. A request with no token or a wrong token gets only the visible fields.

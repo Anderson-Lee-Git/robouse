@@ -5,6 +5,8 @@ solved / scored trials, where scored excludes infrastructure failures and still-
 more than once by the same harness + model, the latest trial counts.
 
   .venv/bin/python scripts/results.py
+
+It takes no arguments: any argument, including --help, is ignored and docs/results.md is rewritten.
 """
 from __future__ import annotations
 
