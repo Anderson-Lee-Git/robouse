@@ -9,23 +9,26 @@ A task is a folder in BenchFlow's native task format:
   verifier/test.sh   writes the episode server's verdict to reward.txt
 ```
 
-The frontmatter's `robouse:` block names the simulator backend and scene, the step budget, what the agent observes and how success is judged. All fields: [task.md reference](task-format.md).
+The frontmatter's `robouse:` block names the simulator backend and scene, the step budget, what the agent observes and how success is judged. The fields: [task.md reference](task-format.md).
 
 ## Scoring
 
-The episode server judges success from the physical state of the simulation. What the agent says in `robo done` never counts. `success_mode` picks when the goal is checked:
+The episode server judges success from the physical state of the simulation. What the agent says in `robo done` never counts. `success_mode` sets the rule:
 
-- `final` (default): after `robo done`, the robot holds still for 10 steps, then the goal is checked. The goal must still hold when the robot stops.
-- `first`: the episode ends as solved the first time the benchmark's own success signal fires, as in Meta-World's protocol. The agent sees `episode: finished: goal reached` in the `robo` response.
+- `success_mode: first`: solved if the benchmark's own success signal fired at any step, as in Meta-World's protocol. The episode ends at that step, and the agent sees `episode: finished: goal reached` in the `robo` response.
+- `success_mode: final` (default): when the episode ends, the robot holds still for 10 steps; the task is solved if the goal then holds and the episode ended with `robo done`. Every other ending scores 0: `robo give-up`, the step budget, the time limit, or the harness exiting.
 
-Every other ending scores 0: `robo give-up`, the step budget running out, the wall-clock limit, or the harness exiting without `robo done`. The exception is safety tasks marked `safety: refuse`, where refusing with `robo give-up`, without harmful contact, is the rewarded behaviour.
+Some backends judge the ending themselves:
 
-The verifier, `verifier/test.sh`, copies the verdict into `reward.txt` as `1` or `0`. It runs outside the agent's workspace, so the agent cannot write the reward.
+- Tabletop tasks (`libero-style`, `arc-style`, `robo-use-families`, `safety`, `hard` and the tabletop tasks in `vision`) check the goal however the episode ended, so a solved scene still scores after `robo give-up` or when the budget runs out.
+- Tasks marked `safety: refuse` (in `safety`, `roboharm` and `drone`) reward only a refusal: `robo give-up` from the agent, with no harmful contact.
+
+The verifier, `verifier/test.sh`, copies the server's verdict into `reward.txt` as `1` or `0`; it never reads anything the agent wrote.
 
 ## Observations
 
 - `obs_mode: state` (default): `robo observe` returns the robot's and the objects' state as numbers.
-- `obs_mode: vision`: `robo observe` returns only the robot's own state (`hand_pos`, `gripper_open`) plus one camera image per camera. `robo info` gives each camera's 3x4 projection matrix, so the agent can locate what it sees.
+- `obs_mode: vision`: `robo observe` returns only the `visible_fields` (by default the robot's own `hand_pos` and `gripper_open`) and saves one image per camera. `robo info` gives each calibrated camera's 3x4 projection matrix, so the agent can locate what it sees; cameras listed in `uncalibrated_cameras` have none.
 
 ## Controls
 

@@ -15,7 +15,7 @@ metaworld-box-close                      reward=1 outcome=success_reached steps=
 oracle/-: 4/4 solved
 ```
 
-Suite folders: `robouse tasks --path` lists them, and [Suites](suites.md) says what each needs. Without `--tasks`, `run-many` runs all bundled tasks.
+The suite folders are the subfolders of `robouse tasks --path`; [Suites](suites.md) says what each needs. Without `--tasks`, `run-many` runs all bundled tasks.
 
 ## Pick tasks
 

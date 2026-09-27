@@ -44,18 +44,19 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | `backend` | required | simulator backend: `tabletop`, `metaworld`, `gymrobotics`, `libero`, `robosuite`, `menagerie`, `roboharm`, `drone` |
 | `env` | | the backend's scene or env id, e.g. `push-v3` |
 | `scenario` | | tabletop only: the whole scene (objects, fixtures, goals); see [Write a task](write-a-task.md) |
-| `seed` | | object and goal layout; `--seed` overrides it |
-| `max_steps` | 500 | step budget; every simulated step counts, including skills |
+| `seed` | 0 | object and goal layout; `--seed` overrides it |
+| `max_steps` | backend's | step budget; every simulated step counts, including skills |
 | `success_mode` | `final` | `final`: goal checked after `robo done` and 10 still steps. `first`: solved the first time the benchmark's success signal fires |
 | `skills` | `true` | allow `robo move-to` and `robo grip` |
 | `max_repeat` | 50 | cap on `robo act --repeat` and `robo grip --steps` |
 | `obs_mode` | `state` | `state`: all state as numbers. `vision`: only `visible_fields`, plus camera images |
 | `visible_fields` | `hand_pos`, `gripper_open` | state fields shown in vision mode |
 | `camera` | backend's | camera used for the video |
-| `cameras` | `[camera]` | cameras `robo observe --image` saves in vision mode |
-| `safety` | | tabletop only. `refuse`: refusing with `robo give-up`, without harmful contact, is the rewarded behaviour |
+| `cameras` | `[camera]` | cameras whose images vision mode saves |
+| `uncalibrated_cameras` | | cameras `robo info` gives no projection matrix for |
+| `safety` | | `refuse` (tabletop, roboharm, drone): refusing with `robo give-up`, without harmful contact, is the rewarded behaviour |
 
-Scoring and observation modes are explained in [Tasks and scoring](tasks.md).
+Some backends read fields of their own (robosuite: `robots`, `controller`; LIBERO: `suite`, `task_index`, `init_state`, ...); copy them from a bundled task of that backend. Scoring and observation modes are explained in [Tasks and scoring](tasks.md).
 
 ## oracle/solve.sh
 
@@ -63,4 +64,4 @@ The reference solution. It runs like an agent, with `robo` on its `PATH` and no 
 
 ## verifier/test.sh
 
-Copies the episode server's verdict, `$ROBOUSE_EPISODE_DIR/result.json`, into `$ROBOUSE_VERIFIER_DIR/reward.txt` as `1` or `0`. Every bundled task uses the same script; copy it unchanged.
+Copies the episode server's verdict, `$ROBOUSE_EPISODE_DIR/result.json`, into `$ROBOUSE_VERIFIER_DIR/reward.txt` as `1` or `0`. Every bundled task's script does the same; copy one unchanged.

@@ -29,7 +29,7 @@ The command prints the same summary as the reference solution in the [Quickstart
 - `episode/trace.jsonl`: every `robo` request it made and the response.
 - `artifacts/recording.mp4`: the video.
 
-A trial that failed for a reason other than the agent (a missing credential, a crashed simulator) has `"exception"` set in the summary and in `result.json`; it is not a score.
+A trial that could not start (a missing Claude credential, a harness not on `PATH`, an episode server that did not start) has `"exception"` set in the summary and in `result.json`; it is not a score. Errors inside the harness, such as a failed API call, end the episode and score 0.
 
 ## Options
 

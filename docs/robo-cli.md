@@ -24,7 +24,7 @@ Add --json to any command for raw JSON output.
 | Command | Notes |
 |---|---|
 | `robo info` | Action names and bounds, available skills, steps used and budget. On vision tasks also the visible fields and each camera's size and projection matrix. |
-| `robo observe` | State as numbers. `--image` saves one PNG per camera into the workspace's `observations/` and prints the paths; `--camera C` picks one camera. |
+| `robo observe` | State as numbers. `--image` also saves a PNG from the task's camera into the workspace's `observations/` and prints its path. On vision tasks it saves one image per camera on every call; `--camera C` picks one of them. |
 | `robo act A1 A2 ...` | One low-level action, applied `--repeat N` times. N is clipped to 50, or to the task's `max_repeat`. |
 | `robo move-to X Y Z` | Skill: moves the hand toward a point. `--grip G` sets the gripper during the move; stops within `--tol` metres (default 0.01) or after `--max-steps` steps (default 100, at most 150). |
 | `robo grip G` | Skill: holds position and sets the gripper for `--steps N` steps (default 15). |
@@ -32,7 +32,7 @@ Add --json to any command for raw JSON output.
 | `robo done "message"` | Ends the episode and asks for scoring. |
 | `robo give-up "reason"` | Ends the episode without claiming success. |
 
-Skills are sequences of low-level actions run by the server, and each simulated step counts against the budget. A task can turn skills off (`skills: false`), leaving only `robo act`. Without a running episode, every command prints `error: no episode: ROBOUSE_SOCKET is not set` and exits 1.
+Skills are sequences of low-level actions run by the server, and each simulated step counts against the budget. A task can turn skills off (`skills: false`), leaving only `robo act`. Without an episode, commands print an error and exit 1: `error: no episode: ROBOUSE_SOCKET is not set`, or `error: episode server is not running (episode may have finished)`.
 
 ## Protocol
 

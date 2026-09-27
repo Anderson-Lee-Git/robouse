@@ -42,12 +42,12 @@ options:
 
 - `--task`: a task folder, or the id of a bundled task (`robouse tasks` lists them).
 - `--harness`: `oracle`, `noop`, `claude-code`, `codex`, `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` or `molmoact2`; see [Harnesses](harnesses.md).
-- `--model`: passed to the harness; each harness has a default.
+- `--model`: the model for `claude-code` and `codex`; the other harnesses ignore it.
 - `--out`: the job folder; the trial is written to `OUT/<task>__<harness>__<id>/`.
 - `--timeout`: the agent's wall-clock limit in seconds (default: the task's `agent.timeout_sec`, else 900).
 - `--seed`: overrides the task's `seed` (object and goal layout).
 
-It prints a JSON summary (`trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`). A non-null `exception` is an infrastructure failure, not a score.
+It prints a JSON summary (`trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`). A non-null `exception` means the trial could not start; it is not a score.
 
 ## robouse run-many
 

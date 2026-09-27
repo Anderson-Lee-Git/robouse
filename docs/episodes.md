@@ -65,14 +65,14 @@ Every simulated step counts against `max_steps`, including the steps a skill suc
 
 | Path | Contents |
 |---|---|
-| `config.json` | task, harness, model, seed, timeout, sandbox |
+| `config.json` | task, harness, `--model` and `--seed` as given, timeout, whether the sandbox was on |
 | `result.json` | reward, episode outcome, model, timing, any runner exception |
 | `agent/stdout.jsonl`, `agent/stderr.txt` | the harness's raw output |
 | `agent/trajectory.json` | the agent's steps in ATIF v1.7, the trajectory format BenchFlow reads |
-| `episode/result.json` | the episode server's verdict: `success`, `outcome`, `steps_used` |
+| `episode/result.json` | the episode server's verdict: `success`, `outcome`, `steps_used`, the seed used |
 | `episode/trace.jsonl` | every `robo` request and response, with times |
 | `verifier/reward.txt` | `1` or `0` |
 | `artifacts/recording.mp4` | the episode video |
-| `artifacts/observations/` | camera images the agent asked for |
+| `artifacts/observations/` | camera images from the episode's workspace |
 
 Outcomes: `done` (the agent called `robo done`), `success_reached` (success mode `first`), `gave_up` (`robo give-up`, or the harness exited without `robo done`), `budget_exhausted`, `wall_time_exhausted`, `agent_timeout` (the harness hit its time limit) and `agent_exited` (the server was shut down mid-episode; the BenchFlow verifier does this).
