@@ -46,6 +46,7 @@ def main(argv=None) -> int:
     m.add_argument("--concurrency", type=int, default=1)
     m.add_argument("--timeout", type=float)
     m.add_argument("--task-list", help="file with one task id per line (subset of --tasks)")
+    m.add_argument("--resume", action="store_true", help="skip tasks that already have a finished, non-infra-failed trial in --out")
 
     t = sub.add_parser("tasks")
     t.add_argument("root")
@@ -73,7 +74,7 @@ def main(argv=None) -> int:
 
         ids = [l.strip() for l in open(a.task_list) if l.strip() and not l.startswith("#")] if a.task_list else None
         run_many(Path(a.tasks), a.harness, a.model, Path(a.out), filt=a.filter, limit=a.limit,
-                 concurrency=a.concurrency, timeout=a.timeout, ids=ids)
+                 concurrency=a.concurrency, timeout=a.timeout, ids=ids, resume=a.resume)
         return 0
     if a.cmd == "tasks":
         for task in find_tasks(a.root):

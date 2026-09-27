@@ -9,7 +9,7 @@ for suite in "$@"; do
   for spec in "${PAIRS[@]}"; do
     IFS=: read h m c tag <<< "$spec"
     job="runs/final-$suite-$tag"; mkdir -p "$job"
-    nohup .venv/bin/robouse run-many --tasks "tasks/$suite" --harness "$h" --model "$m" --out "$job" --concurrency "$c" > "$job/console.log" 2>&1 &
+    nohup .venv/bin/robouse run-many --tasks "tasks/$suite" --harness "$h" --model "$m" --out "$job" --concurrency "$c" --resume >> "$job/console.log" 2>&1 &
   done
 done
 echo "launched $# suite(s) x ${#PAIRS[@]} pairs"

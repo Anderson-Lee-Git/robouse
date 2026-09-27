@@ -188,8 +188,19 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
 
 
 def run_many(root: Path, harness: str, model: str, job_dir: Path, filt: str = "", limit: int = 0,
-             concurrency: int = 1, timeout: float | None = None, ids: list[str] | None = None) -> list[dict]:
+             concurrency: int = 1, timeout: float | None = None, ids: list[str] | None = None,
+             resume: bool = False) -> list[dict]:
     tasks = [t for t in find_tasks(root) if filt in t.id and (ids is None or t.id in ids)]
+    if resume:  # skip tasks already finished in this job (an unfinished trial dir is left as evidence and rerun)
+        done = set()
+        for rj in job_dir.glob("*/result.json"):
+            try:
+                r = json.loads(rj.read_text())
+            except Exception:
+                continue
+            if not r.get("exception_info") and (r.get("episode") or {}).get("outcome"):
+                done.add(r.get("task_name"))
+        tasks = [t for t in tasks if t.id not in done]
     if limit:
         tasks = tasks[:limit]
     job_dir.mkdir(parents=True, exist_ok=True)
