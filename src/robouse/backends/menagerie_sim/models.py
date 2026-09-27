@@ -5,7 +5,6 @@ Assets are the MuJoCo Menagerie `franka_emika_panda` and `aloha` models at commi
 original licence files. Joint limits, inertias, actuators and gripper coupling are
 the upstream ones; only the base placement and a Panda fingertip site are added.
 """
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,10 +18,9 @@ SIDES = ("left", "right")
 
 
 def asset_root() -> Path:
-    override = os.environ.get("ROBOUSE_MENAGERIE_ASSETS")
-    if override:
-        return Path(override)
-    return Path(__file__).resolve().parents[4] / "assets" / "menagerie"
+    from ...assets import asset_root as _root  # checkout assets/menagerie, $ROBOUSE_MENAGERIE_ASSETS, or the fetch cache
+
+    return _root()
 
 
 @dataclass(frozen=True)

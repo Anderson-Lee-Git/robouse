@@ -7,32 +7,51 @@
 - **The episode server is trusted.** It owns the simulator, enforces the step budget, records video and judges success from the physical state. The agent never touches simulator objects.
 - **Every trial is recorded** as a BenchFlow trial directory with video, so it opens in the BenchFlow viewer.
 
-Private, work in progress. Status and overnight log: [STATUS.md](STATUS.md).
+Site: [robouse.ai](https://robouse.ai). Source: [github.com/benchflow-ai/robouse](https://github.com/benchflow-ai/robouse). Status log: [STATUS.md](https://github.com/benchflow-ai/robouse/blob/main/STATUS.md).
+
+## Install
+
+Python 3.11 or newer. The base package is light (numpy and PyYAML): it gives you the task loader, the `robouse` command, and the agent-facing `robo` command, which uses only the standard library. Simulators are extras:
+
+```sh
+pip install robouse                  # task loader, `robouse` and `robo` commands
+pip install 'robouse[sim]'           # + MuJoCo and video recording: tabletop, ARC-style, hard, safety, vision,
+                                     #   robo-use families, RoboHarm, menagerie and drone suites
+pip install 'robouse[metaworld]'     # + Meta-World
+pip install 'robouse[gymrobotics]'   # + Gymnasium-Robotics (Fetch, PointMaze)
+pip install 'robouse[robosuite]'     # + robosuite 1.5
+pip install 'robouse[all]'           # all of the above
+```
+
+LIBERO, RoboCasa, BEHAVIOR and DexJoco run in their own environments; see the suite docs linked below.
+
+**Tasks ship with the package.** All task folders (about 5 MB of text: `task.md`, reference solution, verifier) are inside the wheel, so a task can be named by its id. `robouse tasks` lists them and `robouse tasks --path` prints where they are; copy that folder if you want to edit tasks. **Robot meshes are fetched, not shipped:** the menagerie, RoboHarm and drone suites use MuJoCo Menagerie models (about 43 MB); run `robouse fetch-assets` once to download them from the pinned upstream commit into `~/.cache/robouse/menagerie`, with a SHA-256 check per file.
 
 ## Quickstart
 
-The package names are registered but hold no code yet: PyPI [`robouse`](https://pypi.org/project/robouse/) 0.0.2 and [`roboharm`](https://pypi.org/project/roboharm/) 0.0.2, and npm [`robouse`](https://www.npmjs.com/package/robouse) 0.0.1 are placeholders, and publishing real code is on hold. `pip install robouse` therefore does not give you this code. For now, install from this private repository as an editable package (Python 3.11 or newer; the commands below use [uv](https://docs.astral.sh/uv/)):
+```sh
+# list the bundled tasks (id, backend, env)
+robouse tasks
+
+# check a task with its reference solution (reward should be 1)
+robouse run --task arc-gravity --harness oracle --out runs/try
+robouse run --task metaworld-reach --harness oracle --out runs/try          # needs robouse[metaworld]
+
+# let an agent be the policy (needs the `claude` or `codex` CLI and credentials; see docs/harnesses.md)
+robouse run --task metaworld-push --harness claude-code --model claude-opus-5-5 --out runs/try
+robouse run --task metaworld-push --harness codex --model gpt-6-astra --out runs/try
+
+# a whole suite, 4 at a time (a task folder path works anywhere a task id does)
+robouse run-many --tasks "$(robouse tasks --path)/metaworld" --harness codex --model gpt-6-astra --out runs/mw-codex --concurrency 4
+```
+
+To work on robouse itself, install a checkout in editable mode; it then uses the checkout's `tasks/` and `assets/`:
 
 ```sh
 git clone https://github.com/benchflow-ai/robouse.git && cd robouse
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -e ".[metaworld,gymrobotics]"   # extras: the Meta-World and Gymnasium-Robotics simulators
-
-# list tasks (id, backend, env)
-.venv/bin/robouse tasks tasks
-
-# check a task with its reference solution (reward should be 1)
-.venv/bin/robouse run --task tasks/metaworld/metaworld-reach --harness oracle --out runs/try
-
-# let an agent be the policy (needs the `claude` or `codex` CLI and credentials; see docs/harnesses.md)
-.venv/bin/robouse run --task tasks/metaworld/metaworld-push --harness claude-code --model claude-opus-5-5 --out runs/try
-.venv/bin/robouse run --task tasks/metaworld/metaworld-push --harness codex --model gpt-6-astra --out runs/try
-
-# a whole suite, 4 at a time
-.venv/bin/robouse run-many --tasks tasks/metaworld --harness codex --model gpt-6-astra --out runs/mw-codex --concurrency 4
+uv pip install --python .venv/bin/python -e ".[metaworld,gymrobotics]"
 ```
-
-Once a real release is published, the intended install is `pip install robouse` (or `uv pip install robouse`), which will provide the same `robouse` and `robo` commands.
 
 Each trial writes `runs/<job>/<task>__<harness>__<id>/` with `result.json`, the agent's raw output and trajectory, the episode trace, `verifier/reward.txt` and `artifacts/recording.mp4`.
 
@@ -49,15 +68,15 @@ Each trial writes `runs/<job>/<task>__<harness>__<id>/` with `result.json`, the 
                                                └────────────────────────────────────┘
 ```
 
-The agent sees only what `robo` returns: robot and object state as numbers, and camera images on request. See [docs/robo-cli.md](docs/robo-cli.md).
+The agent sees only what `robo` returns: robot and object state as numbers, and camera images on request. See [docs/robo-cli.md](https://github.com/benchflow-ai/robouse/blob/main/docs/robo-cli.md).
 
 ## Docs
 
-- [docs/task-format.md](docs/task-format.md): task folders, the `robouse:` settings block in `task.md`, observation and scoring modes
-- [docs/robo-cli.md](docs/robo-cli.md): the agent-facing `robo` command
-- [docs/harnesses.md](docs/harnesses.md): supported harnesses and models, credentials, isolation
-- [docs/suites/](docs/suites/): each task suite and where it comes from
-- [docs/results.md](docs/results.md): solve rates per harness, model and suite (generated by `scripts/results.py` from the audit)
-- [docs/viewer.md](docs/viewer.md), [docs/audit.md](docs/audit.md): looking at and checking runs
-- [docs/benchflow.md](docs/benchflow.md): running robo-use tasks through BenchFlow (`bench eval run`)
-- [docs/molmoact2.md](docs/molmoact2.md): MolmoAct2 (a VLA) runs on a remote GPU
+- [docs/task-format.md](https://github.com/benchflow-ai/robouse/blob/main/docs/task-format.md): task folders, the `robouse:` settings block in `task.md`, observation and scoring modes
+- [docs/robo-cli.md](https://github.com/benchflow-ai/robouse/blob/main/docs/robo-cli.md): the agent-facing `robo` command
+- [docs/harnesses.md](https://github.com/benchflow-ai/robouse/blob/main/docs/harnesses.md): supported harnesses and models, credentials, isolation
+- [docs/suites/](https://github.com/benchflow-ai/robouse/blob/main/docs/suites/): each task suite and where it comes from
+- [docs/results.md](https://github.com/benchflow-ai/robouse/blob/main/docs/results.md): solve rates per harness, model and suite (generated by `scripts/results.py` from the audit)
+- [docs/viewer.md](https://github.com/benchflow-ai/robouse/blob/main/docs/viewer.md), [docs/audit.md](https://github.com/benchflow-ai/robouse/blob/main/docs/audit.md): looking at and checking runs
+- [docs/benchflow.md](https://github.com/benchflow-ai/robouse/blob/main/docs/benchflow.md): running robo-use tasks through BenchFlow (`bench eval run`)
+- [docs/molmoact2.md](https://github.com/benchflow-ai/robouse/blob/main/docs/molmoact2.md): MolmoAct2 (a VLA) runs on a remote GPU
