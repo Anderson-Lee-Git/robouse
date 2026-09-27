@@ -35,7 +35,7 @@ WORK_HI = np.array([.60, .30, .55])
 CONTROL_DT = .05
 MAX_JOINT_SPEED = 1.2
 HOME = (0, 0, 0, -1.57079, 0, 1.57079, -.7853)
-READY = (0.0, -0.02, 0.30)
+READY = (0.0, 0.08, 0.42)
 DOWN_QUAT = np.array([0., 1., 0., 0.])
 OPEN_CTRL, CLOSED_CTRL, FINGER_OPEN_M = 255., 0., .04
 

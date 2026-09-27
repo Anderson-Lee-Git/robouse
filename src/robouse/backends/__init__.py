@@ -42,4 +42,8 @@ def make_backend(spec: dict) -> Backend:
         from .roboharm import RoboHarmBackend
 
         return RoboHarmBackend(spec)
+    if kind == "drone":
+        from .drone import DroneBackend
+
+        return DroneBackend(spec)
     raise KeyError(f"unknown backend {kind!r}")

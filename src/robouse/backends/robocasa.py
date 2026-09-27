@@ -35,13 +35,13 @@ TASKS: dict[str, dict] = {
     "robocasa-close-drawer": dict(env="CloseDrawer", layout=1, style=1, seed=0, features=["drawer"], max_steps=400),
     "robocasa-close-drawer-kitchen2": dict(env="CloseDrawer", layout=2, style=2, seed=0, features=["drawer"], max_steps=400),
     "robocasa-pick-place-counter-to-sink": dict(env="PickPlaceCounterToSink", layout=1, style=1, seed=2, features=["object", "sink"],
-                                                max_steps=500),
+                                                max_steps=800),
     "robocasa-pick-place-counter-to-sink-kitchen2": dict(env="PickPlaceCounterToSink", layout=2, style=2, seed=0,
-                                                         features=["object", "sink"], max_steps=500),
-    "robocasa-pick-place-counter-to-sink-kitchen2b": dict(env="PickPlaceCounterToSink", layout=2, style=2, seed=1,
-                                                          features=["object", "sink"], max_steps=500),
-    "robocasa-pick-place-counter-to-stove": dict(env="PickPlaceCounterToStove", layout=1, style=1, seed=0,
-                                                 features=["object", "container"], max_steps=500),
+                                                         features=["object", "sink"], max_steps=800),
+    "robocasa-pick-place-counter-to-sink-kitchen2b": dict(env="PickPlaceCounterToSink", layout=2, style=2, seed=2,
+                                                          features=["object", "sink"], max_steps=800),
+    "robocasa-pick-place-counter-to-stove": dict(env="PickPlaceCounterToStove", layout=1, style=1, seed=1,
+                                                 features=["object", "container"], max_steps=800),
 }
 
 

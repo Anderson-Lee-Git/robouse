@@ -116,7 +116,7 @@ TASKS = [
         goal=f"Pick up the {what} from the bin on the robot's right (bin 1, at -y) and put it into its target compartment of the "
              f"divided bin on the robot's left (bin 2, at +y). robosuite's PickPlace check: the {o}'s centre lies inside the "
              f"target compartment (x inside `target_bin_x_range`, y inside `target_bin_y_range`, z between `bin_floor_z` and "
-             f"`bin_floor_z` + 0.1) and the gripper is at least about 5 cm away from it.",
+             f"`bin_floor_z` + 0.1) and the gripper is at least about 4 cm away from it.",
         fields=f"{HAND_FIELDS}; `{o}_pos`, `{o}_quat`, `{o}_yaw_deg` (the {o}; {size}); `target_bin_center`, "
                f"`target_bin_x_range`, `target_bin_y_range` (the target compartment), `bin_floor_z` (z of the bins' floor). {YAW_NOTE}",
         notes="Lift the object well above the bin walls (z around 1.05 or higher) before carrying it over; release it low inside "
@@ -135,7 +135,7 @@ TASKS = [
         desc=f"Fit the {k} nut over the {k} peg.",
         goal=f"Pick up the {k} nut by its handle and fit it over the {k} peg so that it slides down around the peg to the table. "
              f"robosuite's NutAssembly check: the nut's centre is within 3 cm of the peg's axis in x and y, below "
-             f"`table_height` + 0.05, and the gripper is at least about 5 cm away from it."
+             f"`table_height` + 0.05, and the gripper is at least about 4 cm away from it."
              + (" The square nut's hole only fits the square peg when the nut is turned to match it (the peg's faces are "
                 "aligned with the x and y axes)." if k == "square" else ""),
         fields=f"{HAND_FIELDS}; `{k}nut_pos`, `{k}nut_quat`, `{k}nut_yaw_deg` (the nut's centre, i.e. its hole; the nut's local x axis "

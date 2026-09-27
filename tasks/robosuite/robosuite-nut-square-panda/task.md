@@ -45,7 +45,7 @@ robouse:
 
 A Franka Emika Panda (7-DoF) with its parallel-jaw gripper works at a table; its base is at the -x end, facing +x. The scene is robosuite's `NutAssemblySquare` environment (MuJoCo).
 
-**Goal:** Pick up the square nut by its handle and fit it over the square peg so that it slides down around the peg to the table. robosuite's NutAssembly check: the nut's centre is within 3 cm of the peg's axis in x and y, below `table_height` + 0.05, and the gripper is at least about 5 cm away from it. The square nut's hole only fits the square peg when the nut is turned to match it (the peg's faces are aligned with the x and y axes).
+**Goal:** Pick up the square nut by its handle and fit it over the square peg so that it slides down around the peg to the table. robosuite's NutAssembly check: the nut's centre is within 3 cm of the peg's axis in x and y, below `table_height` + 0.05, and the gripper is at least about 4 cm away from it. The square nut's hole only fits the square peg when the nut is turned to match it (the peg's faces are aligned with the x and y axes).
 
 Call `robo done` when finished; the check is made after the robot then holds still for 10 steps, so the result must last. 
 

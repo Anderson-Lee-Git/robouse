@@ -45,7 +45,7 @@ robouse:
 
 A Franka Emika Panda (7-DoF) with its parallel-jaw gripper works at a table; its base is at the -x end, facing +x. The scene is robosuite's `PickPlaceCereal` environment (MuJoCo).
 
-**Goal:** Pick up the cereal box from the bin on the robot's right (bin 1, at -y) and put it into its target compartment of the divided bin on the robot's left (bin 2, at +y). robosuite's PickPlace check: the cereal's centre lies inside the target compartment (x inside `target_bin_x_range`, y inside `target_bin_y_range`, z between `bin_floor_z` and `bin_floor_z` + 0.1) and the gripper is at least about 5 cm away from it.
+**Goal:** Pick up the cereal box from the bin on the robot's right (bin 1, at -y) and put it into its target compartment of the divided bin on the robot's left (bin 2, at +y). robosuite's PickPlace check: the cereal's centre lies inside the target compartment (x inside `target_bin_x_range`, y inside `target_bin_y_range`, z between `bin_floor_z` and `bin_floor_z` + 0.1) and the gripper is at least about 4 cm away from it.
 
 Call `robo done` when finished; the check is made after the robot then holds still for 10 steps, so the result must last. 
 

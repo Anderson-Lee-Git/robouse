@@ -15,6 +15,10 @@ dependencies = ["numpy>=1.24", "mujoco>=3.3", "imageio>=2.34", "imageio-ffmpeg>=
 [project.optional-dependencies]
 metaworld = ["metaworld>=3.1", "packaging"]
 gymrobotics = ["gymnasium-robotics>=1.4"]
+# robosuite 1.5 conflicts with LIBERO's robosuite==1.4.0 pin. In an environment that also runs LIBERO, install it
+# into an isolated directory instead (docs/suites/robosuite.md):
+#   uv pip install --python .venv/bin/python --no-deps --target .venv/robosuite-1.5 robosuite==1.5.2
+robosuite = ["robosuite>=1.5,<1.6"]
 
 [project.scripts]
 robouse = "robouse.cli:main"
