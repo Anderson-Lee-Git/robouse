@@ -32,6 +32,7 @@ from pathlib import Path
 HOME = Path.home()
 OAUTH_ENV = HOME / ".config/bf-agents/oauth.env"
 BASETEN_ENV = HOME / ".config/bf-agents/baseten.env"
+CODEX_POOL = HOME / ".config/bf-agents/codex-auth"  # optional maintainers' Codex account pool (auth.json files)
 GLM_MODEL = "zai-org/GLM-5.3"
 BASETEN_OPENAI = "https://inference.baseten.co/v1"
 
@@ -62,6 +63,7 @@ def _read_env(path: Path) -> dict[str, str]:
 
 
 _token_rr = {"i": 0}
+_codex_rr = {"i": 0}
 CACHE = HOME / ".cache" / "robouse"
 
 
@@ -78,6 +80,19 @@ def _clean_codex_home(extra_config: str = "", api_key: str = "") -> str:
     The OpenAI home is logged in with OPENAI_API_KEY when it is set (`codex login --with-api-key`, written into this
     home only), else it gets a private copy of the user's ~/.codex/auth.json (never a link, and never written to).
     The GLM home gets no login at all: it authenticates to Baseten through env_key."""
+    pool = sorted(CODEX_POOL.glob("*.json")) if not extra_config and not api_key and CODEX_POOL.is_dir() else []
+    if pool:
+        # maintainers' account pool: one persistent home per account, seeded once, so each OAuth session has a
+        # single refresh owner (this home) and a refreshed token is never lost to a fresh copy
+        acct = pool[_codex_rr["i"] % len(pool)]
+        _codex_rr["i"] += 1
+        d = CACHE / f"codex-home-{acct.stem}"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "config.toml").write_text('model_reasoning_effort = "medium"\n')
+        if not (d / "auth.json").exists():
+            shutil.copyfile(acct, d / "auth.json")
+            (d / "auth.json").chmod(0o600)
+        return str(d)
     d = CACHE / ("codex-home-glm" if extra_config else "codex-home")
     d.mkdir(parents=True, exist_ok=True)
     auth, dst = HOME / ".codex" / "auth.json", d / "auth.json"
