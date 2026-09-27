@@ -40,6 +40,7 @@ def sandbox_profile() -> str:
     The agent still reaches the episode socket (/tmp) and the network (model APIs). Set ROBOUSE_SANDBOX=0 to disable."""
     home = str(Path.home())
     denied = [f"{home}/benchflow", f"{home}/.config/bf-agents"] + [p for p in os.environ.get("ROBOUSE_SANDBOX_DENY", "").split(":") if p]
+    denied = [os.path.realpath(os.path.expanduser(d)) for d in denied]  # Seatbelt matches resolved paths (/tmp -> /private/tmp)
     rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in denied)
     return "(version 1)(allow default)" + rules
 
@@ -59,13 +60,17 @@ def _make_workspace(task: Task) -> Path:
     return ws
 
 
-def _wait_ready(p: Path, proc: subprocess.Popen, timeout: float = 120) -> None:
+def _wait_ready(p: Path, proc: subprocess.Popen, timeout: float = 120, log: Path | None = None) -> None:
     t = time.time() + timeout
     while time.time() < t:
         if p.exists():
             return
         if proc.poll() is not None:
-            raise RuntimeError(f"episode server exited early ({proc.returncode})")
+            last = ""
+            if log is not None and log.exists():  # the server's last line usually names the cause (e.g. a missing simulator)
+                lines = [l for l in log.read_text(errors="replace").splitlines() if l.strip()]
+                last = f": {lines[-1].strip()[:300]}" if lines else ""
+            raise RuntimeError(f"episode server exited early ({proc.returncode}){last}")
         time.sleep(0.2)
     raise TimeoutError("episode server did not start")
 
@@ -100,7 +105,7 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
     agent_rc = None
     timed_out = False
     try:
-        _wait_ready(ready, server)
+        _wait_ready(ready, server, log=tdir / "episode" / "server.log")
         (ws / ".robouse" / "socket").write_text(sock)
         base_env = {k: v for k, v in os.environ.items() if not k.startswith(("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN"))}
         base_env["PATH"] = f"{ws / '.robouse' / 'bin'}:{Path(py).parent}:{base_env.get('PATH', '')}" if harness == "oracle" \

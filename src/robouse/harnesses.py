@@ -83,7 +83,7 @@ def _claude_oauth() -> str:
     if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
         toks.insert(0, os.environ["CLAUDE_CODE_OAUTH_TOKEN"])
     if not toks:
-        raise RuntimeError("no Claude OAuth token found")
+        raise RuntimeError("no Claude token: set CLAUDE_CODE_OAUTH_TOKEN (create one with `claude setup-token`)")
     t = toks[_token_rr["i"] % len(toks)]
     _token_rr["i"] += 1
     return t
@@ -92,7 +92,7 @@ def _claude_oauth() -> str:
 def _baseten_key() -> str:
     k = _read_env(BASETEN_ENV).get("BASETEN_API_KEY") or os.environ.get("BASETEN_API_KEY")
     if not k:
-        raise RuntimeError("no BASETEN_API_KEY")
+        raise RuntimeError("no Baseten key: set BASETEN_API_KEY")
     return k
 
 
@@ -154,7 +154,7 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
 
     if harness == "molmoact2":
         if not os.environ.get("ROBOUSE_MOLMOACT2_URL"):
-            raise RuntimeError("molmoact2 needs ROBOUSE_MOLMOACT2_URL (the MolmoAct2 policy server; see docs/molmoact2.md)")
+            raise RuntimeError("molmoact2 needs ROBOUSE_MOLMOACT2_URL (the URL of a MolmoAct2 policy server)")
         client = workspace / ".robouse" / "molmoact2_client.py"
         client.write_text((Path(__file__).parent / "molmoact2" / "client.py").read_text())
         # the policy gets the source benchmark's own language instruction (LIBERO's), else the task description

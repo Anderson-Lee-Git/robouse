@@ -53,6 +53,13 @@ def tex_dir() -> Path:
     return d
 
 
+def _save(img, p: Path) -> None:
+    """Write atomically: parallel episode servers share the texture cache and must never read a half-written PNG."""
+    tmp = p.with_name(f".{p.stem}.{os.getpid()}.png")
+    img.save(tmp)
+    os.replace(tmp, p)
+
+
 def _font(size: int):
     from PIL import ImageFont
 
@@ -93,7 +100,7 @@ def label_png(name: str, lines: list[str], bg=(245, 245, 240), fg=(20, 20, 20), 
     img = img.transpose(Image.FLIP_TOP_BOTTOM)
     if mirror:
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
-    img.save(p)
+    _save(img, p)
     return str(p)
 
 
@@ -107,7 +114,7 @@ def tiles_png(name: str, c1=(236, 236, 230), c2=(200, 205, 205), n=8) -> str:
     for i in range(n + 1):
         dr.line([(0, i * s), (256, i * s)], fill=c2, width=3)
         dr.line([(i * s, 0), (i * s, 256)], fill=c2, width=3)
-    img.save(p)
+    _save(img, p)
     return str(p)
 
 
@@ -123,7 +130,7 @@ def brick_png(name: str) -> str:
         for c in range(-1, 5):
             x0 = c * bw + off
             dr.rectangle([x0 + 2, r * bh + 2, x0 + bw - 2, r * bh + bh - 2], fill=(150 + (r * 7 + c * 13) % 25, 70, 55))
-    img.save(p)
+    _save(img, p)
     return str(p)
 
 

@@ -1,132 +1,86 @@
 # Quickstart
 
-This page gets you from nothing to a scored robot trial in a few minutes, with no API keys. You install robo-use from PyPI, list the bundled tasks, and run a task's reference solution (the `oracle` harness) in simulation.
-
-The install, listing and reference-solution commands below were run exactly as written on 2026-09-27 against `robouse` 0.1.0 from PyPI, in fresh virtual environments on macOS (Apple silicon) with Python 3.12 (all commands) and 3.11 (the `sim` extra and `arc-gravity`). The model-harness commands near the end were not run for this page, because they need credentials and call paid model APIs.
+Install robo-use, list the tasks and run a reference solution. No model or API key is needed.
 
 ## Install
 
-Python 3.11 to 3.13 (3.11 and 3.12 were tested). Create a virtual environment and install the package with the simulators you need:
+Python 3.11 to 3.13. Install the package with the `sim` extra (MuJoCo and video recording) and, for Meta-World tasks, the `metaworld` extra:
 
 ```sh
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install 'robouse[sim]>=0.1'          # MuJoCo and video recording: tabletop, ARC-style, hard, safety, vision,
-                                         #   robo-use families, RoboHarm, menagerie and drone suites
-pip install 'robouse[metaworld]>=0.1'    # + Meta-World (includes [sim])
+pip install 'robouse[sim,metaworld]>=0.1' 'mujoco==3.3.0'
 ```
 
-Keep the `>=0.1`. Versions 0.0.1 and 0.0.2 on PyPI are empty placeholders without extras, and when an extra cannot be installed, pip falls back to them instead of failing. This happens with `metaworld` and `all` on Python 3.14, because Meta-World 3.1 supports only Python up to 3.13: plain `pip install 'robouse[metaworld]'` then replaces robouse 0.1.0 with the empty 0.0.2, printing only `WARNING: robouse 0.0.2 does not provide the extra 'metaworld'`, and the `robouse` command disappears. With `>=0.1`, pip reports the real error instead. The `sim`, `gymrobotics` and `robosuite` extras do install on Python 3.14.
+Keep both pins:
 
-The extras:
+- `>=0.1`: without it, an extra that cannot be installed makes pip fall back to an empty 0.0.x placeholder instead of failing.
+- `mujoco==3.3.0`: robouse 0.1.0 does not pin MuJoCo, and with newer releases some suites crash or their reference solutions fail. 3.3.0 is the version Meta-World requires and the one every suite was checked with.
 
-| Extra | Adds | Suites |
-|---|---|---|
-| (none) | the task loader and the `robouse` and `robo` commands (numpy, PyYAML) | none: listing tasks only |
-| `sim` | MuJoCo, imageio, Pillow | tabletop (`libero-style`, `arc-style`, `robo-use-families`, `safety`), `vision`, `hard`, `roboharm`, `menagerie`, `drone` |
-| `metaworld` | `sim` + Meta-World | `metaworld` |
-| `gymrobotics` | `sim` + Gymnasium-Robotics | `gymrobotics` |
-| `robosuite` | `sim` + robosuite 1.5 | `robosuite` |
-| `all` | all of the above, plus SciPy | |
+Other extras are listed under [Supported](supported.md#simulators).
 
-Without a simulator extra, `robouse run` stops with `robouse: the simulator dependencies are not installed (missing: mujoco, imageio, PIL)` and names the extra to install.
-
-Some suites need setup that pip cannot do: [LIBERO](suites/libero.md) (installed with `--no-deps`), [RoboCasa](suites/robocasa.md) and [DexJoCo](suites/dexjoco.md) (their own environments and downloads). The DexJoCo and RoboCasa tasks were added after the 0.1.0 release and are not in the 0.1.0 package; run them from a checkout (see [From source](#from-source)).
-
-Rendering: every trial records a video, so MuJoCo must be able to render offscreen. macOS works out of the box. On a headless Linux machine MuJoCo needs `MUJOCO_GL=egl` or `MUJOCO_GL=osmesa` (the simulator Docker image uses osmesa); this was not tested for this page.
-
-## Check the install
-
-```sh
-robouse --version
-robouse --help
-robouse tasks
-robouse tasks --path
+```console
+$ robouse --version
+robouse 0.1.0
 ```
 
-`robouse --version` prints `robouse 0.1.0`. `robouse tasks` lists the tasks bundled in the package, one per line: task id, backend and simulator env id (the env column is empty for tabletop tasks). 0.1.0 bundles 327 tasks. `robouse tasks --path` prints the folder they are installed in (`.../site-packages/robouse/bundled_tasks`, one subfolder per suite); copy it if you want to edit tasks. `robouse tasks <folder>` lists the tasks under any other folder.
+## List tasks
+
+```console
+$ robouse tasks | head -3
+arc-colour-to-pad tabletop
+arc-count-marker tabletop
+arc-fill-missing tabletop
+$ robouse tasks | wc -l
+327
+```
+
+Each line is a task id, its backend and its simulator env id. The task folders ship inside the package; `robouse tasks --path` prints where.
 
 ## Run a reference solution
 
-Every task ships a reference solution that must score 1. Running it is the quickest end-to-end check and needs no model or credentials. A task can be named by its id:
+Every task ships a reference solution, run by the `oracle` harness. It must score 1:
 
-```sh
-robouse run --task arc-gravity --harness oracle --out runs/try
-```
-
-After about 15 seconds it prints a summary:
-
-```json
+```console
+$ robouse run --task metaworld-reach --harness oracle --out runs/try
 {
-  "trial": "arc-gravity__oracle__0bc270",
+  "trial": "metaworld-reach__oracle__ae2f3a",
   "reward": 1.0,
-  "outcome": "done",
-  "steps": 999,
-  "wall_s": 13.0,
+  "outcome": "success_reached",
+  "steps": 51,
+  "wall_s": 14.1,
   "exception": null
 }
 ```
 
-With the `metaworld` extra installed:
+The `noop` harness ends the episode without moving the robot. It must score 0:
 
-```sh
-robouse run --task metaworld-reach --harness oracle --out runs/try
+```console
+$ robouse run --task metaworld-reach --harness noop --out runs/try
+{
+  "trial": "metaworld-reach__noop__3660b9",
+  "reward": 0.0,
+  "outcome": "done",
+  "steps": 0,
+  "wall_s": 7.2,
+  "exception": null
+}
 ```
 
-This one ends with `"reward": 1.0` and `"outcome": "success_reached"` after 51 steps (about 20 seconds).
+## Look at the trial
 
-The negative control, `--harness noop`, calls `robo done` without moving the robot and must score 0:
-
-```sh
-robouse run --task metaworld-reach --harness noop --out runs/try
+```console
+$ ls runs/try/metaworld-reach__oracle__ae2f3a
+agent  artifacts  config.json  episode  result.json  verifier
+$ cat runs/try/metaworld-reach__oracle__ae2f3a/verifier/reward.txt
+1
 ```
 
-`robouse run-many` runs a set of tasks. `--tasks` takes a folder (default: all bundled tasks), so a suite is its subfolder of `robouse tasks --path`. This runs the first 4 Meta-World reference solutions, 4 at a time, in about 20 seconds (drop `--limit` for all 50):
+The video of the episode is `artifacts/recording.mp4`.
 
-```sh
-robouse run-many --tasks "$(robouse tasks --path)/metaworld" --harness oracle --out runs/mw-oracle --concurrency 4 --limit 4
-```
-
-It prints one line per trial and ends with `oracle/-: 4/4 solved`. `--filter` (substring match on task ids) and `--task-list` (a file of task ids) pick other subsets.
-
-## Robot meshes for menagerie, RoboHarm and drone
-
-These suites use MuJoCo Menagerie robot models, which are downloaded rather than shipped. Run this once (about 42 MB, 93 files, checked by SHA-256, stored in `~/.cache/robouse/menagerie`):
-
-```sh
-robouse fetch-assets
-robouse run --task drone-inspect-mast --harness oracle --out runs/try
-```
-
-## What a trial writes
-
-Each trial writes `<out>/<task>__<harness>__<id>/` with `config.json`, `result.json`, the agent's raw output and trajectory under `agent/`, the episode record under `episode/` (`result.json`, `trace.jsonl`, `frames.jsonl`), `verifier/reward.txt`, and `artifacts/recording.mp4` (the episode video). See [Viewing trials](viewer.md) to open them in the BenchFlow viewer.
-
-## Let an agent be the policy
-
-Not run for this page. Model harnesses need the harness's CLI installed and logged in: `claude` for Claude Code, `codex` for Codex, `mini` for mini-swe-agent. Credentials and isolation are described in [Harnesses and models](harnesses.md).
-
-```sh
-robouse run --task metaworld-push --harness claude-code --model claude-opus-5-5 --out runs/try
-robouse run --task metaworld-push --harness codex --model gpt-6-astra --out runs/try
-robouse run-many --tasks "$(robouse tasks --path)/metaworld" --harness codex --model gpt-6-astra --out runs/mw-codex --concurrency 4
-```
-
-## From source
-
-To work on robo-use itself, or to run tasks added since the last release, install a checkout in editable mode. It then uses the checkout's `tasks/` and `assets/` folders (`robouse tasks --path` prints the checkout's `tasks/`). The repository, `benchflow-ai/robouse` on GitHub, is private for now; you need access to clone it.
-
-```sh
-git clone https://github.com/benchflow-ai/robouse.git && cd robouse
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -e ".[metaworld,gymrobotics]"
-.venv/bin/robouse tasks
-.venv/bin/robouse run --task arc-gravity --harness oracle --out runs/try
-```
-
-This uses [uv](https://docs.astral.sh/uv/); `python3.12 -m venv .venv && .venv/bin/pip install -e ".[metaworld,gymrobotics]"` works too.
+What each file holds: [Episodes and robo](episodes.md#the-trial-folder).
 
 ## Next
 
-- [Task format](task-format.md): what a task folder contains and how it is scored.
-- [The robo command](robo-cli.md): everything the agent can do.
-- [Running through BenchFlow](benchflow.md): the same tasks as BenchFlow packages, with the simulator in its own container.
+- [Run an agent](run-an-agent.md): let Claude Code or Codex be the policy.
+- [Run a suite](run-a-suite.md): many tasks in parallel.
+- [Write a task](write-a-task.md): your own scene and goal.

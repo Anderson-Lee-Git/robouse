@@ -18,6 +18,8 @@ from pathlib import Path
 from . import __version__
 from .tasks import bundled_tasks_root, find_tasks, load_task, resolve_task_path
 
+HARNESS_HELP = ("oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm or molmoact2 "
+                "(see https://robouse.ai/docs/harnesses/)")
 SIM_HINT = ("robouse: the simulator dependencies are not installed ({err}).\n"
             "Install the extra for this suite, e.g. `pip install 'robouse[sim]'` (MuJoCo tabletop suites), "
             "`robouse[metaworld]`, `robouse[gymrobotics]`, `robouse[robosuite]` or `robouse[all]`.")
@@ -30,31 +32,31 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("serve", help="run one trusted episode server (used by `run`)")
-    s.add_argument("--task", required=True)
-    s.add_argument("--run-dir", required=True)
-    s.add_argument("--socket", required=True)
-    s.add_argument("--workspace")
-    s.add_argument("--seed", type=int)
-    s.add_argument("--max-wall-s", type=float, default=1800)
-    s.add_argument("--ready-file")
+    s.add_argument("--task", required=True, help="task folder or bundled task id")
+    s.add_argument("--run-dir", required=True, help="where the episode record is written")
+    s.add_argument("--socket", required=True, help="Unix socket path to listen on")
+    s.add_argument("--workspace", help="agent workspace (camera images are saved in its observations/)")
+    s.add_argument("--seed", type=int, help="override the task's seed")
+    s.add_argument("--max-wall-s", type=float, default=1800, help="wall-clock budget in seconds (default 1800)")
+    s.add_argument("--ready-file", help="file created once the server is listening")
 
     r = sub.add_parser("run", help="run one trial end to end")
-    r.add_argument("--task", required=True)
-    r.add_argument("--harness", required=True)
-    r.add_argument("--model", default="")
-    r.add_argument("--out", required=True)
-    r.add_argument("--timeout", type=float)
-    r.add_argument("--seed", type=int)
+    r.add_argument("--task", required=True, help="task folder or bundled task id")
+    r.add_argument("--harness", required=True, help=HARNESS_HELP)
+    r.add_argument("--model", default="", help="model for the harness (default: the harness's default)")
+    r.add_argument("--out", required=True, help="job folder; the trial is written to OUT/<task>__<harness>__<id>/")
+    r.add_argument("--timeout", type=float, help="agent wall-clock limit in seconds (default: the task's agent.timeout_sec)")
+    r.add_argument("--seed", type=int, help="override the task's seed")
 
     m = sub.add_parser("run-many", help="run a set of trials")
     m.add_argument("--tasks", help="task root (default: the bundled tasks)")
-    m.add_argument("--harness", required=True)
-    m.add_argument("--model", default="")
-    m.add_argument("--out", required=True)
-    m.add_argument("--filter", default="")
-    m.add_argument("--limit", type=int, default=0)
-    m.add_argument("--concurrency", type=int, default=1)
-    m.add_argument("--timeout", type=float)
+    m.add_argument("--harness", required=True, help=HARNESS_HELP)
+    m.add_argument("--model", default="", help="model for the harness (default: the harness's default)")
+    m.add_argument("--out", required=True, help="job folder; one trial folder per task")
+    m.add_argument("--filter", default="", help="only task ids containing this substring")
+    m.add_argument("--limit", type=int, default=0, help="run at most this many tasks (0: all)")
+    m.add_argument("--concurrency", type=int, default=1, help="trials run in parallel (default 1)")
+    m.add_argument("--timeout", type=float, help="agent wall-clock limit per trial in seconds (default: each task's)")
     m.add_argument("--task-list", help="file with one task id per line (subset of --tasks)")
     m.add_argument("--resume", action="store_true", help="skip tasks that already have a finished, non-infra-failed trial in --out")
 
