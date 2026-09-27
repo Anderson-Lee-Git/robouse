@@ -10,6 +10,7 @@ and for tabletop tasks the `scenario`). `write_task` writes this layout; adapter
 """
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -83,13 +84,39 @@ def find_tasks(root: str | Path) -> list[Task]:
     return [load_task(d) for d in sorted(dirs) if "_legacy" not in d.parts]
 
 
+_BLOCK_START = re.compile(r"\s*(#|\||[-*+] |\d+\. |>|```)")
+
+
+def unwrap_markdown(text: str) -> str:
+    """One line per paragraph: join hard-wrapped prose lines (and wrapped list-item continuations) while leaving
+    code blocks, tables, headings, list starts and blank lines as they are."""
+    out: list[str] = []
+    in_code = False
+    for line in text.split("\n"):
+        if line.strip().startswith("```"):
+            in_code = not in_code
+            out.append(line)
+            continue
+        if in_code:
+            out.append(line)
+            continue
+        prev = out[-1] if out else ""
+        p = prev.strip()
+        joinable_prev = bool(p) and not p.startswith(("#", "|", "```"))
+        if joinable_prev and line.strip() and not _BLOCK_START.match(line):
+            out[-1] = prev.rstrip() + " " + line.strip()
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 def write_task(d: Path, meta: dict, instruction: str, oracle_sh: str, verifier_sh: str) -> None:
-    """Write one task folder in BenchFlow's native layout."""
+    """Write one task folder in BenchFlow's native layout (the instruction is unwrapped to one line per paragraph)."""
     d = Path(d)
     (d / "oracle").mkdir(parents=True, exist_ok=True)
     (d / "verifier").mkdir(parents=True, exist_ok=True)
     fm = {"schema_version": SCHEMA_VERSION, **{k: meta[k] for k in ("task", "metadata", "agent", "verifier", "robouse") if k in meta}}
-    text = "---\n" + yaml.safe_dump(fm, sort_keys=False, allow_unicode=True, width=10**6) + "---\n\n" + instruction.lstrip("\n")
+    text = "---\n" + yaml.safe_dump(fm, sort_keys=False, allow_unicode=True, width=10**6) + "---\n\n" + unwrap_markdown(instruction.lstrip("\n"))
     (d / "task.md").write_text(text)
     for rel, body in (("oracle/solve.sh", oracle_sh), ("verifier/test.sh", verifier_sh)):
         f = d / rel

@@ -118,9 +118,7 @@ def instruction(env: str) -> str:
 
     **Goal:** {goal}
 
-    In `robo observe`: `hand_pos` is the gripper position, `gripper_open` its opening (1 = open),
-    `obj1_pos`/`obj1_quat` and `obj2_pos` are the task objects ({fields}), and `goal_pos` is the target.
-    The full 39-number observation vector is also given as `obs_vector`.
+    In `robo observe`: `hand_pos` is the gripper position, `gripper_open` its opening (1 = open), `obj1_pos`/`obj1_quat` and `obj2_pos` are the task objects ({fields}), and `goal_pos` is the target. The full 39-number observation vector is also given as `obs_vector`.
 
     """) + ROBO_USAGE
 
