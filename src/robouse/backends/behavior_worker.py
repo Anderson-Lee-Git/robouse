@@ -10,13 +10,18 @@ Methods: info, reset, observe, skill, wait, render, success, goal_status. Images
 Requests carry the shared secret from $ROBOUSE_BEHAVIOR_SECRET in the `X-Robouse-Secret` header.
 
 Robot actions are OmniGibson's symbolic semantic action primitives (omnigibson.action_primitives.
-symbolic_semantic_action_primitives): grasp, place_on_top, place_inside, open, close, toggle_on, toggle_off, release.
-They set the post-condition state directly (no arm motion planning), then let physics settle. The worker adds what
-the symbolic set leaves out, so the agent still has to plan the household task:
-  - navigate_to OBJ: teleport the robot base to a free spot next to OBJ (traversability map), facing it;
-    a held object is carried along.
+symbolic_semantic_action_primitives) for open, close, toggle_on and toggle_off: they set the post-condition state
+directly (no arm motion planning), then let physics settle. The worker implements the rest itself and adds what the
+symbolic set leaves out, so the agent still has to plan the household task:
+  - navigate_to OBJ: teleport the robot base to a free spot next to OBJ (traversability map), facing it.
+  - grasp OBJ: a kinematic carry. The object's gravity is switched off and it rides 0.45 m in front of the base at
+    1.1 m height until it is placed or released. (Sticky/assisted grasp joints kept dropping objects during
+    teleport-based navigation.)
+  - place_on_top / place_inside OBJ: release, then BEHAVIOR's own kinematic sampler (object_states OnTop / Inside
+    set_value) puts the object in the relation; physics settles; the relation is re-checked.
   - reach: grasp/place/open/close/toggle fail unless the robot is within REACH_M of the target (navigate first).
-  - grasp fails on objects that are fixed, too big, or inside a closed container.
+  - grasp fails on objects that are fixed, too big, or inside a closed container; the hand holds one object, and
+    open/close/toggle need an empty hand.
   - place_inside fails if the container is openable and closed.
 Success is BEHAVIOR's own BDDL goal check (the task's PredicateGoal termination condition).
 
@@ -34,13 +39,14 @@ import os
 import sys
 import time
 import traceback
+import types
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 REACH_M = 1.25          # max horizontal distance from the robot base to a target object's bounding box
 NAV_OFFSETS = (0.35, 0.5, 0.7, 0.9)   # stand-off distances (m) from the target's bounding box tried by navigate_to
 ROBOT_RADIUS_M = 0.38   # clearance checked on the traversability map around a candidate base position
 MAX_GRASP_EXTENT_M = 1.0
-FRAME_EVERY = 6         # during a skill, keep one video frame every N env steps
+FRAME_EVERY = 3         # during a skill, keep one video frame every N env steps
 MAX_FRAMES_PER_SKILL = 12
 IMG_W, IMG_H = 640, 480
 
@@ -61,9 +67,25 @@ class SkillError(Exception):
     pass
 
 
+def _short_settle(prims):
+    """Shorter settle than OmniGibson's (50 fixed steps, then up to MAX_STEPS_FOR_SETTLING): hold the joints for 8-30
+    steps until the base stops moving. Each primitive settles once or twice, and every simulator step in a full
+    BEHAVIOR house costs about 0.3 s, so the stock settle made a single grasp take close to a minute."""
+    import torch as th
+
+    for i in range(30):
+        yield prims._postprocess_action(prims.robot.q_to_action(prims.robot.get_joint_positions()))
+        if i >= 8 and th.norm(prims.robot.get_linear_velocity()) < 0.01:
+            break
+
+
 class Worker:
     def __init__(self, activity: str, instance: int, scene_model: str, rooms: list[str] | None):
-        import torch as th  # noqa: F401
+        import torch as th
+
+        # Several workers share one machine; torch's default (one thread per core) oversubscribed the CPUs so badly that
+        # a skill took minutes when five workers were busy at once.
+        th.set_num_threads(int(os.environ.get("ROBOUSE_BEHAVIOR_TORCH_THREADS", "8")))
         import omnigibson as og
         from omnigibson.macros import gm
 
@@ -78,6 +100,7 @@ class Worker:
 
         robot_cfg = yaml.safe_load(open(os.path.join(og.example_config_path, "r1pro_primitives.yaml")))["robots"][0]
         robot_cfg["obs_modalities"] = ["rgb"]
+        robot_cfg["include_sensor_names"] = None
         robot_cfg["grasping_mode"] = "sticky"
         robot_cfg.setdefault("sensor_config", {}).setdefault("VisionSensor", {})["sensor_kwargs"] = {
             "image_height": IMG_H, "image_width": IMG_W}
@@ -94,6 +117,9 @@ class Worker:
         }
         t = time.time()
         self.env = og.Environment(configs=cfg)
+        # Render only when an image is requested (_follow_rgb / _head_rgb), not on every physics step: several workers
+        # share one GPU, and per-step RTX rendering made each skill take minutes.
+        og.sim._render_on_step = False
         self.scene = self.env.scenes[0]
         self.robot = self.scene.robots[0]
         from omnigibson.action_primitives.symbolic_semantic_action_primitives import (
@@ -101,6 +127,7 @@ class Worker:
 
         self.P = SymbolicSemanticActionPrimitiveSet
         self.prims = SymbolicSemanticActionPrimitives(self.env, self.robot)
+        self.prims._settle_robot = types.MethodType(_short_settle, self.prims)
         self.load_s = round(time.time() - t, 1)
         self._frames: list[str] = []
         self.cam = og.sim.viewer_camera
@@ -125,7 +152,13 @@ class Worker:
             self.prims._postprocess_action(self.robot.q_to_action(self.robot.get_joint_positions()))
 
     def _step(self, action, record: bool = True):
-        self.env.step(action)
+        # robot action + one simulator step, without env.step's observation, reward and termination bookkeeping
+        # (the BDDL goal is checked only when the episode is judged)
+        import torch as th
+
+        self._hold_carried()
+        self.robot.apply_action(th.as_tensor(action, dtype=th.float32))
+        self.og.sim.step()
         self._n = getattr(self, "_n", 0) + 1
         if record and self._n % FRAME_EVERY == 0 and len(self._frames) < MAX_FRAMES_PER_SKILL:
             self._frames.append(self._jpeg(self._follow_rgb()))
@@ -149,7 +182,42 @@ class Worker:
         return float(pos[0]), float(pos[1]), yaw
 
     def _held(self):
-        return self.prims._get_obj_in_hand()
+        return getattr(self, "_carry", None)
+
+    def _carry_pose(self):
+        """Where a carried object rides: 0.45 m in front of the base at 1.1 m height (in front of the torso)."""
+        import torch as th
+
+        x, y, yaw = self._robot_xy_yaw()
+        return th.tensor([x + 0.45 * math.cos(yaw), y + 0.45 * math.sin(yaw), 1.1], dtype=th.float32)
+
+    def _hold_carried(self):
+        import torch as th
+
+        obj = self._held()
+        if obj is None:
+            return
+        obj.set_position_orientation(position=self._carry_pose())
+        obj.set_linear_velocity(th.zeros(3))
+        obj.set_angular_velocity(th.zeros(3))
+
+    def _pick(self, obj):
+        self._carry = obj
+        try:
+            obj.disable_gravity()
+        except Exception:
+            pass
+        self._hold_carried()
+        self._settle(6, record=True)
+
+    def _drop(self):
+        obj, self._carry = self._held(), None
+        if obj is not None:
+            try:
+                obj.enable_gravity()
+            except Exception:
+                pass
+        return obj
 
     def _box_dist_xy(self, obj) -> float:
         """Horizontal distance from the robot base to obj's axis-aligned bounding box (0 if inside it)."""
@@ -246,20 +314,27 @@ class Worker:
         p = cands[0][2]
         yaw = math.atan2(center[1] - p[1], center[0] - p[0])
         z = float(self.robot.get_position_orientation()[0][2])
-        if held is not None:
-            for arm in self.robot.arm_names:
-                self.robot.release_grasp_immediately(arm=arm)
         self.robot.set_position_orientation(th.tensor([p[0], p[1], z], dtype=th.float32),
                                             euler2quat(th.tensor([0.0, 0.0, yaw], dtype=th.float32)))
         self._settle(10, record=True)
-        if held is not None:
-            self._regrasp(held)
-        self._settle(20, record=True)
 
-    def _regrasp(self, obj):
-        eef = self.robot.get_eef_position(self.prims.arm)
-        obj.set_position_orientation(position=eef)
-        self.robot._establish_grasp(obj, obj.root_link_name, self.prims.arm, eef, "FixedJoint")
+    def _place(self, target, target_name: str, how: str) -> dict:
+        """Release the held object and put it in the goal relation with BEHAVIOR's own kinematic sampler
+        (object_states.OnTop / Inside set_value), then let physics settle. The symbolic primitive's sampler, which runs
+        while the object is still attached to the hand, failed on open containers such as the trash can."""
+        from omnigibson import object_states as S
+
+        held = self._held()
+        pred = S.Inside if how == "place_inside" else S.OnTop
+        held_name = self._name(held)
+        self._drop()
+        ok = bool(held.states[pred].set_value(target, True))
+        self._settle(20, record=True)
+        if not ok or not held.states[pred].get_value(target):
+            where = "inside" if how == "place_inside" else "on top of"
+            raise SkillError(f"could not place {held_name} {where} {target_name} (no free spot found or it fell off); "
+                             f"it was released and is no longer held")
+        return {"message": f"{how} {target_name}: ok ({held_name})"}
 
     def skill(self, name: str, args: list[str]) -> dict:
         self._frames = []
@@ -270,7 +345,8 @@ class Worker:
         if name == "release":
             if self._held() is None:
                 raise SkillError("the hand is empty")
-            self._run(self.prims.apply_ref(self.P.RELEASE, attempts=1))
+            self._drop()
+            self._settle(15, record=True)
             return {"message": "released"}
         if len(args) != 1:
             raise SkillError(f"{name} takes one object name")
@@ -290,7 +366,12 @@ class Worker:
             c = self._closed_container_of(obj)
             if c:
                 raise SkillError(f"{args[0]} is inside {c}, which is closed; open it first")
-            prim = self.P.GRASP
+            if self._held() is obj:
+                return {"message": f"already holding {args[0]}"}
+            if self._held() is not None:
+                raise SkillError(f"the hand already holds {self._name(self._held())}; place or release it first")
+            self._pick(obj)
+            return {"message": f"grasp {args[0]}: ok"}
         elif name in ("place_on_top", "place_inside"):
             if self._held() is None:
                 raise SkillError("the hand is empty; grasp something first")
@@ -298,8 +379,10 @@ class Worker:
                 raise SkillError("cannot place an object on or in itself")
             if name == "place_inside" and S.Open in obj.states and not obj.states[S.Open].get_value():
                 raise SkillError(f"{args[0]} is closed; open it first")
-            prim = self.P.PLACE_ON_TOP if name == "place_on_top" else self.P.PLACE_INSIDE
+            return self._place(obj, args[0], name)
         else:
+            if self._held() is not None:
+                raise SkillError(f"cannot {name} while holding {self._name(self._held())}; place or release it first")
             prim = {"open": self.P.OPEN, "close": self.P.CLOSE, "toggle_on": self.P.TOGGLE_ON,
                     "toggle_off": self.P.TOGGLE_OFF}[name]
         from omnigibson.action_primitives.action_primitive_set_base import ActionPrimitiveErrorGroup, ActionPrimitiveError
@@ -396,9 +479,7 @@ class Worker:
             return {"activity": self.activity, "instance": self.instance, "load_s": self.load_s, "objects": self.scope_names,
                     "skills": SKILLS, "robot": self.robot.model if hasattr(self.robot, "model") else type(self.robot).__name__}
         if method == "reset":
-            if self._held() is not None:
-                for arm in self.robot.arm_names:
-                    self.robot.release_grasp_immediately(arm=arm)
+            self._drop()
             self.env.reset()
             self._settle(30)
             return {"ok": True}
