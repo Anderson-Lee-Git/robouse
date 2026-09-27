@@ -117,7 +117,10 @@ class GymRoboticsBackend(Backend):
     def _observe_fetch(self) -> dict:
         o = np.asarray(self._obs["observation"], dtype=float)
         dt = float(self.u.dt)
-        grip_pos, fingers, grip_velp = o[0:3], o[9:11], o[20:23]
+        if self.u.has_object:
+            grip_pos, fingers, grip_velp = o[0:3], o[9:11], o[20:23]
+        else:  # FetchReach: grip_pos(3), finger positions(2), grip_velp(3), finger velocities(2)
+            grip_pos, fingers, grip_velp = o[0:3], o[3:5], o[5:8]
         out = {
             "hand_pos": _R(grip_pos),
             "hand_vel": _R(grip_velp / dt),

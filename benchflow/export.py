@@ -12,7 +12,7 @@ self-contained bundle; move it as a whole (tasks share runtime/):
       runtime/                       build context of the trusted simulator image (robouse-sim)
         Dockerfile.sim  requirements-sim.txt  sim-entry.sh  robouse/{pyproject.toml,README.md,src/robouse}
       tasks/<task-id>/
-        task.md                      schema_version 1.3 frontmatter + the task's instruction.md as the prompt
+        task.md                      schema_version 1.3 frontmatter + the task's instruction as the prompt
         environment/Dockerfile       agent (`main`) image: python + the `robo` client only
         environment/robo             copy of src/robouse/agent_cli.py (stdlib only)
         environment/docker-compose.yaml   `main` + trusted `simulator` services (embeds the robouse task definition)

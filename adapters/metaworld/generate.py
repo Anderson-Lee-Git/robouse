@@ -34,7 +34,7 @@ GOALS: dict[str, tuple[str, str]] = {
     "door-lock-v3": ("Lock the door by turning the lock knob down.", "obj1 = lock knob; goal = locked position"),
     "door-open-v3": ("Open the door by pulling its handle.", "obj1 = door handle; goal = open handle position"),
     "door-unlock-v3": ("Unlock the door by turning the lock knob.", "obj1 = lock knob; goal = unlocked position"),
-    "hand-insert-v3": ("Move the gripper into the hole in the table.", "obj1 = (unused); goal = inside the hole"),
+    "hand-insert-v3": ("Push or carry the block into the hole in the table (the block must end within 5 cm of the hole).", "obj1 = block; goal = hole"),
     "drawer-close-v3": ("Push the drawer closed.", "obj1 = drawer handle; goal = closed handle position"),
     "drawer-open-v3": ("Pull the drawer open by its handle.", "obj1 = drawer handle; goal = open handle position"),
     "faucet-open-v3": ("Turn the faucet handle to open it.", "obj1 = faucet handle; goal = open position"),

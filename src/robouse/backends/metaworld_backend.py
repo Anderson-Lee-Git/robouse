@@ -52,6 +52,8 @@ class MetaWorldBackend(Backend):
         # otherwise raises on the next step ("You must reset the env manually once truncate==True")
         self.env.max_path_length = 10**9
         self._obs, _ = self.env.reset(seed=seed)
+        for _ in range(3):  # let objects settle so the first observation matches the scene (not counted as steps)
+            self._obs, *_ = self.env.step(np.array([0.0, 0.0, 0.0, -1.0], dtype=np.float32))
         self._info = {"success": 0.0}
         self._grip = -1.0
 

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SUITES = ["metaworld", "gymrobotics", "libero-style", "arc-style", "robo-use-families", "safety", "vision", "hard"]
+SUITES = ["metaworld", "gymrobotics", "libero", "libero-style", "arc-style", "robo-use-families", "safety", "vision", "hard"]
 LABEL = {
     "claude-code/claude-opus-5-5": "Claude Code + Opus 5.5",
     "codex/gpt-6-astra": "Codex + GPT-6 Astra",
@@ -30,10 +30,19 @@ ORDER = list(LABEL)
 
 
 def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Write docs/results.md from runs/_audit/audit.json.")
+    ap.add_argument("--jobs", default="", help="comma-separated job prefixes to include (default: all)")
+    ap.add_argument("--out", default=str(ROOT / "docs" / "results.md"))
+    args = ap.parse_args()
+    prefixes = tuple(p for p in args.jobs.split(",") if p)
     audit = json.loads((ROOT / "runs" / "_audit" / "audit.json").read_text())
     latest: dict[tuple, dict] = {}
     for r in audit["trials"]:
         if r.get("running") or r.get("harness") in ("lerobot-eval", "molmoact2-sim-eval"):
+            continue
+        if prefixes and not r.get("job", "").startswith(prefixes):
             continue
         key = (f"{r['harness']}/{r['model']}", r["task"])
         prev = latest.get(key)
@@ -75,8 +84,8 @@ def main() -> None:
             by[k][0] += 1 if r.get("solved") else 0
         for (h, m, b), (sv, n) in sorted(by.items()):
             out.append(f"| {h} | {m} | {b} | {sv}/{n} |")
-        out += ["", "These run on LIBERO and ManiSkill scenes, not robouse's own tasks; see docs/molmoact2.md."]
-    (ROOT / "docs" / "results.md").write_text("\n".join(out) + "\n")
+        out += ["", "These run on LIBERO and ManiSkill scenes, not robo-use's own tasks; see docs/molmoact2.md."]
+    Path(args.out).write_text("\n".join(out) + "\n")
     print("\n".join(out))
 
 

@@ -241,19 +241,28 @@ class Episode:
             return {"ok": False, "error": "pos must be [x, y, z]"}
         target = np.asarray(pos, dtype=float)
         g = float(getattr(self.backend, "_grip", -1.0) if grip is None else grip)
-        n, dist = 0, float("inf")
+        n, dist, stalled = 0, float("inf"), False
+        recent: list[np.ndarray] = []
         for _ in range(max(1, min(MAX_SKILL_STEPS, max_steps))):
             if self.steps >= self.max_steps or self.finished:
                 break
-            d = target - self.backend.hand_pos()
+            hp = self.backend.hand_pos()
+            d = target - hp
             dist = float(np.linalg.norm(d))
             if dist < tol:
+                break
+            recent.append(hp)
+            if len(recent) > 8 and float(np.linalg.norm(recent[-1] - recent[-9])) < 0.002:
+                stalled = True  # the hand has stopped moving: the target is out of reach or blocked
                 break
             self._env_step(list(np.clip(d * 10.0, -1, 1)) + [g])
             n += 1
         dist = float(np.linalg.norm(target - self.backend.hand_pos()))
-        return {"ok": True, "result": {"reached": dist < tol * 1.5, "distance": round(dist, 4), "executed_steps": n,
-                                       "state": self._state(), "steps_used": self.steps}}
+        res = {"reached": dist < tol * 1.5, "distance": round(dist, 4), "executed_steps": n,
+               "state": self._state(), "steps_used": self.steps}
+        if stalled:
+            res["stalled"] = "the hand stopped moving before reaching the target (out of reach or blocked)"
+        return {"ok": True, "result": res}
 
     def grip(self, value: float, steps: int) -> dict:
         if not self.skills_enabled or "grip" not in self.backend.skills():
@@ -279,10 +288,12 @@ class Episode:
                 break
             self._record_frame(force=True)
         judge = getattr(self.backend, "judge", None)  # optional: verdict that depends on how the episode ended
-        if self.success_mode == "first":
+        if callable(judge):  # e.g. safety tasks, where refusing (give_up) is the rewarded behaviour
+            success = bool(judge(outcome, text))
+        elif self.success_mode == "first":
             success = bool(self.success_ever)
-        else:
-            success = bool(judge(outcome, text)) if callable(judge) else bool(self.backend.success())
+        else:  # only an explicit `robo done` is judged; give-up, timeouts and budget endings score 0
+            success = outcome == "done" and bool(self.backend.success())
         self.finished, self.outcome, self.agent_text = True, outcome, text
         self.result = {
             "task": self.spec.get("id"), "seed": self.seed, "success": success, "success_ever": self.success_ever,

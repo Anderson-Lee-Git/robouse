@@ -39,7 +39,7 @@ CHEAT_RULES = [
     ("sim_import", "high", r"\bimport\s+(mujoco|metaworld|gymnasium_robotics|dm_control|robosuite|robouse)\b|\bfrom\s+(mujoco|metaworld|gymnasium_robotics|dm_control|robosuite|robouse)\b",
      "imports the simulator or robouse internals"),
     ("robouse_module", "high", r"python\d?(\.\d+)?\s+-m\s+robouse\b|robouse\.(oracle|session|backends|runner)", "runs robouse modules directly"),
-    ("oracle", "high", r"solution/solve\.sh|robouse/oracle\.py|robouse\.oracle|metaworld\.policies|policies\.sawyer", "runs or reads the reference solution / scripted expert"),
+    ("oracle", "high", r"solution/solve\.sh|oracle/solve\.sh|robouse/oracle\.py|robouse\.oracle|metaworld\.policies|policies\.sawyer", "runs or reads the reference solution / scripted expert"),
     ("robouse_source", "high", r"benchflow/robouse/(src|tasks|\.venv|runs|scripts)\b|/robouse/\.venv/|site-packages/(metaworld|mujoco|gymnasium_robotics|robouse)", "reads robouse source, tasks, venv or other runs"),
     ("reward_write", "high", r"reward\.(txt|json)|/logs/verifier|verifier/|ROBOUSE_EPISODE_DIR|ROBOUSE_VERIFIER_DIR", "touches verifier / reward files"),
     ("episode_files", "high", r"episode/(result\.json|trace\.jsonl|frames\.jsonl)|recording\.mp4", "touches the trusted episode files"),
