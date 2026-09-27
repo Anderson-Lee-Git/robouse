@@ -66,13 +66,18 @@ def _clean_claude_home() -> str:
 
 
 def _clean_codex_home(extra_config: str = "") -> str:
-    """Codex home with only the owner's login (auth.json) and a minimal config: no personal MCP servers or skills."""
+    """Codex home with a minimal config: no personal MCP servers or skills.
+
+    The OpenAI home gets a private copy of the owner's login (never a link, so nothing a trial does can overwrite
+    ~/.codex/auth.json). The GLM home gets no login at all: it authenticates to Baseten through env_key."""
     d = CACHE / ("codex-home-glm" if extra_config else "codex-home")
     d.mkdir(parents=True, exist_ok=True)
-    auth = HOME / ".codex" / "auth.json"
-    link = d / "auth.json"
-    if auth.exists() and not link.exists():
-        link.symlink_to(auth)
+    auth, dst = HOME / ".codex" / "auth.json", d / "auth.json"
+    if dst.is_symlink() or (extra_config and dst.exists()):
+        dst.unlink()
+    if not extra_config and auth.exists():
+        shutil.copyfile(auth, dst)
+        dst.chmod(0o600)
     (d / "config.toml").write_text('model_reasoning_effort = "medium"\n' + extra_config)
     return str(d)
 
