@@ -24,6 +24,7 @@ from pathlib import Path
 
 from robouse.backends.tabletop import SCENARIOS
 from robouse.prompts import ROBO_USAGE
+from robouse.tasks import to_native
 
 
 def _metaworld_verify() -> str:
@@ -192,6 +193,7 @@ def main() -> None:
         (d / "tests" / "test.sh").write_text(VERIFY)
         for f in (d / "solution" / "solve.sh", d / "tests" / "test.sh"):
             f.chmod(0o755)
+        to_native(d)
         counts[sc["suite"]] = counts.get(sc["suite"], 0) + 1
     print(f"wrote {sum(counts.values())} tasks to {out}: {counts}")
 

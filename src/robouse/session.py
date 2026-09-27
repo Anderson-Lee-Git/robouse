@@ -53,7 +53,12 @@ class Episode:
         self.visible_fields = list(spec.get("visible_fields", ["hand_pos", "gripper_open"]))
         self.cameras = list(spec.get("cameras", [getattr(self.backend, "camera", "")]))
         self._oracle_token = os.environ.get("ROBOUSE_ORACLE_TOKEN", "")
+        # optional per-task limit on `act --repeat` (and `grip --steps`); default unchanged
+        self.max_repeat = max(1, min(MAX_REPEAT, int(spec.get("max_repeat", MAX_REPEAT))))
+        # cameras whose projection matrix is not given to the agent (e.g. a camera that moves with the gripper)
+        self.uncalibrated = set(spec.get("uncalibrated_cameras", []))
         self.backend.reset(self.seed)
+        self._save_workspace_images()
         self.steps = 0
         self.requests = 0
         self.success_ever = False
@@ -66,6 +71,19 @@ class Episode:
         self._trace = open(self.run_dir / "trace.jsonl", "w")
         self._obs_count = 0
         self._record_frame(force=True)
+
+    def _save_workspace_images(self) -> None:
+        """Optional backend hook: images placed in the agent's workspace at the start (e.g. rule examples)."""
+        hook = getattr(self.backend, "workspace_images", None)
+        imgs = hook() if callable(hook) else {}
+        if not imgs:
+            return
+        from PIL import Image
+
+        for d in [self.run_dir] + ([self.workspace] if self.workspace else []):
+            (d / "observations").mkdir(parents=True, exist_ok=True)
+            for name, img in imgs.items():
+                Image.fromarray(np.asarray(img, dtype=np.uint8)).save(d / "observations" / name)
 
     # ---- recording -------------------------------------------------------------------------
     def _record_frame(self, force: bool = False) -> None:
@@ -105,6 +123,9 @@ class Episode:
             img = self._render(name)
             h, w = img.shape[:2]
             fovy = float(model.cam_fovy[cid])
+            if name in self.uncalibrated:
+                out.append({"name": name, "width": w, "height": h, "fovy_deg": round(fovy, 2), "projection": None})
+                continue
             f = (h / 2) / np.tan(np.deg2rad(fovy) / 2)
             R = data.cam_xmat[cid].reshape(3, 3)
             t = data.cam_xpos[cid]
@@ -174,6 +195,7 @@ class Episode:
             "skills": self.backend.skills() if self.skills_enabled else [],
             "steps_used": self.steps, "max_steps": self.max_steps,
             "observation_mode": self.obs_mode,
+            **({"max_repeat": self.max_repeat} if "max_repeat" in self.spec else {}),
             **({"visible_fields": self.visible_fields, "cameras": self.camera_info()} if self.obs_mode == "vision" else {}),
         }
 
@@ -203,7 +225,7 @@ class Episode:
         spec = self.backend.action_spec
         if not isinstance(action, list) or len(action) != spec.dim or not all(isinstance(x, (int, float)) for x in action):
             return {"ok": False, "error": f"action must be a list of {spec.dim} numbers {spec.names}"}
-        repeat = max(1, min(MAX_REPEAT, repeat))
+        repeat = max(1, min(self.max_repeat, repeat))
         n = 0
         for _ in range(repeat):
             if self.steps >= self.max_steps or self.finished:
@@ -237,7 +259,7 @@ class Episode:
         if not self.skills_enabled or "grip" not in self.backend.skills():
             return {"ok": False, "error": "grip is not available for this task; use act"}
         n = 0
-        for _ in range(max(1, min(MAX_REPEAT, steps))):
+        for _ in range(max(1, min(self.max_repeat, steps))):
             if self.steps >= self.max_steps or self.finished:
                 break
             self._env_step([0.0, 0.0, 0.0, max(-1.0, min(1.0, value))])

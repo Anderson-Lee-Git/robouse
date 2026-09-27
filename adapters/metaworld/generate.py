@@ -13,6 +13,7 @@ import textwrap
 from pathlib import Path
 
 from robouse.prompts import ROBO_USAGE
+from robouse.tasks import to_native
 
 # What each environment asks for, and what obj1/goal mean in its observation.
 GOALS: dict[str, tuple[str, str]] = {
@@ -146,6 +147,7 @@ def main() -> None:
         (d / "tests" / "test.sh").write_text(VERIFY)
         for f in (d / "solution" / "solve.sh", d / "tests" / "test.sh"):
             f.chmod(0o755)
+        to_native(d)
     print(f"wrote {len(GOALS)} tasks to {out}")
 
 

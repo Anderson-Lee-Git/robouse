@@ -1,11 +1,13 @@
+"""Run trials: task x harness x model -> a BenchFlow trial directory (what the BenchFlow viewer reads).
 
 <job>/<task>__<harness>__<n>/
   config.json                 task, harness, model, seed, timeouts
+  result.json                 result (reward, timing, agent info, exception)
   agent/stdout.jsonl          raw harness output (stream-json / codex --json / text)
   agent/stderr.txt
   agent/trajectory.json       ATIF trajectory converted from the raw output (see atif.py)
   episode/                    trusted episode server output (result.json, trace.jsonl, frames.jsonl)
-  verifier/reward.txt         0 or 1, written by the task's tests/test.sh
+  verifier/reward.txt         0 or 1, written by the task's verifier/test.sh
   verifier/test-stdout.txt
   artifacts/recording.mp4     episode video
   artifacts/recording_index.json   video time for each trajectory step
@@ -107,7 +109,7 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
         base_env.pop("ROBOUSE_ORACLE_TOKEN", None)
         if harness == "oracle":  # only the reference solution may see privileged state in vision tasks
             base_env["ROBOUSE_ORACLE_TOKEN"] = oracle_token
-        launch = harnesses.build(harness, model, task.instruction, ws, task.path, base_env)
+        launch = harnesses.build(harness, model, task.instruction, ws, task, base_env)
         sandboxed = harness not in ("oracle", "noop") and sys.platform == "darwin" and os.environ.get("ROBOUSE_SANDBOX", "1") != "0"
         if sandboxed:
             launch.cmd = ["sandbox-exec", "-p", sandbox_profile(), *launch.cmd]
@@ -145,8 +147,8 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
     episode = json.loads(ep.read_text()) if ep.exists() else {}
     if timed_out and episode.get("outcome") == "gave_up":
         episode["outcome"] = "agent_timeout"
-    # verifier: the task's own tests/test.sh turns the trusted verdict into reward.txt
-    vt = subprocess.run(["bash", str(task.path / "tests" / "test.sh")], capture_output=True, text=True,
+    # verifier: the task's own verifier/test.sh turns the trusted verdict into reward.txt
+    vt = subprocess.run(["bash", str(task.verifier_script)], capture_output=True, text=True,
                         env={**os.environ, "ROBOUSE_EPISODE_DIR": str(tdir / "episode"), "ROBOUSE_VERIFIER_DIR": str(tdir / "verifier")})
     (tdir / "verifier" / "test-stdout.txt").write_text(vt.stdout + vt.stderr)
     rf = tdir / "verifier" / "reward.txt"

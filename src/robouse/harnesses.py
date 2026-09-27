@@ -5,7 +5,7 @@ standard-library `robo` shim first, and ROBOUSE_SOCKET. Credentials are read fro
 into this process only and passed to the harness child (never printed or written to the trial dir).
 
 Harnesses
-  oracle                 the task's reference solution (solution/solve.sh)
+  oracle                 the task's reference solution (oracle/solve.sh)
   noop                   calls `robo done` immediately (negative control)
   claude-code            Claude Code CLI; model e.g. claude-opus-5-5 (OAuth token pool)
   codex                  Codex CLI; model e.g. gpt-6-astra (the owner's Codex login)
@@ -94,10 +94,10 @@ def _baseten_key() -> str:
     return k
 
 
-def build(harness: str, model: str, prompt: str, workspace: Path, task_dir: Path, base_env: dict) -> Launch:
+def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env: dict) -> Launch:
     env = dict(base_env)
     if harness == "oracle":
-        return Launch(["bash", str(task_dir / "solution" / "solve.sh")], env, notes={"model": "scripted"})
+        return Launch(["bash", str(task.oracle_script)], env, notes={"model": "scripted"})
     if harness == "noop":
         return Launch(["robo", "done", "noop control"], env, notes={"model": "none"})
 

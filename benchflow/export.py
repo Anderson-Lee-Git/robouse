@@ -15,7 +15,7 @@ self-contained bundle; move it as a whole (tasks share runtime/):
         task.md                      schema_version 1.3 frontmatter + the task's instruction.md as the prompt
         environment/Dockerfile       agent (`main`) image: python + the `robo` client only
         environment/robo             copy of src/robouse/agent_cli.py (stdlib only)
-        environment/docker-compose.yaml   `main` + trusted `simulator` services (embeds the robouse task.toml)
+        environment/docker-compose.yaml   `main` + trusted `simulator` services (embeds the robouse task definition)
         verifier/{verifier.md,test.sh,verify.py}   runs in `simulator` (verifier.service)
         oracle/solve.sh + oracle/vendor/     reference solution; drives the robot through `robo`'s socket only
 
@@ -38,6 +38,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 SRC = REPO / "src" / "robouse"
+sys.path.insert(0, str(SRC.parent))  # import robouse.tasks from this checkout
 TEMPLATES = HERE / "templates"
 RUNTIME = HERE / "runtime"
 SIM_TAG = "0.1.0"
@@ -59,9 +60,19 @@ def _yaml_value(v) -> str:
 
 
 def find_tasks(root: Path) -> list[Path]:
-    if (root / "task.toml").exists():
+    from robouse.tasks import find_tasks as _find
+
+    if (root / "task.md").exists() or (root / "task.toml").exists():
         return [root]
-    return sorted(p.parent for p in root.rglob("task.toml") if (p.parent / "instruction.md").exists())
+    return [t.path for t in _find(root)]
+
+
+def _sim_task_md(meta: dict) -> str:
+    """The task definition the simulator container needs (frontmatter only; the prompt is not in it)."""
+    import yaml
+
+    fm = {k: meta[k] for k in ("schema_version", "task", "metadata", "agent", "verifier", "robouse") if k in meta}
+    return "---\n" + yaml.safe_dump(fm, sort_keys=False, allow_unicode=True, width=10**6) + "---\n"
 
 
 def write_runtime(out: Path) -> None:
@@ -121,7 +132,7 @@ def compose(toml: dict, toml_text: str) -> str:
     return (text.replace("__SIM_TAG__", SIM_TAG)
                 .replace("__MAX_WALL_S__", str(int(agent_timeout + WALL_MARGIN_S)))
                 .replace("__SEED_ARGS__", "")
-                .replace("__TASK_TOML__", block))
+                .replace("__TASK_MD__", block))
 
 
 def _metaworld_vendor(env: str, vendor: Path) -> None:
@@ -161,7 +172,9 @@ def write_oracle(task_dir: Path, toml: dict, dst: Path, noop: bool = False) -> N
     shutil.copytree(SRC, vendor / "robouse", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     if rb.get("backend") == "metaworld":
         _metaworld_vendor(rb["env"], vendor)
-    body = [ln for ln in (task_dir / "solution" / "solve.sh").read_text().splitlines()
+    from robouse.tasks import load_task
+
+    body = [ln for ln in load_task(task_dir).oracle_script.read_text().splitlines()
             if ln.strip() and not ln.startswith("#") and not ln.startswith("set ")]
     body = [re.sub(r"^python3? ", "python3 ", ln) for ln in body]
     (dst / "solve.sh").write_text("\n".join([
@@ -178,22 +191,25 @@ def write_oracle(task_dir: Path, toml: dict, dst: Path, noop: bool = False) -> N
 
 
 def export_task(task_dir: Path, tasks_out: Path, noop: bool = False) -> str:
-    toml = tomllib.loads((task_dir / "task.toml").read_text())
+    from robouse.tasks import load_task
+
+    task = load_task(task_dir)
+    toml = task.meta
     if "robouse" not in toml:
-        raise ValueError(f"{task_dir}: task.toml has no [robouse] table")
+        raise ValueError(f"{task_dir}: task has no robouse block")
     tid = toml["robouse"].get("id") or task_dir.name
     dst = tasks_out / tid
     if dst.exists():
         shutil.rmtree(dst)
     (dst / "environment").mkdir(parents=True)
-    (dst / "task.md").write_text(task_md(toml, (task_dir / "instruction.md").read_text()))
+    (dst / "task.md").write_text(task_md(toml, task.instruction))
     env = dst / "environment"
     shutil.copy2(TEMPLATES / "environment" / "Dockerfile", env / "Dockerfile")
     shutil.copy2(SRC / "agent_cli.py", env / "robo")
     robo = env / "robo"
     robo.write_text("#!/usr/bin/env python3\n" + robo.read_text())
     robo.chmod(0o755)
-    (env / "docker-compose.yaml").write_text(compose(toml, (task_dir / "task.toml").read_text()))
+    (env / "docker-compose.yaml").write_text(compose(toml, _sim_task_md(toml)))
     shutil.copytree(TEMPLATES / "verifier", dst / "verifier")
     write_oracle(task_dir, toml, dst / "oracle", noop)
     return tid
@@ -219,6 +235,7 @@ tasks:
 # ── Conversion ───────────────────────────────────────────────────────
 conversion:
   script: robouse/benchflow/export.py
+  source_format: robouse task folders (task.md with a robouse block)
   has_oracle_solutions: true      # oracle/solve.sh: scripted controllers through the robo socket
   docker_image_pinned: false      # python:3.12-slim-bookworm + pinned pip requirements (runtime/requirements-sim.txt)
 
@@ -271,7 +288,9 @@ def main(argv=None) -> int:
     ids, suites = [], set()
     for t in tasks:
         ids.append(export_task(t, out / "tasks", a.noop_oracle))
-        suites.add(tomllib.loads((t / "task.toml").read_text()).get("metadata", {}).get("suite", "robouse"))
+        from robouse.tasks import load_task
+
+        suites.add(load_task(t).metadata.get("suite", "robouse"))
         print("exported", ids[-1])
     write_bundle_files(out, ids, sorted(suites))
     print(f"{len(ids)} task(s) -> {out}")

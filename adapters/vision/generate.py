@@ -9,7 +9,6 @@ Usage: python adapters/vision/generate.py   (reads tasks/<suite>, writes tasks/v
 """
 from __future__ import annotations
 
-import re
 import shutil
 from pathlib import Path
 
@@ -37,31 +36,32 @@ This is the vision version of the task. `robo observe` does **not** give object 
 
 
 def main() -> None:
+    import copy
+
+    from robouse.tasks import load_task, write_task
+
     if OUT.exists():
         shutil.rmtree(OUT)
     bases = [ROOT / "tasks" / "metaworld" / f"metaworld-{n}" for n in METAWORLD]
     for s in TABLETOP_SUITES:
-        bases += sorted(p for p in (ROOT / "tasks" / s).iterdir() if (p / "task.toml").exists())
+        bases += sorted(p for p in (ROOT / "tasks" / s).iterdir() if p.is_dir())
     n = 0
     for base in bases:
-        toml = (base / "task.toml").read_text()
-        backend = re.search(r'^backend = "(\w+)"', toml, re.M).group(1)
-        old_id = re.search(r'^id = "([^"]+)"', toml, re.M).group(1)
+        t = load_task(base)
+        meta = copy.deepcopy(t.meta)
+        rb, md = meta["robouse"], meta.setdefault("metadata", {})
+        backend, old_id = rb["backend"], rb["id"]
         new_id = f"{old_id}-vision"
-        d = OUT / new_id
-        shutil.copytree(base, d)
         cams, vis = CAMS[backend], VISIBLE[backend]
-        toml = toml.replace(f'id = "{old_id}"', f'id = "{new_id}"', 1)
-        toml = re.sub(r'^name = "robouse/([^"]+)"', lambda m: f'name = "robouse/{m.group(1)}-vision"', toml, count=1, flags=re.M)
-        toml = re.sub(r'^suite = "([^"]+)"', lambda m: f'suite = "vision"\nbase_suite = "{m.group(1)}"\nbase_task = "{old_id}"', toml, count=1, flags=re.M)
-        toml = re.sub(r'^camera = "[^"]*"\n', "", toml, flags=re.M)
-        block = (f'obs_mode = "vision"\ncameras = {cams!r}\nvisible_fields = {vis!r}\ncamera = "{cams[0]}"\n').replace("'", '"')
-        toml = re.sub(r"^\[robouse\]\n", "[robouse]\n" + block, toml, count=1, flags=re.M)
-        (d / "task.toml").write_text(toml)
-        ins = (d / "instruction.md").read_text()
+        rb.update(id=new_id, obs_mode="vision", cameras=cams, visible_fields=vis, camera=cams[0])
+        meta["robouse"] = {"id": new_id, **{k: v for k, v in rb.items() if k != "id"}}
+        meta.setdefault("task", {})["name"] = f"robouse/{new_id}"
+        md.update(base_suite=md.get("suite"), base_task=old_id, suite="vision")
         note = NOTE.format(fields=", ".join(f"`{f}`" for f in vis), cams=", ".join(f"`{c}`" for c in cams))
-        first_break = ins.find("\n\n") + 2
-        (d / "instruction.md").write_text(ins[:first_break] + note + ins[first_break:])
+        body = t.instruction
+        first_break = body.find("\n\n") + 2
+        write_task(OUT / new_id, meta, body[:first_break] + note + body[first_break:],
+                   t.oracle_script.read_text(), t.verifier_script.read_text())
         n += 1
     print(f"wrote {n} vision tasks to {OUT}")
 

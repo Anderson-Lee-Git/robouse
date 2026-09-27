@@ -27,9 +27,9 @@ services:
       - rpc:/rpc
       - episode:/episode
     environment:
-      # The robouse task definition (task.toml); sim-entry writes it to a file for `robouse serve`.
-      ROBOUSE_TASK_TOML: |
-__TASK_TOML__
+      # The robouse task definition (task.md); sim-entry writes it to a file for `robouse serve`.
+      ROBOUSE_TASK_MD: |
+__TASK_MD__
     command: ["robouse-sim-entry", "--max-wall-s", "__MAX_WALL_S__"__SEED_ARGS__]
     healthcheck:
       test: ["CMD", "python", "-c", "import os, stat, sys; sys.exit(0 if stat.S_ISSOCK(os.stat('/rpc/episode.sock').st_mode) else 1)"]

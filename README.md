@@ -1,8 +1,11 @@
 # robouse
 
+**robo-use: agent as a policy for embodied agents.** A BenchFlow extension that turns robot manipulation and navigation benchmarks into tasks an LLM agent harness solves by driving the robot itself, one shell command at a time. Think Terminal-Bench plus ARC, for robots.
 
+- **Tasks** are BenchFlow-native task folders adapted from existing benchmarks (Meta-World, Gymnasium-Robotics, LIBERO-style scenes, ARC-style rule inference, robo-use families, RoboHarm-style safety pairs). Every task ships a reference solution that scores 1.0.
 - **Harnesses** are the agents people already use (Claude Code, Codex, mini-swe-agent, ...) with any model. No harness integration is needed beyond a shell: the robot is driven through the `robo` command.
 - **The episode server is trusted.** It owns the simulator, enforces the step budget, records video and judges success from the physical state. The agent never touches simulator objects.
+- **Every trial is recorded** as a BenchFlow trial directory with video, so it opens in the BenchFlow viewer.
 
 Private, work in progress. Status and overnight log: [STATUS.md](STATUS.md).
 

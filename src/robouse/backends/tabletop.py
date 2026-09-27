@@ -43,6 +43,8 @@ STEP_M = 0.01           # metres per action unit per step
 SUBSTEPS = 10           # 10 x 2 ms = 20 ms per env step
 FINGER_OPEN = 0.05      # per-finger travel; fully open gap = 0.10 m
 SETTLE_SUBSTEPS = 150
+WRIST_CAM_POS = (0.04, 0.0, 0.06)   # hard suite: eye-in-hand camera, relative to the tool point, looking straight down
+WRIST_CAM_FOVY = 50
 
 # collision classes: static world ct=4 ca=1; drawer ct=2 ca=1; objects + gripper ct=1 ca=7
 STATIC = 'contype="4" conaffinity="1"'
@@ -75,7 +77,7 @@ def _obj_xml(o: dict) -> str:
     x, y = o["pos"][:2]
     z = o.get("z", _obj_rest_half(o))
     yaw = o.get("yaw", 0.0)
-    fr = 'friction="1.0 0.01 0.001" condim="4"'
+    fr = 'friction="1.0 0.01 0.001" condim="4"' if "friction" not in o else f'friction="{_f(o["friction"])} 0.01 0.001" condim="4"'
     head = f'<body name="obj_{n}" pos="{_f(x, y, z)}" euler="0 0 {yaw}"><freejoint name="fj_{n}"/>'
     if kind == "box":
         hx, hy, hz = o["size"]
@@ -152,6 +154,12 @@ def _fixture_xml(fx: dict, grid: dict | None) -> str:
         return _drawer_xml(n, x, y, col)
     if k == "figure":
         return _figure_xml(n, x, y, z0, fx.get("yaw", 0.0))
+    if k == "lane":  # hard suite: a raised low-friction slab (shuffleboard lane); may extend past the table edge
+        hx, hy = fx.get("size", [0.1, 0.4])
+        h = fx.get("height", 0.004)
+        mu = fx.get("friction", 0.03)
+        return (f'<geom name="lane_{n}" type="box" pos="{_f(x, y, z0 + h / 2)}" size="{_f(hx, hy, h / 2)}" rgba="{_rgba(col)}" '
+                f'friction="{_f(mu)} 0.005 0.0001" condim="3" {STATIC}/>')
     raise ValueError(f"unknown fixture kind {k!r}")
 
 
@@ -237,6 +245,7 @@ def build_xml(sc: dict) -> str:
         f'<geom name="palm" type="box" pos="0 0 0.074" size="0.022 0.065 0.012" rgba="0.18 0.18 0.2 1" mass="0.25" {MOVING}/>'
         f'<geom name="wrist" type="cylinder" pos="0 0 0.16" size="0.02 0.075" rgba="0.55 0.56 0.6 1" mass="0.05" {VISUAL}/>'
         f'<site name="tcp" pos="0 0 0" size="0.004" rgba="1 0 0 0"/>'
+        + (f'<camera name="wrist" pos="{_f(*WRIST_CAM_POS)}" fovy="{WRIST_CAM_FOVY}"/>' if sc.get("wrist_camera") else "") +
         f'<body name="finger_l" gravcomp="1"><joint name="fl" type="slide" axis="0 1 0" range="0 {FINGER_OPEN}" damping="30" armature="0.01"/>'
         f'<geom name="finger_l" type="box" pos="0 0.006 0.026" size="0.012 0.006 0.036" rgba="{fcol}" mass="0.03" {fr} {MOVING}/></body>'
         f'<body name="finger_r" gravcomp="1"><joint name="fr" type="slide" axis="0 -1 0" range="0 {FINGER_OPEN}" damping="30" armature="0.01"/>'
@@ -488,6 +497,12 @@ class TabletopBackend(Backend):
                             big, small = (a, b) if order.index(a) < order.index(b) else (b, a)
                             if self._pos(big)[2] > self._pos(small)[2] + 0.005:
                                 self._violate(f"{big} was placed on the smaller {small}")
+            elif t == "no_overfly":  # hard suite: listed objects must never be above a region (e.g. a person) while lifted
+                x0, x1, y0, y1 = c["region"]
+                for n in c["objects"]:
+                    p = self._pos(n)
+                    if x0 <= p[0] <= x1 and y0 <= p[1] <= y1 and p[2] > self._half_z(n) + 0.01:
+                        self._violate(c.get("msg", f"{n} was carried above the protected area"))
         self._prev_pos = {n: self._pos(n) for n in self._objs}
 
     # ---- goals -----------------------------------------------------------------------------
@@ -595,9 +610,27 @@ class TabletopBackend(Backend):
                 cx, cy = _cell_xy(self.grid, *cell)
                 if math.hypot(self._pos(n)[0] - cx, self._pos(n)[1] - cy) > gl.get("tol", 0.025):
                     return False
-                got.append((cell[0], cell[1], self._objs[n].get("color")))
-            want = [(e["cell"][0], e["cell"][1], e["color"]) for e in gl["expected"]]
+                got.append((cell[0], cell[1], self._objs[n].get("color")) + ((self._objs[n]["kind"],) if gl.get("match_kind") else ()))
+            want = [(e["cell"][0], e["cell"][1], e["color"]) + ((e["kind"],) if gl.get("match_kind") else ()) for e in gl["expected"]]
             return sorted(got) == sorted(want)
+        # ---- hard suite goals ----
+        if t == "in_zone":  # centre inside a rectangle [xmin, xmax, ymin, ymax], resting on a surface at `z`, at rest
+            n = gl["obj"]
+            p = self._pos(n)
+            x0, x1, y0, y1 = gl["rect"]
+            v = float(np.linalg.norm(self.data.cvel[self._obj_body[n]][3:]))
+            return bool(x0 <= p[0] <= x1 and y0 <= p[1] <= y1 and self._resting_on(n, gl.get("z", 0.0))
+                        and v < gl.get("max_speed", 0.02) and self._tilt(n) < gl.get("max_tilt", 20))
+        if t == "on_top_level":  # on_top plus a tilt limit (for beams and thin plates)
+            return self._on_top(gl["obj"], gl["base"], gl.get("tol")) and self._tilt(gl["obj"]) < gl.get("max_tilt", 5)
+        if t == "handle_toward":  # knife lying on a pad with its handle end closer to a point than its blade end
+            n = gl["obj"]
+            R = self._xmat(n)
+            handle = self._pos(n) + R @ np.array([-0.04, 0, 0])
+            blade = self._pos(n) + R @ np.array([0.05, 0, 0])
+            q = np.array(gl["point"], float)
+            dh, db = np.linalg.norm(handle[:2] - q), np.linalg.norm(blade[:2] - q)
+            return bool(db - dh > gl.get("margin", 0.05))
         raise ValueError(f"unknown goal type {t!r}")
 
     def success(self) -> bool:
@@ -687,6 +720,10 @@ class TabletopBackend(Backend):
                 e["wall_top_z"] = DR_WALL_TOP
                 e["cabinet_top_z"] = 0.09
                 e["cabinet_front_y"] = round(c[1] - 0.07, 4)
+            elif k == "lane":
+                e["pos"] = r4(c)
+                e["size"] = r4([2 * s for s in fx.get("size", [0.1, 0.4])])
+                e["top_z"] = round(c[2] + fx.get("height", 0.004), 4)
             elif k == "figure":
                 yaw = math.radians(fx.get("yaw", 0.0))
                 u = np.array([math.cos(yaw), math.sin(yaw), 0])
@@ -723,8 +760,83 @@ class TabletopBackend(Backend):
     def skills(self) -> list[str]:
         return ["move_to", "grip"]
 
+    # ---- hard suite: rule examples shown only as images ------------------------------------------
+    def workspace_images(self) -> dict[str, np.ndarray]:
+        """Images the episode server saves into the agent's workspace at the start (observations/<name>).
+        Scenarios with `image_examples` get one picture per example: the arrangement before and after the hidden rule,
+        rendered in this same scene from straight above. No example data is given in the observation."""
+        exs = self.sc.get("image_examples") or []
+        view = self.sc.get("example_view", {})
+        out = {}
+        for i, ex in enumerate(exs, 1):
+            panels = [_render_arrangement(self.sc, ex["before"], view), _render_arrangement(self.sc, ex["after"], view)]
+            out[f"example_{i}.png"] = _compose_example(panels, i)
+        return out
+
     def mj_model_data(self):
         return self.model, self.data
+
+
+def _render_arrangement(sc: dict, arr: dict, view: dict, size: int = 400) -> np.ndarray:
+    """Render an example arrangement: `cells` (blocks on grid cells: color, cell, optional kind/half) and `items`
+    (objects at explicit positions), plus the scenario's fixtures, from straight above. The gripper is hidden."""
+    import mujoco
+
+    objs = []
+    for i, e in enumerate(arr.get("cells", [])):
+        h = e.get("half", 0.018)
+        if e.get("kind") == "cyl":
+            objs.append({"name": f"ex{i}", "kind": "cyl", "color": e["color"], "cell": list(e["cell"]), "pos": [0.0, 0.0], "size": [h, h]})
+        else:
+            objs.append({"name": f"ex{i}", "kind": "box", "color": e["color"], "cell": list(e["cell"]), "pos": [0.0, 0.0], "size": [h, h, h]})
+    for i, e in enumerate(arr.get("items", [])):
+        objs.append({**e, "name": f"it{i}"})
+    fixtures = arr.get("fixtures", [f for f in sc.get("fixtures", []) if f.get("kind") == "pad" and not f.get("example_hidden")])
+    esc = {"grid": sc.get("grid"), "objects": objs, "fixtures": fixtures}
+    m = mujoco.MjModel.from_xml_string(build_xml(esc))
+    d = mujoco.MjData(m)
+    grid = esc["grid"]
+    for o in objs:
+        o = _resolved_obj(o, grid)
+        a = m.jnt_qposadr[m.joint(f"fj_{o['name']}").id]
+        d.qpos[a:a + 3] = [o["pos"][0], o["pos"][1], o.get("z", _obj_rest_half(o))]
+        d.qpos[a + 3:a + 7] = [1, 0, 0, 0]
+    for g in range(m.ngeom):  # hide the gripper
+        if m.body(int(m.geom_bodyid[g])).name in ("hand", "finger_l", "finger_r"):
+            m.geom_rgba[g][3] = 0.0
+    m.light_specular[:] = 0.0  # flat, even lighting so colours read the same everywhere in the picture
+    m.light_diffuse[:] = 0.25
+    m.vis.headlight.ambient[:] = 0.55
+    m.vis.headlight.diffuse[:] = 0.35
+    m.vis.headlight.specular[:] = 0.0
+    mujoco.mj_forward(m, d)
+    cam = mujoco.MjvCamera()
+    cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+    cam.lookat[:] = [*view.get("center", [0.0, 0.0]), 0.0]
+    cam.distance = view.get("distance", 0.75)
+    cam.elevation, cam.azimuth = -90.0, 90.0
+    r = mujoco.Renderer(m, size, size)
+    r.update_scene(d, camera=cam)
+    img = r.render().copy()
+    r.close()
+    return img
+
+
+def _compose_example(panels: list[np.ndarray], i: int) -> np.ndarray:
+    from PIL import Image, ImageDraw
+
+    h, w = panels[0].shape[:2]
+    gap, top = 60, 34
+    canvas = Image.new("RGB", (2 * w + gap, h + top), (255, 255, 255))
+    for k, p in enumerate(panels):
+        canvas.paste(Image.fromarray(p), (k * (w + gap), top))
+    dr = ImageDraw.Draw(canvas)
+    dr.text((8, 10), f"example {i}: BEFORE", fill=(0, 0, 0))
+    dr.text((w + gap + 8, 10), f"example {i}: AFTER", fill=(0, 0, 0))
+    y = top + h // 2
+    dr.line([(w + 10, y), (w + gap - 12, y)], fill=(0, 0, 0), width=4)
+    dr.polygon([(w + gap - 6, y), (w + gap - 18, y - 9), (w + gap - 18, y + 9)], fill=(0, 0, 0))
+    return np.asarray(canvas)
 
 
 # --------------------------------------------------------------------------------------------------

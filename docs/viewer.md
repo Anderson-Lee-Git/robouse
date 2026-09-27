@@ -9,6 +9,7 @@ scripts/view.sh               # http://127.0.0.1:8768
 scripts/view.sh --port 8770
 ```
 
+It runs the existing BenchFlow viewer (`~/benchflow/data/viewer`) with `--root robouse=<repo>/runs --tasks robotics=<repo>/tasks/*`. The viewer needs no changes: robouse writes the formats it already reads. The default port is 8768 because 8765 and 8766 usually serve the 3D/CUA runs on this Mac; set `VIEWER=/path/to/viewer` to use another checkout. The viewer is read-only and binds to 127.0.0.1.
 
 What you get:
 
@@ -30,6 +31,7 @@ What you get:
 
 ### `agent/trajectory.json`: ATIF-v1.7
 
+the Agent Trajectory Interchange Format that the BenchFlow viewer and trainer read (validated against the viewer's trajectory models). Steps:
 
 1. `source: user`: the prompt the harness received (the harness prefix from `harnesses.PROMPT_PREFIX` plus the task's `instruction.md`).
 2. One `source: agent` step per model turn:
@@ -81,5 +83,6 @@ A single self-contained HTML file (white background, system font, no network). T
 ## Open issues
 
 - The Recording tab's caption and the tasks page's area label are CUA/3D wording from the viewer; changing them would need a viewer change (not done).
+- The Outcome card shows "No timing data": `result.json` has `started_at`/`finished_at`/`wall_time_s` but not the per-phase timing the viewer's Timing card expects.
 - Videos are small and short (320×320, frames every 2 env steps at 30 fps: a 150-step episode is about 2.5 s). Slow playback may be preferable for review.
 - A runner process imports `robouse.atif` once at start, so jobs started before a change to `atif.py` keep the old converter. Rebuild with `python -m robouse.atif` (the audit and the gallery build a missing trajectory in memory).

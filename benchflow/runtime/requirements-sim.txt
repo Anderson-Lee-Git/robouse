@@ -10,3 +10,4 @@ imageio-ffmpeg==0.6.0
 pillow==12.3.0
 pyopengl==3.1.10
 packaging
+pyyaml>=6

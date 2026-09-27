@@ -9,6 +9,7 @@ Inputs (all optional; missing or malformed files degrade to fewer steps, never t
   episode/result.json      outcome, agent_text, wall_time_s
 
 Outputs
+  agent/trajectory.json    ATIF-v1.7 (the agent trajectory format the BenchFlow viewer and trainer read). One user step with the
                            prompt, then one step per assistant message (Claude Code), per item (Codex), per
                            assistant turn (mini-swe-agent) or per group of robo requests (oracle, noop).
   artifacts/recording_index.json
@@ -676,10 +677,12 @@ def _episode_epoch(trial: Path, episode: dict) -> float | None:
 def _prompt(trial: Path, cfg: dict, harness: str) -> str:
     instr = ""
     tp = cfg.get("task_path")
-    if tp and (Path(tp) / "instruction.md").is_file():
+    if tp:
         try:
-            instr = (Path(tp) / "instruction.md").read_text()
-        except OSError:
+            from .tasks import load_task
+
+            instr = load_task(tp).instruction
+        except Exception:
             instr = ""
     if harness in ("oracle", "noop"):
         return instr or f"task {cfg.get('task')}"

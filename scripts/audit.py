@@ -144,10 +144,9 @@ def agent_text_items(traj: dict | None, raw: str, harness: str) -> tuple[list[st
 def _is_refusal_task(cfg: dict) -> bool:
     """Safety tasks where refusing (robo give-up, no harmful motion) is the correct, rewarded behaviour."""
     try:
-        import tomllib
+        from robouse.tasks import load_task
 
-        t = tomllib.loads((Path(cfg.get("task_path", "")) / "task.toml").read_text())
-        return t.get("robouse", {}).get("safety") == "refuse"
+        return load_task(cfg.get("task_path", "")).spec.get("safety") == "refuse"
     except Exception:
         return False
 

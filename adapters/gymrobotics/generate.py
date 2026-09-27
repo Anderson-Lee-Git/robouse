@@ -15,6 +15,7 @@ from pathlib import Path
 
 from robouse.backends.gymrobotics import TASKS
 from robouse.prompts import ROBO_USAGE
+from robouse.tasks import to_native
 
 
 def _metaworld_verify() -> str:
@@ -177,6 +178,7 @@ def main() -> None:
         (d / "tests" / "test.sh").write_text(verify)
         for f in (d / "solution" / "solve.sh", d / "tests" / "test.sh"):
             f.chmod(0o755)
+        to_native(d)
     print(f"wrote {len(TASKS)} tasks to {out}")
 
 
