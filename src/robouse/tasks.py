@@ -78,6 +78,33 @@ def load_task(path: str | Path) -> Task:
     return Task(p, meta, (p / "instruction.md").read_text())
 
 
+def bundled_tasks_root() -> Path:
+    """The task folders that ship with robouse: robouse/bundled_tasks in an installed wheel, or the repo's tasks/
+    directory in an editable install from a checkout."""
+    here = Path(__file__).resolve().parent
+    for p in (here / "bundled_tasks", here.parents[1] / "tasks"):
+        if p.is_dir():
+            return p
+    return here / "bundled_tasks"
+
+
+def resolve_task_path(arg: str | Path) -> Path:
+    """A task argument is a folder path, or a task id / suite-relative path (e.g. `arc-gravity` or
+    `arc-style/arc-gravity`) looked up in the bundled tasks."""
+    p = Path(arg)
+    if p.exists():
+        return p
+    root = bundled_tasks_root()
+    if (root / p).is_dir():
+        return root / p
+    hits = sorted({m.parent for m in root.rglob("task.md") if m.parent.name == p.name and "_legacy" not in m.parts})
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        raise SystemExit(f"task id {arg!r} is ambiguous in {root}: " + ", ".join(str(h.relative_to(root)) for h in hits))
+    raise SystemExit(f"no task folder {arg!r}, and no bundled task with that id (list them with `robouse tasks`)")
+
+
 def find_tasks(root: str | Path) -> list[Task]:
     root = Path(root)
     dirs = {p.parent for p in root.rglob("task.md")} | {p.parent for p in root.rglob("task.toml") if (p.parent / "instruction.md").exists()}

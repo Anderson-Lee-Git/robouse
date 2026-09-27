@@ -4,21 +4,49 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robouse"
-version = "0.1.0.dev0"
-description = "robo-use: agent as a policy for embodied agents. BenchFlow extension for robot tasks, harnesses and trajectory viewing."
+version = "0.1.0"
+description = "Agent as a policy for embodied agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "Xiangyi Li", email = "xiangyi@benchflow.ai" }]
-dependencies = ["numpy>=1.24", "mujoco>=3.3", "imageio>=2.34", "imageio-ffmpeg>=0.5", "pillow>=10", "pyyaml>=6"]
+keywords = ["robotics", "embodied-agents", "llm-agents", "benchmark", "mujoco", "benchflow"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# The base install is light: the task loader and the `robouse` / `robo` commands. `robo` (the agent-facing command)
+# uses only the standard library. Simulators are extras.
+dependencies = ["numpy>=1.24", "pyyaml>=6"]
 
 [project.optional-dependencies]
-metaworld = ["metaworld>=3.1", "packaging"]
-gymrobotics = ["gymnasium-robotics>=1.4"]
+# MuJoCo and video recording: the built-in tabletop, ARC-style, hard, safety, vision, robo-use-families, RoboHarm,
+# menagerie and drone suites.
+sim = ["mujoco>=3.3", "imageio>=2.34", "imageio-ffmpeg>=0.5", "pillow>=10"]
+metaworld = ["robouse[sim]", "metaworld>=3.1", "packaging"]
+gymrobotics = ["robouse[sim]", "gymnasium-robotics>=1.4"]
 # robosuite 1.5 conflicts with LIBERO's robosuite==1.4.0 pin. In an environment that also runs LIBERO, install it
-# into an isolated directory instead (docs/suites/robosuite.md):
-#   uv pip install --python .venv/bin/python --no-deps --target .venv/robosuite-1.5 robosuite==1.5.2
-robosuite = ["robosuite>=1.5,<1.6"]
+# into an isolated directory instead (docs/suites/robosuite.md). LIBERO itself is installed by hand
+# (docs/suites/libero.md) because it needs --no-deps.
+robosuite = ["robouse[sim]", "robosuite>=1.5,<1.6"]
+dexjoco = ["robouse[sim]", "scipy>=1.10"]
+all = ["robouse[sim,metaworld,gymrobotics,robosuite,dexjoco]"]
+
+[project.urls]
+Homepage = "https://robouse.ai"
+Documentation = "https://robouse.ai/docs"
+Repository = "https://github.com/benchflow-ai/robouse"
+Issues = "https://github.com/benchflow-ai/robouse/issues"
 
 [project.scripts]
 robouse = "robouse.cli:main"
@@ -26,3 +54,16 @@ robo = "robouse.agent_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robouse"]
+# robocasa_episodes are recorded, machine-specific scene files for the RoboCasa suite (not yet bundled as tasks).
+exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes"]
+
+# The task folders ship inside the wheel as robouse/bundled_tasks, so `robouse tasks` and
+# `robouse run --task <id>` work without a checkout.
+[tool.hatch.build.targets.wheel.force-include]
+"tasks" = "robouse/bundled_tasks"
+"assets/menagerie/provenance.json" = "robouse/assets_provenance/menagerie.json"
+"assets/menagerie/skydio_x2/PROVENANCE.json" = "robouse/assets_provenance/skydio_x2.json"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src/robouse", "/tasks", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/README.md", "/LICENSE", "/pyproject.toml"]
+exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/src/robouse/backends/robocasa_episodes"]
