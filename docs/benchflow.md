@@ -7,15 +7,15 @@ Code: [`benchflow/`](../benchflow/) (exporter, simulator image, templates). The 
 ## Trust model
 
 ```
- main (agent container)                         simulator (trusted container)
- ┌────────────────────────────────┐             ┌──────────────────────────────────────────┐
- │ BenchFlow agent / oracle        │  JSON over  │ robouse serve --task … --socket …          │
- │ /usr/local/bin/robo  (stdlib)   │ Unix socket │ MuJoCo + Meta-World / Gymnasium-Robotics   │
- │ ROBOUSE_SOCKET=/rpc/episode.sock│────────────►│ step + wall budgets, video, success judge │
- │ /rpc  (read-only volume)        │             │ /episode (record; not mounted in main)     │
- │ network: yes (model API)        │             │ network: none                              │
- └────────────────────────────────┘             │ verifier: test.sh → /logs/verifier/reward  │
-                                                └──────────────────────────────────────────┘
+ main (agent container)                            simulator (trusted container)
+ ┌──────────────────────────────────┐             ┌───────────────────────────────────────────┐
+ │ BenchFlow agent / oracle         │  JSON over  │ robouse serve --task … --socket …         │
+ │ /usr/local/bin/robo  (stdlib)    │ Unix socket │ MuJoCo + Meta-World / Gymnasium-Robotics  │
+ │ ROBOUSE_SOCKET=/rpc/episode.sock │────────────►│ step + wall budgets, video, success judge │
+ │ /rpc  (read-only volume)         │             │ /episode (record; not mounted in main)    │
+ │ network: yes (model API)         │             │ network: none                             │
+ └──────────────────────────────────┘             │ verifier: test.sh → /logs/verifier/reward │
+                                                  └───────────────────────────────────────────┘
 ```
 
 - **Agent container (`main`).** Built from `environment/Dockerfile`: `python:3.12-slim-bookworm` plus numpy, curl/xz (so BenchFlow can install JS harnesses) and the `robo` client, a copy of `src/robouse/agent_cli.py` (standard library only). There is no simulator, no MuJoCo, no `robouse` source, no task definition and no episode record in this container. The shared `rpc` volume is mounted read-only: it holds the socket and the camera images that `robo observe --image` saves (`/rpc/ws/observations/obs_NNN.png`), which the agent can open.
