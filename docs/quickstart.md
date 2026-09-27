@@ -14,7 +14,9 @@ pip install 'robouse[sim]'
 You also need [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on your `PATH`, and one credential: an Anthropic API key, or a Claude subscription token from `claude setup-token`.
 
 ```sh
-export ANTHROPIC_API_KEY=...          # or: export CLAUDE_CODE_OAUTH_TOKEN=...
+export ANTHROPIC_API_KEY=...
+# or, with a Claude subscription:
+export CLAUDE_CODE_OAUTH_TOKEN=...
 ```
 
 ## Pick a task

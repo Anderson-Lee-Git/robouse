@@ -9,7 +9,9 @@ The commands on this page call paid model APIs. The Claude Code command was run 
 Install Claude Code so that `claude` is on your `PATH`. Set an Anthropic API key, or a subscription token from `claude setup-token`:
 
 ```sh
-export ANTHROPIC_API_KEY=...          # or: export CLAUDE_CODE_OAUTH_TOKEN=...
+export ANTHROPIC_API_KEY=...
+# or, with a Claude subscription:
+export CLAUDE_CODE_OAUTH_TOKEN=...
 robouse run --task metaworld-push --harness claude-code --model claude-sonnet-5 --out runs/try
 ```
 
