@@ -1,4 +1,9 @@
-"""Run trials: task x harness x model -> a BenchFlow trial directory (what the BenchFlow viewer reads).
+"""The local engine (`robouse run --engine local`): host processes, macOS Seatbelt sandbox, no Docker.
+
+The default engine is BenchFlow (engine/run.py). This runner stays for machines without Docker and for the
+local-only harnesses; it writes a BenchFlow-like trial directory (what the BenchFlow viewer reads).
+
+task x harness x model -> one trial directory:
 
 <job>/<task>__<harness>__<id>/     (<id>: 6 random hex characters)
   config.json                 task, harness, model, seed, timeouts
@@ -189,7 +194,7 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
 
 def run_many(root: Path, harness: str, model: str, job_dir: Path, filt: str = "", limit: int = 0,
              concurrency: int = 1, timeout: float | None = None, ids: list[str] | None = None,
-             resume: bool = False) -> list[dict]:
+             resume: bool = False, seed: int | None = None) -> list[dict]:
     tasks = [t for t in find_tasks(root) if filt in t.id and (ids is None or t.id in ids)]
     if resume:  # skip tasks already finished in this job (an unfinished trial dir is left as evidence and rerun)
         done = set()
@@ -208,7 +213,7 @@ def run_many(root: Path, harness: str, model: str, job_dir: Path, filt: str = ""
     results = []
 
     def one(t: Task) -> dict:
-        r = run_trial(t, harness, model, job_dir, timeout=timeout)
+        r = run_trial(t, harness, model, job_dir, timeout=timeout, seed=seed)
         r["task"] = t.id
         return r
 

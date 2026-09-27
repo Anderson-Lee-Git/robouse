@@ -7,7 +7,7 @@ name = "robouse"
 version = "0.1.0"
 description = "Agent as a policy for embodied agents"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Xiangyi Li", email = "xiangyi@benchflow.ai" }]
@@ -20,14 +20,15 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# The base install is light: the task loader and the `robouse` / `robo` commands. `robo` (the agent-facing command)
-# uses only the standard library. Simulators are extras.
-dependencies = ["numpy>=1.24", "pyyaml>=6"]
+# The base install: the task loader, the `robouse` / `robo` commands and BenchFlow, which runs every trial
+# (robouse tasks are a BenchFlow task format; see src/robouse/engine). `robo` (the agent-facing command) uses only
+# the standard library. Simulators are extras; a BenchFlow run needs none of them on the host (the simulator
+# runs in its own container).
+dependencies = ["numpy>=1.24", "pyyaml>=6", "benchflow>=0.7.9.dev0"]
 
 [project.optional-dependencies]
 # MuJoCo and video recording: the built-in tabletop, ARC-style, hard, safety, vision, robo-use-families, RoboHarm,
@@ -51,6 +52,14 @@ Issues = "https://github.com/benchflow-ai/robouse/issues"
 [project.scripts]
 robouse = "robouse.cli:main"
 robo = "robouse.agent_cli:main"
+
+# BenchFlow loads robouse task folders natively (`bench eval run --tasks-dir tasks/metaworld ...`).
+[project.entry-points."benchflow.task_formats"]
+robouse = "robouse.engine.format:RobouseTaskFormat"
+
+# Until BenchFlow publishes the task-format hook, install it from the branch that adds it.
+[tool.uv.sources]
+benchflow = { git = "https://github.com/benchflow-ai/benchflow", branch = "robouse" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robouse"]

@@ -1,4 +1,4 @@
-# Pinned simulator dependencies for the trusted robouse-sim image (versions match the dev venv).
+# Pinned simulator dependencies of the trusted robouse simulator image (versions match the dev venv).
 numpy==2.5.3
 scipy==1.18.1
 mujoco==3.3.0

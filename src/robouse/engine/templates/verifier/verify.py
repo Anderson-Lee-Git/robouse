@@ -7,6 +7,8 @@
 2. Wait for the server to exit (it writes the video on the way out; /episode/serve.exit marks the end).
 3. Copy the episode record (result.json, trace, frames, video, observations) to /logs/verifier/episode
    and write /logs/verifier/reward.txt: 1 if the episode server judged success, else 0.
+4. Copy the video and the camera images the agent saw to /logs/artifacts (the trial's artifacts/ folder),
+   the same place a local robouse run puts them. This happens after the agent has stopped.
 
 A missing result.json is an infrastructure error (exit 1, no reward), not a zero score.
 """
@@ -23,6 +25,8 @@ from pathlib import Path
 EPISODE = Path(os.environ.get("ROBOUSE_EPISODE_DIR", "/episode"))
 SOCKET = os.environ.get("ROBOUSE_SOCKET", "/rpc/episode.sock")
 OUT = Path(os.environ.get("ROBOUSE_VERIFIER_DIR", "/logs/verifier"))
+ARTIFACTS = Path(os.environ.get("ROBOUSE_ARTIFACTS_DIR", "/logs/artifacts"))
+WORKSPACE = Path(os.environ.get("ROBOUSE_WORKSPACE_DIR", "/rpc/ws"))
 WAIT_S = float(os.environ.get("ROBOUSE_VERIFIER_WAIT_S", "240"))
 
 
@@ -45,6 +49,22 @@ def _send(req: dict) -> dict | None:
         s.close()
 
 
+def _copy_artifacts() -> None:
+    if not ARTIFACTS.is_dir():
+        return
+    try:
+        video = EPISODE / "recording.mp4"
+        if video.exists():
+            shutil.copy2(video, ARTIFACTS / "recording.mp4")
+        images = sorted((WORKSPACE / "observations").glob("*.png"))
+        if images:
+            (ARTIFACTS / "observations").mkdir(exist_ok=True)
+            for f in images:
+                shutil.copy2(f, ARTIFACTS / "observations" / f.name)
+    except OSError as e:  # artifacts are a convenience copy; the evidence is in /logs/verifier/episode
+        print(f"warning: could not copy artifacts: {e}", file=sys.stderr)
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     exit_marker = EPISODE / "serve.exit"
@@ -63,6 +83,7 @@ def main() -> int:
     evidence = OUT / "episode"
     if EPISODE.exists():
         shutil.copytree(EPISODE, evidence, dirs_exist_ok=True)
+    _copy_artifacts()
     if not result_path.exists():
         print(f"error: no episode result at {result_path} (episode server did not finish)", file=sys.stderr)
         return 1

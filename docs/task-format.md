@@ -9,7 +9,7 @@ tasks/<suite>/<task-id>/
   verifier/test.sh     turns the episode server's verdict into reward.txt
 ```
 
-`benchflow/export.py` adds the `environment/` folder (Dockerfile and compose file) when packaging tasks for `bench eval run`; see [benchflow.md](benchflow.md). Adapters write task folders with `robouse.tasks.write_task`, directly or through `robouse.tasks.to_native`.
+Task folders are a BenchFlow task format: BenchFlow loads them as they are and generates the `environment/` folder (agent image and simulator service), the BenchFlow verifier and the packaged oracle from the installed robouse package (`robouse.engine.format`); see [benchflow.md](benchflow.md). Adapters write task folders with `robouse.tasks.write_task`, directly or through `robouse.tasks.to_native`.
 
 The loader (`robouse.tasks.load_task`) also reads the older layout (`task.toml` + `instruction.md` + `solution/solve.sh` + `tests/test.sh`) until every folder is migrated. As of 2026-09-27 every folder under `tasks/` is in the layout above; the older-layout reader is kept for external task folders.
 
