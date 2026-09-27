@@ -113,7 +113,7 @@ class Worker:
         self.bimanual = task.startswith("bimanual_")
         self.arms = ["right", "left"] if self.bimanual else ["right"]
         if self.bimanual:
-            self.mocap = {"right": self.raw._mocap_right_id, "left": self.raw._mocap_left_id}
+            self.mocap = {"right": int(getattr(self.raw, "_mocap_right_id", 0)), "left": int(getattr(self.raw, "_mocap_left_id", 1))}
         else:
             self.mocap = {"right": int(getattr(self.raw, "_panda_mocap_id", 0))}
         ids = np.asarray(self.raw._allegro_ctrl_ids, dtype=int)
@@ -294,7 +294,6 @@ class Worker:
                     out[f"{label}_{k2}"] = v2
             else:
                 out[label] = v
-        out["table_top_z"] = self._table_top()
         if self.failed:
             out["task_failed"] = self.failed
         return out

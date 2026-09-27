@@ -46,4 +46,8 @@ def make_backend(spec: dict) -> Backend:
         from .drone import DroneBackend
 
         return DroneBackend(spec)
+    if kind == "dexjoco":  # DexJoCo dexterous tool use; the simulator runs in its own virtualenv (dexjoco_worker.py)
+        from .dexjoco import DexjocoBackend
+
+        return DexjocoBackend(spec)
     raise KeyError(f"unknown backend {kind!r}")

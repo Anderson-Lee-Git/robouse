@@ -133,7 +133,10 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
 
     if harness == "codex-glm":
         env["BASETEN_API_KEY"] = _baseten_key()
-        env["CODEX_HOME"] = _clean_codex_home("# GLM via Baseten; provider set on the command line\n")
+        env["ROBOUSE_TEXT_ONLY"] = "1"  # Baseten's Responses API rejects images; Codex attaches PNGs it sees in command output
+        env["CODEX_HOME"] = _clean_codex_home("# GLM via Baseten; provider set on the command line\n"
+                                               "# Baseten's Responses API rejects image input, so the image viewer tool is off\n"
+                                               "[tools]\nview_image = false\n")
         cfg = ['-c', 'model_providers.baseten.name="Baseten"', '-c', f'model_providers.baseten.base_url="{BASETEN_OPENAI}"',
                '-c', 'model_providers.baseten.env_key="BASETEN_API_KEY"', '-c', 'model_providers.baseten.wire_api="responses"',
                '-c', 'model_provider="baseten"']

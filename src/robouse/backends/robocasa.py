@@ -40,7 +40,7 @@ TASKS: dict[str, dict] = {
                                                          features=["object", "sink"], max_steps=800),
     "robocasa-pick-place-counter-to-sink-kitchen2b": dict(env="PickPlaceCounterToSink", layout=2, style=2, seed=2,
                                                           features=["object", "sink"], max_steps=800),
-    "robocasa-pick-place-counter-to-stove": dict(env="PickPlaceCounterToStove", layout=1, style=1, seed=1,
+    "robocasa-pick-place-counter-to-stove": dict(env="PickPlaceCounterToStove", layout=1, style=1, seed=3,
                                                  features=["object", "container"], max_steps=800),
 }
 

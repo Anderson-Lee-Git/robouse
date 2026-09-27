@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SUITES = ["metaworld", "gymrobotics", "libero", "libero-style", "arc-style", "robo-use-families", "safety", "vision", "hard"]
+SUITES = ["metaworld", "gymrobotics", "libero", "libero-style", "arc-style", "robo-use-families", "safety", "vision", "hard", "robosuite"]
 LABEL = {
     "claude-code/claude-opus-5-5": "Claude Code + Opus 5.5",
     "codex/gpt-6-astra": "Codex + GPT-6 Astra",
