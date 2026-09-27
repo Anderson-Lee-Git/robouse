@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -108,8 +109,12 @@ def main(argv=None) -> int:
         if a.path:
             print(bundled_tasks_root())
             return 0
-        for task in find_tasks(a.root or bundled_tasks_root()):
-            print(task.id, task.spec.get("backend"), task.spec.get("env", ""))
+        try:
+            for task in find_tasks(a.root or bundled_tasks_root()):
+                print(task.id, task.spec.get("backend"), task.spec.get("env", ""))
+            sys.stdout.flush()
+        except BrokenPipeError:  # e.g. `robouse tasks | head`
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         return 0
     return 2
 
