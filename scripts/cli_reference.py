@@ -5,8 +5,7 @@
     python scripts/cli_reference.py --robouse /path/to/robouse   # or name the executable
 
 Run it against the release users install from PyPI (not a checkout), so the page shows what they get. The help
-blocks are pasted verbatim; the short notes under each command are kept in NOTES below and describe flags whose
-help text is empty in that release.
+blocks are pasted verbatim; the short notes under each command are kept in NOTES below.
 """
 from __future__ import annotations
 
@@ -20,20 +19,8 @@ from pathlib import Path
 DOC = Path(__file__).resolve().parent.parent / "docs" / "cli.md"
 COMMANDS = ["run", "run-many", "tasks", "fetch-assets", "serve"]
 NOTES = {
-    "run": """- `--task`: a task folder, or the id of a bundled task (`robouse tasks` lists them).
-- `--harness`: `oracle`, `noop`, `claude-code`, `codex`, `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` or `molmoact2`; see [Harnesses](harnesses.md).
-- `--model`: the model for `claude-code` and `codex`; the other harnesses ignore it.
-- `--out`: the job folder; the trial is written to `OUT/<task>__<harness>__<id>/`.
-- `--timeout`: the agent's wall-clock limit in seconds (default: the task's `agent.timeout_sec`, else 900).
-- `--seed`: overrides the task's `seed` (object and goal layout).
-
-It prints a JSON summary (`trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`). A non-null `exception` means the trial could not start; it is not a score.""",
-    "run-many": """- `--tasks`: a folder of task folders, searched recursively (default: all bundled tasks).
-- `--filter`: only task ids containing this substring. `--task-list`: only the ids in this file.
-- `--limit`: at most this many tasks (0: all). `--concurrency`: trials in parallel (default 1).
-- `--harness`, `--model`, `--out`, `--timeout`: as for `run`.
-
-It prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved.""",
+    "run": """`--model` matters only for `claude-code` and `codex`; the other harnesses ignore it. The command prints a JSON summary (`trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`). A non-null `exception` means the trial could not start; it is not a score.""",
+    "run-many": """`--tasks` is searched recursively. The command prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved.""",
     "tasks": """Prints one line per task: id, backend, simulator env id (empty for tabletop tasks).""",
     "fetch-assets": """Downloads the MuJoCo Menagerie robot models (about 42 MB) that the `menagerie`, `roboharm` and `drone` suites need, each checked by SHA-256. Files already present are skipped. The episode server looks in `$ROBOUSE_MENAGERIE_ASSETS`, else `~/.cache/robouse/menagerie`.""",
     "serve": """Runs one episode server on a Unix socket until the episode ends, then prints the verdict as JSON. `run` starts it for you; use it directly to drive a robot by hand with `robo` (set `ROBOUSE_SOCKET` to the socket path).""",
