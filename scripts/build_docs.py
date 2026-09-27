@@ -616,7 +616,7 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; text-decoratio
 .shell { display: grid; grid-template-columns: 210px minmax(0, 1fr) 190px; gap: 0 48px; max-width: 1120px; margin: 0 auto; padding: 44px 24px 0; }
 .shell.no-toc { grid-template-columns: 210px minmax(0, 1fr); }
 .side, .toc { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; font-size: 13.5px; }
-.grp { margin: 26px 0 8px; font: 400 10.5px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+.grp { margin: 28px 0 6px; font: 600 13px/1.4 var(--sans); letter-spacing: 0; text-transform: none; color: var(--ink); }
 .side .grp:first-child, .toc .grp { margin-top: 4px; }
 .side ul, .toc ul { list-style: none; margin: 0; padding: 0; }
 .side li a { display: block; padding: 3px 0; color: var(--muted); line-height: 1.45; }
@@ -652,7 +652,7 @@ pre { margin: 0; padding: 14px 16px; background: var(--code-bg); border: 1px sol
 pre code { display: block; width: max-content; min-width: 100%; padding: 0; background: none; border-radius: 0; font-size: inherit; color: var(--ink); white-space: pre; overflow-wrap: normal; }
 pre .p { color: var(--faint); user-select: none; }
 pre .o { color: var(--muted); }
-.copy { position: absolute; top: 8px; right: 8px; padding: 4px 7px; font: 400 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; opacity: 0; transition: opacity .12s, color .12s; }
+.copy { position: absolute; top: 8px; right: 8px; padding: 4px 7px; font:500 10px/1 var(--sans); letter-spacing:.06em; text-transform: uppercase; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; opacity: 0; transition: opacity .12s, color .12s; }
 .code:hover .copy, .copy:focus-visible { opacity: 1; }
 .copy:hover { color: var(--ink); }
 @media (hover: none) { .copy { opacity: 1; } }
@@ -661,14 +661,14 @@ pre .o { color: var(--muted); }
 .table { margin: 0 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; line-height: 1.5; }
 th, td { padding: 8px 12px 8px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
-th { font: 400 10.5px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border-bottom-color: var(--line-strong); white-space: nowrap; }
+th { font:500 10.5px/1.4 var(--sans); letter-spacing:.06em; text-transform: uppercase; color: var(--muted); border-bottom-color: var(--line-strong); white-space: nowrap; }
 td code { font-size: .82em; white-space: nowrap; }
 
 /* pager */
 .pager { display: flex; justify-content: space-between; gap: 16px; margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); }
 .pager a { display: flex; flex-direction: column; gap: 4px; color: var(--ink); font-size: 15px; }
 .pager a:hover { color: var(--accent); text-decoration: none; }
-.pager a span { font: 400 10.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+.pager a span { font:500 10.5px/1 var(--sans); letter-spacing:.06em; text-transform: uppercase; color: var(--faint); }
 .pager .next { margin-left: auto; text-align: right; }
 
 /* /bridge.css (the site's shared palette and type, loaded after this file) is written for pages with their own
@@ -679,7 +679,7 @@ td code { font-size: .82em; white-space: nowrap; }
 @media (max-width: 1080px) { .shell { grid-template-columns: 200px minmax(0, 1fr); } .toc { display: none; } }
 @media (max-width: 760px) {
   .shell, .shell.no-toc { display: block; padding: 20px 20px 0; }
-  .navbtn { display: flex; align-items: center; gap: 10px; padding: 10px 0; margin-bottom: 18px; border-bottom: 1px solid var(--line); font: 400 10.5px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); cursor: pointer; user-select: none; }
+  .navbtn { display: flex; align-items: center; gap: 10px; padding: 10px 0; margin-bottom: 18px; border-bottom: 1px solid var(--line); font:500 10.5px/1.2 var(--sans); letter-spacing:.06em; text-transform: uppercase; color: var(--muted); cursor: pointer; user-select: none; }
   .navbtn .cur { color: var(--ink); font: 500 14px/1.2 var(--sans); letter-spacing: 0; text-transform: none; }
   .side { display: none; position: static; max-height: none; padding-bottom: 12px; }
   .navtoggle:checked ~ .side { display: block; }
