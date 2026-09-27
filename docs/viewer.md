@@ -80,6 +80,14 @@ open runs/_gallery/index.html
 
 A single self-contained HTML file (white background, system font, no network). The top shows totals (trials, tasks, harness·model pairs, solve rate, suspicious, infra failures) for the current filter. Below them is a sortable table of every trial (task, job, suite, source benchmark, harness, model, reward, outcome, env steps, wall time, audit flags, viewer link), filterable by harness, model, suite, source benchmark, job, solved or failed, audit status and free text. Under the table there is one card per trial, 48 at a time, each with the video, the agent's last message, the `robo done` message and links to the full viewer, the video and the trial folder. Videos are linked relatively (`../<job>/<trial>/artifacts/recording.mp4`), so the page works from disk or when `runs/` is served. The viewer links need `scripts/view.sh` running (change the base with `--viewer URL`).
 
+## Public viewer: `scripts/build_runs_site.py`
+
+```
+.venv/bin/python scripts/build_runs_site.py --out ~/benchflow/roboharm/site/runs   # then deploy the site
+```
+
+This builds https://robouse.ai/runs/, a static viewer for the final v1 runs (`runs/final-*`; jobs still running, listed in `SKIP_JOBS`, are left out, and so are unfinished trials except in jobs listed in `PARTIAL_JOBS`). It writes a results table (solved / scored per harness + model and suite, with the rule of `scripts/results.py`: per task the latest trial that was not an infrastructure failure), one per-task grid per suite, and one page per trial with the recording, the trajectory (messages, reasoning, commands and outputs, each step with a button that seeks the video to it) and the verifier output. Videos are re-encoded to H.264 Main (CRF 30, faststart, no audio), about 30 KB per trial on average. The build replaces secret-shaped strings with `[redacted]`, withholds the trajectory of trials whose agent looked at files outside its workspace (the page says so and still shows the video and reward), then scans the output for secret shapes and banned words and exits non-zero if anything is found.
+
 ## Open issues
 
 - Fixed on the viewer's `robouse` branch (2026-09-27): the CUA wording on the Recording tab and the `3D ·` area label, `task.md` folders missing from the Tasks page, the fixed Opus/Astra/Fable model columns, and "No timing data". The copy at `~/benchflow/data/viewer` (what 8765 and 8766 serve) does not have these changes until the branch is merged there.

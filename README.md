@@ -23,7 +23,9 @@ pip install 'robouse[robosuite]'     # + robosuite 1.5
 pip install 'robouse[all]'           # all of the above
 ```
 
-LIBERO, RoboCasa, BEHAVIOR and DexJoco run in their own environments; see the suite docs linked below.
+Meta-World (and therefore `[all]`) supports Python up to 3.13. On Python 3.14, `pip install 'robouse[metaworld]'` does not fail: pip falls back to the empty 0.0.2 placeholder and the `robouse` command disappears. Writing `'robouse[metaworld]>=0.1'` makes pip report the real error instead.
+
+LIBERO, RoboCasa and DexJoCo need setup beyond pip; see their suite docs. The RoboCasa and DexJoCo tasks were added after 0.1.0 and are not in the 0.1.0 package; run them from a checkout (below).
 
 **Tasks ship with the package.** All task folders (about 5 MB of text: `task.md`, reference solution, verifier) are inside the wheel, so a task can be named by its id. `robouse tasks` lists them and `robouse tasks --path` prints where they are; copy that folder if you want to edit tasks. **Robot meshes are fetched, not shipped:** the menagerie, RoboHarm and drone suites use MuJoCo Menagerie models (about 43 MB); run `robouse fetch-assets` once to download them from the pinned upstream commit into `~/.cache/robouse/menagerie`, with a SHA-256 check per file.
 
@@ -72,6 +74,7 @@ The agent sees only what `robo` returns: robot and object state as numbers, and 
 
 ## Docs
 
+- [docs/quickstart.md](https://github.com/benchflow-ai/robouse/blob/main/docs/quickstart.md): install, list tasks and run a first trial, step by step (tested against 0.1.0 from PyPI)
 - [docs/task-format.md](https://github.com/benchflow-ai/robouse/blob/main/docs/task-format.md): task folders, the `robouse:` settings block in `task.md`, observation and scoring modes
 - [docs/robo-cli.md](https://github.com/benchflow-ai/robouse/blob/main/docs/robo-cli.md): the agent-facing `robo` command
 - [docs/harnesses.md](https://github.com/benchflow-ai/robouse/blob/main/docs/harnesses.md): supported harnesses and models, credentials, isolation

@@ -17,7 +17,10 @@ that are not published (source code, STATUS.md, runs/, internal notes) become pl
 the repository is private. The build fails if the output contains the banned word list or anything that looks
 like a credential (see check_output).
 
-Pages and navigation are listed in PAGES below; a doc that is not listed is not published.
+Sources are read from git HEAD by default (--ref REV for another revision, --worktree for uncommitted edits), so
+the site matches the repository. Pages and navigation are listed in PAGES below; a doc that is not listed is not
+published, except that any committed docs/suites/*.md is added to the Suites group. Absolute GitHub links to
+docs (https://github.com/benchflow-ai/robouse/blob/main/docs/...) map to the generated pages too.
 """
 
 from __future__ import annotations
@@ -27,12 +30,44 @@ import html
 import posixpath
 import re
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+GITHUB = "https://github.com/benchflow-ai/robouse"
+# Absolute links to docs in the repository (README uses them so they work on PyPI) map to the generated pages.
+GITHUB_DOC_RE = re.compile(re.escape(GITHUB) + r"/(?:blob|tree)/main/((?:docs/|README\.md).*)$")
 MARKER = ".build_docs"  # written into --out so a rebuild only ever clears a directory this script owns
+
+class Source:
+    """Reads docs from a git revision (default HEAD, so the site matches the repository) or the working tree."""
+
+    def __init__(self, ref: str | None):
+        self.ref = ref
+        if ref:
+            out = subprocess.run(["git", "-C", str(REPO), "ls-tree", "-r", "--name-only", ref], check=True,
+                                 capture_output=True, text=True).stdout
+            self.paths = set(out.splitlines())
+        else:
+            self.paths = {str(f.relative_to(REPO)) for f in REPO.rglob("*") if f.is_file() and ".git" not in f.parts}
+
+    def exists(self, path: str) -> bool:
+        return path in self.paths
+
+    def list(self, folder: str, suffix: str) -> list[str]:
+        return sorted(q for q in self.paths if posixpath.dirname(q) == folder.rstrip("/") and q.endswith(suffix))
+
+    def read_bytes(self, path: str) -> bytes:
+        if self.ref:
+            return subprocess.run(["git", "-C", str(REPO), "show", f"{self.ref}:{path}"], check=True,
+                                  capture_output=True).stdout
+        return (REPO / path).read_bytes()
+
+    def read(self, path: str) -> str:
+        return self.read_bytes(path).decode("utf-8")
+
 
 # (group, source path relative to the repo, slug, nav label). Order = sidebar order = prev/next order.
 PAGES: list[tuple[str, str, str, str]] = [
@@ -51,6 +86,8 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("Suites", "docs/suites/dexjoco.md", "suites/dexjoco", "DexJoCo"),
     ("Suites", "docs/suites/roboharm.md", "suites/roboharm", "RoboHarm v0.1"),
     ("Suites", "docs/suites/drone.md", "suites/drone", "Drone"),
+    ("Suites", "docs/suites/menagerie.md", "suites/menagerie", "Menagerie"),
+    ("Suites", "docs/suites/robocasa.md", "suites/robocasa", "RoboCasa"),
     ("Suites", "docs/suites/vision.md", "suites/vision", "Vision tier"),
     ("Suites", "docs/suites/hard.md", "suites/hard", "Hard tier"),
     ("Reference", "docs/task-format.md", "task-format", "Task format"),
@@ -75,6 +112,8 @@ SUITE_SUMMARIES = {
     "robosuite": "21 tasks on robosuite 1.5 with full robot arms (Franka Panda, UR5e, Kinova Gen3, KUKA IIWA, Sawyer), one arm or two.",
     "dexjoco": "14 dexterous tool-use tasks from DexJoCo: a Franka arm carrying a 16-joint Allegro hand instead of a gripper.",
     "roboharm": "80 tasks: 10 harm scenarios, each with a benign twin, in 4 configurations. Does the agent carry out harmful physical requests?",
+    "menagerie": "15 tasks with two real robot arms from MuJoCo Menagerie on a desk: two Franka Panda arms or an ALOHA 2 pair.",
+    "robocasa": "7 tasks in full RoboCasa household kitchens with counters, cabinets, drawers, sinks and appliances.",
     "drone": "10 tasks with a Skydio X2 over a small town: four flight skills and three harmful/benign safety pairs.",
     "vision": "55 tasks where the agent gets camera images instead of object coordinates.",
     "hard": "25 tasks with low-level control only, no calibrated cameras, and rules shown only as pictures.",
@@ -158,7 +197,7 @@ class Converter:
 
     def _link(self, href: str, inner: str) -> str:
         href = html.unescape(href)
-        if re.match(r"^(https?:|mailto:)", href):
+        if re.match(r"^(https?:|mailto:)", href) and not GITHUB_DOC_RE.match(href):
             return self._a(href, inner)
         url = self.link(href)
         if url:
@@ -372,7 +411,7 @@ def page_url(base: str, slug: str) -> str:
     return base + (slug + "/" if slug else "")
 
 
-def suites_markdown(pages: list[Page]) -> str:
+def suites_markdown(pages: list[Page], source: Source) -> str:
     lines = ["# Suites", "",
              "Each suite adapts an existing benchmark or scene family to the robo-use task format. Every task ships a reference solution that scores 1, and the no-op control scores 0 on every task. Solve rates per harness and model are on the [Results](../results.md) page.",
              ""]
@@ -381,30 +420,34 @@ def suites_markdown(pages: list[Page]) -> str:
             continue
         name = posixpath.splitext(posixpath.basename(p.src))[0]
         lines.append(f"- [{p.label}]({name}.md): {SUITE_SUMMARIES.get(name, '')}".rstrip(": "))
-    lines += ["", "Meta-World (the 50 MT50 tasks, `tasks/metaworld/`) and the MuJoCo Menagerie tasks (`tasks/menagerie/`) have no page of their own yet. For Meta-World, the [task format](../task-format.md) page uses `metaworld-push` as its example."]
+    lines += ["", "Meta-World (the 50 MT50 tasks, `tasks/metaworld/`) has no page of its own yet; the, [task format](../task-format.md) page uses `metaworld-push` as its example."]
     return "\n".join(lines) + "\n"
 
 
-def page_list() -> list[Page]:
-    pages = [Page(*p) for p in PAGES]
-    listed = {p.src for p in pages}
+def page_list(source: Source) -> list[Page]:
+    pages = []
+    for p in PAGES:
+        if p[1] != SUITES_INDEX and not source.exists(p[1]):
+            print(f"note: {p[1]} is not in {source.ref or 'the working tree'}; page skipped", file=sys.stderr)
+            continue
+        pages.append(Page(*p))
+    listed = {p.src for p in pages} | {p[1] for p in PAGES}
     last_suite = max(i for i, p in enumerate(pages) if p.group == "Suites")
-    for f in sorted((REPO / "docs/suites").glob("*.md")):
-        src = f"docs/suites/{f.name}"
+    for src in source.list("docs/suites", ".md"):
         if src not in listed:
-            h1 = next((l[2:].strip() for l in f.read_text(encoding="utf-8").splitlines() if l.startswith("# ")), f.stem)
+            stem = posixpath.splitext(posixpath.basename(src))[0]
+            h1 = next((l[2:].strip() for l in source.read(src).splitlines() if l.startswith("# ")), stem)
             last_suite += 1
-            pages.insert(last_suite, Page("Suites", src, f"suites/{f.stem}", re.sub(r"\s+suite\b.*$", "", plain(h1)) or f.stem))
+            pages.insert(last_suite, Page("Suites", src, f"suites/{stem}", re.sub(r"\s+suite\b.*$", "", plain(h1)) or stem))
             print(f"note: added unlisted suite page {src}", file=sys.stderr)
-    for f in sorted((REPO / "docs").glob("*.md")):
-        src = f"docs/{f.name}"
+    for src in source.list("docs", ".md"):
         if src not in listed and src not in EXCLUDED:
             print(f"note: {src} is neither in PAGES nor in EXCLUDED; not published", file=sys.stderr)
     return pages
 
 
-def build(out: Path, base: str) -> list[Path]:
-    pages = page_list()
+def build(out: Path, base: str, source: Source) -> list[Path]:
+    pages = page_list(source)
     by_src = {p.src: p for p in pages}
     copies: dict[str, str] = {}  # repo path -> output-relative path (images)
 
@@ -412,10 +455,11 @@ def build(out: Path, base: str) -> list[Path]:
         src_dir = posixpath.dirname(p.src) if p.src != SUITES_INDEX else "docs/suites"
 
         def link(href: str, src_dir=src_dir) -> str | None:
-            path, _, anchor = href.partition("#")
+            gh = GITHUB_DOC_RE.match(href)
+            path, _, anchor = (gh.group(1) if gh else href).partition("#")
             if not path:
                 return "#" + anchor if anchor else None
-            target = posixpath.normpath(posixpath.join(src_dir, path))
+            target = posixpath.normpath(path if gh else posixpath.join(src_dir, path))
             if path.endswith("/"):
                 target += "/"
             frag = "#" + anchor if anchor else ""
@@ -423,15 +467,15 @@ def build(out: Path, base: str) -> list[Path]:
                 return page_url(base, by_src[target].slug) + frag
             if target.rstrip("/") + "/" == SUITES_INDEX:
                 return page_url(base, by_src[SUITES_INDEX].slug) + frag
-            if re.search(r"\.(png|jpe?g|gif|svg|webp)$", target, re.I) and target.startswith("docs/") and (REPO / target).is_file():
+            if re.search(r"\.(png|jpe?g|gif|svg|webp)$", target, re.I) and target.startswith("docs/") and source.exists(target):
                 rel = target[len("docs/"):]
                 copies[target] = rel
                 return base + rel
-            return None
+            return href if gh else None  # other GitHub links stay as they are
 
-        md = suites_markdown(pages) if p.src == SUITES_INDEX else (REPO / p.src).read_text(encoding="utf-8")
+        md = suites_markdown(pages, source) if p.src == SUITES_INDEX else source.read(p.src)
         md = re.sub(r"/Users/(?!<)[^/\s`]+/", "~/", md)  # tidy absolute home paths
-        for pat in DROP_PARAGRAPHS.get(p.src, []):
+        for pat in DROP_PARAGRAPHS.get(p.src, []) + [r"^[A-Z][A-Z_]*PLACEHOLDER[A-Z_]*$"]:
             md = "\n\n".join(b for b in re.split(r"\n\s*\n", md) if not re.match(pat, b.strip()))
         conv = Converter(link, {page_url(base, q.slug): q.label for q in pages})
         lines = md.splitlines()
@@ -456,7 +500,7 @@ def build(out: Path, base: str) -> list[Path]:
     for src, rel in copies.items():
         dst = out / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(REPO / src, dst)
+        dst.write_bytes(source.read_bytes(src))
     written = []
     for k, p in enumerate(pages):
         prev_p = pages[k - 1] if k > 0 else None
@@ -695,10 +739,13 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True, type=Path, help="output directory (replaced if it was built by this script)")
     ap.add_argument("--base", default="/docs/", help="URL path the output is served under (default /docs/)")
+    src = ap.add_mutually_exclusive_group()
+    src.add_argument("--ref", default="HEAD", help="git revision to read README.md and docs/ from (default HEAD)")
+    src.add_argument("--worktree", action="store_true", help="read the working tree instead (uncommitted edits included)")
     args = ap.parse_args()
     base = "/" + args.base.strip("/") + "/" if args.base.strip("/") else "/"
     out = args.out.expanduser().resolve()
-    written = build(out, base)
+    written = build(out, base, Source(None if args.worktree else args.ref))
     problems = check_output(out)
     for f in sorted(out.rglob("*.html")):
         for m in re.finditer(r"\b[A-Z][A-Z_]*PLACEHOLDER[A-Z_]*\b|\bTODO\b|\bTBD\b", f.read_text(encoding="utf-8")):
