@@ -1,0 +1,29 @@
+version = "1.0"
+
+[task]
+name = "robouse/gymrobotics-pointmaze-medium-s5"
+description = "Roll the ball through the maze to the goal."
+
+[metadata]
+source_benchmark = "Gymnasium-Robotics (Farama)"
+source_task = "PointMaze_Medium-v3"
+suite = "gymrobotics"
+category = "navigation"
+difficulty = "medium"
+tags = ["pointmaze", "mujoco", "navigation", "2d"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "gymrobotics-pointmaze-medium-s5"
+backend = "gymrobotics"
+env = "PointMaze_Medium-v3"
+seed = 5
+max_steps = 1000
+camera = "top"
+skills = false
+success_mode = "first"  # reaching the goal ends the episode (PointMaze/D4RL episodic protocol)

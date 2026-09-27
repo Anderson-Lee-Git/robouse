@@ -1,0 +1,29 @@
+version = "1.0"
+
+[task]
+name = "robouse/gymrobotics-fetch-pick-place-s0"
+description = "Pick up the block and place it at the goal position. The goal may be on the table or in the air; if it is in the air, hold the block there."
+
+[metadata]
+source_benchmark = "Gymnasium-Robotics (Farama)"
+source_task = "FetchPickAndPlace-v4"
+suite = "gymrobotics"
+category = "manipulation"
+difficulty = "medium"
+tags = ["fetch", "mujoco", "single-arm", "pick-place"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "gymrobotics-fetch-pick-place-s0"
+backend = "gymrobotics"
+env = "FetchPickAndPlace-v4"
+seed = 0
+max_steps = 300
+camera = "default"
+skills = true
+success_mode = "final"  # the goal must still hold after `robo done` and a settle period

@@ -1,10 +1,10 @@
 """Gymnasium-Robotics (Farama) backend: Fetch manipulation and PointMaze navigation, in MuJoCo.
 
-Fetch (FetchReach/Push/Slide/PickAndPlace-v4): a 7-DoF Fetch arm with a two-finger gripper at a table.
+Fetch (FetchReach/Push/PickAndPlace-v4; FetchSlide-v4 also loads): a 7-DoF Fetch arm with a two-finger gripper at a table.
   Action: [dx, dy, dz, grip] in [-1, 1]. dx/dy/dz move the gripper's position target by 5 cm per unit
   per step (Fetch's native scaling; one step = 40 ms of simulation). grip: +1 close, -1 open. The grip
   sign is flipped relative to native Fetch (where +1 opens) so it matches the shared `robo grip` skill.
-  Reach and Slide block the fingers, so grip has no effect there.
+  Reach (and Slide) block the fingers, so grip has no effect there.
   Observation: hand_pos, hand_vel, gripper_open (0 closed .. 1 open), gripper_width (m), obj1_pos,
   obj1_vel, obj1_rot (Euler xyz, rad), goal_pos (Fetch's `desired_goal`). Success is Fetch's own
   `is_success`: the object (the gripper, for Reach) within 5 cm of the goal.
@@ -25,20 +25,22 @@ import numpy as np
 
 from .base import ActionSpec, Backend, StepInfo
 
-# task id -> (env id, seed). The oracle only needs the env id; the episode server passes the seed.
+# task id -> (env id, seed). Maze seeds were picked for long start->goal paths (BFS cells: UMaze 5/6,
+# Medium 9/9, Large 16/13). FetchSlide is not included: no scripted solution through the public
+# interface solved it reliably (the puck keeps gliding and strikes deflect by 5-20 degrees).
 TASKS: dict[str, tuple[str, int]] = {
-    "gymrobotics-fetch-reach": ("FetchReach-v4", 0),
-    "gymrobotics-fetch-slide": ("FetchSlide-v4", 0),
+    "gymrobotics-fetch-reach-s0": ("FetchReach-v4", 0),
+    "gymrobotics-fetch-reach-s1": ("FetchReach-v4", 1),
     "gymrobotics-fetch-push-s0": ("FetchPush-v4", 0),
     "gymrobotics-fetch-push-s1": ("FetchPush-v4", 1),
     "gymrobotics-fetch-pick-place-s0": ("FetchPickAndPlace-v4", 0),
     "gymrobotics-fetch-pick-place-s1": ("FetchPickAndPlace-v4", 1),
-    "gymrobotics-pointmaze-umaze-s0": ("PointMaze_UMaze-v3", 0),
-    "gymrobotics-pointmaze-umaze-s1": ("PointMaze_UMaze-v3", 1),
-    "gymrobotics-pointmaze-medium-s0": ("PointMaze_Medium-v3", 0),
-    "gymrobotics-pointmaze-medium-s1": ("PointMaze_Medium-v3", 1),
-    "gymrobotics-pointmaze-large-s0": ("PointMaze_Large-v3", 0),
+    "gymrobotics-pointmaze-umaze-s3": ("PointMaze_UMaze-v3", 3),
+    "gymrobotics-pointmaze-umaze-s11": ("PointMaze_UMaze-v3", 11),
+    "gymrobotics-pointmaze-medium-s3": ("PointMaze_Medium-v3", 3),
+    "gymrobotics-pointmaze-medium-s5": ("PointMaze_Medium-v3", 5),
     "gymrobotics-pointmaze-large-s1": ("PointMaze_Large-v3", 1),
+    "gymrobotics-pointmaze-large-s2": ("PointMaze_Large-v3", 2),
 }
 
 _R = lambda v: [round(float(x), 4) for x in np.ravel(v)]
@@ -78,6 +80,11 @@ class GymRoboticsBackend(Backend):
             )
             self._grip = -1.0
         self.u = self.env.unwrapped
+        if not self.is_maze:  # hide the 2 m green crosshair drawn on Fetch's mocap body (visual only)
+            m = self.u.model
+            for g in range(m.ngeom):
+                if m.body_mocapid[m.geom_bodyid[g]] >= 0:
+                    m.geom_rgba[g, 3] = 0.0
         self._renderer = None
         self._obs: dict = {}
         self._info: dict = {}
@@ -172,11 +179,13 @@ class GymRoboticsBackend(Backend):
                 cam.distance, cam.azimuth, cam.elevation = 2.2, 160.0, -30.0
                 cam.lookat[:] = [1.45, 0.75, 0.4]
             else:
-                cam.distance, cam.azimuth, cam.elevation = 1.4, 150.0, -25.0
-                cam.lookat[:] = [1.3, 0.75, 0.5]
+                cam.distance, cam.azimuth, cam.elevation = 1.6, 150.0, -22.0
+                cam.lookat[:] = [1.3, 0.75, 0.58]  # high enough to keep goals in the air in view
             self._cam = cam
         mujoco.mj_forward(model, data)
-        self._renderer.update_scene(data, camera=self._cam)
+        names = {model.camera(i).name for i in range(model.ncam)}
+        # a named model camera (e.g. Fetch's "external_camera_0") if the task asks for one, else the free camera
+        self._renderer.update_scene(data, camera=self.camera if self.camera in names else self._cam)
         return self._renderer.render().copy()
 
     # ---- skills ---------------------------------------------------------------------------------
@@ -236,7 +245,7 @@ def _grip(v: float, steps: int = 10) -> dict:
 
 
 def _fetch_reach() -> None:
-    _move(_state()["goal_pos"], tol=0.005)
+    _move(_state()["goal_pos"], tol=0.01)
 
 
 def _fetch_push() -> None:
@@ -287,31 +296,6 @@ def _fetch_pick_place() -> None:
             break
 
 
-def _fetch_slide() -> None:
-    """Closed loop: strike the puck toward the goal from behind, let it glide, re-aim and repeat.
-
-    The puck keeps gliding slowly on the low-friction table; the task counts the first time it is on the goal.
-    """
-    st = _state()
-    for _ in range(12):
-        obj, goal = np.array(st["obj1_pos"]), np.array(st["goal_pos"])
-        d = goal[:2] - obj[:2]
-        dist = np.linalg.norm(d)
-        u = d / dist
-        z = obj[2]
-        hand = np.array(st["hand_pos"])
-        _move(np.r_[hand[:2], z + 0.08], tol=0.02)
-        _move(np.r_[obj[:2] - u * 0.07, z + 0.08], tol=0.01)
-        _move(np.r_[obj[:2] - u * 0.07, z + 0.01], tol=0.01)  # the fingertips cannot go lower
-        speed = float(np.clip(0.2 + 0.5 * dist, 0.2, 0.6))
-        _act([u[0] * speed, u[1] * speed, 0, 0], 8)
-        _act([-u[0] * 0.5, -u[1] * 0.5, 0.5, 0], 2)  # back off and let the puck glide
-        for _ in range(15):
-            st = _act([0, 0, 0, 0], 4)
-            if np.linalg.norm(st["obj1_vel"]) < 0.06:
-                break
-
-
 def _maze(env: str) -> None:
     st = _state()
     rows = st["maze_rows"]
@@ -359,8 +343,6 @@ def oracle_main(env: str) -> None:
             _fetch_push()
         elif env_id.startswith("FetchPickAndPlace"):
             _fetch_pick_place()
-        elif env_id.startswith("FetchSlide"):
-            _fetch_slide()
         else:
             raise KeyError(env_id)
     except _Finished:
