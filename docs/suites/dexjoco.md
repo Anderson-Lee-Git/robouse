@@ -64,7 +64,17 @@ Through the real runner (`robouse run-many`, macOS, M2 Max):
 - Reference solutions: **14/14** (`runs/dexjoco-oracle`), 202 to 693 steps, 13 to 57 s of wall time per episode.
 - No-op control: **0/14** (`runs/dexjoco-noop`).
 
-PROBE_PLACEHOLDER
+Model probe, Codex + GPT-6 Astra on 5 tasks (`runs/dexjoco-probe-astra`, list `task-lists/dexjoco-probe-5.txt`): **2/5**.
+
+| Task | Result | Steps | Wall time | What happened |
+|---|---|---|---|---|
+| dexjoco-hammer-nail | solved | 683 | 200 s | Grasped the hammer with `grip`, then drove the nail 4.4 cm with repeated downward `act` strikes |
+| dexjoco-click-mouse | solved | 720 | 216 s | Slid the mouse onto the pad, then pressed the button with a finger (`display_blue` set) |
+| dexjoco-pick-bucket | failed | 2500 (budget) | 570 s | Knocked the food box over near the bucket and ran out of steps without getting it in |
+| dexjoco-water-plant | failed | 2500 (budget) | 625 s | Knocked the sprayer onto its side; never got a grasp that could squeeze the trigger |
+| dexjoco-unlock-ipad | failed | 2860 | 948 s | Knocked the iPad off its stand and off the table; gave an honest unsuccessful `robo done` |
+
+The two solved tasks need one well-timed motion primitive (strike, press); the failures are all grasp-and-hold failures with a 16-joint hand, which is where this suite discriminates. Claude Code + Opus 5.5 was not probed (owner instruction: no Opus trials for now).
 
 ## Known limitations
 
