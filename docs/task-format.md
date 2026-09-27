@@ -40,7 +40,13 @@ max_steps = 500            # simulated step budget; every step counts, including
 camera = "corner"
 skills = true              # allow the move_to / grip helpers
 success_mode = "first"     # "first" or "final" (below)
+obs_mode = "state"         # "state" (default) or "vision" (below)
 ```
+
+## Observation modes
+
+- `obs_mode = "state"` (default): `robo observe` returns every public state field (robot, objects, goals).
+- `obs_mode = "vision"`: `robo observe` returns only `visible_fields` (by default the robot's own `hand_pos` and `gripper_open`) and saves one image per camera in `cameras`. `robo info` gives each camera's 3x4 projection matrix P, with `[u*w, v*w, w] = P @ [x, y, z, 1]` in the saved image's pixels (v down), so the agent can locate what it sees. The reference solution still gets full state: the runner gives it a per-episode oracle token that model harnesses never see.
 
 ## Scoring
 
