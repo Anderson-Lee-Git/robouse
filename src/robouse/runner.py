@@ -18,6 +18,7 @@ from __future__ import annotations
 import concurrent.futures as cf
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -34,15 +35,28 @@ from .tasks import Task, find_tasks
 AGENT_CLI = Path(__file__).with_name("agent_cli.py")
 
 
-def sandbox_profile() -> str:
-    """macOS Seatbelt profile for agent processes: everything is allowed except reading or writing the paths in
-    ROBOUSE_SANDBOX_DENY (colon-separated), plus the maintainers' workspace and credential folders when they exist.
-    The agent still reaches the episode socket (/tmp) and the network (model APIs). Set ROBOUSE_SANDBOX=0 to disable."""
+def sandbox_profile(workspace: str | Path | None = None, local_ports: tuple[int, ...] = ()) -> str:
+    """macOS Seatbelt profile for agent processes. Everything is allowed except:
+
+    - reading or writing the paths in ROBOUSE_SANDBOX_DENY (colon-separated), plus the maintainers' workspace and
+      credential folders when they exist;
+    - reading any robo-use source or install (a `robouse` package directory anywhere, e.g. another venv under /tmp);
+    - reading other trials' workspaces (only this trial's workspace is allowed);
+    - TCP connections to this machine, except `local_ports` (a harness's own local proxy). This keeps agents away
+      from local viewers and servers (e.g. a runs viewer on localhost) while the episode Unix socket and the
+      network (model APIs) stay reachable.
+    Set ROBOUSE_SANDBOX=0 to disable."""
     home = Path.home()
     builtin = [str(p) for p in (home / "benchflow", home / ".config" / "bf-agents") if p.exists()]
     denied = builtin + [p for p in os.environ.get("ROBOUSE_SANDBOX_DENY", "").split(":") if p]
     denied = [os.path.realpath(os.path.expanduser(d)) for d in denied]  # Seatbelt matches resolved paths (/tmp -> /private/tmp)
     rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in dict.fromkeys(denied))
+    rules += '(deny file-read* (regex #"/site-packages/robouse(/|$)") (regex #"/src/robouse(/|$)"))'
+    rules += '(deny file-read* file-write* (regex #"/robouse-ws-[^/]*(/|$)"))'
+    if workspace:
+        rules += f'(allow file-read* file-write* (subpath "{os.path.realpath(workspace)}"))'
+    rules += '(deny network-outbound (remote ip "localhost:*"))'
+    rules += "".join(f'(allow network-outbound (remote ip "localhost:{p}"))' for p in local_ports)
     return "(version 1)(allow default)" + rules
 
 
@@ -119,7 +133,8 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
         launch = harnesses.build(harness, model, task.instruction, ws, task, base_env)
         sandboxed = harness not in ("oracle", "noop") and sys.platform == "darwin" and os.environ.get("ROBOUSE_SANDBOX", "1") != "0"
         if sandboxed:
-            launch.cmd = ["sandbox-exec", "-p", sandbox_profile(), *launch.cmd]
+            ports = tuple(int(m) for v in launch.env.values() for m in re.findall(r"//(?:127\.0\.0\.1|localhost):(\d+)", str(v)))
+            launch.cmd = ["sandbox-exec", "-p", sandbox_profile(ws, ports), *launch.cmd]
         cfg["sandbox"] = "macos-seatbelt" if sandboxed else "none"
         (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
         with open(tdir / "agent" / "stdout.jsonl", "w") as out, open(tdir / "agent" / "stderr.txt", "w") as err:
