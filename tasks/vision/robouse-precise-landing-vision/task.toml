@@ -1,0 +1,43 @@
+version = "1.0"
+
+[task]
+name = "robouse/robouse-precise-landing-vision"
+description = "Precise landing on a small pad"
+
+[metadata]
+source_benchmark = "BenchFlow robo-use (task family, adapted to a single floating gripper)"
+source_task = "D01 Precise Landing"
+source_suite = "robo-use D-family"
+suite = "vision"
+base_suite = "robo-use-families"
+base_task = "robouse-precise-landing"
+category = "precision"
+difficulty = "medium"
+tags = ["robo-use", "precision"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+obs_mode = "vision"
+cameras = ["front", "top"]
+visible_fields = ["hand_pos", "gripper_open", "holding", "examples", "grid", "constraint_violations"]
+camera = "front"
+id = "robouse-precise-landing-vision"
+backend = "tabletop"
+seed = 0
+max_steps = 500
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "robouse-precise-landing"
+title = "Precise landing on a small pad"
+goal = "Move the small purple cube from the bowl onto the small gold square. The cube's whole base must lie inside the square (the square is 3.6 cm wide, the cube 2.5 cm), resting flat and released."
+objects = [{name = "cube", kind = "box", color = "purple", pos = [-0.14, -0.04], size = [0.0125, 0.0125, 0.0125], z = 0.0187}]
+fixtures = [{name = "bowl", kind = "bowl", pos = [-0.14, -0.04], radius = 0.06, color = "white"}, {name = "gold_square", kind = "pad", pos = [0.12, 0.1], size = [0.018, 0.018], color = "gold"}]
+goals = [{type = "on_pad", obj = "cube", pad = "gold_square", full = true, max_tilt = 10}]
+max_steps = 500

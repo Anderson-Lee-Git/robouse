@@ -1,0 +1,44 @@
+version = "1.0"
+
+[task]
+name = "robouse/arc-odd-one-out-vision"
+description = "Rule inference: which one moves"
+
+[metadata]
+source_benchmark = "ARC-AGI (style), robouse original"
+source_task = "odd-one-out"
+source_suite = "arc-style"
+suite = "vision"
+base_suite = "arc-style"
+base_task = "arc-odd-one-out"
+category = "rule-inference"
+difficulty = "easy"
+tags = ["arc", "few-shot"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+obs_mode = "vision"
+cameras = ["front", "top"]
+visible_fields = ["hand_pos", "gripper_open", "holding", "examples", "grid", "constraint_violations"]
+camera = "front"
+id = "arc-odd-one-out-vision"
+backend = "tabletop"
+seed = 0
+max_steps = 500
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "arc-odd-one-out"
+title = "Rule inference: which one moves"
+grid = {rows = 3, cols = 4, cell = 0.08, origin = [-0.12, 0.08]}
+objects = [{name = "block_1", kind = "box", color = "orange", cell = [0, 2], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}, {name = "block_2", kind = "box", color = "orange", cell = [1, 0], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}, {name = "block_3", kind = "box", color = "purple", cell = [2, 2], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}, {name = "block_4", kind = "box", color = "orange", cell = [2, 3], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}]
+fixtures = [{name = "target", kind = "pad", pos = [0.25, -0.2], size = [0.04, 0.04], color = "grey", label = "target"}]
+goals = [{type = "grid", expected = [{color = "orange", cell = [0, 2]}, {color = "orange", cell = [1, 0]}, {color = "orange", cell = [2, 3]}]}, {type = "on_pad", obj = "block_3", pad = "target"}]
+max_steps = 500
+public = {examples = [{before = [{color = "red", cell = [0, 0]}, {color = "red", cell = [1, 2]}, {color = "blue", cell = [2, 1]}, {color = "red", cell = [2, 3]}], after = [{color = "red", cell = [0, 0]}, {color = "red", cell = [1, 2]}, {color = "red", cell = [2, 3]}], on_target_pad_after = ["blue"]}, {before = [{color = "yellow", cell = [0, 1]}, {color = "green", cell = [1, 1]}, {color = "green", cell = [2, 0]}, {color = "green", cell = [0, 3]}], after = [{color = "green", cell = [1, 1]}, {color = "green", cell = [2, 0]}, {color = "green", cell = [0, 3]}], on_target_pad_after = ["yellow"]}]}

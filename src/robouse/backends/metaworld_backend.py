@@ -85,6 +85,11 @@ class MetaWorldBackend(Backend):
         self._renderer.update_scene(self.env.data, camera=self.camera)
         return self._renderer.render()[::-1].copy()  # Meta-World cameras come out upside down
 
+    image_flipped = True  # render() flips vertically; camera projections account for it
+
+    def mj_model_data(self):
+        return self.env.model, self.env.data
+
     def success(self) -> bool:
         return bool(self._info.get("success", 0.0) >= 1.0)
 

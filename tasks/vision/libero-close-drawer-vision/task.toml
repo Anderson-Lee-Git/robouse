@@ -1,0 +1,43 @@
+version = "1.0"
+
+[task]
+name = "robouse/libero-close-drawer-vision"
+description = "Close the drawer"
+
+[metadata]
+source_benchmark = "LIBERO (Liu et al. 2023), adapted"
+source_task = "close the top drawer of the cabinet"
+source_suite = "libero_90"
+suite = "vision"
+base_suite = "libero-style"
+base_task = "libero-close-drawer"
+category = "articulated"
+difficulty = "easy"
+tags = ["libero", "drawer"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+obs_mode = "vision"
+cameras = ["front", "top"]
+visible_fields = ["hand_pos", "gripper_open", "holding", "examples", "grid", "constraint_violations"]
+camera = "front"
+id = "libero-close-drawer-vision"
+backend = "tabletop"
+seed = 0
+max_steps = 400
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "libero-close-drawer"
+title = "Close the drawer"
+goal = "Push the open drawer of the cabinet fully closed (within 1 cm)."
+objects = [{name = "red_block", kind = "box", color = "red", pos = [-0.15, -0.05], size = [0.02, 0.02, 0.02]}]
+fixtures = [{name = "drawer", kind = "drawer", pos = [0.15, 0.17], color = "darkgrey", open = 0.12}]
+goals = [{type = "drawer", drawer = "drawer", max_open = 0.01}]
+max_steps = 400

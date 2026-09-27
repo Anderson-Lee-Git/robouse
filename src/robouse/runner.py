@@ -90,7 +90,8 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
                   "--socket", sock, "--workspace", str(ws), "--ready-file", str(ready), "--max-wall-s", str(timeout + 60)]
     if seed is not None:
         server_cmd += ["--seed", str(seed)]
-    server = subprocess.Popen(server_cmd, stdout=open(tdir / "episode" / "server.log", "w"), stderr=subprocess.STDOUT)
+    oracle_token = uuid.uuid4().hex
+    server = subprocess.Popen(server_cmd, env={**os.environ, "ROBOUSE_ORACLE_TOKEN": oracle_token}, stdout=open(tdir / "episode" / "server.log", "w"), stderr=subprocess.STDOUT)
     exc = None
     launch = None
     agent_rc = None
@@ -103,6 +104,9 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
             else f"{ws / '.robouse' / 'bin'}:{base_env.get('PATH', '')}"
         base_env["ROBOUSE_SOCKET"] = sock
         base_env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1]) if harness == "oracle" else ""
+        base_env.pop("ROBOUSE_ORACLE_TOKEN", None)
+        if harness == "oracle":  # only the reference solution may see privileged state in vision tasks
+            base_env["ROBOUSE_ORACLE_TOKEN"] = oracle_token
         launch = harnesses.build(harness, model, task.instruction, ws, task.path, base_env)
         sandboxed = harness not in ("oracle", "noop") and sys.platform == "darwin" and os.environ.get("ROBOUSE_SANDBOX", "1") != "0"
         if sandboxed:
@@ -128,6 +132,7 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
         from .agent_cli import _send
 
         os.environ["ROBOUSE_SOCKET"] = sock
+        os.environ.pop("ROBOUSE_ORACLE_TOKEN", None)
         st = _send({"op": "status"})
         if st.get("ok") and not st["result"]["finished"]:
             _send({"op": "give_up", "text": "[runner] agent timed out" if timed_out else "[runner] agent exited without robo done"})

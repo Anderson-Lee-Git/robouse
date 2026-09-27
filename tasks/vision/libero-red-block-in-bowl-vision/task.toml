@@ -1,0 +1,43 @@
+version = "1.0"
+
+[task]
+name = "robouse/libero-red-block-in-bowl-vision"
+description = "Put the red block in the bowl"
+
+[metadata]
+source_benchmark = "LIBERO (Liu et al. 2023), adapted"
+source_task = "pick up the alphabet soup and place it in the basket (object-centric pick-and-place)"
+source_suite = "libero_object"
+suite = "vision"
+base_suite = "libero-style"
+base_task = "libero-red-block-in-bowl"
+category = "pick-place"
+difficulty = "easy"
+tags = ["libero", "container"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+obs_mode = "vision"
+cameras = ["front", "top"]
+visible_fields = ["hand_pos", "gripper_open", "holding", "examples", "grid", "constraint_violations"]
+camera = "front"
+id = "libero-red-block-in-bowl-vision"
+backend = "tabletop"
+seed = 0
+max_steps = 500
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "libero-red-block-in-bowl"
+title = "Put the red block in the bowl"
+goal = "Pick up the red block and place it in the white bowl."
+objects = [{name = "red_block", kind = "box", color = "red", pos = [-0.13, -0.06], size = [0.02, 0.02, 0.02]}, {name = "blue_block", kind = "box", color = "blue", pos = [0.1, -0.12], size = [0.02, 0.02, 0.02]}, {name = "yellow_cylinder", kind = "cyl", color = "yellow", pos = [-0.16, 0.12], size = [0.02, 0.03]}]
+fixtures = [{name = "bowl", kind = "bowl", pos = [0.12, 0.1], radius = 0.07, color = "white"}]
+goals = [{type = "in", obj = "red_block", container = "bowl"}]
+max_steps = 500

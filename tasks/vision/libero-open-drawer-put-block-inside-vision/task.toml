@@ -1,0 +1,43 @@
+version = "1.0"
+
+[task]
+name = "robouse/libero-open-drawer-put-block-inside-vision"
+description = "Open the drawer and put the block inside"
+
+[metadata]
+source_benchmark = "LIBERO (Liu et al. 2023), adapted"
+source_task = "open the top drawer and put the bowl inside"
+source_suite = "libero_goal"
+suite = "vision"
+base_suite = "libero-style"
+base_task = "libero-open-drawer-put-block-inside"
+category = "articulated"
+difficulty = "hard"
+tags = ["libero", "drawer", "long-horizon"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+obs_mode = "vision"
+cameras = ["front", "top"]
+visible_fields = ["hand_pos", "gripper_open", "holding", "examples", "grid", "constraint_violations"]
+camera = "front"
+id = "libero-open-drawer-put-block-inside-vision"
+backend = "tabletop"
+seed = 0
+max_steps = 900
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "libero-open-drawer-put-block-inside"
+title = "Open the drawer and put the block inside"
+goal = "Open the drawer of the cabinet and put the red block inside the drawer."
+objects = [{name = "red_block", kind = "box", color = "red", pos = [-0.14, -0.06], size = [0.02, 0.02, 0.02]}]
+fixtures = [{name = "drawer", kind = "drawer", pos = [0.15, 0.17], color = "darkgrey", open = 0.0}]
+goals = [{type = "in", obj = "red_block", container = "drawer"}]
+max_steps = 900

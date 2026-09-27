@@ -45,6 +45,14 @@ class Episode:
         # "first": the episode ends as solved the first time the task's own success signal fires
         #          (Meta-World's evaluation protocol).
         self.success_mode = str(spec.get("success_mode", "final"))
+        # "state" (default): observe returns all public state fields.
+        # "vision": observe returns only `visible_fields` (the robot's own proprioception by default) plus camera
+        #           images; objects and goals must be found in the images. Requests carrying the per-episode
+        #           oracle token (given only to the reference solution) still get the full state.
+        self.obs_mode = str(spec.get("obs_mode", "state"))
+        self.visible_fields = list(spec.get("visible_fields", ["hand_pos", "gripper_open"]))
+        self.cameras = list(spec.get("cameras", [getattr(self.backend, "camera", "")]))
+        self._oracle_token = os.environ.get("ROBOUSE_ORACLE_TOKEN", "")
         self.backend.reset(self.seed)
         self.steps = 0
         self.requests = 0
@@ -75,9 +83,56 @@ class Episode:
             self.finish("success_reached", "", settle=False)
         return info
 
+    def _state(self, privileged: bool = False) -> dict:
+        st = self.backend.observe()
+        if self.obs_mode == "vision" and not privileged:
+            st = {k: v for k, v in st.items() if k in self.visible_fields}
+        return st
+
+    def camera_info(self) -> list[dict]:
+        """Per camera: a 3x4 projection matrix P with [u*w, v*w, w] = P @ [x, y, z, 1] in the saved image's pixels."""
+        out = []
+        m_d = getattr(self.backend, "mj_model_data", lambda: None)()
+        if not m_d:
+            return out
+        model, data = m_d
+        import mujoco
+
+        for name in self.cameras:
+            cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, name)
+            if cid < 0:
+                continue
+            img = self._render(name)
+            h, w = img.shape[:2]
+            fovy = float(model.cam_fovy[cid])
+            f = (h / 2) / np.tan(np.deg2rad(fovy) / 2)
+            R = data.cam_xmat[cid].reshape(3, 3)
+            t = data.cam_xpos[cid]
+            ext = np.hstack([R.T, (-R.T @ t)[:, None]])
+            K = np.array([[f, 0, -w / 2], [0, -f, -h / 2], [0, 0, -1.0]])
+            P = K @ ext
+            if getattr(self.backend, "image_flipped", False):
+                P[1] = (h - 1) * P[2] - P[1]
+            out.append({"name": name, "width": w, "height": h, "fovy_deg": round(fovy, 2),
+                        "position": [round(float(x), 4) for x in t],
+                        "projection": [[round(float(x), 5) for x in row] for row in P]})
+        return out
+
+    def _render(self, camera: str | None = None):
+        if not camera or camera == getattr(self.backend, "camera", None):
+            return self.backend.render()
+        old = self.backend.camera
+        try:
+            self.backend.camera = camera
+            return self.backend.render()
+        finally:
+            self.backend.camera = old
+
     # ---- request handling ------------------------------------------------------------------
     def handle(self, req: dict) -> dict:
         self.requests += 1
+        privileged = bool(self._oracle_token) and req.get("token") == self._oracle_token
+        req = {k: v for k, v in req.items() if k != "token"}  # never write the token to the trace
         op = req.get("op")
         t = round(time.time() - self.t0, 3)
         try:
@@ -88,7 +143,7 @@ class Episode:
             elif op == "status":
                 resp = {"ok": True, "result": {"finished": self.finished, "outcome": self.outcome, "steps": self.steps}}
             elif op == "observe":
-                resp = {"ok": True, "result": self.observe(bool(req.get("image", False)))}
+                resp = {"ok": True, "result": self.observe(bool(req.get("image", False)), privileged, req.get("camera"))}
             elif op == "act":
                 resp = self.act(req.get("action"), int(req.get("repeat", 1)))
             elif op == "move_to":
@@ -118,24 +173,30 @@ class Episode:
             "action": {"names": s.names, "low": s.low, "high": s.high, "doc": s.doc},
             "skills": self.backend.skills() if self.skills_enabled else [],
             "steps_used": self.steps, "max_steps": self.max_steps,
+            "observation_mode": self.obs_mode,
+            **({"visible_fields": self.visible_fields, "cameras": self.camera_info()} if self.obs_mode == "vision" else {}),
         }
 
-    def observe(self, image: bool) -> dict:
-        out = {"state": self.backend.observe(), "steps_used": self.steps, "max_steps": self.max_steps}
-        if image:
-            self._obs_count += 1
+    def observe(self, image: bool, privileged: bool = False, camera: str | None = None) -> dict:
+        out = {"state": self._state(privileged), "steps_used": self.steps, "max_steps": self.max_steps}
+        if image or self.obs_mode == "vision":
             from PIL import Image
 
-            img = Image.fromarray(np.asarray(self.backend.render(), dtype=np.uint8))
-            name = f"obs_{self._obs_count:03d}.png"
-            (self.run_dir / "observations").mkdir(exist_ok=True)
-            img.save(self.run_dir / "observations" / name)
-            if self.workspace:
-                (self.workspace / "observations").mkdir(exist_ok=True)
-                img.save(self.workspace / "observations" / name)
-                out["image_path"] = str(self.workspace / "observations" / name)
-            else:
-                out["image_path"] = str(self.run_dir / "observations" / name)
+            cams = [camera] if camera in self.cameras else (self.cameras if self.obs_mode == "vision" else [None])
+            paths = []
+            for cam in cams:
+                self._obs_count += 1
+                img = Image.fromarray(np.asarray(self._render(cam), dtype=np.uint8))
+                name = f"obs_{self._obs_count:03d}" + (f"_{cam}" if cam else "") + ".png"
+                (self.run_dir / "observations").mkdir(exist_ok=True)
+                img.save(self.run_dir / "observations" / name)
+                if self.workspace:
+                    (self.workspace / "observations").mkdir(exist_ok=True)
+                    img.save(self.workspace / "observations" / name)
+                    paths.append(str(self.workspace / "observations" / name))
+                else:
+                    paths.append(str(self.run_dir / "observations" / name))
+            out["image_path"] = paths[0] if len(paths) == 1 else paths
         return out
 
     def act(self, action, repeat: int) -> dict:
@@ -149,7 +210,7 @@ class Episode:
                 break
             self._env_step(action)
             n += 1
-        return {"ok": True, "result": {"executed_steps": n, "state": self.backend.observe(), "steps_used": self.steps}}
+        return {"ok": True, "result": {"executed_steps": n, "state": self._state(), "steps_used": self.steps}}
 
     def move_to(self, pos, grip, max_steps: int, tol: float) -> dict:
         if not self.skills_enabled or "move_to" not in self.backend.skills():
@@ -170,7 +231,7 @@ class Episode:
             n += 1
         dist = float(np.linalg.norm(target - self.backend.hand_pos()))
         return {"ok": True, "result": {"reached": dist < tol * 1.5, "distance": round(dist, 4), "executed_steps": n,
-                                       "state": self.backend.observe(), "steps_used": self.steps}}
+                                       "state": self._state(), "steps_used": self.steps}}
 
     def grip(self, value: float, steps: int) -> dict:
         if not self.skills_enabled or "grip" not in self.backend.skills():
@@ -181,7 +242,7 @@ class Episode:
                 break
             self._env_step([0.0, 0.0, 0.0, max(-1.0, min(1.0, value))])
             n += 1
-        return {"ok": True, "result": {"executed_steps": n, "state": self.backend.observe(), "steps_used": self.steps}}
+        return {"ok": True, "result": {"executed_steps": n, "state": self._state(), "steps_used": self.steps}}
 
     def finish(self, outcome: str, text: str, settle: bool = True) -> dict:
         if self.finished:

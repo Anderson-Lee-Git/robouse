@@ -723,6 +723,9 @@ class TabletopBackend(Backend):
     def skills(self) -> list[str]:
         return ["move_to", "grip"]
 
+    def mj_model_data(self):
+        return self.model, self.data
+
 
 # --------------------------------------------------------------------------------------------------
 # Oracle: drives the episode only through the robo socket (public observation + the task definition)

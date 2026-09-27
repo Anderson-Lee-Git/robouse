@@ -1,0 +1,44 @@
+version = "1.0"
+
+[task]
+name = "robouse/arc-swap-vision"
+description = "Rule inference: exchange"
+
+[metadata]
+source_benchmark = "ARC-AGI (style), robouse original"
+source_task = "swap"
+source_suite = "arc-style"
+suite = "vision"
+base_suite = "arc-style"
+base_task = "arc-swap"
+category = "rule-inference"
+difficulty = "medium"
+tags = ["arc", "few-shot"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+obs_mode = "vision"
+cameras = ["front", "top"]
+visible_fields = ["hand_pos", "gripper_open", "holding", "examples", "grid", "constraint_violations"]
+camera = "front"
+id = "arc-swap-vision"
+backend = "tabletop"
+seed = 0
+max_steps = 1000
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "arc-swap"
+title = "Rule inference: exchange"
+grid = {rows = 3, cols = 4, cell = 0.08, origin = [-0.12, 0.08]}
+objects = [{name = "block_1", kind = "box", color = "red", cell = [2, 3], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}, {name = "block_2", kind = "box", color = "blue", cell = [0, 1], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}, {name = "block_3", kind = "box", color = "green", cell = [1, 0], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}, {name = "block_4", kind = "box", color = "yellow", cell = [2, 1], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}]
+fixtures = []
+goals = [{type = "grid", expected = [{color = "red", cell = [0, 1]}, {color = "blue", cell = [2, 3]}, {color = "green", cell = [1, 0]}, {color = "yellow", cell = [2, 1]}]}]
+max_steps = 1000
+public = {examples = [{before = [{color = "red", cell = [0, 0]}, {color = "blue", cell = [2, 2]}, {color = "green", cell = [1, 3]}], after = [{color = "blue", cell = [0, 0]}, {color = "red", cell = [2, 2]}, {color = "green", cell = [1, 3]}]}, {before = [{color = "red", cell = [1, 1]}, {color = "blue", cell = [0, 3]}, {color = "yellow", cell = [2, 0]}], after = [{color = "blue", cell = [1, 1]}, {color = "red", cell = [0, 3]}, {color = "yellow", cell = [2, 0]}]}]}

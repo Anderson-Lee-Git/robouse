@@ -3,7 +3,7 @@
 Finds the episode socket from $ROBOUSE_SOCKET (set by the runner) and sends one JSON request.
 
   robo info                          action space, skills, step budget
-  robo observe [--image]             robot and object state; --image also saves a camera PNG and prints its path
+  robo observe [--image] [--camera C] robot and object state; --image also saves a camera PNG and prints its path
   robo act A1 A2 ... [--repeat N]    apply one low-level action N times (N <= 50)
   robo move-to X Y Z [--grip G]      move the hand toward a point (skill; may be disabled per task)
   robo grip G [--steps N]            hold position and set the gripper (+1 close, -1 open)
@@ -23,6 +23,8 @@ def _send(req: dict) -> dict:
     path = os.environ.get("ROBOUSE_SOCKET") or _find_socket()
     if not path:
         return {"ok": False, "error": "no episode: ROBOUSE_SOCKET is not set"}
+    if os.environ.get("ROBOUSE_ORACLE_TOKEN"):  # set only for the reference solution
+        req = {**req, "token": os.environ["ROBOUSE_ORACLE_TOKEN"]}
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(120)
     try:
@@ -98,7 +100,9 @@ def main(argv: list[str] | None = None) -> int:
         if cmd == "info":
             return _print(_send({"op": "info"}), as_json)
         if cmd == "observe":
-            return _print(_send({"op": "observe", "image": "--image" in rest}), as_json)
+            args = rest
+            cam = opt("--camera", None, str)
+            return _print(_send({"op": "observe", "image": "--image" in args, "camera": cam}), as_json)
         if cmd == "act":
             args = rest
             rep = opt("--repeat", 1, int)

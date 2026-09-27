@@ -1,0 +1,43 @@
+version = "1.0"
+
+[task]
+name = "robouse/libero-cube-on-plate-vision"
+description = "Put the green cube on the plate"
+
+[metadata]
+source_benchmark = "LIBERO (Liu et al. 2023), adapted"
+source_task = "put the bowl on the plate"
+source_suite = "libero_goal"
+suite = "vision"
+base_suite = "libero-style"
+base_task = "libero-cube-on-plate"
+category = "pick-place"
+difficulty = "easy"
+tags = ["libero", "plate"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+obs_mode = "vision"
+cameras = ["front", "top"]
+visible_fields = ["hand_pos", "gripper_open", "holding", "examples", "grid", "constraint_violations"]
+camera = "front"
+id = "libero-cube-on-plate-vision"
+backend = "tabletop"
+seed = 0
+max_steps = 500
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "libero-cube-on-plate"
+title = "Put the green cube on the plate"
+goal = "Put the green cube on the plate."
+objects = [{name = "green_cube", kind = "box", color = "green", pos = [-0.14, -0.02], size = [0.02, 0.02, 0.02]}, {name = "red_cube", kind = "box", color = "red", pos = [0.0, -0.13], size = [0.02, 0.02, 0.02]}]
+fixtures = [{name = "plate", kind = "plate", pos = [0.12, 0.08], color = "white"}]
+goals = [{type = "on_plate", obj = "green_cube", plate = "plate"}]
+max_steps = 500
