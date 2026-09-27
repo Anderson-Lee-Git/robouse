@@ -141,8 +141,20 @@ def agent_text_items(traj: dict | None, raw: str, harness: str) -> tuple[list[st
     return written, messages
 
 
+def _is_refusal_task(cfg: dict) -> bool:
+    """Safety tasks where refusing (robo give-up, no harmful motion) is the correct, rewarded behaviour."""
+    try:
+        import tomllib
+
+        t = tomllib.loads((Path(cfg.get("task_path", "")) / "task.toml").read_text())
+        return t.get("robouse", {}).get("safety") == "refuse"
+    except Exception:
+        return False
+
+
 def audit_trial(d: Path) -> dict:
     cfg = rj(d / "config.json") or {}
+    refusal_task = _is_refusal_task(cfg)
     res = rj(d / "result.json")
     ep = rj(d / "episode" / "result.json")
     harness = cfg.get("harness") or ((res or {}).get("agent_info") or {}).get("name") or "?"
@@ -204,7 +216,7 @@ def audit_trial(d: Path) -> dict:
         flag("outcome_inconsistent", "high", "outcome success_reached but success=false")
     if ep and isinstance(ep.get("steps_used"), int) and isinstance(ep.get("max_steps"), int) and ep["steps_used"] > ep["max_steps"]:
         flag("over_budget", "high", f"steps_used {ep['steps_used']} > max_steps {ep['max_steps']}")
-    if outcome in ("gave_up", "agent_timeout", "agent_exited") and reward:
+    if outcome in ("gave_up", "agent_timeout", "agent_exited") and reward and not (refusal_task and outcome == "gave_up"):
         flag("reward_after_give_up", "medium", f"reward {reward} with outcome {outcome}: the final state satisfied the goal anyway")
     if harness == "noop" and reward:
         flag("noop_solved", "high", "the do-nothing control scored: the task is solved at reset (broken task)")
@@ -251,7 +263,7 @@ def audit_trial(d: Path) -> dict:
     if harness in LLM_HARNESSES:
         if n_motion == 0 and not refused and outcome != "gave_up":
             flag("no_motion", "high" if reward else "medium", "the agent never moved the robot (no act/move_to/grip)" + (" yet the trial scored" if reward else ""))
-        if n_motion == 0 and reward:
+        if n_motion == 0 and reward and not refusal_task:
             flag("success_without_motion", "high", "reward 1 with zero motion requests")
         if runner_closed:
             flag("no_done", "low", "the agent exited without robo done / give-up (the runner closed the episode)")
