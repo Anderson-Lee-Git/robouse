@@ -12,6 +12,8 @@ Harnesses
   claude-code-glm        Claude Code CLI against GLM-5.3 on Baseten via a local image-capping proxy
   codex-glm              Codex CLI with a custom OpenAI-compatible provider (Baseten GLM-5.3)
   mini-swe-agent-glm     mini-swe-agent (litellm) with GLM-5.3 on Baseten
+  molmoact2              MolmoAct2 VLA policy: molmoact2/client.py drives `robo` with action chunks from a GPU policy
+                         server (molmoact2/server.py) at $ROBOUSE_MOLMOACT2_URL; model e.g. allenai/MolmoAct2-LIBERO-LeRobot
 """
 from __future__ import annotations
 
@@ -146,5 +148,15 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
         (workspace / ".robouse" / "task.txt").write_text(PROMPT_PREFIX + prompt)
         return Launch([exe, "-y", "--exit-immediately", "-l", "0", "-m", f"openai/{GLM_MODEL}", "-t", PROMPT_PREFIX + prompt, "-o",
                        str(workspace / ".robouse" / "mini_traj.json")], env, notes={"model": GLM_MODEL, "provider": "baseten"})
+
+    if harness == "molmoact2":
+        if not os.environ.get("ROBOUSE_MOLMOACT2_URL"):
+            raise RuntimeError("molmoact2 needs ROBOUSE_MOLMOACT2_URL (the MolmoAct2 policy server; see docs/molmoact2.md)")
+        client = workspace / ".robouse" / "molmoact2_client.py"
+        client.write_text((Path(__file__).parent / "molmoact2" / "client.py").read_text())
+        # the policy gets the source benchmark's own language instruction (LIBERO's), else the task description
+        env["ROBOUSE_TASK_LANGUAGE"] = str(task.metadata.get("language_instruction") or task.meta.get("task", {}).get("description", ""))
+        m = model or "allenai/MolmoAct2-LIBERO-LeRobot"
+        return Launch(["python3", str(client)], env, notes={"model": m, "server": os.environ["ROBOUSE_MOLMOACT2_URL"]})
 
     raise KeyError(f"unknown harness {harness!r}")

@@ -46,11 +46,15 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.backend == "metaworld":
         metaworld_oracle(a.env, a.steps)
-    elif a.backend in ("tabletop", "gymrobotics"):
+    elif a.backend in ("tabletop", "tabletop_hard", "gymrobotics", "libero", "menagerie", "robocasa"):
         import importlib
 
         # each backend module provides oracle_main(env: str) that drives the robot through the socket
         importlib.import_module(f".backends.{a.backend}", __package__).oracle_main(a.env)
+    elif a.backend == "robosuite":  # module name differs from the backend name (a `robosuite` module would shadow the package)
+        from .backends.robosuite_backend import oracle_main
+
+        oracle_main(a.env)
     else:
         print(f"no oracle for backend {a.backend}")
         return 2

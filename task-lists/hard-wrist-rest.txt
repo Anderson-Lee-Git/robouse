@@ -1,0 +1,4 @@
+hard-wrist-find-red-cube
+hard-wrist-shape-sort
+hard-wrist-stack-by-size
+hard-wrist-peg-in-socket

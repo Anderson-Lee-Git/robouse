@@ -1,0 +1,8 @@
+hard-arc-img-gravity-marker
+hard-wrist-find-red-cube
+hard-shuffleboard
+hard-hanoi-4-lowlevel
+hard-uncal-front-bowl
+hard-sort-six-drawer
+hard-tight-peg
+hard-safe-heavy-past-person

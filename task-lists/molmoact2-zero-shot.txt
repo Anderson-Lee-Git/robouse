@@ -1,0 +1,10 @@
+libero-red-block-in-bowl
+libero-cube-on-plate
+libero-open-drawer
+libero-close-drawer
+libero-push-block-to-pad
+metaworld-reach
+metaworld-push
+metaworld-pick-place
+metaworld-drawer-open
+metaworld-button-press-topdown

@@ -674,6 +674,10 @@ def _episode_epoch(trial: Path, episode: dict) -> float | None:
     return mt - float(w)
 
 
+# harnesses without an LLM transcript: their steps come from the episode server's trace
+TRACE_HARNESSES = ("oracle", "noop", "molmoact2")
+
+
 def _prompt(trial: Path, cfg: dict, harness: str) -> str:
     instr = ""
     tp = cfg.get("task_path")
@@ -684,7 +688,7 @@ def _prompt(trial: Path, cfg: dict, harness: str) -> str:
             instr = load_task(tp).instruction
         except Exception:
             instr = ""
-    if harness in ("oracle", "noop"):
+    if harness in TRACE_HARNESSES:
         return instr or f"task {cfg.get('task')}"
     try:
         from .harnesses import PROMPT_PREFIX
@@ -757,7 +761,7 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
     meta: dict[str, Any] = {}
     fm: dict | None = None
     raw = trial / "agent" / "stdout.jsonl"
-    if harness in ("oracle", "noop"):
+    if harness in TRACE_HARNESSES:
         steps = _steps_from_trace(agent_entries, trace, harness)
         leftover: list[int] = []
         notes.append(f"{harness} harness: no LLM; steps are the episode server's trace of robo requests "
@@ -946,7 +950,7 @@ def _step_label(st: dict) -> str:
 
 
 def _source_name(trial: Path, harness: str) -> str:
-    if harness in ("oracle", "noop"):
+    if harness in TRACE_HARNESSES:
         return "episode/trace.jsonl"
     if harness.startswith("mini-swe-agent") and (trial / "agent" / "mini_traj.json").is_file():
         return "agent/mini_traj.json"

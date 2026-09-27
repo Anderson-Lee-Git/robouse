@@ -18,4 +18,20 @@ def make_backend(spec: dict) -> Backend:
         from .gymrobotics import GymRoboticsBackend
 
         return GymRoboticsBackend(spec)
+    if kind == "libero":
+        from .libero import LiberoBackend
+
+        return LiberoBackend(spec)
+    if kind == "robosuite":
+        from .robosuite_backend import RobosuiteBackend
+
+        return RobosuiteBackend(spec)
+    if kind == "menagerie":
+        from .menagerie import MenagerieBackend
+
+        return MenagerieBackend(spec)
+    if kind == "robocasa":
+        from .robocasa import RobocasaBackend
+
+        return RobocasaBackend(spec)
     raise KeyError(f"unknown backend {kind!r}")
