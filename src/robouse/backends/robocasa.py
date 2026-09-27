@@ -27,19 +27,21 @@ import numpy as np
 from .base import ActionSpec, Backend, StepInfo
 
 WORKER = Path(__file__).with_name("robocasa_worker.py")
+EPISODES = Path(__file__).with_name("robocasa_episodes")
 DEFAULT_PY = Path.home() / ".cache" / "robouse" / "robocasa-venv" / "bin" / "python"
 
 # task id -> RoboCasa env, kitchen layout/style (test split styles 1-10 need no AI-generated textures), seed, features
 TASKS: dict[str, dict] = {
-    "robocasa-pick-place-counter-to-sink": dict(env="PickPlaceCounterToSink", layout=1, style=1, seed=0, features=["object", "sink"], max_steps=500),
-    "robocasa-start-coffee-machine": dict(env="StartCoffeeMachine", layout=1, style=1, seed=0, features=["coffee"], max_steps=300,
-                                          tool="forward"),
-    "robocasa-turn-on-microwave": dict(env="TurnOnMicrowave", layout=1, style=1, seed=0, features=["microwave"], max_steps=300),
-    "robocasa-turn-on-sink-faucet": dict(env="TurnOnSinkFaucet", layout=1, style=1, seed=0, features=["faucet"], max_steps=300),
-    "robocasa-close-drawer": dict(env="CloseDrawer", layout=1, style=1, seed=0, features=["drawer"], max_steps=300),
-    "robocasa-open-drawer": dict(env="OpenDrawer", layout=1, style=1, seed=0, features=["drawer"], max_steps=400),
-    "robocasa-close-cabinet": dict(env="CloseCabinet", layout=1, style=1, seed=0, features=["door"], max_steps=300),
-    "robocasa-close-microwave": dict(env="CloseMicrowave", layout=1, style=1, seed=0, features=["door"], max_steps=300),
+    "robocasa-close-drawer": dict(env="CloseDrawer", layout=1, style=1, seed=0, features=["drawer"], max_steps=400),
+    "robocasa-close-drawer-kitchen2": dict(env="CloseDrawer", layout=2, style=2, seed=0, features=["drawer"], max_steps=400),
+    "robocasa-pick-place-counter-to-sink": dict(env="PickPlaceCounterToSink", layout=1, style=1, seed=2, features=["object", "sink"],
+                                                max_steps=500),
+    "robocasa-pick-place-counter-to-sink-kitchen2": dict(env="PickPlaceCounterToSink", layout=2, style=2, seed=0,
+                                                         features=["object", "sink"], max_steps=500),
+    "robocasa-pick-place-counter-to-sink-kitchen2b": dict(env="PickPlaceCounterToSink", layout=2, style=2, seed=1,
+                                                          features=["object", "sink"], max_steps=500),
+    "robocasa-pick-place-counter-to-stove": dict(env="PickPlaceCounterToStove", layout=1, style=1, seed=0,
+                                                 features=["object", "container"], max_steps=500),
 }
 
 
@@ -64,7 +66,9 @@ class RobocasaBackend(Backend):
         py = os.environ.get("ROBOUSE_ROBOCASA_PYTHON", str(DEFAULT_PY))
         if not Path(py).exists():
             raise RuntimeError(f"RoboCasa virtualenv not found at {py}; see docs/suites/robocasa.md")
+        # PYTHONHASHSEED: RoboCasa iterates over sets of names when placing objects; fix the order so a seed is reproducible
         self.proc = subprocess.Popen([py, str(WORKER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     env={**os.environ, "PYTHONHASHSEED": "0"},
                                      stderr=subprocess.DEVNULL if os.environ.get("ROBOUSE_ROBOCASA_QUIET", "1") == "1" else None)
         self._state = None
         self._success = False
@@ -85,8 +89,12 @@ class RobocasaBackend(Backend):
 
     def reset(self, seed: int) -> None:
         t = self.task
+        # RoboCasa's object placement is not reproducible from the seed alone (it iterates over sets of objects), so every
+        # task replays a recorded episode layout (RoboCasa's ep_meta, the mechanism its demo replay uses).
+        ep = EPISODES / f"{self.task_id}.json"
+        ep_meta = json.loads(ep.read_text()) if ep.exists() else None
         self.meta = self._call("make", env_name=t["env"], layout=t["layout"], style=t["style"], seed=int(t.get("seed", seed)),
-                               tool=t.get("tool", "down"))
+                               tool=t.get("tool", "down"), ep_meta=ep_meta)
         self._state = None
 
     def step(self, action) -> StepInfo:
@@ -128,3 +136,16 @@ def oracle_main(env: str) -> None:
     from .robocasa_oracles import run
 
     run(env)
+
+
+def record_episode(task_id: str) -> Path:
+    """Create the task's scene once and store its ep_meta so every later reset replays the same layout."""
+    b = RobocasaBackend({"env": task_id})
+    t = b.task
+    b._call("make", env_name=t["env"], layout=t["layout"], style=t["style"], seed=int(t["seed"]), tool=t.get("tool", "down"))
+    meta = b._call("ep_meta")
+    b.close()
+    EPISODES.mkdir(exist_ok=True)
+    out = EPISODES / f"{task_id}.json"
+    out.write_text(json.dumps(meta, indent=1))
+    return out

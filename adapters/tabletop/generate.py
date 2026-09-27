@@ -40,7 +40,7 @@ def _metaworld_verify() -> str:
 VERIFY = _metaworld_verify()
 
 SUITES = ["libero-style", "arc-style", "robo-use-families", "safety"]
-PRIVATE_KEYS = {"oracle", "meta", "suite"}  # reference plan and metadata are not part of the scene
+PRIVATE_KEYS = {"oracle", "meta", "suite", "goal_note"}  # reference plan and metadata are not part of the scene
 
 
 def toml_value(v) -> str:
@@ -79,6 +79,16 @@ FIELDS = (
     "{extra}"
 )
 
+GRIP_NOTE = (
+    "## Gripper\n\n"
+    "The grip value is a finger position target, not a hold command: +1 = fully closed, -1 = fully open (10 cm gap), and values in "
+    "between give a partial opening (finger gap = 10 cm * (1 - G) / 2, so 0 = half open, a 5 cm gap). There is no separate \"hold\" "
+    "value: to keep holding an object, keep sending +1 (the fingers then squeeze it). `robo move-to X Y Z --grip G` applies G on every "
+    "step of the move, starting with the first, so `--grip 1` closes the fingers at the start of the move (they take about 15 steps to "
+    "close fully); without `--grip`, the last grip value is kept. `robo grip G --steps N` holds the hand still for N steps while applying "
+    "G. The same values apply to the GRIP argument of `robo act`.\n\n")
+
+
 SCENE = ("A two-finger parallel gripper hangs over a table (a floating gripper, no arm). The camera looks at the table from the "
          "front: x points to the right, y away from the camera (toward the back of the table), z up; the table top is at z = 0. "
          "The fingers close along the y axis.")
@@ -97,6 +107,8 @@ def instruction(sc: dict) -> str:
             "colour are interchangeable. Only the final arrangement is judged; blocks must be released and resting on the table.\n")
     else:
         parts.append(f"**Goal:** {sc['goal']}\n")
+    if sc.get("goal_note"):
+        parts.append(sc["goal_note"] + "\n")
     extra = []
     if sc.get("grid"):
         extra.append("- `grid`: rows, cols, `cell_size` and the centre of every cell (`cell_centers[row][col]`). Row 0 is the back row, "
@@ -113,6 +125,7 @@ def instruction(sc: dict) -> str:
                 "the drawer face; the fingers can close around it from above if the gripper is only partly open, e.g. grip 0.2), `interior_center`, `interior_size`, `wall_top_z`, and the cabinet top height."
                 if "drawer" in kinds else ""),
         extra="".join(e + "\n" for e in extra)))
+    parts.append(GRIP_NOTE)
     parts.append("Objects must be released (not touching the fingers) when the episode is judged.\n\n")
     return "\n".join(parts) + ROBO_USAGE
 

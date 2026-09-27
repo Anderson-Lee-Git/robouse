@@ -321,13 +321,13 @@ def _hanoi(tid: str, rb: dict, title_extra: str, max_steps: int, tags: list[str]
         "id": tid, "title": f"Tower of Hanoi, four discs{title_extra}",
         "goal": "Move the tower of four square discs (flat plates of four sizes: red 8.4 cm, yellow 7 cm, green 5.6 cm, blue 4.2 cm wide, "
                 "each 2 cm thick) from the left grey pad (pad_a) to the right grey pad (pad_c), using the middle pad (pad_b) as a buffer. "
-                "Move one disc at a time and never put a larger disc on a smaller one (checked at every step and reported in "
-                "`constraint_violations`). At the end the four discs must be stacked on pad_c, largest at the bottom, each centred on the "
+                "Move one disc at a time, only ever the top disc of a pile (never pull a disc out from under another), and never leave a "
+                "larger disc resting on a smaller one (both checked at every step and reported in `constraint_violations`). At the end the four discs must be stacked on pad_c, largest at the bottom, each centred on the "
                 "one below within 2 cm. The minimum solution is 15 moves.",
         "objects": objs,
         "fixtures": [{"name": f"pad_{k}", "kind": "pad", "pos": [x, 0.04], "size": [0.055, 0.055], "color": "grey", "label": k.upper()}
                      for k, x in (("a", -0.2), ("b", 0.0), ("c", 0.2))],
-        "constraints": [{"type": "size_order", "objects": names}],
+        "constraints": [{"type": "size_order", "objects": names}, {"type": "top_only", "objects": names}],
         "goals": [{"type": "stack", "order": names, "pad": "pad_c", "tol": 0.02}],
         "max_steps": max_steps, "robouse": rb,
         "meta": _meta("BenchFlow robo-use L-family (Tower of Hanoi), extended to four discs", "L-family long-horizon sequencing",
@@ -903,13 +903,14 @@ _H3 = [("item_1", "red", 0.04), ("item_2", "yellow", 0.032), ("item_3", "blue", 
 task({
     "id": "hard-uncal-hanoi-3", "title": "One uncalibrated camera: Tower of Hanoi, three discs",
     "goal": "Move the tower of three square discs (flat plates: red 8 cm, yellow 6.4 cm, blue 4.8 cm wide, 2.4 cm thick) from the left grey pad to "
-            "the right grey pad, using the middle grey pad as a buffer. Move one disc at a time and never put a larger disc on a smaller one "
-            "(checked at every step and reported in `constraint_violations`). At the end all three must be stacked on the right pad, largest at "
+            "the right grey pad, using the middle grey pad as a buffer. Move one disc at a time, only ever the top disc of a pile (never pull a "
+            "disc out from under another), and never leave a larger disc resting on a smaller one (both checked at every step and reported in "
+            "`constraint_violations`). At the end all three must be stacked on the right pad, largest at "
             "the bottom, each centred on the one below within 2 cm. There is one camera (`front`) and its projection matrix is NOT given: work "
             "out where things are from the images, for example by moving the gripper (whose position you know) and seeing where it appears.",
     "objects": [_box(n, c, -0.16, 0.02, half=[s, s, 0.012], z=0.012 + 0.0245 * i) for i, (n, c, s) in enumerate(_H3)],
     "fixtures": [{"name": f"pad_{k}", "kind": "pad", "pos": [x, 0.02], "size": [0.05, 0.05], "color": "grey"} for k, x in (("a", -0.16), ("b", 0.0), ("c", 0.16))],
-    "constraints": [{"type": "size_order", "objects": [n for n, _, _ in _H3]}],
+    "constraints": [{"type": "size_order", "objects": [n for n, _, _ in _H3]}, {"type": "top_only", "objects": [n for n, _, _ in _H3]}],
     "goals": [{"type": "stack", "order": [n for n, _, _ in _H3], "pad": "pad_c", "tol": 0.02}],
     "max_steps": 2000, "robouse": _uncal("front"),
     "meta": _meta("BenchFlow robo-use L-family (Tower of Hanoi)", "L-family long-horizon sequencing", "hard", "sequencing", "hard",

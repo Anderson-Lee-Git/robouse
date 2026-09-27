@@ -94,7 +94,8 @@ class Worker:
         }
         t = time.time()
         self.env = og.Environment(configs=cfg)
-        self.robot = self.env.robots[0]
+        self.scene = self.env.scenes[0]
+        self.robot = self.scene.robots[0]
         from omnigibson.action_primitives.symbolic_semantic_action_primitives import (
             SymbolicSemanticActionPrimitives, SymbolicSemanticActionPrimitiveSet)
 
@@ -162,7 +163,7 @@ class Worker:
         import torch as th
 
         try:
-            return self.env.scene._seg_map.get_room_instance_by_point(th.tensor(xy[:2], dtype=th.float32))
+            return self.scene._seg_map.get_room_instance_by_point(th.tensor(xy[:2], dtype=th.float32))
         except Exception:
             return None
 
@@ -175,7 +176,7 @@ class Worker:
     def _free(self, xy, floor: int = 0) -> bool:
         import torch as th
 
-        tm = self.env.scene._trav_map
+        tm = self.scene._trav_map
         fm = tm.floor_map[floor]
         r = max(1, int(math.ceil(ROBOT_RADIUS_M / tm.map_resolution)))
         c = tm.world_to_map(th.tensor(xy, dtype=th.float32))
@@ -419,6 +420,10 @@ class Worker:
             return {"jpeg": self.render(a.get("camera", "follow"))}
         if method == "success":
             return self.success()
+        if method == "debug_exec" and os.environ.get("ROBOUSE_BEHAVIOR_DEBUG") == "1":  # development only
+            g = {"w": self, "og": self.og, "result": None}
+            exec(a.get("code", ""), g)
+            return repr(g.get("result"))[:20000]
         raise KeyError(f"unknown method {method!r}")
 
 

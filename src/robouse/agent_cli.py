@@ -7,6 +7,7 @@ Finds the episode socket from $ROBOUSE_SOCKET (set by the runner) and sends one 
   robo act A1 A2 ... [--repeat N]    apply one low-level action N times (N <= 50)
   robo move-to X Y Z [--grip G]      move the hand toward a point (skill; may be disabled per task)
   robo grip G [--steps N]            hold position and set the gripper (+1 close, -1 open)
+  robo skill NAME [ARG ...]          run a named high-level skill listed by `robo info` (only some tasks have them)
   robo done ["message"]              end the episode and ask for scoring
   robo give-up ["message"]           end the episode without claiming success
 Add --json to any command for raw JSON output.
@@ -117,6 +118,10 @@ def main(argv: list[str] | None = None) -> int:
             args = rest
             steps = opt("--steps", 15, int)
             return _print(_send({"op": "grip", "value": float(args[0]), "steps": steps}), as_json)
+        if cmd == "skill":
+            if not rest:
+                raise IndexError("skill needs a name")
+            return _print(_send({"op": "skill", "name": rest[0], "args": rest[1:]}), as_json)
         if cmd == "done":
             return _print(_send({"op": "done", "text": " ".join(rest)}), as_json)
         if cmd in ("give-up", "give_up"):

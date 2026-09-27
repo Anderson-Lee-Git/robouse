@@ -92,5 +92,5 @@ Speed on the Mac: about 40 ms per simulated step, including rendering both camer
 |---|---|---|---|
 | oracle | demonstration replay | 20/20 | `runs/oracle-libero` |
 | noop | none | 0/20 | `runs/noop-libero` |
-| molmoact2 | allenai/MolmoAct2-LIBERO-LeRobot | see [molmoact2.md](../molmoact2.md) | `runs/final-libero-molmoact2` |
+| molmoact2 | allenai/MolmoAct2-LIBERO-LeRobot | 20/20 (see [molmoact2.md](../molmoact2.md) for caveats) | `runs/final-libero-molmoact2` |
 | claude-code | claude-opus-5-5 | 1/1 smoke trial (libero-goal-8, 279 of 300 steps) | `runs/smoke-libero-claude` |

@@ -456,7 +456,53 @@ def solve_handover(link: Link) -> None:
     hold(link, [a0, a1], 10)
 
 
+def solve_peg_in_hole(link: Link) -> None:
+    """Both arms turn about 45 degrees so the peg's axis and the hole's axis meet in the middle (a 90 degree turn
+    for one wrist alone does not reach), then robot0 lines the peg up in front of the hole and pushes it through."""
+    a0, a1 = Arm(link, 0, grip=False), Arm(link, 1, grip=False)
+    st = link.st
+    v0 = np.asarray(st["peg_axis"], float)
+    n0 = np.asarray(st["hole_axis"], float)
+    c0 = np.asarray(st["hole_center"], float)
+    start = np.asarray(st["peg_pos"], float)
+    n0 = n0 if (start - c0) @ n0 < 0 else -n0  # hole axis pointing from the peg's side into the plate
+    m = (v0 + n0) / np.linalg.norm(v0 + n0)  # the shared axis both will turn to
+    hand1 = a1.pos()
+
+    def step(peg_goal, vmax=0.4, hold1=True):
+        st = link.st
+        a = np.zeros(len(link.names))
+        peg = np.asarray(st["peg_pos"], float)
+        a0.command(a0.pos() + (np.asarray(peg_goal, float) - peg), a, vmax=vmax)
+        n = np.asarray(st["hole_axis"], float)
+        n = n if n @ n0 > 0 else -n
+        # robot0 aims the peg at the plate's current axis (not the fixed one), so drift of either hand is corrected
+        a[a0.sl.start + 3:a0.sl.stop] = np.clip(rotvec_to(st["peg_axis"], m if hold1 else n) / 0.5, -0.6, 0.6)
+        a1.command(hand1, a, vmax=vmax)
+        a[a1.sl.start + 3:a1.sl.stop] = np.clip(rotvec_to(n, m) / 0.5, -0.6, 0.6)
+        link.act(a)
+
+    for _ in range(120):  # 1) turn both, the peg raised a little and pulled back from the plate
+        if link.finished or link.st["peg_hole_cos"] > 0.995:
+            break
+        step(start + [0, 0, 0.05] - m * 0.05)
+    # 2) line the peg up on the hole's axis, 15 cm in front of the plate; 3) push it through along the axis
+    for depth, tol in ((-0.15, 0.006), (0.0, 0.01)):
+        for _ in range(150):
+            if link.finished:
+                return
+            n = np.asarray(link.st["hole_axis"], float)
+            n = n if n @ n0 > 0 else -n
+            goal = np.asarray(link.st["hole_center"], float) + n * depth
+            if np.linalg.norm(goal - np.asarray(link.st["peg_pos"], float)) < tol and link.st["peg_hole_cos"] > 0.98:
+                break
+            step(goal, hold1=False)
+    for _ in range(5):  # hold still with zero deltas (the generic hold would level the hands again)
+        link.act(np.zeros(len(link.names)))
+
+
 SOLVERS = {
+    "TwoArmPegInHole": solve_peg_in_hole,
     "TwoArmHandover": solve_handover,
     "TwoArmLift": solve_two_arm_lift,
     "Wipe": solve_wipe,

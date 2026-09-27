@@ -47,8 +47,14 @@ class Worker:
         self.env = None
 
     # ---- setup ---------------------------------------------------------------------------------------------------
-    def make(self, env_name: str, layout: int, style: int, seed: int, tool: str = "down", kwargs: dict | None = None) -> dict:
+    def make(self, env_name: str, layout: int, style: int, seed: int, tool: str = "down", kwargs: dict | None = None,
+             ep_meta: dict | None = None) -> dict:
+        import random
+
         import robocasa  # noqa: F401  (registers the kitchen environments)
+
+        random.seed(int(seed))  # some RoboCasa placement code draws from the global generators
+        np.random.seed(int(seed))
         import robosuite
         from robosuite.controllers import load_composite_controller_config
 
@@ -57,7 +63,7 @@ class Worker:
         # Only the lightwheel object registry is installed (see docs/suites/robocasa.md); object groups that exist only in
         # the objaverse registry are swapped for a lightwheel category of the same use.
         base = REGISTERED_ENVS[env_name]
-        swap = {"mug": "glass_cup"}
+        swap = {"mug": "glass_cup", "pan": "saucepan"}
 
         def _get_obj_cfgs(env_self):
             cfgs = base._get_obj_cfgs(env_self)
@@ -78,6 +84,8 @@ class Worker:
             has_renderer=False, has_offscreen_renderer=True, use_camera_obs=False, ignore_done=True,
             layout_ids=[int(layout)], style_ids=[int(style)], obj_registries=("lightwheel",), seed=int(seed),
             translucent_robot=False, **(kwargs or {}))
+        if ep_meta:  # replay a recorded episode layout exactly (RoboCasa's own demo-replay mechanism)
+            self.env.set_ep_meta(ep_meta)
         self.obs = self.env.reset()
         self.grip = -1.0
         self.adim = self.env.action_spec[0].shape[0]
@@ -91,6 +99,9 @@ class Worker:
         for _ in range(60):  # part of the reset: turn to the tool orientation, then hold it
             self._send(np.zeros(3))
         return {"lang": self.env.get_ep_meta().get("lang", ""), "cameras": list(self.env.sim.model.camera_names)}
+
+    def ep_meta(self) -> dict:
+        return json.loads(json.dumps(self.env.get_ep_meta(), default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o)))
 
     # ---- helpers -------------------------------------------------------------------------------------------------
     def _pos(self, name: str):
@@ -168,8 +179,16 @@ class Worker:
         for f in features:
             if f == "object":
                 st["object_pos"] = r(o["obj_pos"])
-                st["object_name"] = env.objects["obj"].name if "obj" in env.objects else ""
-                st["object_category"] = getattr(env.objects["obj"], "category", "")
+                ob = env.objects["obj"]
+                cat = ""
+                for c in getattr(env, "object_cfgs", []):
+                    if c.get("name") == "obj":
+                        cat = c.get("info", {}).get("cat", "")
+                st["object_category"] = cat
+                st["object_size"] = r(getattr(ob, "size", [0, 0, 0]))
+            elif f == "container":
+                st["container_pos"] = r(o["container_pos"]) if "container_pos" in o else r(self._pos(env.objects["container"].root_body))
+                st["container_size"] = r(getattr(env.objects["container"], "size", [0, 0, 0]))
             elif f == "sink":
                 ints = env.sink.get_int_sites(relative=False)
                 p0, px, py, pz = (np.asarray(v, dtype=float) for v in list(ints.values())[0][:4])

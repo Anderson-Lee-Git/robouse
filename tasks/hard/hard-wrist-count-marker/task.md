@@ -208,6 +208,10 @@ A two-finger parallel gripper hangs over a table (a floating gripper, no arm; it
 
 The only camera is `wrist`, an eye-in-hand camera fixed to the gripper and moving with it. It looks straight down; in its image, right is +x and up is +y (the back of the table). It is mounted to one side of the fingers, but its exact offset from the tool point is NOT given, and no projection matrix is given (`robo info` gives only its image size and field of view). You know `hand_pos`, and the task description gives the positions of some fixed things, so you can work out how image positions relate to world positions by moving the gripper and watching how the view changes. The higher the gripper, the more of the table you see. There is no other camera.
 
+## Gripper
+
+The grip value is a finger position target, not a hold command: +1 = fully closed, -1 = fully open (10 cm gap), and values in between give a partial opening (finger gap = 10 cm * (1 - G) / 2, so 0 = half open, a 5 cm gap). There is no separate "hold" value: to keep holding an object, keep sending +1 (the fingers then squeeze it). `robo move-to X Y Z --grip G` applies G on every step of the move, starting with the first, so `--grip 1` closes the fingers at the start of the move (they take about 15 steps to close fully); without `--grip`, the last grip value is kept. `robo grip G --steps N` holds the hand still for N steps while applying G. The same values apply to the GRIP argument of `robo act`.
+
 ## Task rules
 
 - Step budget: 550 simulated steps (one step = 20 ms). Wall-clock limit: 20 minutes.

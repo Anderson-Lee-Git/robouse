@@ -171,6 +171,8 @@ class Episode:
                 resp = self.move_to(req.get("pos"), req.get("grip"), int(req.get("max_steps", 100)), float(req.get("tol", 0.01)))
             elif op == "grip":
                 resp = self.grip(float(req.get("value", 1.0)), int(req.get("steps", 15)))
+            elif op == "skill":
+                resp = self.skill(req.get("name"), req.get("args") or [])
             elif op in ("done", "give_up"):
                 resp = {"ok": True, "result": self.finish("done" if op == "done" else "gave_up", str(req.get("text", ""))[:4000])}
             else:
@@ -179,7 +181,7 @@ class Episode:
             resp = {"ok": False, "error": f"{type(e).__name__}: {e}"[:500]}
         if not self.finished and self.steps >= self.max_steps:
             self.finish("budget_exhausted", "")
-        if self.finished and op in ("act", "move_to", "grip") and resp.get("ok") and isinstance(resp.get("result"), dict):
+        if self.finished and op in ("act", "move_to", "grip", "skill") and resp.get("ok") and isinstance(resp.get("result"), dict):
             msg = {"budget_exhausted": "step budget exhausted", "success_reached": "goal reached, episode scored as solved",
                    "wall_time_exhausted": "wall-clock budget exhausted"}.get(self.outcome, self.outcome)
             resp["result"]["episode"] = f"finished: {msg}"
@@ -274,6 +276,26 @@ class Episode:
             self._env_step([0.0, 0.0, 0.0, max(-1.0, min(1.0, value))])
             n += 1
         return {"ok": True, "result": {"executed_steps": n, "state": self._state(), "steps_used": self.steps}}
+
+    def skill(self, name, args) -> dict:
+        """Named high-level skill implemented by the backend (optional `run_skill(name, args)` hook, e.g. BEHAVIOR's
+        symbolic primitives). One skill call counts as one step of the budget. Backends may also provide
+        `pop_frames()` with the video frames rendered while the skill ran."""
+        run = getattr(self.backend, "run_skill", None)
+        if not self.skills_enabled or not callable(run):
+            return {"ok": False, "error": "no named skills in this task; see `robo info`"}
+        if not isinstance(name, str) or not isinstance(args, list):
+            return {"ok": False, "error": "skill needs a name and a list of arguments"}
+        if self.steps >= self.max_steps:
+            return {"ok": False, "error": "step budget exhausted"}
+        out = run(name, [str(a) for a in args])
+        self.steps += 1
+        pop = getattr(self.backend, "pop_frames", None)
+        for fr in (pop() if callable(pop) else []):
+            self._frames.append(np.asarray(fr, dtype=np.uint8))
+            self._frame_meta.append({"i": len(self._frames) - 1, "t": round(time.time() - self.t0, 3), "step": self.steps})
+        self._record_frame(force=True)
+        return {"ok": True, "result": {**out, "steps_used": self.steps, "max_steps": self.max_steps}}
 
     def finish(self, outcome: str, text: str, settle: bool = True) -> dict:
         if self.finished:

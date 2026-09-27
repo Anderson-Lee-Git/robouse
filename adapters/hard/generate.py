@@ -145,6 +145,7 @@ def instruction(sc: dict) -> str:
     else:
         parts.append(f"**Goal:** {sc['goal']}\n" + (f"\n{sc['goal_extra']}\n" if sc.get("goal_extra") else ""))
     parts.append(_obs_section(sc))
+    parts.append(TT.GRIP_NOTE.rstrip("\n") + "\n")
     parts.append(_control_section(sc))
     return "\n".join(parts) + "\n" + ROBO_USAGE
 

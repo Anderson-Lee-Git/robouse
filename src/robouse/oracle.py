@@ -3,6 +3,7 @@ which proves each task is solvable with the public interface.
 
 metaworld: Meta-World's scripted expert reads `obs_vector` from `robo observe` and sends `robo act`.
 tabletop:  scripted pick/place using the move_to and grip skills and public object positions.
+libero:    replays one LIBERO demonstration's recorded actions (the task starts from that demonstration's first state).
 """
 from __future__ import annotations
 
@@ -46,7 +47,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.backend == "metaworld":
         metaworld_oracle(a.env, a.steps)
-    elif a.backend in ("tabletop", "tabletop_hard", "gymrobotics", "libero", "menagerie", "robocasa"):
+    elif a.backend in ("tabletop", "tabletop_hard", "gymrobotics", "libero", "menagerie", "robocasa", "behavior", "roboharm"):
         import importlib
 
         # each backend module provides oracle_main(env: str) that drives the robot through the socket

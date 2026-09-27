@@ -34,4 +34,12 @@ def make_backend(spec: dict) -> Backend:
         from .robocasa import RobocasaBackend
 
         return RobocasaBackend(spec)
+    if kind == "behavior":  # BEHAVIOR-1K; the simulator runs in a remote GPU worker (behavior_worker.py)
+        from .behavior import BehaviorBackend
+
+        return BehaviorBackend(spec)
+    if kind == "roboharm":
+        from .roboharm import RoboHarmBackend
+
+        return RoboHarmBackend(spec)
     raise KeyError(f"unknown backend {kind!r}")
