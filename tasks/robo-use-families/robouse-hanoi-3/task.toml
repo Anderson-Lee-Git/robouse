@@ -1,0 +1,39 @@
+version = "1.0"
+
+[task]
+name = "robouse/robouse-hanoi-3"
+description = "Tower of Hanoi, three discs"
+
+[metadata]
+source_benchmark = "BenchFlow robo-use (task family, adapted to a single floating gripper)"
+source_task = "L-family long-horizon sequencing (tower of Hanoi re-scope)"
+source_suite = "robo-use L-family"
+suite = "robo-use-families"
+category = "sequencing"
+difficulty = "hard"
+tags = ["robo-use", "hanoi", "long-horizon"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "robouse-hanoi-3"
+backend = "tabletop"
+seed = 0
+max_steps = 2500
+camera = "front"
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "robouse-hanoi-3"
+title = "Tower of Hanoi, three discs"
+goal = "Move the tower of three square discs (flat plates of three sizes) from the left grey pad (pad_a) to the right grey pad (pad_c), using the middle pad (pad_b) as a buffer. Move one disc at a time and never put a larger disc on a smaller one (checked at every step and reported in `constraint_violations`). At the end the three discs must be stacked on pad_c, largest at the bottom."
+objects = [{name = "large_disc", kind = "box", color = "red", pos = [-0.16, 0.02], size = [0.04, 0.04, 0.012], z = 0.012}, {name = "medium_disc", kind = "box", color = "yellow", pos = [-0.16, 0.02], size = [0.032, 0.032, 0.012], z = 0.0365}, {name = "small_disc", kind = "box", color = "blue", pos = [-0.16, 0.02], size = [0.024, 0.024, 0.012], z = 0.061}]
+fixtures = [{name = "pad_a", kind = "pad", pos = [-0.16, 0.02], size = [0.05, 0.05], color = "grey", label = "A"}, {name = "pad_b", kind = "pad", pos = [0.0, 0.02], size = [0.05, 0.05], color = "grey", label = "B"}, {name = "pad_c", kind = "pad", pos = [0.16, 0.02], size = [0.05, 0.05], color = "grey", label = "C"}]
+constraints = [{type = "size_order", objects = ["large_disc", "medium_disc", "small_disc"]}]
+goals = [{type = "stack", order = ["large_disc", "medium_disc", "small_disc"], pad = "pad_c", tol = 0.02}]
+max_steps = 2500

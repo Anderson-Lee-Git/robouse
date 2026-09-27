@@ -46,6 +46,7 @@ DEFAULT_MODELS = {"claude-code": "claude-opus-5-5", "codex": "gpt-6-astra", "cla
 ROBO_SUBCOMMANDS = ("info", "observe", "act", "move-to", "move_to", "grip", "done", "give-up", "give_up")
 ROBO_RE = re.compile(r"(?:^|[^\w.-])robo\s+(" + "|".join(re.escape(s) for s in ROBO_SUBCOMMANDS) + r")(?![\w-])", re.M)
 SCRIPT_RE = re.compile(r"(?:^|[\s;&|(])(?:python\d?(?:\.\d+)?|bash|sh|zsh|node|\./)", re.M)
+LOOP_RE = re.compile(r"(?:^|[\s;&|(])(?:for|while|until)\s|\bxargs\b|\bseq\b", re.M)
 RESULT_MARK_RE = re.compile(r'^(?:steps_used: |outcome: |error: |\{"ok": )', re.M)
 HAND_RE = re.compile(r'"?hand_pos"?:\s*(\[[^\]]*\])')
 STEPS_RE = re.compile(r'"?steps_used"?:\s*(\d+)')
@@ -577,7 +578,8 @@ def _align(steps: list[dict], agent_entries: list[int], trace: list[dict]) -> li
     k_static = [len(ROBO_RE.findall(c["command"])) for c in calls]
     need_after = [sum(k_static[i + 1:]) for i in range(len(calls))]
     pos = 0
-    last_script: dict | None = None
+    pending: dict | None = None  # an earlier call that may have made more requests than we could see
+    blind = False  # True when that call showed no robo results at all (a script)
     for i, c in enumerate(calls):
         if pos >= n:
             break
@@ -594,28 +596,29 @@ def _align(steps: list[dict], agent_entries: list[int], trace: list[dict]) -> li
             cands = [q for q in range(pos, hi) if _sig_match(sigs[q], osig) and q + after <= n - 1 - need_after[i]] or \
                     [q for q in range(pos, hi) if _sig_match(sigs[q], osig)]
             if cands:
-                if last_script is not None:
-                    best = max(cands)  # an earlier script made requests we could not see: take the latest fit
+                if pending is not None and blind:
+                    best = max(cands)  # a script made requests we could not see: take the latest fit
                 else:
                     target = (end - after) if end is not None else pos
                     best = min(cands, key=lambda q: (abs(q - target), q))
                 end = best + after
         if end is None:
             if scripty and not ks:
-                last_script = c
+                pending, blind = c, True
             continue
         end = min(max(end, pos), n - 1)
         start = pos
         own_start = max(pos, end - max(k, 1) + 1)
-        if last_script is not None and own_start > pos:
-            last_script["trace"] = agent_entries[pos:own_start]
+        if pending is not None and own_start > pos:
+            # requests before this command's own ones: the earlier script or loop made them without printing
+            pending["trace"] = (pending.get("trace") or []) + agent_entries[pos:own_start]
             start = own_start
         c["trace"] = agent_entries[start:end + 1]
         pos = end + 1
-        last_script = None
+        pending, blind = (c, False) if (scripty or LOOP_RE.search(cmd)) else (None, False)
     rest = agent_entries[pos:]
-    if rest and last_script is not None:
-        last_script["trace"] = rest
+    if rest and pending is not None:
+        pending["trace"] = (pending.get("trace") or []) + rest
         rest = []
     return rest
 

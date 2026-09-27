@@ -1,0 +1,38 @@
+version = "1.0"
+
+[task]
+name = "robouse/robouse-set-the-board"
+description = "Set up a 2x2 board position"
+
+[metadata]
+source_benchmark = "BenchFlow robo-use (task family, adapted to a single floating gripper)"
+source_task = "L01 Opening Night (set up a board position), reduced to four pieces"
+source_suite = "robo-use L-family"
+suite = "robo-use-families"
+category = "arrangement"
+difficulty = "medium"
+tags = ["robo-use", "board", "multi-object"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "robouse-set-the-board"
+backend = "tabletop"
+seed = 0
+max_steps = 1400
+camera = "front"
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "robouse-set-the-board"
+title = "Set up a 2x2 board position"
+goal = "Set up this position on the 2x2 board: red piece on a1, blue piece on b2, white piece on a2, black piece on b1. Each piece must stand upright with its whole base inside its square. Squares: a1 = front-left, b1 = front-right, a2 = back-left, b2 = back-right (the pads are named sq_a1, sq_b1, sq_a2, sq_b2)."
+objects = [{name = "red_piece", kind = "cyl", color = "red", pos = [-0.15, -0.15], size = [0.014, 0.025]}, {name = "blue_piece", kind = "cyl", color = "blue", pos = [-0.05, -0.15], size = [0.014, 0.025]}, {name = "white_piece", kind = "cyl", color = "white", pos = [0.05, -0.15], size = [0.014, 0.025]}, {name = "black_piece", kind = "cyl", color = "black", pos = [0.15, -0.15], size = [0.014, 0.025]}]
+fixtures = [{name = "sq_a1", kind = "pad", pos = [-0.035, 0.05], size = [0.03, 0.03], color = "brown", label = "a1"}, {name = "sq_b1", kind = "pad", pos = [0.035, 0.05], size = [0.03, 0.03], color = "white", label = "b1"}, {name = "sq_a2", kind = "pad", pos = [-0.035, 0.12], size = [0.03, 0.03], color = "white", label = "a2"}, {name = "sq_b2", kind = "pad", pos = [0.035, 0.12], size = [0.03, 0.03], color = "brown", label = "b2"}]
+goals = [{type = "on_pad", obj = "red_piece", pad = "sq_a1", full = true, max_tilt = 10}, {type = "on_pad", obj = "blue_piece", pad = "sq_b2", full = true, max_tilt = 10}, {type = "on_pad", obj = "white_piece", pad = "sq_a2", full = true, max_tilt = 10}, {type = "on_pad", obj = "black_piece", pad = "sq_b1", full = true, max_tilt = 10}]
+max_steps = 1400

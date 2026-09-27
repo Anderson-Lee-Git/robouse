@@ -27,7 +27,10 @@ def metaworld_oracle(env_name: str, steps: int) -> None:
 
     pol = ENV_POLICY_MAP[env_name]()
     for _ in range(steps):
-        st = _obs()["state"]
+        r = _send({"op": "observe"})
+        if not r.get("ok"):  # episode already finished (e.g. goal reached)
+            return
+        st = r["result"]["state"]
         a = np.clip(np.asarray(pol.get_action(np.asarray(st["obs_vector"], dtype=np.float64)), dtype=float), -1, 1)
         r = _send({"op": "act", "action": [float(x) for x in a], "repeat": 1})
         if not r.get("ok") or "episode" in (r.get("result") or {}):

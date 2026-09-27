@@ -48,6 +48,9 @@ class MetaWorldBackend(Backend):
         tasks = [t for t in self._mt1.train_tasks if t.env_name == self.env_name]
         self.env.set_task(tasks[seed % len(tasks)])
         self.env._partially_observable = False  # show the goal, as in the fully-observable MT setting
+        # the episode server enforces the step budget; lift Meta-World's own 500-step truncation, which
+        # otherwise raises on the next step ("You must reset the env manually once truncate==True")
+        self.env.max_path_length = 10**9
         self._obs, _ = self.env.reset(seed=seed)
         self._info = {"success": 0.0}
         self._grip = -1.0

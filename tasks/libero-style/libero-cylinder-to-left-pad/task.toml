@@ -1,0 +1,38 @@
+version = "1.0"
+
+[task]
+name = "robouse/libero-cylinder-to-left-pad"
+description = "Place the cylinder on the left pad"
+
+[metadata]
+source_benchmark = "LIBERO (Liu et al. 2023), adapted"
+source_task = "pick up the ketchup and place it in the basket (with a spatial target)"
+source_suite = "libero_spatial"
+suite = "libero-style"
+category = "pick-place"
+difficulty = "easy"
+tags = ["libero", "spatial"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "libero-cylinder-to-left-pad"
+backend = "tabletop"
+seed = 0
+max_steps = 500
+camera = "front"
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "libero-cylinder-to-left-pad"
+title = "Place the cylinder on the left pad"
+goal = "Pick up the yellow cylinder and place it standing upright on the left one of the two grey pads."
+objects = [{name = "yellow_cylinder", kind = "cyl", color = "yellow", pos = [0.0, -0.08], size = [0.02, 0.035]}]
+fixtures = [{name = "pad_a", kind = "pad", pos = [0.15, 0.1], size = [0.045, 0.045], color = "grey"}, {name = "pad_b", kind = "pad", pos = [-0.15, 0.1], size = [0.045, 0.045], color = "grey"}]
+goals = [{type = "on_pad", obj = "yellow_cylinder", pad = "pad_b", max_tilt = 10}]
+max_steps = 500

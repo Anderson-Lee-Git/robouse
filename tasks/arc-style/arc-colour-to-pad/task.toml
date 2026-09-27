@@ -1,0 +1,39 @@
+version = "1.0"
+
+[task]
+name = "robouse/arc-colour-to-pad"
+description = "Rule inference: blocks and pads"
+
+[metadata]
+source_benchmark = "ARC-AGI (style), robouse original"
+source_task = "colour-to-pad"
+source_suite = "arc-style"
+suite = "arc-style"
+category = "rule-inference"
+difficulty = "easy"
+tags = ["arc", "few-shot"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "arc-colour-to-pad"
+backend = "tabletop"
+seed = 0
+max_steps = 1200
+camera = "front"
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "arc-colour-to-pad"
+title = "Rule inference: blocks and pads"
+grid = {rows = 3, cols = 4, cell = 0.08, origin = [-0.12, 0.08]}
+objects = [{name = "block_1", kind = "box", color = "red", cell = [2, 0], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}, {name = "block_2", kind = "box", color = "blue", cell = [1, 2], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}, {name = "block_3", kind = "box", color = "green", cell = [2, 3], pos = [0.0, 0.0], size = [0.02, 0.02, 0.02]}]
+fixtures = [{name = "red_pad", kind = "pad", cell = [0, 3], size = [0.036, 0.036], color = "red"}, {name = "blue_pad", kind = "pad", cell = [0, 0], size = [0.036, 0.036], color = "blue"}, {name = "green_pad", kind = "pad", cell = [0, 1], size = [0.036, 0.036], color = "green"}]
+goals = [{type = "grid", expected = [{color = "red", cell = [0, 3]}, {color = "blue", cell = [0, 0]}, {color = "green", cell = [0, 1]}]}]
+max_steps = 1200
+public = {examples = [{pads = [{color = "red", cell = [0, 1]}, {color = "blue", cell = [0, 3]}], before = [{color = "blue", cell = [2, 0]}, {color = "red", cell = [1, 2]}], after = [{color = "red", cell = [0, 1]}, {color = "blue", cell = [0, 3]}]}, {pads = [{color = "green", cell = [0, 0]}, {color = "yellow", cell = [0, 2]}, {color = "red", cell = [0, 3]}], before = [{color = "yellow", cell = [2, 3]}, {color = "green", cell = [1, 1]}, {color = "red", cell = [2, 0]}], after = [{color = "green", cell = [0, 0]}, {color = "yellow", cell = [0, 2]}, {color = "red", cell = [0, 3]}]}]}

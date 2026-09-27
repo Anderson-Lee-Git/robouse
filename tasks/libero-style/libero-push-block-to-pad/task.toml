@@ -1,0 +1,38 @@
+version = "1.0"
+
+[task]
+name = "robouse/libero-push-block-to-pad"
+description = "Push the block onto the green pad"
+
+[metadata]
+source_benchmark = "LIBERO (Liu et al. 2023), adapted"
+source_task = "push the plate to the front of the stove"
+source_suite = "libero_goal"
+suite = "libero-style"
+category = "pushing"
+difficulty = "easy"
+tags = ["libero", "push"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "libero-push-block-to-pad"
+backend = "tabletop"
+seed = 0
+max_steps = 500
+camera = "front"
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "libero-push-block-to-pad"
+title = "Push the block onto the green pad"
+goal = "Push the orange block across the table until it sits on the green pad (its centre inside the pad)."
+objects = [{name = "orange_block", kind = "box", color = "orange", pos = [-0.14, -0.06], size = [0.02, 0.02, 0.02]}]
+fixtures = [{name = "green_pad", kind = "pad", pos = [0.12, -0.06], size = [0.05, 0.05], color = "green"}]
+goals = [{type = "on_pad", obj = "orange_block", pad = "green_pad"}]
+max_steps = 500

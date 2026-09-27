@@ -31,6 +31,16 @@ from .tasks import Task, find_tasks
 AGENT_CLI = Path(__file__).with_name("agent_cli.py")
 
 
+def sandbox_profile() -> str:
+    """macOS Seatbelt profile for agent processes: everything is allowed except reading or writing the
+    robouse repo, runs and episode data (all under ~/benchflow) and the owner's credential files.
+    The agent still reaches the episode socket (/tmp) and the network (model APIs). Set ROBOUSE_SANDBOX=0 to disable."""
+    home = str(Path.home())
+    denied = [f"{home}/benchflow", f"{home}/.config/bf-agents"] + [p for p in os.environ.get("ROBOUSE_SANDBOX_DENY", "").split(":") if p]
+    rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in denied)
+    return "(version 1)(allow default)" + rules
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -94,6 +104,11 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
         base_env["ROBOUSE_SOCKET"] = sock
         base_env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1]) if harness == "oracle" else ""
         launch = harnesses.build(harness, model, task.instruction, ws, task.path, base_env)
+        sandboxed = harness not in ("oracle", "noop") and sys.platform == "darwin" and os.environ.get("ROBOUSE_SANDBOX", "1") != "0"
+        if sandboxed:
+            launch.cmd = ["sandbox-exec", "-p", sandbox_profile(), *launch.cmd]
+        cfg["sandbox"] = "macos-seatbelt: deny ~/benchflow, ~/.config/bf-agents" if sandboxed else "none"
+        (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
         with open(tdir / "agent" / "stdout.jsonl", "w") as out, open(tdir / "agent" / "stderr.txt", "w") as err:
             agent = subprocess.Popen(launch.cmd, cwd=ws, env=launch.env, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
                                      start_new_session=True)

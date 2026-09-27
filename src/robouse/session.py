@@ -190,9 +190,16 @@ class Episode:
         dim = self.backend.action_spec.dim
         hold = [0.0] * (dim - 1) + [g] if dim >= 1 else []
         for _ in range(SETTLE_STEPS if settle else 0):  # settle; success must still hold afterwards
-            self.backend.step(hold)
+            try:
+                self.backend.step(hold)
+            except Exception:  # a backend that cannot step further is judged on its current state
+                break
             self._record_frame(force=True)
-        success = bool(self.success_ever) if self.success_mode == "first" else bool(self.backend.success())
+        judge = getattr(self.backend, "judge", None)  # optional: verdict that depends on how the episode ended
+        if self.success_mode == "first":
+            success = bool(self.success_ever)
+        else:
+            success = bool(judge(outcome, text)) if callable(judge) else bool(self.backend.success())
         self.finished, self.outcome, self.agent_text = True, outcome, text
         self.result = {
             "task": self.spec.get("id"), "seed": self.seed, "success": success, "success_ever": self.success_ever,

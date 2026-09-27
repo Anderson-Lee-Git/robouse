@@ -1,0 +1,39 @@
+version = "1.0"
+
+[task]
+name = "robouse/robouse-clutter-retrieval"
+description = "Retrieve a block from clutter"
+
+[metadata]
+source_benchmark = "BenchFlow robo-use (task family, adapted to a single floating gripper)"
+source_task = "D02 Clutter Retrieval"
+source_suite = "robo-use D-family"
+suite = "robo-use-families"
+category = "precision"
+difficulty = "medium"
+tags = ["robo-use", "clutter", "protected-neighbours"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "robouse-clutter-retrieval"
+backend = "tabletop"
+seed = 0
+max_steps = 500
+camera = "front"
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "robouse-clutter-retrieval"
+title = "Retrieve a block from clutter"
+goal = "Take the red block out from between the four violet cylinders and put it in the white tray. The violet cylinders are protected: none may be displaced by more than 6 mm or tilted by more than 5 degrees at any time (checked at every step, reported in `constraint_violations`). Tip: the gripper's opening can be set with a grip value between -1 and 1."
+objects = [{name = "red_block", kind = "box", color = "red", pos = [-0.1, 0.02], size = [0.02, 0.02, 0.02]}, {name = "violet_1", kind = "cyl", color = "violet", pos = [-0.15, 0.02], size = [0.015, 0.035]}, {name = "violet_2", kind = "cyl", color = "violet", pos = [-0.05, 0.02], size = [0.015, 0.035]}, {name = "violet_3", kind = "cyl", color = "violet", pos = [-0.1, 0.09], size = [0.015, 0.035]}, {name = "violet_4", kind = "cyl", color = "violet", pos = [-0.1, -0.05], size = [0.015, 0.035]}]
+fixtures = [{name = "tray", kind = "tray", pos = [0.15, 0.02], size = [0.07, 0.06], color = "white"}]
+constraints = [{type = "max_disp", objects = ["violet_1", "violet_2", "violet_3", "violet_4"], tol = 0.006, tilt_deg = 5}]
+goals = [{type = "in", obj = "red_block", container = "tray"}]
+max_steps = 500

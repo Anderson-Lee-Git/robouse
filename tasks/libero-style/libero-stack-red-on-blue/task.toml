@@ -1,0 +1,37 @@
+version = "1.0"
+
+[task]
+name = "robouse/libero-stack-red-on-blue"
+description = "Stack the red block on the blue block"
+
+[metadata]
+source_benchmark = "LIBERO (Liu et al. 2023), adapted"
+source_task = "stack the left bowl on the right bowl and place them in the tray (stacking)"
+source_suite = "libero_90"
+suite = "libero-style"
+category = "stacking"
+difficulty = "medium"
+tags = ["libero", "stack"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 120
+
+[robouse]
+id = "libero-stack-red-on-blue"
+backend = "tabletop"
+seed = 0
+max_steps = 500
+camera = "front"
+skills = true
+success_mode = "final"  # judged after `robo done` (or `robo give-up`) and a 10-step settle
+
+[robouse.scenario]
+id = "libero-stack-red-on-blue"
+title = "Stack the red block on the blue block"
+goal = "Stack the red block on top of the blue block."
+objects = [{name = "red_block", kind = "box", color = "red", pos = [-0.12, 0.02], size = [0.02, 0.02, 0.02]}, {name = "blue_block", kind = "box", color = "blue", pos = [0.1, -0.06], size = [0.02, 0.02, 0.02]}, {name = "yellow_block", kind = "box", color = "yellow", pos = [0.02, 0.14], size = [0.02, 0.02, 0.02]}]
+goals = [{type = "on_top", obj = "red_block", base = "blue_block"}]
+max_steps = 500
