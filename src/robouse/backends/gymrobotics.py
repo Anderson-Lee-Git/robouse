@@ -288,25 +288,27 @@ def _fetch_pick_place() -> None:
 
 
 def _fetch_slide() -> None:
-    """Strike the puck toward the goal from behind; success counts the first time the puck is on the goal."""
+    """Closed loop: strike the puck toward the goal from behind, let it glide, re-aim and repeat.
+
+    The puck keeps gliding slowly on the low-friction table; the task counts the first time it is on the goal.
+    """
     st = _state()
-    for _ in range(6):
+    for _ in range(12):
         obj, goal = np.array(st["obj1_pos"]), np.array(st["goal_pos"])
         d = goal[:2] - obj[:2]
         dist = np.linalg.norm(d)
         u = d / dist
-        z = obj[2] + 0.005
+        z = obj[2]
         hand = np.array(st["hand_pos"])
         _move(np.r_[hand[:2], z + 0.08], tol=0.02)
-        _move(np.r_[obj[:2] - u * 0.08, z + 0.08], tol=0.01)
-        _move(np.r_[obj[:2] - u * 0.08, z], tol=0.01)
-        speed = float(np.clip(0.9 * dist ** 0.5 + 0.08, 0.15, 1.0))
-        for _ in range(6):
-            st = _act([u[0] * speed, u[1] * speed, 0, 0])
-        _act([-u[0] * 0.5, -u[1] * 0.5, 0.5, 0], 3)  # back off and let the puck slide
-        for _ in range(20):
-            st = _act([0, 0, 0, 0], 5)
-            if np.linalg.norm(st["obj1_vel"]) < 0.01:
+        _move(np.r_[obj[:2] - u * 0.07, z + 0.08], tol=0.01)
+        _move(np.r_[obj[:2] - u * 0.07, z + 0.01], tol=0.01)  # the fingertips cannot go lower
+        speed = float(np.clip(0.2 + 0.5 * dist, 0.2, 0.6))
+        _act([u[0] * speed, u[1] * speed, 0, 0], 8)
+        _act([-u[0] * 0.5, -u[1] * 0.5, 0.5, 0], 2)  # back off and let the puck glide
+        for _ in range(15):
+            st = _act([0, 0, 0, 0], 4)
+            if np.linalg.norm(st["obj1_vel"]) < 0.06:
                 break
 
 

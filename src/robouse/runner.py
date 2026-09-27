@@ -179,7 +179,9 @@ def run_many(root: Path, harness: str, model: str, job_dir: Path, filt: str = ""
         return r
 
     with cf.ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:
-        for r in ex.map(one, tasks):
+        futs = [ex.submit(one, t) for t in tasks]
+        for fut in cf.as_completed(futs):
+            r = fut.result()
             results.append(r)
             log.write(json.dumps(r) + "\n")
             log.flush()
