@@ -133,7 +133,7 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task_dir: Path
         env["BASETEN_API_KEY"] = _baseten_key()
         env["CODEX_HOME"] = _clean_codex_home("# GLM via Baseten; provider set on the command line\n")
         cfg = ['-c', 'model_providers.baseten.name="Baseten"', '-c', f'model_providers.baseten.base_url="{BASETEN_OPENAI}"',
-               '-c', 'model_providers.baseten.env_key="BASETEN_API_KEY"', '-c', 'model_providers.baseten.wire_api="chat"',
+               '-c', 'model_providers.baseten.env_key="BASETEN_API_KEY"', '-c', 'model_providers.baseten.wire_api="responses"',
                '-c', 'model_provider="baseten"']
         return Launch(["codex", "exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox",
                        *cfg, "-m", GLM_MODEL, "-C", str(workspace), PROMPT_PREFIX + prompt], env,
