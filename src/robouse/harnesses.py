@@ -53,6 +53,26 @@ def _read_env(path: Path) -> dict[str, str]:
 
 
 _token_rr = {"i": 0}
+CACHE = HOME / ".cache" / "robouse"
+
+
+def _clean_claude_home() -> str:
+    """Empty Claude Code config dir: no user settings, CLAUDE.md, MCP servers or plugins leak into trials."""
+    d = CACHE / "claude-home"
+    d.mkdir(parents=True, exist_ok=True)
+    return str(d)
+
+
+def _clean_codex_home(extra_config: str = "") -> str:
+    """Codex home with only the owner's login (auth.json) and a minimal config: no personal MCP servers or skills."""
+    d = CACHE / ("codex-home-glm" if extra_config else "codex-home")
+    d.mkdir(parents=True, exist_ok=True)
+    auth = HOME / ".codex" / "auth.json"
+    link = d / "auth.json"
+    if auth.exists() and not link.exists():
+        link.symlink_to(auth)
+    (d / "config.toml").write_text('model_reasoning_effort = "medium"\n' + extra_config)
+    return str(d)
 
 
 def _claude_oauth() -> str:
@@ -83,6 +103,7 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task_dir: Path
 
     if harness == "claude-code":
         env["CLAUDE_CODE_OAUTH_TOKEN"] = _claude_oauth()
+        env["CLAUDE_CONFIG_DIR"] = _clean_claude_home()
         m = model or "claude-opus-5-5"
         return Launch(["claude", "-p", PROMPT_PREFIX + prompt, "--model", m, "--output-format", "stream-json", "--verbose",
                        "--dangerously-skip-permissions", "--max-turns", "400", "--disallowedTools", "WebFetch,WebSearch,Task"],
@@ -97,17 +118,20 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task_dir: Path
                     "ANTHROPIC_DEFAULT_SONNET_MODEL": GLM_MODEL, "ANTHROPIC_DEFAULT_HAIKU_MODEL": GLM_MODEL,
                     "ANTHROPIC_SMALL_FAST_MODEL": GLM_MODEL, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"})
         env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+        env["CLAUDE_CONFIG_DIR"] = _clean_claude_home()
         return Launch(["claude", "-p", PROMPT_PREFIX + prompt, "--model", GLM_MODEL, "--output-format", "stream-json",
                        "--verbose", "--dangerously-skip-permissions", "--max-turns", "400",
                        "--disallowedTools", "WebFetch,WebSearch,Task"], env, helper=stats, notes={"model": GLM_MODEL, "provider": "baseten"})
 
     if harness == "codex":
         m = model or "gpt-6-astra"
+        env["CODEX_HOME"] = _clean_codex_home()
         return Launch(["codex", "exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox",
                        "-m", m, "-C", str(workspace), PROMPT_PREFIX + prompt], env, notes={"model": m})
 
     if harness == "codex-glm":
         env["BASETEN_API_KEY"] = _baseten_key()
+        env["CODEX_HOME"] = _clean_codex_home("# GLM via Baseten; provider set on the command line\n")
         cfg = ['-c', 'model_providers.baseten.name="Baseten"', '-c', f'model_providers.baseten.base_url="{BASETEN_OPENAI}"',
                '-c', 'model_providers.baseten.env_key="BASETEN_API_KEY"', '-c', 'model_providers.baseten.wire_api="chat"',
                '-c', 'model_provider="baseten"']
@@ -120,7 +144,7 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task_dir: Path
                     "MSWEA_COST_TRACKING": "ignore_errors"})
         exe = shutil.which("mini") or str(HOME / ".local/bin/mini")
         (workspace / ".robouse" / "task.txt").write_text(PROMPT_PREFIX + prompt)
-        return Launch([exe, "-y", "--exit-immediately", "-m", f"openai/{GLM_MODEL}", "-t", PROMPT_PREFIX + prompt, "-o",
+        return Launch([exe, "-y", "--exit-immediately", "-l", "0", "-m", f"openai/{GLM_MODEL}", "-t", PROMPT_PREFIX + prompt, "-o",
                        str(workspace / ".robouse" / "mini_traj.json")], env, notes={"model": GLM_MODEL, "provider": "baseten"})
 
     raise KeyError(f"unknown harness {harness!r}")
