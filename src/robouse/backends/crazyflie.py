@@ -58,6 +58,7 @@ TASKS: dict[str, dict] = {
     "crazyflie-waypoints": dict(n=1, kind="waypoints", land="A", max_steps=1400),
     "crazyflie-gates": dict(n=1, kind="gates", land="A", max_steps=1600),
     "crazyflie-window": dict(n=1, kind="land", land="B", max_steps=1400),
+    "crazyflie-window-manual": dict(n=1, kind="land", land="B", max_steps=1400, skills=False),
     "crazyflie-shelf-landing": dict(n=1, kind="land", land="shelf", max_steps=1400),
     "crazyflie-swarm-formation": dict(n=3, kind="formation", center=(-1.9, -0.3, 1.2), side=.6, max_steps=1200),
     "crazyflie-swarm-swap": dict(n=3, kind="swap", max_steps=2000),
@@ -575,6 +576,25 @@ def oracle_main(env: str) -> None:
             x, y = PADS["A"]
             o.skill("goto", x, y, 0.8)
             o.skill("land")
+        elif env == "crazyflie-window-manual":
+            # no skills: a proportional controller on the predicted stopping point, through `robo act` only
+            wx, wy, wz = WINDOW["c"]
+            for tgt, tol in (((-3.2, -2.3, wz), .08), ((wx - .7, -1.0, wz), .1), ((wx - .7, wy, wz), .04), ((wx + .7, wy, wz), .08),
+                             ((*PADS["B"], .6), .04)):
+                for _ in range(200):
+                    d = o.state()["drones"][0]
+                    p, v = np.array(d["pos"]), np.array(d["vel"])
+                    if np.linalg.norm(p - tgt) < tol and np.linalg.norm(v) < .1:
+                        break
+                    c = KP_GOTO * (np.array(tgt) - (p + LEAD * v))
+                    c[:2] *= min(1.0, .8 / max(np.linalg.norm(c[:2]), 1e-9))
+                    c[2] = np.clip(c[2], -.6, .6)
+                    o.act([*c, 0.0], 2)
+            for _ in range(100):
+                d = o.state()["drones"][0]
+                if d["landed_on"] and not d["motors_on"]:
+                    break
+                o.act([0, 0, -.3, 0], 5)
         elif env == "crazyflie-window":
             wx, wy, wz = WINDOW["c"]
             o.skill("takeoff", wz)

@@ -70,6 +70,12 @@ TEXT = {
         title="Through the window", difficulty="medium", category="navigation",
         goal=f"Take off from the `home` pad in the west hall, fly through the window in the partition wall into the east room, and land on pad `B` at {PADS['B']}.",
         success="the drone rests on pad `B`, with no crash at any time"),
+    "crazyflie-window-manual": dict(
+        title="Through the window, no autopilot", difficulty="hard", category="low-level control",
+        goal=(f"Take off from the `home` pad in the west hall, fly through the window in the partition wall into the east room, and "
+              f"land on pad `B` at {PADS['B']}. In this task the skills are disabled: fly with `robo act` velocity setpoints only, "
+              f"closing the loop yourself with `robo observe`."),
+        success="the drone rests on pad `B`, with no crash at any time"),
     "crazyflie-shelf-landing": dict(
         title="Land on the shelf", difficulty="medium", category="navigation",
         goal=(f"Take off from the `home` pad, get into the east room (through the window), and land on the white platform on top of "
@@ -107,13 +113,17 @@ def main() -> None:
                               swarm_rule="; so does a collision between drones" if swarm else ""),
                  "## Task\n\n" + x["goal"],
                  f"**Success:** {x['success']}. Judged by the episode server from the simulated state after you call `robo done` and the drones have held still for 10 steps.",
-                 SWARM_CONTROLS if swarm else SINGLE_CONTROLS, SWARM_OBS if swarm else SINGLE_OBS,
+                 SWARM_CONTROLS if swarm else (SINGLE_CONTROLS.split(" Skills (")[0] + " `robo skill` is disabled in this task."
+                                               if t.get("skills") is False else SINGLE_CONTROLS),
+                 SWARM_OBS if swarm else SINGLE_OBS,
                  f"The step budget is {t['max_steps']} steps ({t['max_steps'] * 0.05:.0f} s of flight).", EMBODIED_USAGE]
         write_embodied_task(out, task_id=tid, backend="crazyflie", suite="crazyflie", title=x["title"], instruction="\n\n".join(parts) + "\n",
                             robot="Bitcraze Crazyflie 2", category=x["category"], difficulty=x["difficulty"],
                             tags=["aerial", "quadrotor", "crazyflie", "menagerie", "mujoco"] + (["swarm"] if swarm else []),
                             max_steps=t["max_steps"], camera=be.camera, cameras=be.decl.cameras,
-                            oracle_note="scripted flight with the goto/land skills.")
+                            oracle_note=("a proportional controller on the drone's predicted stopping point, through robo act only."
+                                         if t.get("skills") is False else "scripted flight with the goto/land skills."),
+                            extra_robouse={"skills": False} if t.get("skills") is False else None)
     print(f"wrote {len(TASKS)} tasks to {out}")
 
 

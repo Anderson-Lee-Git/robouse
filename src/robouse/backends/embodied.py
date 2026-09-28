@@ -235,7 +235,10 @@ class EmbodiedBackend(Backend):
 
     def embodiment(self) -> dict:
         """BenchFlow's backend contract: the embodiment spec (spec_version 1) for this task's robot."""
-        return self.decl.to_spec()
+        spec = self.decl.to_spec(success_mode=str(self.spec.get("success_mode", "final")))
+        if self.spec.get("skills") is False:  # the task disables skills: the agent has only the action groups
+            spec["skills"], spec["budgets"]["max_skill_steps"] = [], 0
+        return spec
 
     def info_extra(self) -> dict:
         return {"embodiment": self.embodiment()}

@@ -1,6 +1,6 @@
 # Crazyflie suite (nano-quadrotors in a flight arena)
 
-The crazyflie suite has 6 tasks in `tasks/crazyflie/`: four single-drone flights and two three-drone swarm tasks.
+The crazyflie suite has 7 tasks in `tasks/crazyflie/`: five single-drone flights (one without skills) and two three-drone swarm tasks.
 
 - Backend: `src/robouse/backends/crazyflie.py` (scene, controller, skills, monitor, judge, reference solutions).
 - Generator: `python adapters/crazyflie/generate.py`.
@@ -57,6 +57,7 @@ Single drone: `takeoff [Z]`, `goto X Y Z [TOL]`, `turn YAW_DEG`, `land`, `hover 
 | crazyflie-waypoints | four waypoints in order, then land on `A` | each waypoint reached in order (centre within 0.10 m), resting on `A` | 1400 |
 | crazyflie-gates | gates G1, G2, G3 in order and direction, then land on `A` | each gate plane crossed inside its opening, in order; resting on `A` | 1600 |
 | crazyflie-window | through the window, land on `B` | resting on `B` | 1400 |
+| crazyflie-window-manual | the same with skills disabled: `robo act` velocity setpoints only | resting on `B` | 1400 |
 | crazyflie-shelf-landing | through the window, land on the shelf platform | resting on the platform | 1400 |
 | crazyflie-swarm-formation | three drones into a 0.6 m equilateral triangle at 1.2 m, centred on (-1.9, -0.3) | heights within 0.05 m, centroid within 0.10 m, sides 0.6 +- 0.06 m, all slower than 0.1 m/s | 1200 |
 | crazyflie-swarm-swap | swap cf0 and cf2 between `S0` and `S2`; cf1 ends on `S1` | all three resting on their target pads | 2000 |
@@ -69,10 +70,10 @@ Real runner, 2026-09-28, MuJoCo 3.3.0:
 
 | Harness | Result | Runs |
 |---|---|---|
-| oracle | 6/6 | `runs/emb-oracle-crazyflie/` |
-| noop | 0/6 | `runs/emb-noop-crazyflie/` |
+| oracle | 7/7 | `runs/emb-oracle-crazyflie/` |
+| noop | 0/7 | `runs/emb-noop-crazyflie/` |
 
-The reference solutions use only the skills and public positions. Scripted wrong attempts score 0: flying straight at pad `B` crashes into the partition; passing G2 before G1 sets the out-of-order flag; swapping the swarm with one `goto_all` (straight, simultaneous lines) brings cf0 and cf2 into contact.
+The reference solutions use only the skills and public positions; the no-skills task's reference solution runs its own proportional controller through `robo observe` and `robo act`. Scripted wrong attempts score 0: flying straight at pad `B` crashes into the partition; passing G2 before G1 sets the out-of-order flag; swapping the swarm with one `goto_all` (straight, simultaneous lines) brings cf0 and cf2 into contact.
 
 ## Limitations
 
