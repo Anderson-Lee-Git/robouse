@@ -364,6 +364,7 @@ class Episode:
             "outcome": outcome, "steps_used": self.steps, "max_steps": self.max_steps, "requests": self.requests,
             "agent_text": text, "wall_time_s": round(time.time() - self.t0, 2),
             **({"judge_error": judge_error} if judge_error else {}),
+            **({"judge_detail": getattr(self.backend, "last_judge")} if getattr(self.backend, "last_judge", None) else {}),
         }
         (self.run_dir / "result.json").write_text(json.dumps(self.result, indent=2))
         self._write_video()

@@ -11,13 +11,17 @@ Action (one 0.1 s step = one MetaDrive step): vehicle.controls [STEER, THROTTLE]
 STEER x 40 deg front-wheel angle (positive = left); THROTTLE > 0 drives (engine force), < 0 brakes, 0 coasts. The hold
 value (settle after `robo done`) is [0, -1]: full brake.
 
-Skills: follow_route SPEED_KMH METERS (lane keeping by pure pursuit on the route's lane centre line plus cruise control;
-it does not brake for traffic or obstacles), change_lane left|right, stop [METERS], wait SECONDS.
+Skills: follow_route SPEED_KMH METERS (lane keeping by a Stanley controller on the route's lane centre line plus PI cruise
+control; it does not brake for traffic or obstacles), change_lane left|right, stop [METERS], wait SECONDS.
 
-Success (every task): after `robo done` and the 10-step settle (brakes on), the car is inside the destination zone
-(MetaDrive's arrive_dest region: within 5 m of the end of the route's final road, any lane) and at rest (< 1 km/h), and
-at no time did it collide with a vehicle or object, touch the road edge or sidewalk, or leave the road / cross a solid
-lane line (MetaDrive's out_of_road rule).
+Success (every task): after `robo done` and the 10-step settle (full brake, wheels straight), the car is at rest
+(< 2 km/h) inside the destination zone (MetaDrive's arrive_dest region: from 5 m before the end of the route's final
+road to 5 m past it, any lane of that road), and at no time did it collide with a vehicle or object, touch the road
+edge or sidewalk, go out of road (off the lanes or onto a solid lane line: MetaDrive's out_of_road rule), or cut off
+another driver (a vehicle behind in the car's lane closing in with a time gap under 1 s). The roundabout task adds a
+give-way rule (`yield_rule`, published in the observation as `route.give_way`).
+
+Each task's scene is fixed (map blocks, map seed, scripted traffic timetable); the episode seed (`--seed`) is ignored.
 """
 from __future__ import annotations
 
@@ -39,6 +43,20 @@ MAX_KMH = 80.0          # MetaDrive's default car: no engine force above 80 km/h
 
 # Road names are MetaDrive node pairs: ">", ">>", ">>>" are the start block; "<i><B><socket>_<road>_" belongs to block i of
 # type B (S straight, C curve, O roundabout, X intersection, r on-ramp). Lane 0 is the leftmost lane (next to the centre line).
+_MAIN = [((">", ">>"), 0.0, 10.0), ((">>", ">>>"), 10.0, 50.0), ((">>>", "1S0_0_"), 50.0, 121.3), (("1S0_0_", "2r0_0_"), 121.3, 179.9)]
+
+
+def _main_road(x: float) -> list:
+    """Ramp-merge map: the main-road road containing x (the main road runs along +x from x = 0)."""
+    return list(next(r for r, a, b in _MAIN if a <= x < b))
+
+
+def _main_road_s(x: float) -> float:
+    return x - next(a for r, a, b in _MAIN if a <= x < b)
+
+
+DENSE = dict(gap_m=5.0, headway_s=1.0)  # scripted streams: IDM with a 5 m + 1 s desired gap (MetaDrive's default: 10 m + 1.5 s)
+
 TASKS: dict[str, dict] = {
     # lane keeping on a winding two-lane road (tight S-bends), no traffic
     "driving-winding-road": dict(
@@ -65,23 +83,28 @@ TASKS: dict[str, dict] = {
     "driving-cone-zone": dict(
         map="SCS", seed=4, lanes=3, spawn=[">", ">>", 2], max_steps=900, cones=dict(road=["1S0_0_", "2C0_0_"], s=30.0, length=45.0),
         vehicles=[dict(type="m", lane=[">>>", "1S0_0_", 0], s=20, speed_kmh=35)]),
-    # a two-lane roundabout with MetaDrive's own IDM traffic; the route takes the third exit
+    # a two-lane roundabout; circulating cars (they do not yield) pass the entry in a steady stream, then a gap
     "driving-roundabout": dict(
-        map="SOS", seed=0, lanes=2, spawn=[">", ">>", 1], max_steps=900, traffic_density=0.25),
+        map="SOS", seed=0, lanes=2, spawn=[">", ">>", 1], max_steps=1200,
+        yield_rule=dict(road="1S0_0_->2O0_0_", point=[136.3, -5.1], window_s=4.0),
+        vehicles=[dict(type=("m", "s", "l", "m", "s")[i], lane=road + [1], s=st, speed_kmh=30, dest="2O0_3_", **DENSE)   # circulating
+                  for i, (road, st) in enumerate(((["2O3_1_", "2O0_0_"], 8.0), (["2O3_0_", "2O3_1_"], 18.0),
+                                                  (["2O3_0_", "2O3_1_"], 0.5), (["2O2_1_", "2O3_0_"], 10.0),
+                                                  (["2O2_0_", "2O2_1_"], 20.0)))]
+        + [dict(type=("m", "s", "l", "m")[i % 4], lane=["-2O2_3_", "-2O2_2_", 1], s=0, speed_kmh=30, t=2.1 * i,
+                dest="2O0_3_", **DENSE) for i in range(10)]),                                          # entering from the north
     # unprotected left turn at a four-way intersection (no traffic lights) across a stream of oncoming cars
     "driving-intersection-left-turn": dict(
         map="SXS", seed=0, lanes=2, spawn=[">", ">>", 0], max_steps=900,
-        vehicles=[dict(type=ty, lane=["-2X1_1_", "-2X1_0_", ln], s=0, speed_kmh=40, t=t, dest="->")
-                  for ty, ln, t in (("m", 0, 4.0), ("s", 1, 6.5), ("l", 0, 9.0), ("m", 1, 11.5), ("m", 0, 14.0),
-                                    ("s", 1, 16.5), ("s", 0, 38.0), ("m", 1, 41.0))]
-        + [dict(type="m", lane=["-2X2_1_", "-2X2_0_", 1], s=0, speed_kmh=35, t=19.0, dest="2X0_1_")]),
-    # join a highway from an on-ramp: a short acceleration lane and a platoon in the right lane
+        vehicles=[dict(type=("m", "s", "l", "m")[i % 4], lane=["-2X1_1_", "-2X1_0_", i % 2], s=0, speed_kmh=40,
+                       t=3.0 + 1.0 * i, dest="->", **DENSE) for i in range(24)]
+        + [dict(type=ty, lane=["-2X1_1_", "-2X1_0_", ln], s=0, speed_kmh=40, t=t, dest="->") for ty, ln, t in (("s", 0, 48.0), ("m", 1, 51.0))]),
+    # join a highway from an on-ramp: a short acceleration lane and a long platoon in the right lane
     "driving-ramp-merge": dict(
-        map="SrS", seed=0, lanes=3, spawn=["2r1_0_", "2r1_1_", 0], spawn_s=2.0, max_steps=700,
-        vehicles=[dict(type=ty, lane=road + [2], s=st, speed_kmh=50)
-                  for ty, road, st in (("m", ["1S0_0_", "2r0_0_"], 39.7), ("l", ["1S0_0_", "2r0_0_"], 19.7),
-                                       ("m", ["1S0_0_", "2r0_0_"], 0.0), ("s", [">>>", "1S0_0_"], 51.0),
-                                       ("m", [">>>", "1S0_0_"], 31.0), ("xl", [">>>", "1S0_0_"], 9.0))]
+        map="SrS", seed=0, lanes=3, spawn=["2r1_0_", "2r1_1_", 0], spawn_s=2.0, max_steps=800,
+        vehicles=[dict(type=("m", "l", "m", "s", "xl", "m")[k % 6], lane=_main_road(175.0 - 20.0 * k) + [2],
+                       s=_main_road_s(175.0 - 20.0 * k), speed_kmh=50) for k in range(9)]
+        + [dict(type=("s", "m", "l", "m", "m")[k], lane=[">", ">>", 2], s=0.0, speed_kmh=50, t=0.35 + 1.44 * k) for k in range(5)]
         + [dict(type="m", lane=[">>>", "1S0_0_", 1], s=30, speed_kmh=62)]),
 }
 
@@ -134,10 +157,13 @@ class DrivingBackend(EmbodiedBackend):
         # run from the worker's own folder so no stray module (e.g. a profile.py in the cwd) shadows the stdlib
         self.proc = subprocess.Popen([py, str(WORKER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=str(WORKER.parent),
                                      env={**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1",
-                                          "PYGAME_HIDE_SUPPORT_PROMPT": "1", "SDL_VIDEODRIVER": "dummy"},
+                                          "PYGAME_HIDE_SUPPORT_PROMPT": "1", "SDL_VIDEODRIVER": "dummy",
+                                          "SDL_AUDIODRIVER": "dummy", "AUDIODEV": "null"},
                                      stderr=subprocess.DEVNULL if os.environ.get("ROBOUSE_METADRIVE_QUIET", "1") == "1" else None)
         self._state = None
         self._new_events: list[dict] = []
+        self._worker_dead = ""
+        self.last_judge: dict = {}
 
     def _declare(self) -> Embodiment:
         sensors = [
@@ -171,19 +197,32 @@ class DrivingBackend(EmbodiedBackend):
 
     # ---- worker ------------------------------------------------------------------------------------------------
     def _call(self, cmd: str, **kw):
-        self.proc.stdin.write((json.dumps({"cmd": cmd, **kw}) + "\n").encode())
-        self.proc.stdin.flush()
-        line = self.proc.stdout.readline()
-        if not line:
-            raise RuntimeError("MetaDrive worker exited (run with ROBOUSE_METADRIVE_QUIET=0 to see its stderr)")
-        hdr = json.loads(line)
+        if self.proc.poll() is not None:
+            self._dead(f"exit code {self.proc.returncode}")
+        try:
+            self.proc.stdin.write((json.dumps({"cmd": cmd, **kw}) + "\n").encode())
+            self.proc.stdin.flush()
+            line = self.proc.stdout.readline()
+            if not line:
+                raise EOFError("no reply")
+            hdr = json.loads(line)
+            if hdr.get("ok") and cmd == "render":
+                h, w, c = hdr["shape"]
+                data = self.proc.stdout.read(hdr["nbytes"])
+                if len(data) != hdr["nbytes"]:
+                    raise EOFError("truncated image")
+                return np.frombuffer(data, dtype=np.uint8).reshape(h, w, c)
+        except (BrokenPipeError, EOFError, OSError, ValueError) as e:
+            self._dead(f"{type(e).__name__}: {e}")
         if not hdr.get("ok"):
             raise RuntimeError(f"MetaDrive worker: {hdr.get('error')}")
-        if cmd == "render":
-            h, w, c = hdr["shape"]
-            data = self.proc.stdout.read(hdr["nbytes"])
-            return np.frombuffer(data, dtype=np.uint8).reshape(h, w, c)
         return hdr["result"]
+
+    def _dead(self, why: str):
+        self._state = None
+        self._worker_dead = why
+        raise RuntimeError(f"simulator worker died ({why}); the episode cannot continue "
+                           "(run with ROBOUSE_METADRIVE_QUIET=0 to see the worker's stderr)")
 
     # ---- episode -----------------------------------------------------------------------------------------------
     def reset(self, seed: int) -> None:
@@ -212,12 +251,22 @@ class DrivingBackend(EmbodiedBackend):
             self._state = self._call("observe")
         return json.loads(json.dumps(self._state))
 
-    def success(self) -> bool:
-        j = self._call("judge")
-        return bool(j["success"]) and not self.events
-
     def judge_detail(self) -> dict:
-        return self._call("judge")
+        """Why the episode scored what it did: zone, speed at the end, events (also kept in self.last_judge)."""
+        try:
+            j = self._call("judge")
+        except RuntimeError as e:
+            j = {"success": False, "error": str(e)}
+        j["success"] = bool(j.get("success")) and not self.events
+        self.last_judge = j
+        return j
+
+    def success(self) -> bool:
+        return bool(self.judge_detail()["success"])  # False (never raises) when the worker has died
+
+    def judge(self, outcome: str, text: str = "") -> bool:
+        detail = self.judge_detail()
+        return outcome == "done" and bool(detail["success"])
 
     def mj_model_data(self):
         return None
@@ -227,6 +276,8 @@ class DrivingBackend(EmbodiedBackend):
         return self._call("render", width=int(w), height=int(h), camera=self.camera or "topdown")
 
     def close(self) -> None:
+        if self.proc.poll() is not None:
+            return
         try:
             self.proc.stdin.write(b'{"cmd": "close"}\n')
             self.proc.stdin.flush()
@@ -424,6 +475,53 @@ def _pass_blockage(o: Oracle, st: dict, cruise: float, pass_to: int, blocked_spe
     return st
 
 
+def _stop_before(o: Oracle, st: dict, road: str, cruise: float) -> dict:
+    """Drive until `road` is the next road on the route and stop about 2.5 m before its start (a stop line)."""
+    while st["lane"]["road"] != road:
+        to_line = next((r["starts_in_m"] for r in st["route"]["next_roads"] if r["road"] == road), None)
+        if to_line is not None and to_line < 30.0:
+            o.skill("stop", max(1.0, to_line - 2.5))
+            return o.state()
+        st = _step_drive(o, st, cruise)
+    return st
+
+
+def _yield(o: Oracle, horizon_s: float) -> None:
+    """Wait until no vehicle is within 14 m or closing in on the car within `horizon_s` seconds."""
+    while True:
+        st = o.state()
+        danger = False
+        for v in st["vehicles"]:
+            spd = v.get("speed_kmh", 0.0) / 3.6
+            hr = math.radians(v.get("heading_rel_deg", 0.0))
+            closing = v["rel_ahead_m"] * math.cos(hr) + v["rel_left_m"] * math.sin(hr) < 0  # moving towards the car
+            if v["distance_m"] < 14.0 or (closing and spd > 0.5 and v["distance_m"] < 14.0 + spd * horizon_s):
+                danger = True
+        if not danger:
+            return
+        o.skill("wait", 0.5)
+
+
+def _eta_min(st: dict, point) -> float:
+    """Shortest time (s) any listed vehicle needs to reach `point` (map frame), from the public observation."""
+    ex, ey = st["ego"]["pos"]
+    h = math.radians(st["ego"]["heading_deg"])
+    best = 1e9
+    for v in st["vehicles"]:
+        px = ex + v["rel_ahead_m"] * math.cos(h) - v["rel_left_m"] * math.sin(h)
+        py = ey + v["rel_ahead_m"] * math.sin(h) + v["rel_left_m"] * math.cos(h)
+        vh = h + math.radians(v.get("heading_rel_deg", 0.0))
+        spd = v.get("speed_kmh", 0.0) / 3.6
+        dx, dy = px - point[0], py - point[1]
+        dist = math.hypot(dx, dy)
+        closing = -(dx * math.cos(vh) + dy * math.sin(vh)) * spd / max(dist, 1e-6)
+        if dist < 8.0 or (closing > 0.3 and dist < 18.0):
+            best = 0.0
+        elif closing > 0.3:
+            best = min(best, dist / closing)
+    return best
+
+
 def solution(env: str):
     def winding(o: Oracle) -> None:
         st = o.state()
@@ -455,47 +553,33 @@ def solution(env: str):
         return solve
 
     def roundabout(o: Oracle) -> None:
-        st = o.state()
-        _arrive(o, st, 40.0)
+        st = _stop_before(o, o.state(), "1S0_0_->2O0_0_", 30.0)
+        gw = st["route"]["give_way"]
+        # give way: wait until no vehicle will reach the conflict point within the rule's window plus the time the car
+        # needs to get there from the stop line (about 3 s)
+        while _eta_min(o.state(), gw["point"]) < gw["window_s"] + 3.5:
+            o.skill("wait", 0.5)
+        o.skill("follow_route", 22, 30)
+        _arrive(o, o.state(), 30.0)
 
     def intersection(o: Oracle) -> None:
-        st = o.state()
-        # approach and stop at the stop line (the end of the road before the junction)
-        while st["lane"]["road"] != "1S0_0_->2X2_0_":
-            to_line = next((r["starts_in_m"] for r in st["route"]["next_roads"] if r["road"] == "1S0_0_->2X2_0_"), None)
-            if to_line is not None and to_line < 30.0:
-                o.skill("stop", max(1.0, to_line - 2.5))
-                break
-            st = _step_drive(o, st, 40.0)
-        # yield to oncoming and crossing traffic: go when no vehicle is closing in within 5 s (or is inside the junction)
-        while True:
-            st = o.state()
-            danger = False
-            for v in st["vehicles"]:
-                spd = v.get("speed_kmh", 0.0) / 3.6
-                hr = math.radians(v.get("heading_rel_deg", 0.0))
-                px, py = v["rel_ahead_m"], v["rel_left_m"]
-                closing = px * math.cos(hr) + py * math.sin(hr) < 0  # its velocity points towards the car
-                if v["distance_m"] < 14.0 or (closing and v["distance_m"] < 14.0 + spd * 5.0):
-                    danger = True
-            if not danger:
-                break
-            o.skill("wait", 0.5)
+        _stop_before(o, o.state(), "1S0_0_->2X2_0_", 40.0)
+        _yield(o, horizon_s=5.0)
         o.skill("follow_route", 22, 32)
-        st = o.state()
-        _arrive(o, st, 40.0)
+        _arrive(o, o.state(), 40.0)
 
     def ramp(o: Oracle) -> None:
-        st = o.state()
-        # on the ramp: hold back while main-road traffic in the right lane is level with or behind the car, so the
-        # acceleration lane is reached behind the platoon rather than alongside it
+        # stop near the end of the ramp and wait until the right lane is clear from 80 m back to 10 m ahead
+        st = _stop_before(o, o.state(), "2r1_3_->2r0_0_", 25.0)
+        while True:
+            busy = [v for v in st["vehicles"] if v.get("lane") == 2 and str(v.get("road", "")).split("->")[0] in (">>", ">>>", "1S0_0_", "2r0_0_")
+                    and -80.0 < v["rel_ahead_m"] < 12.0 and v.get("speed_kmh", 0) > 5]
+            if not busy:
+                break
+            o.skill("wait", 0.5)
+            st = o.state()
         while not (st["lane"]["count"] == 4 and st["lane"]["index"] == 3):
-            level = [v for v in st["vehicles"] if v.get("lane") == 2 and str(v.get("road", "")).split("->")[0] in (">>", ">>>", "1S0_0_", "2r0_0_")
-                     and v["rel_ahead_m"] < 12.0 and v.get("speed_kmh", 0) > 5]
-            if level:
-                o.skill("follow_route", 18, 3)
-            else:
-                o.skill("follow_route", 50, 4)
+            o.skill("follow_route", 50, 4)
             st = o.state()
         # acceleration lane: merge left into the first safe gap
         while st["lane"]["index"] == 3:

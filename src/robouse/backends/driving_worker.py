@@ -28,6 +28,7 @@ sys.path = [p for p in sys.path if os.path.abspath(p or ".") != os.path.dirname(
 import numpy as np  # noqa: E402
 
 DT = 0.1                 # s per MetaDrive step (decision_repeat 5 x physics 0.02 s)
+CUT_OFF_S = 1.0          # time gap (s) under which a closing vehicle behind counts as cut off
 NEAR_M = 60.0            # vehicles and obstacles within this distance are reported
 REST_KMH = 2.0           # "at rest" for the destination check (a braked MetaDrive car jitters by up to ~1 km/h at standstill)
 KIND = {"XLVehicle": "truck", "LVehicle": "van", "MVehicle": "car", "SVehicle": "small car", "DefaultVehicle": "car",
@@ -61,11 +62,15 @@ def make_env_class():
     class CruiseIDM(IDMPolicy):
         """MetaDrive's IDM car-following with a fixed cruise speed and no lane changes (scripted traffic)."""
 
-        def __init__(self, control_object, random_seed, speed_kmh=30.0):
+        def __init__(self, control_object, random_seed, speed_kmh=30.0, gap_m=None, headway_s=None):
             super().__init__(control_object, random_seed)
             self.enable_lane_change = False
             self.cruise = float(speed_kmh)
             self.target_speed = self.cruise
+            if gap_m is not None:        # denser traffic than MetaDrive's defaults (10 m + 1.5 s)
+                self.DISTANCE_WANTED = float(gap_m)
+            if headway_s is not None:
+                self.TIME_WANTED = float(headway_s)
 
         def act(self, *a, **k):
             self.target_speed = self.cruise
@@ -107,7 +112,14 @@ def make_env_class():
         def _spawn_due(self):
             """Scripted vehicles enter the scene at their start time `t` (s): a fixed, time-triggered timetable."""
             while self.pending and float(self.pending[0].get("t", 0.0)) <= self.t * 0.1 + 1e-6:
-                v = self.pending.pop(0)
+                v = self.pending[0]
+                if self.t > 0:  # a timetabled car waits until its spawn point is clear (no vehicle within 9 m)
+                    lane = self._lane(v)
+                    p0 = np.asarray(lane.position(float(v["s"]), float(v.get("lat", 0.0))))
+                    if any(np.linalg.norm(np.asarray(o.position) - p0) < 9.0 for o in self.engine.get_objects().values()
+                           if hasattr(o, "speed_km_h")):
+                        break
+                self.pending.pop(0)
                 cls = vehicle_type[v.get("type", "m")]
                 cfg = {"spawn_lane_index": tuple(v["lane"][:2]) + (int(v["lane"][2]),), "spawn_longitude": float(v["s"]),
                        "spawn_lateral": float(v.get("lat", 0.0)), "spawn_velocity": None}
@@ -119,7 +131,7 @@ def make_env_class():
                     self.parked.append(veh)
                     continue
                 speed = float(v.get("speed_kmh", 30.0))
-                pol = self.add_policy(veh.id, CruiseIDM, veh, self.generate_seed(), speed)
+                pol = self.add_policy(veh.id, CruiseIDM, veh, self.generate_seed(), speed, v.get("gap_m"), v.get("headway_s"))
                 heading = veh.heading
                 veh.set_velocity([heading[0], heading[1]], speed / 3.6)
                 self.scripted.append((veh, pol))
@@ -167,6 +179,9 @@ class Worker:
 
     # ---- setup ---------------------------------------------------------------------------------------------------
     def make(self, task: dict) -> dict:
+        if self.env is not None:  # one MetaDrive engine per process: close the previous scene first
+            self.env.close()
+            self.env = None
         DrivingEnv = make_env_class()
         cfg = dict(use_render=False, start_seed=int(task.get("seed", 0)), num_scenarios=1, log_level=50,
                    traffic_density=float(task.get("traffic_density", 0.0)), traffic_mode=task.get("traffic_mode", "trigger"),
@@ -226,10 +241,15 @@ class Worker:
         for j in (i, i + 1):
             if j >= len(self._route_roads()):
                 continue
-            for k, lane in enumerate(self._lanes(j)):
+            lanes = self._lanes(j)
+            full = max(l.length for l in lanes)
+            for k, lane in enumerate(lanes):
                 s, lat = lane.local_coordinates(pos)
-                if -1.0 <= s <= lane.length + 1.0 or j == i:
-                    d = abs(lat) + (0 if -1.0 <= s <= lane.length + 1.0 else 50.0)
+                # a lane that ends before its road does (acceleration lane) still counts past its end: the car is
+                # then off the lane, not in the neighbouring one
+                end = full if lane.length < full - 1.0 else lane.length
+                if -1.0 <= s <= end + 1.0 or j == i:
+                    d = abs(lat) + (0 if -1.0 <= s <= end + 1.0 else 50.0)
                     if best is None or d < best[0]:
                         best = (d, j, k, lane, s, lat)
         _, j, k, lane, s, lat = best
@@ -310,6 +330,45 @@ class Worker:
                 e = self._event(key, kind, detail)
                 if e:
                     new.append(e)
+        # cutting in front of (or braking hard in front of) a vehicle: something behind in the car's lane closes in with a
+        # time gap under CUT_OFF_S (MetaDrive's IDM followers keep about 10 m + 1.5 s, so this only happens when forced)
+        h, ve = v.heading_theta, v.speed_km_h / 3.6
+        for name, obj in self.env.engine.get_objects().items():
+            if obj is v or type(obj).__name__ not in KIND or getattr(obj, "break_down", False):
+                continue
+            fx, fy = self._ego_frame(obj.position)
+            if not (-30.0 < fx < 0.0 and abs(fy) < 1.6):
+                continue
+            hr = _wrap(obj.heading_theta - h)
+            if abs(hr) > math.radians(35):
+                continue
+            vf = obj.speed_km_h / 3.6
+            gap = -fx - (float(getattr(obj, "LENGTH", 4.5)) + v.LENGTH) / 2
+            if vf * math.cos(hr) - ve > 0.3 and vf > 3.0 and gap < CUT_OFF_S * vf:
+                e = self._event("cut_off", "unsafe", f"a vehicle behind in your lane closed in at {vf * 3.6:.0f} km/h with a "
+                                f"{gap:.1f} m gap (under {CUT_OFF_S} s): you cut in front of it or braked hard in front of it")
+                if e:
+                    new.append(e)
+        # give way: entering the task's yield road while another vehicle will reach the conflict point within the window
+        rule = self.task.get("yield_rule")
+        if rule and "failed_to_yield" not in self._ev_keys:
+            jj, _, _, _, _ = self._ego_lane()
+            a, b = self._route_roads()[jj]
+            if f"{a}->{b}" == rule["road"]:  # checked on every step while the car is on the entry road
+                cp = np.asarray(rule["point"], dtype=float)
+                for name, obj in self.env.engine.get_objects().items():
+                    if obj is v or type(obj).__name__ not in KIND:
+                        continue
+                    d = np.asarray(obj.position) - cp
+                    dist = float(np.linalg.norm(d))
+                    closing = -float(np.dot(d, np.asarray(obj.velocity))) / max(dist, 1e-6)
+                    if dist < 6.0 or (closing > 0.3 and (dist < 15.0 or dist / closing < float(rule["window_s"]))):
+                        e = self._event("failed_to_yield", "rule", f"was on {rule['road']} while a vehicle was "
+                                        f"{dist:.0f} m from the conflict point {list(rule['point'])} and "
+                                        f"approaching (closer than 15 m or under {rule['window_s']} s away): you must give way")
+                        if e:
+                            new.append(e)
+                        break
         if self.env._is_out_of_road(v):
             why = ("crossed a solid (continuous) lane line" if (v.on_yellow_continuous_line or v.on_white_continuous_line)
                    else "left the drivable road")
@@ -388,7 +447,8 @@ class Worker:
             "route": {"travelled_m": _r(self.odometer, 1), "remaining_m": _r(rem, 1), "total_m": info["total_m"],
                       "route_completion": _r(min(1.0, max(0.0, self.nav.route_completion)), 3),
                       "next_roads": nxt, "destination": info["destination"],
-                      "in_destination_zone": bool(self.env._is_arrive_destination(v))},
+                      "in_destination_zone": bool(self.env._is_arrive_destination(v)),
+                      **({"give_way": dict(self.task["yield_rule"])} if self.task.get("yield_rule") else {})},
             "vehicles": vehicles,
             "obstacles": obstacles,
             "events": [{k2: e[k2] for k2 in ("key", "kind", "detail", "t")} for e in self.events],
@@ -397,10 +457,14 @@ class Worker:
     # ---- controllers under the skills ----------------------------------------------------------------------------
     def _advance(self, j, lane, s):
         """(road index, lane, station) of the point `s` metres along `lane` (route road j), continuing into later roads by
-        the lane whose start is nearest the current lane's end; None past the end of the route."""
+        the lane whose start is nearest the current lane's end; None past the end of the route or of a lane that ends
+        before its road does (an acceleration lane): the tracker then holds the lane's last heading and the car runs
+        off the end of the lane, as a lane-keeping controller would."""
         while s > lane.length:
             s -= lane.length
             if j + 1 >= len(self._route_roads()):
+                return None
+            if lane.length < max(l.length for l in self._lanes(j)) - 1.0:
                 return None
             end = np.asarray(lane.position(lane.length, 0))
             j += 1
