@@ -33,7 +33,7 @@ One step is 40 ms (20 physics steps). The action is two groups, 26 values for Sh
 
 | Group | Mode | Components | Scale |
 |---|---|---|---|
-| `wrist.pose_delta` | `ee_delta_pose`, world frame | DX DY DZ DROLL DPITCH DYAW | x 1 cm on the positioner's x, y, z target; x 4 degrees on its roll, pitch, yaw target |
+| `wrist.pose_delta` | `ee_delta_pose`; frame: xyz world, rpy positioner joints | DX DY DZ DROLL DPITCH DYAW | x 1 cm on the positioner's x, y, z target; x 4 degrees on its roll, pitch, yaw target |
 | `hand.joints` | `joint_delta` | one per hand actuator (upstream order) | added to the actuator's position target, x 10 % of its control range per step |
 
 Controllers:
@@ -47,21 +47,21 @@ Controllers:
 
 - `hand`: wrist pose and targets, `palm_pos` (a point about 3.5 cm in front of the palm), `palm_normal`, `finger_dir`, fingertip positions, joint positions and targets normalised to [-1, 1], and per-finger contacts;
 - `objects`: pose and what each object touches, cube face normals, and the marker's end points;
-- `table`, `landmarks` (bowl, holders, valve angle, buttons with depth), `progress`, `safety_events`.
+- `table`, `landmarks` (bowl and holders with rim height, `inside_bottom_z` and `inside_depth`; valve angle; buttons with depth), `progress`, `safety_events`.
 
 Cameras: `front` (default), `side`, `top`, `back`.
 
 Skills are generators that yield ordinary actions, so they share the budget and the video:
 
-- `move_to X Y Z [SPEED]`, `move_by DX DY DZ [SPEED]`: straight line of the palm point with the orientation held. Each reports `reached` or `blocked`.
-- `rotate ROLL PITCH YAW [SPEED]`: absolute positioner angles, turning about the palm point.
-- `turn_about X Y DEG [SPEED]`: swing the hand about a vertical line, yawing with it.
+- `move_to X Y Z [SPEED]`, `move_by DX DY DZ [SPEED]`: straight line of the palm point with the orientation held; SPEED clamped to 0.01-0.25 m/s. Each reports `reached` or `blocked`, or `remaining_m` if it runs out of its 400 steps.
+- `rotate ROLL PITCH YAW [SPEED]`: absolute positioner angles, turning about the palm point; SPEED clamped to 5-100 deg/s.
+- `turn_about X Y DEG [SPEED]`: swing the hand about a vertical line, yawing with it; SPEED clamped to 5-90 deg/s. It reports `remaining_deg` if it runs out of its 580 steps.
 - `grasp power|pinch|tripod`: close those fingers toward a fully closed posture until they stall. Reports which fingers touch what.
 - `open` (gentle), `pose NAME` (`open`, `flat`, `relaxed`, `point`, `fist`, `power_ready`, `pinch_ready`, `tripod_ready`), `set_joint NAME DEG`, `wait [SECONDS]`.
 
 None of the skills attaches anything or reads hidden state. They only read public observation fields and the controller's own targets.
 
-Events: an object reaching the floor is recorded as "dropped" if the hand had lifted it, else "knocked off the table". In the in-hand task, the cube touching the table is an event. Any event fails the task.
+Events: an object reaching the floor is recorded as "dropped" if the hand had lifted it, else "knocked off the table". In the in-hand task, the cube touching the table and any positioner angle deviating more than 15 degrees from its start are events, both checked every 2 ms physics step. Any event fails the task.
 
 ## Tasks
 
@@ -70,12 +70,12 @@ Success is judged from the physical state after `robo done` and a 10-step hold.
 | Task | Hand | Goal | Success rule | Budget |
 |---|---|---|---|---|
 | shadow-cube-face-up | Shadow | Turn a 5.6 cm coloured cube so red is up (reorient by regrasp) | Red normal within 20 degrees of up; cube on the table, not touched by the hand; never fell off | 1200 |
-| shadow-pour-balls | Shadow | Lift a cup holding six balls, pour into a bowl, set the cup down | At least 4 balls inside the bowl; cup upright (within 20 degrees) on the table | 1200 |
-| shadow-turn-valve | Shadow | Turn a three-spoke hand wheel (friction 0.15 N m) at least 180 degrees counter-clockwise | Wheel angle at least 180 degrees from its start (yaw range forces two strokes) | 1000 |
+| shadow-pour-balls | Shadow | Lift a cup holding six balls, pour into a bowl (rim 4.5 cm, 3 cm deep inside over a 1.5 cm bottom), set the cup down | At least 4 ball centres inside the bowl's inner radius and below its rim height; cup upright (within 20 degrees) on the table | 1200 |
+| shadow-turn-valve | Shadow | Turn a three-spoke hand wheel (friction 0.15 N m) at least 180 degrees counter-clockwise | Wheel angle at least 180 degrees from its start (the yaw range means it may need more than one stroke; the oracle uses two) | 1000 |
 | leap-lift-ball | LEAP | Lift a 6.6 cm ball out of a ring stand | Ball centre at least 0.15 m above the table, touching the hand, not the table, slower than 5 cm/s | 700 |
-| leap-pen-to-holder | LEAP | Move a 16.6 cm marker from a narrow stand into a pen cup | Marker's lower end inside the cup (radius, below rim); hand not touching it | 1000 |
+| leap-pen-to-holder | LEAP | Move a 16.6 cm marker from a narrow stand (4.5 cm deep inside) into a pen cup (6.5 cm deep inside) | Marker's lower end inside the cup (radius, below rim); hand not touching it | 1000 |
 | leap-press-buttons | LEAP | Press spring buttons green, blue, green; never red | Click sequence exactly [green, blue, green] (a click is at least 8 mm of travel) | 800 |
-| leap-cube-in-hand | LEAP | Palm up, flip a cube lying on the palm so red is up (in-hand, large tolerance) | Red normal within 25 degrees of up; cube on the hand, not the table; wrist angles within 15 degrees of start; cube never touched the table | 600 |
+| leap-cube-in-hand | LEAP | Palm up, flip a cube lying on the palm so red is up (in-hand, large tolerance) | Red normal within 25 degrees of up; cube on the hand, not the table; wrist angles never deviated more than 15 degrees from start and cube never touched the table (both checked every physics step) | 600 |
 
 In-hand versus regrasp:
 
@@ -90,8 +90,8 @@ Real runner, 2026-09-28, on this Mac's CPU:
 
 | Harness | Result | Runs |
 |---|---|---|
-| oracle | 7/7 | `runs/emb-oracle-dexhand/` |
-| noop | 0/7 | `runs/emb-noop-dexhand/` |
+| oracle | 7/7 | `runs/emb-oracle-dexhand-v2/` |
+| noop | 0/7 | `runs/emb-noop-dexhand-v2/` |
 
 - Oracle episodes take 8-14 s wall time and 45-586 steps. The reference solutions use only the socket: skills plus raw `robo act` for the in-hand flip.
 - Frames from every recording were checked. They show no interpenetration, no flying objects and no teleports.

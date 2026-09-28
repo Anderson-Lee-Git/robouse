@@ -49,9 +49,9 @@ TEXT = {
     "shadow-pour-balls": dict(
         title="Pour balls into the bowl", difficulty="hard", category="dexterous-manipulation",
         goal=("A blue cup (6.4 cm outer diameter, 11 cm tall) stands on the table at about (0.14, -0.10) with six small orange "
-              "balls (1.8 cm) inside. A wide bowl (inner radius 9.5 cm, 4.5 cm deep) is fixed to the table at (0.14, 0.14). "
+              "balls (1.8 cm) inside. A wide bowl (inner radius 9.5 cm, rim 4.5 cm above the table, 3 cm deep inside over a 1.5 cm solid bottom) is fixed to the table at (0.14, 0.14). "
               "Pick up the cup, pour at least four balls into the bowl, and put the cup back down upright on the table."),
-        success=("at least 4 balls lie inside the bowl (within its inner radius, below its rim), and the cup stands upright "
+        success=("at least 4 balls lie inside the bowl (centre within its inner radius and below its rim height), and the cup stands upright "
                  "(axis within 20 degrees of vertical) on the table; dropping the cup to the floor fails; spilled balls do not "
                  "count but do not fail the task. `progress.balls_in_bowl` counts the balls in the bowl")),
     "shadow-turn-valve": dict(
@@ -71,7 +71,7 @@ TEXT = {
     "leap-pen-to-holder": dict(
         title="Marker into the pen cup", difficulty="hard", category="dexterous-manipulation",
         goal=("A 16.6 cm marker (1.6 cm thick, red cap up) stands in a narrow blue stand at (0.14, -0.12) (hole radius 1.2 cm, "
-              "6 cm deep). Take it out and put it into the green pen cup at (0.14, 0.14) (inner radius 3 cm, 8 cm tall), then let "
+              "rim 6 cm above the table, 4.5 cm deep inside). Take it out and put it into the green pen cup at (0.14, 0.14) (inner radius 3 cm, rim 8 cm above the table, 6.5 cm deep inside), then let "
               "go of it. Positions of both ends of the marker are in `objects.marker` (`cap_end`, `tip_end`)."),
         success=("the marker's lower end is inside the green pen cup (within its inner radius and below its rim), and the hand "
                  "does not touch the marker; a marker dropped to the floor fails")),
@@ -88,13 +88,13 @@ TEXT = {
         goal=("The hand is held palm up (roll 180, pitch 0, yaw 0) about 20 cm above the table. A 6 cm cube (70 g) with six "
               "coloured faces lies on the palm near the finger roots, white face up and red face toward the fingertips (+x). "
               "Using the fingers, turn the cube over in the hand so that its **red** face points up, and leave it resting on the "
-              "hand. This is in-hand manipulation: the positioner's roll, pitch and yaw must each stay within 15 degrees of "
+              "hand. This is in-hand manipulation: the positioner's roll, pitch and yaw must never deviate more than 15 degrees from "
               "their start values (so the wrist cannot simply tip the cube over), and the cube must never touch the table. "
               "Face directions are in `objects.cube.face_normals`."),
         success=("the cube's red face normal is within 25 degrees of straight up, the cube touches the hand and not the table, "
-                 "and each positioner angle (roll, pitch, yaw) is within 15 degrees of its start "
-                 "(`progress.wrist_rotation_since_start_deg` is the largest change); the cube touching the table at any time "
-                 "fails")),
+                 "and no positioner angle (roll, pitch, yaw) ever deviated more than 15 degrees from its start, checked every 2 ms "
+                 "(`progress.wrist_rotation_since_start_deg` is the current largest change); the cube touching the table at any "
+                 "time, also checked every 2 ms, fails")),
 }
 
 
@@ -103,16 +103,20 @@ def controls(hand: str) -> str:
     n = len(acts)
     return ("**Controls.** `robo act` takes {n6} numbers, each in [-1, 1], applied for one 40 ms step (`--repeat N` holds them for "
             "N steps): first the wrist group `wrist.pose_delta` = DX DY DZ DROLL DPITCH DYAW, which moves the positioner's "
-            "target by x 1 cm along world x, y, z and by x 4 degrees in roll, pitch and yaw (rotations about the wrist); then the "
+            "target by x 1 cm along world x, y, z and by x 4 degrees on its roll, pitch and yaw joints (rotations about the "
+            "wrist); then the "
             "hand group `hand.joints` = {names} ({n} values), each added to that actuator's position target as a fraction of its "
             "range (x 10 %; for the flexion joints + curls the finger). All zeros holds the current targets. The positioner is a stiff "
             "joint-space PD controller with force limits (200-300 N, 40 N m), so pushing into the table or an object stalls it "
             "instead of passing through; its target never runs more than 3 cm / 15 degrees ahead of the measured pose. The "
             "hand's actuators are the upstream position servos, so a finger stopped by an object keeps squeezing with a force "
             "that grows with the remaining target error. Skills (`robo info` lists arguments): `move_to X Y Z [SPEED]` and "
-            "`move_by DX DY DZ [SPEED]` (straight line of the palm point, orientation kept; reports `blocked` if stopped), "
-            "`rotate ROLL PITCH YAW [SPEED]` (absolute positioner angles in degrees, turning about the palm point), "
-            "`turn_about X Y DEG [SPEED]` (swing the hand about a vertical line, yawing with it), `grasp power|pinch|tripod` "
+            "`move_by DX DY DZ [SPEED]` (straight line of the palm point, orientation kept, SPEED 0.01-0.25 m/s; reports "
+            "`blocked` if stopped, `remaining_m` if it ran out of steps), "
+            "`rotate ROLL PITCH YAW [SPEED]` (absolute positioner angles in degrees, turning about the palm point, SPEED 5-100 "
+            "deg/s), "
+            "`turn_about X Y DEG [SPEED]` (swing the hand about a vertical line, yawing with it, SPEED 5-90 deg/s; reports "
+            "`remaining_deg` if it ran out of steps), `grasp power|pinch|tripod` "
             "(close those fingers until they stall or are fully closed; reports which fingers touch what), `open`, `pose NAME` "
             "(named postures: {poses}), `set_joint NAME DEG` and `wait [SECONDS]`. Skills are plain controllers: a grasp "
             "can slip or miss, and nothing is attached to the hand.").format(

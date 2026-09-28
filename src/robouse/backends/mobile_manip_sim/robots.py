@@ -630,10 +630,6 @@ class Stretch(DiffDriveMixin, Robot):
     WPITCH = (-1.57, .56)
     SLIDE_OPEN, SLIDE_CLOSED = .04, -.02
     STOW = dict(lift=.25, ext=0.0, wyaw=3.14, wpitch=-.4, wroll=0.0)
-    # the grasp point (between the fingertips) with wrist yaw = pitch = 0: robot-frame offsets from the geometry
-    GRASP_Y0 = -.415   # y of the grasp point at zero extension (the arm extends towards the robot's -y side)
-    GRASP_X = -.021    # x of the grasp point (behind the base centre)
-    GRASP_DZ = .109    # grasp point height above the lift joint value
 
     def load_spec(self):
         import mujoco

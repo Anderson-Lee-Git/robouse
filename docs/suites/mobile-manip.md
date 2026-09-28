@@ -51,7 +51,7 @@ Zero holds everything. `robo info` shows the declaration under `embodiment`.
 
 ## Skills
 
-`drive_to X Y [YAW_DEG] [TOL]` (diff drive: turn, straight line with heading correction and a braking profile, final turn; Google: straight holonomic line while turning; not obstacle-aware, stops and reports when the base is blocked), `turn YAW_DEG`, `reach X Y Z` (IK arms: straight-line target motion then convergence, reports the error and contacts; Stretch: lift to the height, drive the base along its heading to put the point on the arm's line, extend; reports out-of-range points), `grasp` (close until the fingers stop; reports what is held), `open_gripper`, `ready`, `stow`. Skills yield ordinary actions, so their steps count and they can fail.
+`drive_to X Y [YAW_DEG] [TOL]` (diff drive: turn, straight line with heading correction and a braking profile, final turn; Google: straight holonomic line while turning; not obstacle-aware, stops and reports when the base is blocked), `turn YAW_DEG`, `reach X Y Z` (IK arms: straight-line target motion then convergence, reports the error and contacts; Stretch: lift to the height, drive the base along its heading to put the point on the arm's line, extend; reports out-of-range points), `grasp` (close until the fingers stop; reports what is held), `open_gripper`, `ready`, `stow`. Skills yield ordinary actions, so their steps count and they can fail. Step caps per call: `drive_to` 1000 (Google Robot 700), `reach` 800 (Stretch; 300 for the IK arms), `turn` 200, `ready`/`stow` 200. `drive_to` rejects a non-finite YAW_DEG.
 
 ## Observation and cameras
 
@@ -59,21 +59,21 @@ Zero holds everything. `robo info` shows the declaration under `embodiment`.
 
 ## Judge and events
 
-Placement on a table or shelf: the object touches that surface, its centre is above it, it is tilted less than 20 degrees and the robot does not touch it. Bin: centre inside the bin walls, below the rim, not touched by the robot. Drawer: centre inside the drawer (at most 5 cm above its walls), touching it, not touched by the robot. Drawer tasks: `opening_m` of at least 0.25. Any safety event fails a task: a contact force above 150 N between a wall or furniture and the robot's base or body (base, wheels, mast or torso, head), or above 400 N for the arm; a task object touching the floor (outside the bin); a cylinder knocked over (tilt > 60 degrees) on a table, shelf or counter; the base tilting more than 12 degrees.
+Placement on a table or shelf: the object touches that surface, its centre is above it, it is tilted less than 20 degrees and the robot does not touch it. Bin: centre inside the bin walls, below the rim, not touched by the robot. Drawer: centre inside the drawer (at most 5 cm above its walls), touching it, not touched by the robot. Drawer tasks: `opening_m` of at least 0.25 and no part of the robot touching the drawer (the handle has been let go). Any safety event fails a task: a contact force above 150 N between a wall, furniture or the drawer and the robot's base or body (base, wheels, mast or torso, head), or above 400 N for the arm and gripper (checked every 2 ms physics step; the fingers are exempt only on the drawer, which they grip and pull); a task object touching the floor (outside the bin); a cylinder knocked over (tilt > 60 degrees) on a table, shelf or counter; the base tilting more than 12 degrees (Stretch and TIAGo; the Google Robot's planar base cannot tilt).
 
 ## Tasks
 
 | Task | Robot | Goal | Success | Budget |
 |---|---|---|---|---|
 | stretch-fetch-cup | Stretch 3 | cup from the study desk to the dining table (route through the study doorway) | cup stands on the dining table | 4000 |
-| stretch-open-drawer | Stretch 3 | open the kitchen drawer | opening >= 0.25 m | 2400 |
+| stretch-open-drawer | Stretch 3 | open the kitchen drawer | opening >= 0.25 m, robot not touching the drawer | 2400 |
 | stretch-shelve-two | Stretch 3 | can and box from the dining table onto the bookshelf | both stand on a shelf | 5000 |
 | tiago-fetch-juice | TIAGo | juice box from the kitchen counter to the dining table | box stands on the dining table | 3600 |
 | tiago-drawer-stow | TIAGo | put the spice box (on the counter) into the closed drawer: open it first | box inside the drawer | 3000 |
 | tiago-bin-cans | TIAGo | red and green cans from the dining table into the bin, leave the cup | both cans in the bin, cup still on the table | 4000 |
 | tiago-study-to-kitchen | TIAGo | mug from the study desk to the kitchen table (no door between them: through the living room) | mug stands on the kitchen table | 3600 |
 | google-fetch-can | Google Robot | can from the kitchen table to the dining table | can stands on the dining table | 2600 |
-| google-open-drawer | Google Robot | open the kitchen drawer | opening >= 0.25 m | 1400 |
+| google-open-drawer | Google Robot | open the kitchen drawer | opening >= 0.25 m, robot not touching the drawer | 1400 |
 | google-sort-bottle-can | Google Robot | bottle to the upper shelf, can into the bin | both in place | 3600 |
 
 Every success also requires no safety event.
@@ -84,10 +84,10 @@ Real runner, 2026-09-28, MuJoCo 3.3.0, concurrency 3:
 
 | Harness | Result | Runs |
 |---|---|---|
-| oracle | 10/10 | `runs/emb-oracle-mobile-manip/` |
-| noop | 0/10 | `runs/emb-noop-mobile-manip/` |
+| oracle | 10/10 | `runs/emb-oracle-mobile-manip-v2/` |
+| noop | 0/10 | `runs/emb-noop-mobile-manip-v2/` |
 
-Oracle episodes use 628 to 2885 steps and 2 to 16 s of episode wall time (8 to 24 s per trial with startup). The reference solutions use only `robo observe` fields, `robo act` and the skills, with waypoints through the doorways. Scripted wrong attempts score 0: pulling the drawer only 0.13 m; bringing the cup to the table without letting go; throwing the cup into the bin as well; dropping the juice box; putting the can on the floor next to the dining table; driving TIAGo (0.45 m/s), Stretch (0.25 m/s) or the Google Robot (0.5 m/s) into a wall (184 to 2452 N, a crash).
+Oracle episodes use 628 to 2885 steps and 3 to 25 s of episode wall time on an unloaded run; in the v2 run three trials that ran at the same moment took about 15 minutes each while the machine was saturated by other jobs (load average near 70), which happened in earlier runs of other suites too. The reference solutions use only `robo observe` fields, `robo act` and the skills, with waypoints through the doorways. Scripted wrong attempts score 0: pulling the drawer only 0.13 m; opening it fully but still holding the handle; bringing the cup to the table without letting go; throwing the cup into the bin as well; dropping the juice box; putting the can on the floor next to the dining table; driving TIAGo (0.45 m/s), Stretch (0.25 m/s) or the Google Robot (0.5 m/s) into a wall (184 to 2452 N, a crash).
 
 ## Limitations
 

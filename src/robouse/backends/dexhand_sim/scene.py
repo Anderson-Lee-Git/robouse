@@ -63,6 +63,7 @@ CUBE_FACES = {"red": (1, 0, 0), "orange": (-1, 0, 0), "green": (0, 1, 0), "blue"
 FACE_RGBA = {"red": [.85, .15, .15, 1], "orange": [.95, .55, .1, 1], "green": [.2, .7, .25, 1], "blue": [.15, .3, .85, 1],
              "white": [.95, .95, .95, 1], "yellow": [.95, .85, .15, 1]}
 
+CONTAINER_BOTTOM = .015             # fixed containers (bowl, stand, pen cup) have a 15 mm solid bottom
 OBJ_FRICTION = [1.2, 0.01, 0.0005]   # objects are rubber-coated / grippy (only object friction is raised; hands are upstream)
 
 
@@ -210,7 +211,7 @@ def _add_objects(s, w, task: dict) -> None:
                             mass=ob["mass"], friction=OBJ_FRICTION)
         elif k == "container":  # fixed to the table (bowl, pen holder)
             hollow_cylinder(w, ob["name"], pos=(*ob["pos"][:2], Z), r_in=ob["r_in"], height=ob["height"], wall=ob["wall"], n=ob.get("n", 20),
-                            rgba=ob.get("rgba", [.85, .85, .8, 1]), bottom_t=.015)
+                            rgba=ob.get("rgba", [.85, .85, .8, 1]), bottom_t=CONTAINER_BOTTOM)
         elif k == "balls":
             cx, cy = ob["pos"][:2]
             for i in range(ob["n"]):

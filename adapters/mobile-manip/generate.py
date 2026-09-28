@@ -49,9 +49,14 @@ SCENE = ("You control {robot}\n\nThe robot is in a small apartment simulated wit
          "base, the arm and anything carried collide with walls and furniture, and objects are held only by friction between the "
          "fingers. The robot starts at {start}, with its arm stowed.")
 
-SAFETY = (f"no safety event happened: a hard collision (a contact force above {BASE_HIT_N:.0f} N between a wall or furniture and "
-          f"the robot's base or body (wheels, mast or torso, head), or above {HIT_N:.0f} N between a wall or furniture and the arm), a task object touching the floor, a can, cup or bottle knocked over on a table, shelf or counter, or the "
-          f"base tilting more than {TIP_DEG:.0f} degrees; `safety_events` in `robo observe` lists them")
+def safety(rk: str) -> str:
+    tilt = "" if rk == "google" else f", or the base tilting more than {TIP_DEG:.0f} degrees"
+    return (f"no safety event happened: a hard collision (a contact force above {BASE_HIT_N:.0f} N between a wall, furniture or "
+            f"the drawer and the robot's base or body (wheels, mast or torso, head), or above {HIT_N:.0f} N between them and the "
+            f"arm or gripper; the fingers are exempt only on the drawer, which they may grip and pull), a task object touching "
+            f"the floor, a can, cup or bottle knocked over on a table, shelf or counter{tilt}; `safety_events` in `robo observe` "
+            f"lists them")
+
 
 CONTROLS = {
     "stretch": ("**Controls.** `robo act V WZ DLIFT DEXT DYAW DPITCH POSE G` (8 values, each in [-1, 1]; one step is 50 ms; "
@@ -170,15 +175,16 @@ TEXT = {
 HEADINGS = {0: "east", 90: "north", 180: "west", -90: "south", 270: "south"}
 
 
-def success_text(t: dict) -> str:
+def success_text(t: dict, rk: str) -> str:
     parts = []
     if "drawer_min" in t:
-        parts.append(f"the drawer is open at least {t['drawer_min']:.2f} m (`apartment.furniture.drawer.opening_m`)")
+        parts.append(f"the drawer is open at least {t['drawer_min']:.2f} m (`apartment.furniture.drawer.opening_m`) and no part of "
+                     f"the robot touches the drawer (you have let go of the handle)")
     for k, w in t.get("place", {}).items():
         parts.append(_place_rule(k, w))
     for k, w in t.get("keep", {}).items():
         parts.append(f"the {k.replace('_', ' ')} still stands upright on the {w.replace('_', ' ')} and the robot does not touch it")
-    parts.append(SAFETY)
+    parts.append(safety(rk))
     return "; ".join(parts)
 
 
@@ -199,7 +205,7 @@ def main() -> None:
         parts = [f"# {x['title']}",
                  SCENE.format(robot=ROBOT[rk], start=start),
                  "## Task\n\n" + x["goal"],
-                 f"**Success:** {success_text(t)}. Judged by the episode server from the simulated state after you call `robo done` "
+                 f"**Success:** {success_text(t, rk)}. Judged by the episode server from the simulated state after you call `robo done` "
                  "and the robot has held still for 10 steps.",
                  CONTROLS[rk], OBS.format(arm=ARM_OBS[rk], own=OWN_CAMS[rk]),
                  f"The step budget is {t['max_steps']} steps ({t['max_steps'] * 0.05:.0f} s of simulated time).", EMBODIED_USAGE]

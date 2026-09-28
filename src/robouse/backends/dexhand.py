@@ -26,7 +26,7 @@ import math
 
 import numpy as np
 
-from .dexhand_sim.scene import CUBE_FACES, HANDS, POSITIONER, TABLE_C, TABLE_HALF, TABLE_Z, build
+from .dexhand_sim.scene import CONTAINER_BOTTOM, CUBE_FACES, HANDS, POSITIONER, TABLE_C, TABLE_HALF, TABLE_Z, build
 from .embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg, r3, wrap
 
 PHYS_DT, CONTROL_DT = .002, .04
@@ -183,21 +183,25 @@ class DexHandBackend(EmbodiedBackend):
                    *[Sensor(f"camera:{c}", "camera", [], "", mount="world") for c in self._cameras()]]
         groups = [ActionGroup("wrist.pose_delta", "ee_delta_pose", ["DX", "DY", "DZ", "DROLL", "DPITCH", "DYAW"], [-1] * 6, [1] * 6,
                               "x 1 cm (world x, y, z), x 4 deg (positioner roll, pitch, yaw)",
-                              "added to the positioner target; zero = hold", frame="world"),
+                              "added to the positioner target; zero = hold", frame="xyz world; rpy positioner joints"),
                   ActionGroup("hand.joints", "joint_delta", list(self.act_names), [-1] * n, [1] * n,
                               "x 10 % of each actuator's range", "added to the hand's position targets; zero = hold")]
         xyz = [SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("z", unit="m")]
         skills = [
             Skill("move_to", xyz + [SkillArg("speed", unit="m/s", default=.15)],
-                  "move the palm point (hand.palm_pos) in a straight line to (X, Y, Z) keeping the orientation; stops when there or blocked", 250),
+                  "move the palm point (hand.palm_pos) in a straight line to (X, Y, Z) keeping the orientation (SPEED clamped to 0.01-0.25 m/s); "
+                  "stops when there or blocked, or after 400 steps (then it reports `remaining_m`)", 420),
             Skill("move_by", [SkillArg("dx", unit="m"), SkillArg("dy", unit="m"), SkillArg("dz", unit="m"), SkillArg("speed", unit="m/s", default=.15)],
-                  "move the palm point by (DX, DY, DZ)", 250),
+                  "move the palm point by (DX, DY, DZ) (SPEED clamped to 0.01-0.25 m/s); stops when there or blocked, or after 400 "
+                  "steps (then it reports `remaining_m`)", 420),
             Skill("rotate", [SkillArg("roll", unit="deg"), SkillArg("pitch", unit="deg"), SkillArg("yaw", unit="deg"),
                              SkillArg("speed", unit="deg/s", default=60.0)],
-                  "turn the hand to absolute positioner angles ROLL PITCH YAW about the palm point (the palm point stays put)", 250),
+                  "turn the hand to absolute positioner angles ROLL PITCH YAW about the palm point (the palm point stays put; SPEED "
+                  "clamped to 5-100 deg/s)", 620),
             Skill("turn_about", [SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("deg", unit="deg"), SkillArg("speed", unit="deg/s", default=45.0)],
                   "swing the hand DEG degrees (counter-clockwise seen from above, + ) about the vertical line through (X, Y), yawing with it, "
-                  "like turning a wheel; whatever the fingers hold or push is carried only by contact", 300),
+                  "like turning a wheel (SPEED clamped to 5-90 deg/s); whatever the fingers hold or push is carried only by contact; stops "
+                  "after 580 steps and then reports `remaining_deg`", 600),
             Skill("grasp", [SkillArg("type", "enum", choices=["power", "pinch", "tripod"])],
                   "close the fingers of that grasp until they stall on something or are fully closed; reports which fingers touch what", 40),
             Skill("open", [], "open the hand gently (posture `open`)", 40),
@@ -289,12 +293,14 @@ class DexHandBackend(EmbodiedBackend):
         self.lifted: set = set()
         self.clicks: list[str] = []
         self._pressed = {}
+        self._inhand = False  # enabled after the settle, once the start pose is recorded
         # settle
         for _ in range(15):
             self.control_step(np.zeros(6 + len(self.ha)))
         self.valve0 = self._valve_angle() if "valve" in self.free or self._has_joint("valve") else 0.0
         if self.task["kind"] == "inhand":
             self.wrist0 = self._pq()[3:].copy()
+            self._inhand = True
         self.events, self._event_keys = [], set()
         self.clicks = []
 
@@ -410,7 +416,20 @@ class DexHandBackend(EmbodiedBackend):
             u = self.kp * (self.pt - q) - self.kd * qd + d.qfrc_bias[self.pv]
             d.ctrl[self.pa] = np.clip(u, -lim, lim)
             mujoco.mj_step(m, d)
+            if self._inhand:
+                self._inhand_check()
         self._monitor()
+
+    def _inhand_check(self) -> None:
+        """In-hand task, every physics step: the cube must never touch the table and the wrist must never rotate more
+        than the tolerance away from its start."""
+        d = self.data
+        for c in d.contact[:d.ncon]:
+            if {self.gowner[c.geom1], self.gowner[c.geom2]} == {"cube", "table"}:
+                self.event("table:cube", "dropped", "the cube touched the table")
+                break
+        if self._wrist_dev() > math.radians(self.task["wrist_tol_deg"]):
+            self.event("wrist:tilt", "rule", f"the wrist rotated more than {self.task['wrist_tol_deg']} degrees from its start")
 
     # ---- monitor -----------------------------------------------------------------------------------------------
     def _monitor(self) -> None:
@@ -436,8 +455,6 @@ class DexHandBackend(EmbodiedBackend):
                     self.clicks.append(cname)
                 elif down and depth < BUTTON_CLICK / 2:
                     self._pressed[cname] = False
-        if k == "inhand" and ("cube", "table") in pairs:
-            self.event("table:cube", "dropped", "the cube touched the table")
 
     # ---- observation -------------------------------------------------------------------------------------------
     def observe(self) -> dict:
@@ -490,7 +507,8 @@ class DexHandBackend(EmbodiedBackend):
         for ob in self.task["objects"]:
             k = ob["kind"]
             if k == "container":
-                out[ob["name"]] = {"center": [*ob["pos"][:2], Z], "inner_radius": ob["r_in"], "rim_z": round(Z + ob["height"], 3)}
+                out[ob["name"]] = {"center": [*ob["pos"][:2], Z], "inner_radius": ob["r_in"], "rim_z": round(Z + ob["height"], 3),
+                                   "inside_bottom_z": round(Z + CONTAINER_BOTTOM, 3), "inside_depth": round(ob["height"] - CONTAINER_BOTTOM, 3)}
             elif k == "valve":
                 out["valve"] = {"axis": [*ob["pos"][:2]], "wheel_z": round(Z + ob["height"], 3), "wheel_radius": ob["r"], "spokes": 3,
                                 "angle_deg": round(math.degrees(self._valve_angle()), 1)}
@@ -526,7 +544,7 @@ class DexHandBackend(EmbodiedBackend):
         for name in self.free:
             if name.startswith("ball") and name != "ball":
                 p = self._obj_pos(name)
-                if np.linalg.norm(p[:2] - c) < bowl["r_in"] and Z < p[2] < Z + bowl["height"] + .01:
+                if np.linalg.norm(p[:2] - c) < bowl["r_in"] and Z < p[2] < Z + bowl["height"]:
                     n += 1
         return n
 
@@ -614,7 +632,9 @@ class DexHandBackend(EmbodiedBackend):
         off = self._flange_R() @ self._palm_offset()
         rpy = self._rpy_of(self.pt)
         status = yield from self._servo(lambda k: (goal - off, rpy), 400, v, STEP_ROT)
-        return self._report(status=status, goal=r3(goal), error_m=round(float(np.linalg.norm(self.palm_pos() - goal)), 3))
+        rem = goal - self.palm_pos()
+        extra = {"remaining_m": r3(rem)} if status == "stopped" else {}
+        return self._report(status=status, goal=r3(goal), error_m=round(float(np.linalg.norm(rem)), 3), **extra)
 
     def skill_move_by(self, dx: float, dy: float, dz: float, speed: float):
         p = self.palm_pos()
@@ -657,8 +677,10 @@ class DexHandBackend(EmbodiedBackend):
             rpy = rpy0 + np.array([0, 0, th])
             return p - _R(rpy) @ c, tuple(rpy)
 
-        status = yield from self._servo(goal_fn, n + 60, STEP_XYZ, w * 1.5)
-        return self._report(status=status, turned_deg=round(math.degrees(self._pq()[3] - rpy0[2]), 1))
+        status = yield from self._servo(goal_fn, min(n + 60, 580), STEP_XYZ, w * 1.5)
+        turned = math.degrees(self._pq()[3] - rpy0[2])
+        extra = {"remaining_deg": round(deg - turned, 1)} if status == "stopped" else {}
+        return self._report(status=status, turned_deg=round(turned, 1), **extra)
 
     def _hand_to(self, target: np.ndarray, n_max: int, settle: int = 4, rate: float = 1.0):
         """Ramp the hand targets to `target` (at `rate` x the full per-step change), then let the fingers settle;

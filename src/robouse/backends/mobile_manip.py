@@ -133,14 +133,14 @@ def declare(robot_key: str, max_steps: int) -> Embodiment:
                "walls or furniture (give it waypoints through doorways) and stops if the base is blocked")
               if robot_key != "google" else
               ("drive in a straight line to (X, Y) (holonomic) while turning to YAW_DEG; it does not plan around walls or "
-               "furniture (give it waypoints through doorways) and stops if the base is blocked"), 700),
+               "furniture (give it waypoints through doorways) and stops if the base is blocked"), 700 if robot_key == "google" else 1000),
         Skill("turn", [SkillArg("yaw_deg", unit="deg")], "rotate in place to heading YAW_DEG (0 = +x, 90 = +y)", 200),
         Skill("reach", xyz,
               ("move the grasp point (between the fingertips) to (X, Y, Z): lift to the height, drive the base forward or back "
                "along its heading so the point lies on the arm's line, then extend; reports whether it got there")
               if robot_key == "stretch" else
               "move the grasp point (between the fingertips) to (X, Y, Z) in a straight line with the IK arm; reports whether it got there",
-              300),
+              800 if robot_key == "stretch" else 300),
         Skill("grasp", [], "close the gripper until the fingers stop; reports what is held between the fingers", 40),
         Skill("open_gripper", [], "open the gripper fully", 30),
         Skill("ready", [], "move the arm to the ready pose (gripper in front of the robot, level, open)", 200),
@@ -227,6 +227,9 @@ class MobileManipBackend(EmbodiedBackend):
         self.surf = A.surfaces()
         self.surf_geom = {k: m.geom(v[5]).id for k, v in self.surf.items()}
         self.monitor_armed = False
+        mask = lambda gs: np.isin(np.arange(m.ngeom), list(gs))
+        self._is_robot, self._is_finger, self._is_base = mask(r.robot_geoms), mask(r.finger_geoms), mask(r.base_geoms)
+        self._is_env, self._is_drawer = mask(self.env_geoms), mask(self.drawer_geoms)
         # let everything settle (objects onto their surfaces, the robot onto its wheels) with the controllers holding
         for _ in range(10):
             self.control_step(np.array(self.decl.hold()))
@@ -278,7 +281,7 @@ class MobileManipBackend(EmbodiedBackend):
         for i in range(N_SUB):
             r.substep(PHYS_DT)
             mujoco.mj_step(m, d)
-            if self.monitor_armed and i % 5 == 4:
+            if self.monitor_armed:
                 self._monitor_contacts()
         if self.monitor_armed:
             self._monitor_state()
@@ -337,22 +340,29 @@ class MobileManipBackend(EmbodiedBackend):
 
     # ---- monitor -----------------------------------------------------------------------------------------------
     def _monitor_contacts(self) -> None:
+        """Every physics step: contact forces between the robot and the walls, furniture and the drawer (the fingers are
+        exempt only on the drawer, whose handle they are meant to pull)."""
         import mujoco
 
-        m, d, r = self.model, self.data, self.robot
-        f = np.zeros(6)
-        for i in range(d.ncon):
-            c = d.contact[i]
-            g1, g2 = c.geom1, c.geom2
-            for a, b in ((g1, g2), (g2, g1)):
-                if a in r.robot_geoms and a not in r.finger_geoms and b in self.static:
-                    mujoco.mj_contactForce(m, d, i, f)
-                    self.max_hit = max(self.max_hit, abs(f[0]))
-                    lim = BASE_HIT_N if a in r.base_geoms else HIT_N
-                    if abs(f[0]) > lim:
-                        what = self.gname[b].replace("_", " ")
-                        part = "base or body" if a in r.base_geoms else "arm"
-                        self.event(f"hit:{self.gname[b]}", "crash", f"the robot's {part} hit the {what} hard ({abs(f[0]):.0f} N contact force)")
+        m, d = self.model, self.data
+        n = d.ncon
+        if not n:
+            return
+        g = d.contact.geom[:n]
+        for col, other in ((0, 1), (1, 0)):
+            a, b = g[:, col], g[:, other]
+            hit = self._is_robot[a] & self._is_env[b] & ~(self._is_finger[a] & self._is_drawer[b])
+            for i in np.nonzero(hit)[0]:
+                f = np.zeros(6)
+                mujoco.mj_contactForce(m, d, int(i), f)
+                fn = abs(f[0])
+                ga, gb = int(a[i]), int(b[i])
+                self.max_hit = max(self.max_hit, fn)
+                body = self._is_base[ga]
+                if fn > (BASE_HIT_N if body else HIT_N):
+                    what = "drawer" if self._is_drawer[gb] else self.gname[gb].replace("_", " ")
+                    part = "base or body" if body else "arm"
+                    self.event(f"hit:{what}", "crash", f"the robot's {part} hit the {what} hard ({fn:.0f} N contact force)")
 
     def _monitor_state(self) -> None:
         r = self.robot
@@ -489,12 +499,17 @@ class MobileManipBackend(EmbodiedBackend):
                 return pre.replace("_", " ")
         return n or "furniture"
 
+    def _robot_touches_drawer(self) -> bool:
+        d = self.data
+        g = d.contact.geom[:d.ncon]
+        return bool(np.any((self._is_robot[g[:, 0]] & self._is_drawer[g[:, 1]]) | (self._is_robot[g[:, 1]] & self._is_drawer[g[:, 0]])))
+
     # ---- scoring -----------------------------------------------------------------------------------------------
     def success(self) -> bool:
         if self.events:
             return False
         t = self.task
-        if "drawer_min" in t and self.drawer_open() < t["drawer_min"]:
+        if "drawer_min" in t and (self.drawer_open() < t["drawer_min"] or self._robot_touches_drawer()):
             return False
         for k, where in t.get("place", {}).items():
             if not self._in_place(k, where):
@@ -543,10 +558,23 @@ class MobileManipBackend(EmbodiedBackend):
         return {"reached": abs(err) < 3, "heading_error_deg": round(err, 1), **self._pose_report()}
 
     def skill_drive_to(self, x: float, y: float, yaw_deg="none", tol: float = .05):
+        """Validates the arguments before the generator starts (YAW_DEG is a number or `none`)."""
+        if str(yaw_deg).strip().lower() in ("none", ""):
+            yaw_goal = None
+        else:
+            try:
+                yv = float(yaw_deg)
+            except ValueError:
+                raise ValueError("yaw_deg must be a number of degrees or none") from None
+            if not math.isfinite(yv):
+                raise ValueError("yaw_deg must be a finite number")
+            yaw_goal = math.radians(yv)
+        return self._drive_to(x, y, yaw_goal, tol)
+
+    def _drive_to(self, x: float, y: float, yaw_goal, tol: float):
         r = self.robot
         tol = max(float(tol), .02)
         goal = np.array([x, y])
-        yaw_goal = None if str(yaw_deg).lower() in ("none", "") else math.radians(float(yaw_deg))
         blocked = False
         hist: list[np.ndarray] = []
         if self.rkey == "google":
@@ -574,7 +602,7 @@ class MobileManipBackend(EmbodiedBackend):
                 head = math.degrees(math.atan2(y - py, x - px))
                 res = yield from self.skill_turn(head)
                 del res
-            for i in range(560):
+            for i in range(880):
                 px, py, yaw = r.base_pose()
                 e = goal - np.array([px, py])
                 dist = float(np.linalg.norm(e))
