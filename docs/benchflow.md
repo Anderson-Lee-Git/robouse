@@ -119,7 +119,23 @@ Trials use BenchFlow's job layout:
 
 BenchFlow has no host-process sandbox. Its providers are Docker, Daytona, Modal, AgentCore and Apple Container, and all of them run Linux containers. The sandbox contract assumes Linux paths (`/logs/...`, `/oracle`, `/app`), root for agent installs (Node.js into `/opt/benchflow`), and a separate agent user. Apple Container (`--sandbox apple-container`, macOS 26 `container` CLI) is Docker-free, but it runs a single container, so it cannot host the simulator sidecar; `verifier.service` is Docker-only as well. A local mode would therefore need either a new BenchFlow provider that maps those paths onto a host directory (a large change that touches agent install, lockdown and the verifier) or sidecar support in Apple Container. Until one of them exists, a Mac needs Docker for the BenchFlow engine: Colima (`colima start --vm-type vz`) with the Compose plugin works.
 
-## Validation (2026-09-27)
+## Validation on the embodied layer (2026-09-28)
+
+Same Mac and Colima setup; BenchFlow branch `robouse` at the `benchflow.embodied` commit, robouse branch `embodied`. Every Docker run below is `bench eval run --sandbox docker`.
+
+| Run | Result |
+|---|---|
+| Oracle, 7 tasks over 4 suites (arc-gravity, arc-colour-to-pad, metaworld-reach, metaworld-push, drone-waypoint, drone-land-helipad, menagerie-aloha-opening-four, bimanual ALOHA) | 7/7, errors 0, rerun on the final code 7/7. Step counts equal the protocol-1 baseline (reach 51, push 63, arc-colour-to-pad 779, arc-gravity 999) |
+| Noop control (`robouse export --noop`, then `bench eval run --agent oracle`), same 7 | 0/7, errors 0, every episode `agent_exited` with 0 steps, closed by the verifier; rerun on the final code 0/7 |
+| Seeded oracle, `--seeds 0-2` on metaworld-reach and metaworld-push | 6/6; `summary.json` `seeded`: pass@1..3 = 1.0, 3 distinct initial states per task |
+| DexJoCo (local engine; the DexJoCo virtualenv is not in the simulator image) | water-plant (hand) and microwave-cook (bimanual hands): oracle 1.0 (steps 306 and 693), noop 0.0 |
+| Real model: Claude Code on GLM-5.3 (Baseten, BenchFlow `vllm/` provider), a substitute, see below | metaworld-push `--seeds 0-2`: 3/3 (pass@1 = 1.0); metaworld-reach 1/1; drone-waypoint 1/1; arc-gravity 0/1 (wrong arrangement, `robo done` at step 1192); menagerie-aloha-opening-four 0/1 (agent timeout at step 477 of 2000). Errors 0 |
+| Reset reproducibility | metaworld-push seeds 0, 1, 2 start from identical `initial_state_sha256` in the oracle job and the GLM job |
+| Scene: planner + operator on metaworld-push (`scripts/scene_planner_operator.py`, both roles GLM-5.3) | reward 1.0; the planner made only `info`/`observe` requests, all 65 simulator steps are attributed to the operator in `steps.jsonl` |
+
+The prescribed real agents could not run: all three Codex pool accounts (`~/.config/bf-agents/codex-auth`) return "You've hit your usage limit" until Oct 3-4, and both Claude OAuth pool tokens return "weekly limit" until Oct 2 (checked with one-line CLI calls; a Codex job started before the check failed with ACP "Internal error" on the first prompt and was stopped). Rerun `robouse run-many --agent codex --model gpt-6-astra` or `--agent claude-code --model claude-sonnet-5` on the same sample once the quotas reset.
+
+## Validation on the protocol-1 engine (2026-09-27)
 
 Mac (Apple Silicon), Colima 0.10.3 with the vz VM (6 CPUs, 12 GiB), Docker 29.5.2, Compose 5.5.1, BenchFlow 0.7.9.dev0 from the `robouse` branch, robouse `benchflow-engine` branch.
 
