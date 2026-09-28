@@ -57,7 +57,7 @@ def _make(env_id: str, **kw):
 
 class GymRoboticsBackend(Backend):
     name = "gymrobotics"
-    dense_reward = "shaped"  # Gymnasium-Robotics' reward
+    probe_success = False  # step() already reports success (Fetch and PointMaze rewards are sparse)
 
     @property
     def robot_name(self) -> str:

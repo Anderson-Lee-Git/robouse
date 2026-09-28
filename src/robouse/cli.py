@@ -118,6 +118,9 @@ def main(argv=None) -> int:
         from .engine.run import run_job, select_tasks
 
         seeds = parse_seeds(a.seeds) if a.seeds else None
+        if seeds and a.seed is not None:
+            print("robouse: use --seed or --seeds, not both", file=sys.stderr)
+            return 2
 
         if a.cmd == "run":
             tasks = [load_task(resolve_task_path(a.task))]
@@ -146,6 +149,9 @@ def main(argv=None) -> int:
                     max_wall_s=a.max_wall_s, ready_file=Path(a.ready_file) if a.ready_file else None)
         print(json.dumps(res))
         return 0
+    if getattr(a, "seeds", None):
+        print("robouse: --seeds needs the BenchFlow engine (drop --engine local, or use --seed)", file=sys.stderr)
+        return 2
     if a.cmd == "run":
         from .runner import run_trial
 

@@ -301,6 +301,7 @@ def _quat_yaw_tilt(xmat: np.ndarray) -> tuple[float, float]:
 class TabletopBackend(Backend):
     name = "tabletop"
     robot_name = "tabletop-arm-2f"
+    probe_success = False  # step() already evaluates success()
 
     def action_layout(self) -> list[G]:
         return arm_layout("gripper velocity, about 1 cm per unit per step",

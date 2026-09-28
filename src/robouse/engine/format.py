@@ -103,6 +103,8 @@ class RobouseTaskFormat(EmbodiedTaskFormat):
         shutil.copytree(PKG, pkg, ignore=_IGNORE)
         prov = pkg / "assets_provenance"
         prov.mkdir(exist_ok=True)
+        if not any(p.exists() for p in _asset_manifests().values()):
+            raise FileNotFoundError("robot mesh provenance manifests not found (assets/menagerie or assets_provenance)")
         for name, src in _asset_manifests().items():
             if src.exists() and not (prov / name).exists():
                 shutil.copy2(src, prov / name)

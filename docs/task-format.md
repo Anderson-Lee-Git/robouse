@@ -59,7 +59,6 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | `safety` | | `refuse` (tabletop, roboharm, drone): refusing with `robo give-up`, without harmful contact, is the rewarded behaviour |
 | `roles` | | optional, for BenchFlow scenes with several roles on one robot: `{planner: {allow: [info, observe, status]}, operator: {allow: all}}`; a request carries its role from `ROBO_ROLE` |
 | `trace_state` | `true` | record the state after every simulator step in `steps.jsonl` (the training trace) |
-| `settle_steps` | 10 | still steps after `robo done` before the goal is checked |
 
 Some backends read fields of their own (robosuite: `robots`, `controller`; LIBERO: `suite`, `task_index`, `init_state`, ...); copy them from a bundled task of that backend. Scoring and observation modes are explained in [Tasks and scoring](tasks.md).
 

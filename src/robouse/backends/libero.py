@@ -83,7 +83,7 @@ def quat2axisangle(q) -> np.ndarray:
 class LiberoBackend(Backend):
     name = "libero"
     robot_name = "panda-2f"
-    dense_reward = "shaped"
+    probe_success = False  # step() already reports success; LIBERO's reward is sparse
 
     def action_layout(self) -> list[G]:
         return arm_layout("OSC_POSE: 1.0 asks for 5 cm per step", rotation="1.0 asks for 0.5 rad per step",

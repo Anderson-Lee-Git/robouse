@@ -102,6 +102,8 @@ def episode_from_spec(spec: dict, run_dir: Path, workspace: Path | None = None, 
     sim = RobouseSim(make_backend(spec))
     block = dict(spec)
     block.setdefault("visible_fields", list(LEGACY_VISIBLE))  # protocol-1 default for vision tasks
+    # robouse's `settle_steps` is a backend setting (LIBERO: still steps at reset), not the post-`done` settle
+    block.pop("settle_steps", None)
     cfg = EpisodeConfig.from_task(block, sim.embodiment(), seed=seed, default_camera=sim.default_camera,
                                   max_wall_s=1800.0 if max_wall_s is None else max_wall_s)
     return EpisodeServer(sim, cfg, run_dir, workspace)

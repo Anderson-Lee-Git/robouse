@@ -50,6 +50,7 @@ TASKS: dict[str, dict] = {
 class RobocasaBackend(Backend):
     name = "robocasa"
     robot_name = "panda-omron-2f"
+    probe_success = False  # step() already reports success; each probe would be another worker call
 
     def action_layout(self) -> list[G]:
         return arm_layout("2 cm per unit per step", grip_hold="zero", grip_initial=None,

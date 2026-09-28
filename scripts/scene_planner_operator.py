@@ -1,8 +1,10 @@
 """Two roles on one robot: a BenchFlow scene with a planner and an operator sharing one simulator sidecar.
 
 The planner may only look (`robo info`, `robo observe`, images) and writes a plan to /app/plan.md; the operator
-carries it out and calls `robo done`. The episode server enforces the split through the task's `roles:` block
-(requests carry ROBO_ROLE from each role's environment) and records the role on every trace line and step.
+carries it out and calls `robo done`. The task's `roles:` block makes the episode server refuse the planner's
+step-taking requests (each role's requests carry ROBO_ROLE from its environment), and the server records the role on
+every trace line and step. This is a guard rail and an attribution record, not a security boundary: the roles share
+a container, so a role could unset its own ROBO_ROLE.
 
     python scripts/scene_planner_operator.py --task tasks/arc-style/arc-gravity --agent codex --model gpt-6-astra \
         --jobs runs/scene

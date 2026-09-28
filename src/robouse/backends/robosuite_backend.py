@@ -67,7 +67,7 @@ def _r(v, n=4):
 
 class RobosuiteBackend(Backend):
     name = "robosuite"
-    dense_reward = "shaped"
+    probe_success = False  # built with reward_shaping=False; step() already reports success
 
     @property
     def robot_name(self) -> str:
