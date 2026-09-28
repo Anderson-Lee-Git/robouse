@@ -675,7 +675,8 @@ article img { display: block; max-width: 100%; height: auto; margin: 8px 0; bord
 
 /* figures: inline SVG diagrams take the page's colours and type; stills are small webp images */
 .figure { margin: 22px 0 26px; }
-.figure > svg { display: block; width: 100%; height: auto; overflow: visible; }
+.figure { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.figure > svg { display: block; width: 100%; min-width: 500px; height: auto; overflow: visible; }  /* small screens scroll rather than shrink the type */
 .figure img { margin: 0; }
 figcaption { margin-top: 10px; font: 400 13.5px/1.5 var(--sans); color: var(--muted); }
 .fig { color: var(--ink); }
