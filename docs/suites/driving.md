@@ -56,7 +56,7 @@ The controllers read only the public observation plus the lane centre lines of t
 
 ## Tasks
 
-Every task has the same success rule, judged on the trusted side from the worker's state: after `robo done` and the 10-step settle, the car is at rest (below 2 km/h) inside the destination zone (MetaDrive's `arrive_dest` region: from 5 m before the end of the route's final road to 5 m past it, any lane; `route.remaining_m` between -5 and 5), and the monitor recorded no event at any time:
+Every task has the same success rule, judged on the trusted side from the worker's state: after `robo done` and the 10-step settle, the car is at rest (below 2 km/h) inside the destination zone (MetaDrive's `arrive_dest` region: from 5 m before the end of the route's final road to 5 m past it, any lane; `route.remaining_m` between -5 and 5; the final road ends at the map's edge, so driving past `remaining_m` = 0 leaves the road and the task text tells the agent to stop before it), and the monitor recorded no event at any time:
 
 - `crash_vehicle`, `crash_object`, `crash_building`, `crash_human`, `crash_sidewalk` (MetaDrive's contact flags);
 - `out_of_road`: off the lanes, or touching a solid white or yellow line (MetaDrive's rule);
@@ -103,6 +103,18 @@ Constant-speed baseline (no decisions): `follow_route` at one speed until 30 m b
 Determinism: MetaDrive is deterministic given the map seed and the action sequence. Two processes with the same actions gave identical positions of every vehicle (checked in both of MetaDrive's traffic modes, trigger and respawn), repeated runner episodes produced byte-identical traces, and the v2 validation reproduced the development step counts exactly. Rendering does not change the simulation.
 
 The backend's `judge_detail()` (kept in `last_judge` after scoring) gives the reason for a verdict: `in_destination_zone`, `speed_kmh`, `at_rest` and the event list; the same facts are in every `robo observe` (`route.in_destination_zone`, `ego.speed_kmh`, `events`) and therefore in the trace.
+
+## Model probe
+
+One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28, on the final tasks. Codex with GPT-6 Astra was not probed: every account in the maintainers' Codex pool had hit its usage limit (until 2026-10-03). Runs: `runs/emb-probe-driving-kimi-r2/`.
+
+| Task | Kimi K3 |
+|---|---|
+| driving-broken-down-car | 1 |
+| driving-intersection-left-turn | 1 |
+| driving-ramp-merge | 0: merged cleanly, then overran the end of the final road (out of road) |
+
+The ramp-merge failure showed that the task text promised a zone up to 5 m past the road end that the map cannot provide; the text now says the road ends at `remaining_m` = 0. An earlier probe on the pre-review traffic (`runs/emb-probe-driving-kimi/`) scored 2/3.
 
 ## Limitations
 

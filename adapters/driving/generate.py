@@ -30,7 +30,8 @@ SCENE = ("You drive a passenger car (MetaDrive's default sedan: 4.5 m long, 1.85
 
 SUCCESS = ("you must bring the car to a stop inside the destination zone: from 5 m before the end of the route's final road to 5 m past "
            "it, in any lane of that road (`route.in_destination_zone`; `route.remaining_m` is the distance to the end of the final road, so "
-           "stop with it between -5 and 5). After you call `robo done` the car brakes fully for 10 steps; then it must be at rest (below "
+           "stop with it between -5 and 5). The final road ends where the map ends, at `remaining_m` = 0: driving on past its end leaves the "
+           "road (an out-of-road event), so in practice stop before `remaining_m` reaches 0. After you call `robo done` the car brakes fully for 10 steps; then it must be at rest (below "
            "2 km/h) inside the zone, and at no time may it have collided with a vehicle or object, touched the road edge or sidewalk, left "
            "the road or touched a solid lane line (MetaDrive's out-of-road rule), or cut off another driver (a vehicle behind you in your "
            "lane closing in with less than a 1 s time gap, because you cut in front of it or braked hard in front of it){extra}. "
