@@ -1,6 +1,6 @@
 # Supported
 
-What robo-use 0.1.1 supports, and how each item was tested. "Docs check": run from the PyPI package for these docs. "v1 runs": used in the final v1 runs published under [Results](/runs/); trial counts are scored trials.
+What Robo Use 0.1.1 supports, and how each item was tested. "Docs check": run from the PyPI package for these docs. "v1 runs": used in the final v1 runs published under [Results](/runs/); trial counts are scored trials.
 
 ## Models
 

@@ -9,7 +9,7 @@ scripts/view.sh               # http://127.0.0.1:8768
 scripts/view.sh --port 8770
 ```
 
-It runs the BenchFlow viewer from the `robouse` branch of the private repo `benchflow-ai/trial-viewer` (https://github.com/benchflow-ai/trial-viewer/tree/robouse), checked out at `~/benchflow/trial-viewer`, with `--root robouse=<repo>/runs --tasks robotics=<repo>/tasks/*`. One-time setup: `gh repo clone benchflow-ai/trial-viewer ~/benchflow/trial-viewer && git -C ~/benchflow/trial-viewer checkout robouse`; the first start installs the Python environment and builds the frontend (about a minute; needs `uv` and Node.js 20+). That branch adds what robo-use needs on top of the viewer at `~/benchflow/data/viewer`: robot trials, `task.md` task folders and a column per harness and model. The default port is 8768 because 8765 and 8766 usually serve the 3D/CUA runs on this Mac; set `VIEWER=/path/to/viewer` to use another checkout. The viewer is read-only and binds to 127.0.0.1.
+It runs the BenchFlow viewer from the `robouse` branch of the private repo `benchflow-ai/trial-viewer` (https://github.com/benchflow-ai/trial-viewer/tree/robouse), checked out at `~/benchflow/trial-viewer`, with `--root robouse=<repo>/runs --tasks robotics=<repo>/tasks/*`. One-time setup: `gh repo clone benchflow-ai/trial-viewer ~/benchflow/trial-viewer && git -C ~/benchflow/trial-viewer checkout robouse`; the first start installs the Python environment and builds the frontend (about a minute; needs `uv` and Node.js 20+). That branch adds what Robo Use needs on top of the viewer at `~/benchflow/data/viewer`: robot trials, `task.md` task folders and a column per harness and model. The default port is 8768 because 8765 and 8766 usually serve the 3D/CUA runs on this Mac; set `VIEWER=/path/to/viewer` to use another checkout. The viewer is read-only and binds to 127.0.0.1.
 
 What you get:
 
@@ -21,7 +21,7 @@ What you get:
   - **Files**: the trial folder. Under **More**: **Run details** (Outcome, Tokens, and Timing, which shows the whole run from `wall_time_s` when there is no per-phase timing), **Config** (`config.json`), **Agent** and **Log** (raw `agent/stdout.jsonl` and `stderr.txt`).
 - **Tasks** (home page): every task under `tasks/<suite>/`, in either layout (`task.md` + `oracle/` + `verifier/`, or the older `task.toml` + `instruction.md`), labelled `Robotics · <suite>` with its category, description, difficulty, source benchmark and item, a **Robot · env** column (backend, env, observation mode, success mode, step budget), the oracle result and one column per harness and model with a trial (Opus 5.5 / claude-code, GPT-6 Astra / codex, noop, claude-code-glm · GLM-5.3, codex-glm · GLM-5.3, mini-swe-agent-glm · GLM-5.3, lerobot-eval · MolmoAct2-LIBERO-LeRobot, ...). A task page shows the `task.md` body as the instruction and the whole `task.md` under Reviews.
 
-## Formats robo-use writes for the viewer
+## Formats Robo Use writes for the viewer
 
 `src/robouse/atif.py` runs at the end of every trial (`runner.py`) and writes two files. To rebuild them for existing trials:
 
@@ -104,7 +104,7 @@ Publishing safety: the build replaces secret-shaped strings with `[redacted]`, w
 ## Open issues
 
 - Fixed on the viewer's `robouse` branch (2026-09-27): the CUA wording on the Recording tab and the `3D ·` area label, `task.md` folders missing from the Tasks page, the fixed Opus/Astra/Fable model columns, and "No timing data". The copy at `~/benchflow/data/viewer` (what 8765 and 8766 serve) does not have these changes until the branch is merged there.
-- Timing is one span: robo-use records no per-phase timing, so the whole run (`wall_time_s`) is shown as Agent Execution. Writing phase timings to `result.json` (`timing: {environment_setup, agent_setup, agent_execution, verifier}` in seconds) would split it.
+- Timing is one span: Robo Use records no per-phase timing, so the whole run (`wall_time_s`) is shown as Agent Execution. Writing phase timings to `result.json` (`timing: {environment_setup, agent_setup, agent_execution, verifier}` in seconds) would split it.
 - The Recording's simulator name is inferred from text (`source`, benchmark, backend). Adding `"simulator": "MuJoCo"` to `recording_index.json` would make it explicit; the viewer reads that field first.
 - The /review queue's model filter still offers only Opus, Astra and Fable (other models are "other").
 - Videos are small and short (320×320, frames every 2 env steps at 30 fps: a 150-step episode is about 2.5 s). Slow playback may be preferable for review.

@@ -1,6 +1,6 @@
 # Quickstart
 
-Install robo-use and let Claude Code drive a simulated robot through one task.
+Install Robo Use and let Claude Code drive a simulated robot through one task.
 
 ## Install
 

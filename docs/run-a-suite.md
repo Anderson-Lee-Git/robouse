@@ -1,6 +1,6 @@
 # Run a suite
 
-`robouse run-many` runs one harness on a set of tasks, several at a time. It is robo-use's own local runner, the same one as `robouse run`.
+`robouse run-many` runs one harness on a set of tasks, several at a time. It is Robo Use's own local runner, the same one as `robouse run`.
 
 ## A suite
 
@@ -41,7 +41,7 @@ Each trial is one agent session, so cost and rate limits grow with `--concurrenc
 
 `robouse run` and `run-many` do not use BenchFlow. They write BenchFlow's trial layout and ATIF trajectories, and the tasks are BenchFlow-native `task.md` folders, but the runner, the episode server and the agent all run on your machine.
 
-To run tasks under BenchFlow's `bench eval run` instead, export them with `benchflow/export.py`. Each exported task runs in two Docker containers: the agent with only the `robo` client, and the simulator with no network. They share only the episode socket, and the verifier runs in the simulator container. The exporter is in the robo-use repository, not in the PyPI package, so this needs a checkout:
+To run tasks under BenchFlow's `bench eval run` instead, export them with `benchflow/export.py`. Each exported task runs in two Docker containers: the agent with only the `robo` client, and the simulator with no network. They share only the episode socket, and the verifier runs in the simulator container. The exporter is in the Robo Use repository, not in the PyPI package, so this needs a checkout:
 
 ```console
 $ python benchflow/export.py --tasks tasks/metaworld --filter reach,push --out dist/robouse

@@ -6,7 +6,7 @@
 $ robouse --help
 usage: robouse [-h] [--version] {serve,run,run-many,tasks,fetch-assets} ...
 
-robo-use: agent as a policy for embodied agents. Runs robot tasks with an
+Robo Use: agent as a policy for embodied agents. Runs robot tasks with an
 agent harness as the policy. https://robouse.ai
 
 positional arguments:

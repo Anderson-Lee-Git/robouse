@@ -34,7 +34,7 @@ robouse:
 A Sawyer robot arm with a two-finger gripper stands at a table ...
 ```
 
-`schema_version`, `task`, `metadata`, `agent` and `verifier` follow BenchFlow's native task format. robo-use reads `agent.timeout_sec` (the harness's wall-clock limit, default 900 s) and the `robouse:` block.
+`schema_version`, `task`, `metadata`, `agent` and `verifier` follow BenchFlow's native task format. Robo Use reads `agent.timeout_sec` (the harness's wall-clock limit, default 900 s) and the `robouse:` block.
 
 ## The robouse block
 

@@ -1,6 +1,6 @@
 # robouse
 
-**robo-use: agent as a policy for embodied agents.** robo-use turns robot benchmarks into tasks that an agent harness, such as Claude Code or Codex, solves by driving a simulated robot from its shell, one `robo` command at a time. A trusted episode server runs the simulator, enforces the step budget, records a video and scores the final physical state.
+**Robo Use: agent as a policy for embodied agents.** Robo Use turns robot benchmarks into tasks that an agent harness, such as Claude Code or Codex, solves by driving a simulated robot from its shell, one `robo` command at a time. A trusted episode server runs the simulator, enforces the step budget, records a video and scores the final physical state.
 
 ```sh
 pip install 'robouse[sim]'
@@ -11,7 +11,7 @@ Python 3.11 to 3.13. Other extras add more simulators: `metaworld`, `gymrobotics
 
 Docs: [robouse.ai/docs](https://robouse.ai/docs/). Results and videos: [robouse.ai/runs](https://robouse.ai/runs/).
 
-## Working on robo-use
+## Working on Robo Use
 
 Install a checkout in editable mode; it then uses the checkout's `tasks/` and `assets/`:
 

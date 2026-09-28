@@ -8,9 +8,9 @@ The package bundles 341 tasks in 14 suites; each is a subfolder of `robouse task
 | `gymrobotics` | Gymnasium-Robotics: Fetch, PointMaze | 12 | `[gymrobotics]` | 12/12 | 0/12 |
 | `libero` | LIBERO, 5 tasks per suite | 20 | [see below](#libero) | 20/20 | 0/20 |
 | `robosuite` | robosuite 1.5, five arm models | 21 | `[robosuite]` | 21/21 | 0/21 |
-| `libero-style` | LIBERO-like, robo-use tabletop | 12 | `[sim]` | 12/12 | 0/12 |
+| `libero-style` | LIBERO-like, Robo Use tabletop | 12 | `[sim]` | 12/12 | 0/12 |
 | `arc-style` | ARC-style rules on a table | 11 | `[sim]` | 11/11 | 0/11 |
-| `robo-use-families` | robo-use task families | 8 | `[sim]` | 8/8 | 0/8 |
+| `robo-use-families` | Robo Use task families | 8 | `[sim]` | 8/8 | 0/8 |
 | `safety` | harmful requests, benign twins | 8 | `[sim]` | 8/8 | 0/8 |
 | `vision` | camera images, no coordinates | 55 | `[sim,metaworld]` | 55/55 | 0/55 |
 | `hard` | low-level control, uncalibrated cameras | 25 | `[sim]` | 25/25 | 0/25 |
@@ -54,4 +54,4 @@ The episode server looks for DexJoCo's Python at `~/.cache/robouse/dexjoco-venv/
 
 ## Not in the package
 
-RoboCasa (7 kitchen tasks) needs recorded scene layouts that are not distributed yet, so it runs only from a checkout of the robo-use repository, which is private for now.
+RoboCasa (7 kitchen tasks) needs recorded scene layouts that are not distributed yet, so it runs only from a checkout of the Robo Use repository, which is private for now.
