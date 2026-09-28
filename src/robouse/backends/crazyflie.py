@@ -178,15 +178,15 @@ class CrazyflieBackend(EmbodiedBackend):
         sensors = [Sensor("drones", "proprio", ["drones"], "per drone: pos, vel, yaw_deg, roll_deg, pitch_deg, landed_on, motors_on"),
                    Sensor("arena", "world", ["arena"], "pads, gates, window, shelf platform, walls (public positions)"),
                    Sensor("progress", "events", ["progress", "safety_events"], "task progress counters and crash/near-miss events"),
-                   *[Sensor(f"camera:{c}", "camera", [], "") for c in self._cameras()]]
+                   *[Sensor(f"camera:{c}", "camera", mount="body" if c.startswith("cf") else "world") for c in self._cameras()]]
         if n == 1:
-            groups = [ActionGroup("velocity_setpoint", "velocity_setpoint", ["VX", "VY", "VZ", "YAW_RATE"], [-1] * 4, [1] * 4,
+            groups = [ActionGroup("body.velocity_setpoint", "velocity_setpoint", ["VX", "VY", "VZ", "YAW_RATE"], [-1] * 4, [1] * 4,
                                   "x 1 m/s (world x, y, z); x 90 deg/s",
-                                  "zero = hold position; resting on a pad with VZ <= 0 the motors stay off")]
+                                  "zero = hold position; resting on a pad with VZ <= 0 the motors stay off", frame="world")]
             ID = []
         else:
             groups = [ActionGroup(f"cf{i}.velocity_setpoint", "velocity_setpoint", [f"VX{i}", f"VY{i}", f"VZ{i}"], [-1] * 3, [1] * 3,
-                                  "x 1 m/s (world)", "zero = hold position") for i in range(n)]
+                                  "x 1 m/s (world)", "zero = hold position", frame="world") for i in range(n)]
             ID = [SkillArg("id", "int", doc="drone index 0-2")]
         tol = SkillArg("tol", "float", "m", .05, doc="arrival tolerance")
         xyz = [SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("z", unit="m")]

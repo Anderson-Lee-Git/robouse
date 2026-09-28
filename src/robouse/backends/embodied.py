@@ -35,18 +35,23 @@ class Sensor:
     kind: str                 # "proprio" | "world" (public scene facts) | "camera" | "events"
     fields: list[str] = field(default_factory=list)  # `robo observe` keys this sensor fills (cameras: none)
     doc: str = ""
+    units: str = ""
+    frame: str = ""           # e.g. "world", "body"
+    mount: str = ""           # cameras: "world" | "body" | "head" | "wrist" | "hand"
 
 
 @dataclass
 class ActionGroup:
     name: str                 # e.g. "base.twist", "arm.ee_delta", "gripper", "hand.joints", "velocity_setpoint"
-    kind: str                 # "velocity_setpoint" | "twist" | "ee_delta" | "joint_pos_delta" | "joint_pos" | "gripper"
-    names: list[str]
+    kind: str                 # control mode, BenchFlow's vocabulary: "base_twist" | "velocity_setpoint" | "ee_delta_pos" |
+                              # "ee_delta_pose" | "joint_pos" | "joint_delta" | "joint_vel" | "gripper" | "select" | ...
+    names: list[str]          # components
     low: list[float]
     high: list[float]
     units: str = ""
     doc: str = ""
     hold: list[float] | None = None  # the value that means "hold still" (default: zeros)
+    frame: str = ""           # e.g. "world", "body"
 
 
 @dataclass
@@ -154,6 +159,41 @@ class Embodiment:
                 g.pop("hold")
         return d
 
+    def to_spec(self, max_repeat: int = 50, settle_steps: int = 10, success_mode: str = "final") -> dict:
+        """The declaration in BenchFlow's embodiment spec (docs/embodied.md in BenchFlow, spec_version 1). A group
+        whose hold value is not all zeros is written with hold "value" and its `hold_value` (a proposed addition to
+        the spec's zero/last policies, e.g. a car that brakes when not commanded)."""
+        groups = []
+        for g in self.action_groups:
+            d = {"name": g.name, "components": list(g.names), "low": list(g.low), "high": list(g.high), "units": g.units,
+                 "mode": g.kind, **({"frame": g.frame} if g.frame else {}), "doc": g.doc}
+            if g.hold is None or not any(g.hold):
+                d["hold"] = "zero"
+            else:
+                d["hold"], d["hold_value"] = "value", list(g.hold)
+            groups.append(d)
+        sensors: dict = {"cameras": [], "proprioception": [], "state": []}
+        for se in self.sensors:
+            if se.kind == "camera":
+                sensors["cameras"].append({"name": se.name.removeprefix("camera:"), "mount": se.mount or "world",
+                                           "calibrated": False, **({"doc": se.doc} if se.doc else {})})
+            else:
+                key = "proprioception" if se.kind == "proprio" else "state"
+                for f in se.fields or [se.name]:
+                    sensors[key].append({"name": f, **({"units": se.units} if se.units else {}),
+                                         **({"frame": se.frame} if se.frame else {}), "privileged": False,
+                                         **({"doc": se.doc} if se.doc else {})})
+        skills = [{"name": sk.name, "impl": "backend", "doc": sk.doc, "max_steps": sk.max_steps,
+                   "args": [{"name": a.name, "type": a.type, **({"units": a.unit} if a.unit else {}),
+                             **({"choices": a.choices} if a.choices else {}),
+                             **({"optional": True, "default": a.default} if a.default is not None else {}),
+                             **({"doc": a.doc} if a.doc else {})} for a in sk.args]} for sk in self.skills]
+        return {"spec_version": "1", "name": self.robot, "kind": self.family, "assets": list(self.assets),
+                "step_s": self.budget.control_dt, "action_groups": groups, "sensors": sensors, "skills": skills,
+                "budgets": {"max_steps": self.budget.max_steps, "max_repeat": max_repeat,
+                            "max_skill_steps": max((sk.max_steps for sk in self.skills), default=0), "settle_steps": settle_steps},
+                "reward": {"dense": "sparse", "success_mode": success_mode}}
+
     def summary(self) -> dict:
         """Compact form for `robo info`."""
         return {"robot": self.robot, "family": self.family,
@@ -193,8 +233,12 @@ class EmbodiedBackend(Backend):
     def skills(self) -> list[str]:
         return [s.signature() for s in self.decl.skills]
 
+    def embodiment(self) -> dict:
+        """BenchFlow's backend contract: the embodiment spec (spec_version 1) for this task's robot."""
+        return self.decl.to_spec()
+
     def info_extra(self) -> dict:
-        return {"embodiment": self.decl.summary()}
+        return {"embodiment": self.embodiment()}
 
     def hold_action(self) -> list[float]:
         return self.decl.hold()

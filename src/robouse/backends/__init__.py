@@ -50,7 +50,7 @@ def make_backend(spec: dict) -> Backend:
         from .dexjoco import DexjocoBackend
 
         return DexjocoBackend(spec)
-    # embodiment suites (backends/embodied.py): quadrupeds, humanoids, mobile manipulators, dexterous hands, Crazyflie
+    # embodiment suites (backends/embodied.py): quadrupeds, humanoids, mobile manipulators, dexterous hands, Crazyflie, driving
     if kind in EMBODIED:
         import importlib
 
@@ -61,4 +61,5 @@ def make_backend(spec: dict) -> Backend:
 
 EMBODIED = {"quadruped": ("quadruped", "QuadrupedBackend"), "humanoid": ("humanoid", "HumanoidBackend"),
             "mobile_manip": ("mobile_manip", "MobileManipBackend"), "dexhand": ("dexhand", "DexHandBackend"),
-            "crazyflie": ("crazyflie", "CrazyflieBackend")}
+            "crazyflie": ("crazyflie", "CrazyflieBackend"),
+            "driving": ("driving", "DrivingBackend")}  # MetaDrive in its own virtualenv (driving_worker.py)
