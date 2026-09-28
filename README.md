@@ -7,7 +7,9 @@ pip install 'robouse[sim]'
 robouse run --task arc-gravity --harness claude-code --model claude-sonnet-5 --out runs/quickstart
 ```
 
-Python 3.11 to 3.13. Other extras add more simulators: `metaworld`, `gymrobotics`, `robosuite`, `dexjoco`, `all`.
+Python 3.12 to 3.13. Other extras add more simulators: `metaworld`, `gymrobotics`, `robosuite`, `dexjoco`, `all`.
+
+`robouse run` runs each trial as a BenchFlow job in Docker, with the simulator in its own container; `--harness` (or `--agent`) takes any BenchFlow agent. Add `--engine local` to run the trial on your machine without Docker.
 
 Docs: [robouse.ai/docs](https://robouse.ai/docs/). Results and videos: [robouse.ai/runs](https://robouse.ai/runs/).
 

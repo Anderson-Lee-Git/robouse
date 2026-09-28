@@ -1,7 +1,7 @@
-# robouse-sim: the trusted simulator + episode server + verifier image for BenchFlow runs.
+# robouse simulator: the trusted simulator + episode server + verifier image of a robouse task on BenchFlow.
 #
-# Build context: the `runtime/` directory written by benchflow/export.py (this file, requirements-sim.txt,
-# sim-entry.sh and a copy of the robouse package under robouse/). The agent container never uses this image.
+# Build context: the simulator runtime written by robouse.engine.format (this file, requirements.txt,
+# sim-entry.sh and a copy of the robouse package under robouse/src/robouse). The agent container never uses it.
 FROM python:3.12-slim-bookworm
 
 # Headless rendering: MuJoCo renders through OSMesa (CPU); no X server or GPU needed.
@@ -12,7 +12,7 @@ RUN apt-get update \
 ENV MUJOCO_GL=osmesa PYOPENGL_PLATFORM=osmesa \
     PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 
-COPY requirements-sim.txt /tmp/requirements-sim.txt
+COPY requirements.txt /tmp/requirements-sim.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-sim.txt && rm -rf /root/.cache
 
 # robouse itself is pure Python; run it from source.

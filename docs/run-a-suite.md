@@ -1,13 +1,13 @@
 # Run a suite
 
-`robouse run-many` runs one harness on a set of tasks, several at a time. It is Robo Use's own local runner, the same one as `robouse run`.
+`robouse run-many` runs one harness on a set of tasks, several at a time. Like `robouse run`, it runs on BenchFlow by default, as one job in Docker; `--engine local` runs the trials on your machine instead.
 
 ## A suite
 
-A suite is a subfolder of the bundled tasks. This runs the first 4 Meta-World reference solutions, 4 at a time:
+A suite is a subfolder of the bundled tasks. This runs the first 4 Meta-World reference solutions, 4 at a time, with the local engine:
 
 ```console
-$ robouse run-many --tasks "$(robouse tasks --path)/metaworld" --harness oracle --out runs/mw-oracle --concurrency 4 --limit 4
+$ robouse run-many --engine local --tasks "$(robouse tasks --path)/metaworld" --harness oracle --out runs/mw-oracle --concurrency 4 --limit 4
 metaworld-bin-picking                    reward=1 outcome=success_reached steps=131 9.0s
 metaworld-assembly                       reward=1 outcome=success_reached steps=93 9.1s
 metaworld-basketball                     reward=1 outcome=success_reached steps=91 9.1s
@@ -27,7 +27,7 @@ robouse run-many --tasks mytasks --harness oracle --out runs/mine          # any
 
 ## Stop and resume
 
-Each finished trial is appended to `<out>/run_log.jsonl`. After an interruption, run the same command with `--resume`: tasks that already have a finished trial in `--out` are skipped, and the rest run.
+With `--engine local`, each finished trial is appended to `<out>/run_log.jsonl`. After an interruption, run the same command with `--resume`: tasks that already have a finished trial in `--out` are skipped, and the rest run.
 
 ## With an agent
 
@@ -35,21 +35,14 @@ Each finished trial is appended to `<out>/run_log.jsonl`. After an interruption,
 robouse run-many --tasks "$(robouse tasks --path)/metaworld" --harness codex --model gpt-6-astra --out runs/mw-codex --concurrency 4
 ```
 
-Each trial is one agent session, so cost and rate limits grow with `--concurrency`. A trial that failed for an infrastructure reason has an `EXC` note on its line and `exception_info` in its `result.json`; rerunning with `--resume` retries it.
+Each trial is one agent session, so cost and rate limits grow with `--concurrency`. A trial that failed for an infrastructure reason has an `EXC` note on its line and `exception_info` in its `result.json`; with `--engine local`, rerunning with `--resume` retries it.
 
 ## Run under BenchFlow
 
-`robouse run` and `run-many` do not use BenchFlow. They write BenchFlow's trial layout and ATIF trajectories, and the tasks are BenchFlow-native `task.md` folders, but the runner, the episode server and the agent all run on your machine.
+`robouse run` and `run-many` run on BenchFlow unless you pass `--engine local`. BenchFlow loads the task folders as they are and runs each trial in two Docker containers: the agent with only the `robo` client, and the simulator with no network. They share only the episode socket, and the verifier runs in the simulator container. The job is written to `OUT/<job>/`, one `<task>__<id>/` folder per trial. `bench eval run` runs the same task folders directly:
 
-To run tasks under BenchFlow's `bench eval run` instead, export them with `benchflow/export.py`. Each exported task runs in two Docker containers: the agent with only the `robo` client, and the simulator with no network. They share only the episode socket, and the verifier runs in the simulator container. The exporter is in the Robo Use repository, not in the PyPI package, so this needs a checkout:
-
-```console
-$ python benchflow/export.py --tasks tasks/metaworld --filter reach,push --out dist/robouse
-...
-7 task(s) -> /path/to/robouse/dist/robouse
-$ cd dist/robouse && bench tasks check tasks/metaworld-reach
-✓ metaworld-reach — valid (structural)
-$ bench eval run --config robouse-oracle.yaml
+```sh
+bench eval run --tasks-dir "$(robouse tasks --path)/metaworld" --agent oracle --sandbox docker
 ```
 
-The export and the structural check were run for these docs. `bench eval run` needs Docker with Compose 2.24.4 or newer and was not re-run for these docs.
+This needs Docker with Compose 2.24.4 or newer. `robouse export --tasks DIR --out DIR` writes the same tasks as BenchFlow packages, for a machine without Robo Use installed.

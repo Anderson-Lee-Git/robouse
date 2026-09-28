@@ -1,6 +1,8 @@
 # task.md
 
-A task folder holds `task.md`, `oracle/solve.sh` and `verifier/test.sh`. `task.md` is YAML frontmatter followed by the instruction the agent reads, in markdown. This is `metaworld-push`, trimmed:
+A task folder holds `task.md`, `oracle/solve.sh` and `verifier/test.sh`. BenchFlow loads the folder as it is: the installed robouse package (`robouse.engine.format`) generates the Docker environment, the verifier and the oracle package for it, so there is no `environment/` folder to write.
+
+`task.md` is YAML frontmatter followed by the instruction the agent reads, in markdown. This is `metaworld-push`, trimmed:
 
 ```markdown
 ---
