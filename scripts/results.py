@@ -23,6 +23,9 @@ LABEL = {
     "claude-code-glm/zai-org/GLM-5.3": "Claude Code + GLM-5.3",
     "codex-glm/zai-org/GLM-5.3": "Codex + GLM-5.3",
     "mini-swe-agent-glm/zai-org/GLM-5.3": "mini-swe-agent + GLM-5.3",
+    "claude-code-glm/moonshotai/Kimi-K3": "Claude Code + Kimi K3",
+    "codex-glm/moonshotai/Kimi-K3": "Codex + Kimi K3",
+    "mini-swe-agent-glm/moonshotai/Kimi-K3": "mini-swe-agent + Kimi K3",
     "oracle/scripted": "Reference solutions",
     "noop/none": "No-op control",
 }

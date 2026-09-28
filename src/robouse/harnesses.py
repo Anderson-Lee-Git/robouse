@@ -7,7 +7,7 @@ passed to the harness child only (never printed or written to the trial dir).
 Credentials
   claude-code            ANTHROPIC_API_KEY, else CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`)
   codex                  OPENAI_API_KEY, else a private copy of ~/.codex/auth.json (from `codex login`)
-  *-glm                  BASETEN_API_KEY
+  *-glm                  BASETEN_API_KEY (default model zai-org/GLM-5.3; --model takes any Baseten model id, e.g. moonshotai/Kimi-K3)
 Optional maintainer fallback: token and key files under ~/.config/bf-agents (oauth.env, baseten.env) when present.
 
 Harnesses
@@ -156,18 +156,19 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
                       env, notes={"model": m})
 
     if harness == "claude-code-glm":
+        bm = model or GLM_MODEL  # any Baseten model id, e.g. moonshotai/Kimi-K3
         from .providers import baseten_proxy
 
         port, stats = baseten_proxy.start(_baseten_key())
         env.update({"ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}", "ANTHROPIC_AUTH_TOKEN": "proxy-held",
-                    "ANTHROPIC_API_KEY": "", "ANTHROPIC_MODEL": GLM_MODEL, "ANTHROPIC_DEFAULT_OPUS_MODEL": GLM_MODEL,
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL": GLM_MODEL, "ANTHROPIC_DEFAULT_HAIKU_MODEL": GLM_MODEL,
-                    "ANTHROPIC_SMALL_FAST_MODEL": GLM_MODEL, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"})
+                    "ANTHROPIC_API_KEY": "", "ANTHROPIC_MODEL": bm, "ANTHROPIC_DEFAULT_OPUS_MODEL": bm,
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL": bm, "ANTHROPIC_DEFAULT_HAIKU_MODEL": bm,
+                    "ANTHROPIC_SMALL_FAST_MODEL": bm, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"})
         env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
         env["CLAUDE_CONFIG_DIR"] = _clean_claude_home()
-        return Launch(["claude", "-p", PROMPT_PREFIX + prompt, "--model", GLM_MODEL, "--output-format", "stream-json",
+        return Launch(["claude", "-p", PROMPT_PREFIX + prompt, "--model", bm, "--output-format", "stream-json",
                        "--verbose", "--dangerously-skip-permissions", "--max-turns", "400",
-                       "--disallowedTools", "WebFetch,WebSearch,Task"], env, helper=stats, notes={"model": GLM_MODEL, "provider": "baseten"})
+                       "--disallowedTools", "WebFetch,WebSearch,Task"], env, helper=stats, notes={"model": bm, "provider": "baseten"})
 
     if harness == "codex":
         m = model or "gpt-6-astra"
@@ -179,6 +180,7 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
                        "-m", m, "-C", str(workspace), PROMPT_PREFIX + prompt], env, notes={"model": m})
 
     if harness == "codex-glm":
+        bm = model or GLM_MODEL  # any Baseten model id, e.g. moonshotai/Kimi-K3
         env["BASETEN_API_KEY"] = _baseten_key()
         env["ROBOUSE_TEXT_ONLY"] = "1"  # Baseten's Responses API rejects images; Codex attaches PNGs it sees in command output
         env["CODEX_HOME"] = _clean_codex_home("# GLM via Baseten; provider set on the command line\n"
@@ -188,16 +190,17 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
                '-c', 'model_providers.baseten.env_key="BASETEN_API_KEY"', '-c', 'model_providers.baseten.wire_api="responses"',
                '-c', 'model_provider="baseten"']
         return Launch(["codex", "exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox",
-                       *cfg, "-m", GLM_MODEL, "-C", str(workspace), PROMPT_PREFIX + prompt], env,
-                      notes={"model": GLM_MODEL, "provider": "baseten"})
+                       *cfg, "-m", bm, "-C", str(workspace), PROMPT_PREFIX + prompt], env,
+                      notes={"model": bm, "provider": "baseten"})
 
     if harness == "mini-swe-agent-glm":
+        bm = model or GLM_MODEL  # any Baseten model id, e.g. moonshotai/Kimi-K3
         env.update({"OPENAI_API_KEY": _baseten_key(), "OPENAI_API_BASE": BASETEN_OPENAI, "MSWEA_CONFIGURED": "true",
                     "MSWEA_COST_TRACKING": "ignore_errors"})
         exe = shutil.which("mini") or str(HOME / ".local/bin/mini")
         (workspace / ".robouse" / "task.txt").write_text(PROMPT_PREFIX + prompt)
-        return Launch([exe, "-y", "--exit-immediately", "-l", "0", "-m", f"openai/{GLM_MODEL}", "-t", PROMPT_PREFIX + prompt, "-o",
-                       str(workspace / ".robouse" / "mini_traj.json")], env, notes={"model": GLM_MODEL, "provider": "baseten"})
+        return Launch([exe, "-y", "--exit-immediately", "-l", "0", "-m", f"openai/{bm}", "-t", PROMPT_PREFIX + prompt, "-o",
+                       str(workspace / ".robouse" / "mini_traj.json")], env, notes={"model": bm, "provider": "baseten"})
 
     if harness == "molmoact2":
         if not os.environ.get("ROBOUSE_MOLMOACT2_URL"):
