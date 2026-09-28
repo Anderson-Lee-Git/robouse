@@ -50,4 +50,15 @@ def make_backend(spec: dict) -> Backend:
         from .dexjoco import DexjocoBackend
 
         return DexjocoBackend(spec)
+    # embodiment suites (backends/embodied.py): quadrupeds, humanoids, mobile manipulators, dexterous hands, Crazyflie
+    if kind in EMBODIED:
+        import importlib
+
+        mod, cls = EMBODIED[kind]
+        return getattr(importlib.import_module(f".{mod}", __package__), cls)(spec)
     raise KeyError(f"unknown backend {kind!r}")
+
+
+EMBODIED = {"quadruped": ("quadruped", "QuadrupedBackend"), "humanoid": ("humanoid", "HumanoidBackend"),
+            "mobile_manip": ("mobile_manip", "MobileManipBackend"), "dexhand": ("dexhand", "DexHandBackend"),
+            "crazyflie": ("crazyflie", "CrazyflieBackend")}

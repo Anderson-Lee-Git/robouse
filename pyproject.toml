@@ -65,6 +65,7 @@ exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes
 # One entry per suite that is self-contained. Left out: robocasa (its recorded episode layouts are machine-specific
 # and not distributed) and any suite still in development.
 "tasks/arc-style" = "robouse/bundled_tasks/arc-style"
+"tasks/crazyflie" = "robouse/bundled_tasks/crazyflie"
 "tasks/dexjoco" = "robouse/bundled_tasks/dexjoco"
 "tasks/drone" = "robouse/bundled_tasks/drone"
 "tasks/gymrobotics" = "robouse/bundled_tasks/gymrobotics"
@@ -80,7 +81,8 @@ exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes
 "tasks/vision" = "robouse/bundled_tasks/vision"
 "assets/menagerie/provenance.json" = "robouse/assets_provenance/menagerie.json"
 "assets/menagerie/skydio_x2/PROVENANCE.json" = "robouse/assets_provenance/skydio_x2.json"
+"assets/menagerie/embodiments.json" = "robouse/assets_provenance/embodiments.json"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/robouse", "/tasks", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/README.md", "/LICENSE", "/pyproject.toml"]
+include = ["/src/robouse", "/tasks", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/README.md", "/LICENSE", "/pyproject.toml"]
 exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/src/robouse/backends/robocasa_episodes", "/tasks/robocasa", "/tasks/behavior"]
