@@ -79,6 +79,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("Guides", "docs/run-an-agent.md", "run-an-agent", "Run an agent"),
     ("Guides", "docs/write-a-task.md", "write-a-task", "Write a task"),
     ("Guides", "docs/run-a-suite.md", "run-a-suite", "Run a suite"),
+    ("Guides", "docs/datasets.md", "datasets", "Datasets"),
     ("Reference", "docs/cli.md", "cli", "robouse CLI"),
     ("Reference", "docs/robo-cli.md", "robo-cli", "robo CLI"),
     ("Reference", "docs/task-format.md", "task-format", "task.md"),

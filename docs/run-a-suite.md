@@ -53,3 +53,5 @@ $ bench eval run --config robouse-oracle.yaml
 ```
 
 The export and the structural check were run for these docs. `bench eval run` needs Docker with Compose 2.24.4 or newer and was not re-run for these docs.
+
+To run published sets of exported tasks by name, without a checkout, see [Datasets](datasets.md).
