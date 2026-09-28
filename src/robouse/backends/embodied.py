@@ -260,8 +260,10 @@ class EmbodiedBackend(Backend):
     # ---- stepping ----------------------------------------------------------------------------------------------
     def step(self, action) -> StepInfo:
         a = self.action_spec.clip(action)
+        if not np.all(np.isfinite(a)):
+            raise ValueError("action values must be finite numbers")
         self.control_step(a)
-        return StepInfo(success=False)
+        return StepInfo(success=bool(self.success()))  # so the episode's success_ever is meaningful
 
     def control_step(self, a: np.ndarray) -> None:
         raise NotImplementedError
