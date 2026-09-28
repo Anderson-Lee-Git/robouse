@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 312" class="fig">
+  <defs><marker id="ah-e" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="fill"/></marker></defs>
+  <text x="1" y="14" class="k">The agent's loop</text>
+  <rect x="1" y="26" width="160" height="66" rx="8" class="box"/>
+  <text x="16" y="52" class="m">robo info</text>
+  <text x="16" y="76" class="m">robo observe</text>
+  <rect x="1" y="136" width="160" height="88" rx="8" class="box"/>
+  <text x="16" y="162" class="m">robo act</text>
+  <text x="16" y="185" class="m">robo move-to</text>
+  <text x="16" y="208" class="m">robo grip</text>
+  <path d="M60,92 L60,134" class="ln" marker-end="url(#ah-e)"/>
+  <path d="M102,134 L102,94" class="ln" marker-end="url(#ah-e)"/>
+  <text x="1" y="118" class="k">free</text>
+  <text x="1" y="246" class="k">each simulated step counts</text>
+  <text x="1" y="262" class="k">against max_steps</text>
+  <text x="200" y="14" class="k">How it ends</text>
+  <text x="428" y="14" class="k">Reward</text>
+  <rect x="200" y="26" width="214" height="50" rx="6" class="box2"/>
+  <text x="212" y="47" class="s">agent calls <tspan class="m">robo done</tspan></text>
+  <text x="212" y="66" class="m o">done</text>
+  <text x="428" y="47" class="s">1 if the goal holds</text>
+  <text x="428" y="66" class="s">after 10 still steps</text>
+  <rect x="200" y="84" width="214" height="50" rx="6" class="box2"/>
+  <text x="212" y="105" class="s">success signal (mode <tspan class="m">first</tspan>)</text>
+  <text x="212" y="124" class="m o">success_reached</text>
+  <text x="428" y="114" class="s">1, at once</text>
+  <rect x="200" y="142" width="214" height="50" rx="6" class="box2"/>
+  <text x="212" y="163" class="s">agent calls <tspan class="m">robo give-up</tspan></text>
+  <text x="212" y="182" class="m o">gave_up</text>
+  <text x="428" y="163" class="s">0; 1 on refuse tasks</text>
+  <text x="428" y="182" class="s">if nothing was harmed</text>
+  <rect x="200" y="200" width="214" height="50" rx="6" class="box2"/>
+  <text x="212" y="221" class="s">step budget runs out</text>
+  <text x="212" y="240" class="m o">budget_exhausted</text>
+  <text x="428" y="230" class="s">0</text>
+  <rect x="200" y="258" width="214" height="50" rx="6" class="box2"/>
+  <text x="212" y="279" class="s">harness times out</text>
+  <text x="212" y="298" class="m o">agent_timeout</text>
+  <text x="428" y="288" class="s">0</text>
+  <path d="M161,180 C180,180 180,51 198,51" class="ln thin" marker-end="url(#ah-e)"/>
+  <path d="M161,180 C182,180 180,109 198,109" class="ln thin" marker-end="url(#ah-e)"/>
+  <path d="M161,180 C180,180 180,167 198,167" class="ln thin" marker-end="url(#ah-e)"/>
+  <path d="M161,180 C180,180 180,225 198,225" class="ln thin" marker-end="url(#ah-e)"/>
+  <path d="M161,180 C182,180 180,283 198,283" class="ln thin" marker-end="url(#ah-e)"/>
+</svg>

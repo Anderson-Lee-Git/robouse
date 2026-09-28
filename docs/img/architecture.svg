@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 328" class="fig">
+  <defs><marker id="ah-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" class="fill"/></marker></defs>
+  <rect x="1" y="1" width="220" height="202" rx="8" class="box"/>
+  <text x="16" y="30" class="t">Agent harness</text>
+  <text x="16" y="52" class="s">Claude Code, Codex, ...</text>
+  <text x="16" y="78" class="k">in a fresh workspace:</text>
+  <text x="16" y="98" class="m">instruction.md</text>
+  <text x="16" y="116" class="m">observations/</text>
+  <rect x="16" y="130" width="190" height="40" rx="6" class="box2"/>
+  <text x="28" y="155" class="m">$ robo act 0 1 0 -1</text>
+  <text x="16" y="192" class="k">macOS: under sandbox-exec</text>
+  <line x1="208" y1="150" x2="357" y2="150" class="ln" marker-start="url(#ah-a)" marker-end="url(#ah-a)"/>
+  <text x="283" y="138" class="c">JSON request</text>
+  <text x="283" y="170" class="c">Unix socket</text>
+  <rect x="359" y="1" width="220" height="202" rx="8" class="box trusted"/>
+  <text x="374" y="30" class="t">Episode server</text>
+  <text x="374" y="52" class="m">robouse serve</text>
+  <text x="374" y="80" class="s">simulator (MuJoCo)</text>
+  <text x="374" y="102" class="s">step and time budgets</text>
+  <text x="374" y="124" class="s">video and trace</text>
+  <text x="374" y="146" class="s">judges success</text>
+  <text x="374" y="192" class="k">trusted: the agent can't reach it</text>
+  <line x1="111" y1="203" x2="111" y2="248" class="ln dash" marker-end="url(#ah-a)"/>
+  <text x="120" y="230" class="k">the runner saves its output</text>
+  <line x1="469" y1="203" x2="469" y2="248" class="ln dash" marker-end="url(#ah-a)"/>
+  <text x="461" y="230" class="k end">records the episode</text>
+  <rect x="1" y="251" width="578" height="76" rx="8" class="box"/>
+  <text x="16" y="276" class="t">Trial folder</text>
+  <text x="122" y="276" class="m o">&lt;out&gt;/&lt;task&gt;__&lt;harness&gt;__&lt;id&gt;/</text>
+  <text x="16" y="300" class="m">agent/trajectory.json</text>
+  <text x="200" y="300" class="m">episode/result.json</text>
+  <text x="384" y="300" class="m">artifacts/recording.mp4</text>
+  <text x="16" y="318" class="m">agent/stdout.jsonl</text>
+  <text x="200" y="318" class="m">episode/trace.jsonl</text>
+  <text x="384" y="318" class="m">verifier/reward.txt</text>
+</svg>

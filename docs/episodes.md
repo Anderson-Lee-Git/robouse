@@ -2,19 +2,13 @@
 
 One trial runs one episode. `robouse run` starts an episode server for the task, gives the agent a fresh workspace and waits for the agent to finish.
 
-```
- agent harness                   episode server
- (Claude Code, Codex, ...)       (robouse serve)
-┌─────────────────────────┐     ┌─────────────────────────┐
-│ reads instruction.md    │     │ MuJoCo simulator        │
-│ robo observe            │────►│ step and time budgets   │
-│ robo act, robo move-to  │◄────│ video and trace         │
-│ robo done               │     │ judges the final state  │
-└─────────────────────────┘     └─────────────────────────┘
-          JSON requests over a Unix socket
-```
-
 The agent gets a temporary workspace with `instruction.md` and an `observations/` folder for camera images, `robo` first on its `PATH`, and `ROBOUSE_SOCKET` pointing at the episode. There is no reset, teleport or state-setting request: the only way to change the scene is to move the robot.
+
+![An episode. `robo info` and `robo observe` cost nothing; every simulated step of `act`, `move-to` and `grip` counts against the task's `max_steps`. The ending, recorded as `outcome` in `episode/result.json`, decides the reward. Not shown: the wall-clock limit (`wall_time_exhausted`, 0) and a harness that exits without `robo done` (`gave_up`, 0).](img/episode.svg)
+
+On vision tasks, `robo observe` also saves camera images into the workspace, and the agent opens them like any other file. This is the first image from `arc-gravity-vision`:
+
+![`observations/obs_001_front.png`, the 320×320 front camera image the agent gets from `robo observe` on `arc-gravity-vision`. The agent must infer the rule from example grids and move the blocks it sees.](img/observe-front.webp)
 
 ## A session
 

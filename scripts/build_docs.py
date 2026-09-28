@@ -134,8 +134,9 @@ def plain(md: str) -> str:
 class Converter:
     """Converts one markdown document. `link` maps (href) -> (url or None); None means 'not published'."""
 
-    def __init__(self, link, labels=None):
+    def __init__(self, link, labels=None, svg=None):
         self.link = link
+        self.svg = svg  # href -> inline SVG markup (or None), for figures that follow the page's theme
         self.labels = labels or {}  # page url -> nav label, for links whose text is just the file path
         self.seen: dict[str, int] = {}
         self.headings: list[tuple[int, str, str]] = []
@@ -226,6 +227,15 @@ class Converter:
                     body.append(lines[i][ind:] if lines[i][:ind].strip() == "" else lines[i])
                     i += 1
                 i += 1
+                if lang == "gallery":  # one "image | caption" per line: a strip of small figures
+                    items = []
+                    for row in body:
+                        if "|" not in row:
+                            continue
+                        src, cap = (s.strip() for s in row.split("|", 1))
+                        items.append(f"<figure>{self._img(src, plain(cap))}<figcaption>{self.inline(cap)}</figcaption></figure>")
+                    out.append('<div class="gallery">' + "".join(items) + "</div>")
+                    continue
                 cls = f' class="language-{lang}"' if lang else ""
                 out.append(f'<div class="code"><pre><code{cls}>{html.escape(chr(10).join(body), quote=False)}</code></pre></div>')
                 continue
@@ -263,6 +273,14 @@ class Converter:
                 continue
             if self.LIST_RE.match(line):
                 i = self.list_block(lines, i, out)
+                continue
+            fm = re.fullmatch(r"!\[([^\]]+)\]\(([^)\s]+)\)", line.strip())
+            if fm and (i + 1 >= n or not lines[i + 1].strip()):  # an image alone in its paragraph: a figure
+                cap, src = fm.group(1), fm.group(2)
+                svg = self.svg(src) if self.svg and src.endswith(".svg") else None
+                body = svg.replace("<svg ", f'<svg role="img" aria-label="{html.escape(plain(cap))}" ', 1) if svg else self._img(src, html.escape(plain(cap)))
+                out.append(f'<figure class="figure">{body}<figcaption>{self.inline(cap)}</figcaption></figure>')
+                i += 1
                 continue
             para = [line.strip()]
             i += 1
@@ -443,7 +461,17 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
 
         md = source.read(p.src)
         md = re.sub(r"/Users/(?!<)[^/\s`]+/", "~/", md)  # tidy absolute home paths
-        conv = Converter(link, {page_url(base, q.slug): q.label for q in pages})
+        def svg(href: str, src_dir=src_dir) -> str | None:
+            target = posixpath.normpath(posixpath.join(src_dir, href))
+            if not (target.startswith("docs/") and source.exists(target)):
+                broken.append(f"{p.src}: missing figure {href}")
+                return None
+            s = source.read(target)
+            s = re.sub(r"<\?xml[^>]*>\s*|<!--.*?-->", "", s, flags=re.S).strip()
+            uid = posixpath.splitext(posixpath.basename(target))[0]
+            return re.sub(r'id="ah-([\w-]+)"', lambda m: f'id="{uid}-{m.group(1)}"', s).replace("url(#ah-", f"url(#{uid}-")
+
+        conv = Converter(link, {page_url(base, q.slug): q.label for q in pages}, svg)
         p.body = conv.blocks(md.splitlines())
         p.toc = [(hid, plain(text)) for lvl, hid, text in conv.headings if lvl == 2]
         p.ids = {hid for _, hid, _ in conv.headings}
@@ -644,6 +672,33 @@ article strong { font-weight: 600; }
 article hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
 article blockquote { padding: 2px 0 2px 16px; border-left: 2px solid var(--line-strong); color: var(--muted); }
 article img { display: block; max-width: 100%; height: auto; margin: 8px 0; border-radius: 6px; border: 1px solid var(--line); }
+
+/* figures: inline SVG diagrams take the page's colours and type; stills are small webp images */
+.figure { margin: 22px 0 26px; }
+.figure > svg { display: block; width: 100%; height: auto; overflow: visible; }
+.figure img { margin: 0; }
+figcaption { margin-top: 10px; font: 400 13.5px/1.5 var(--sans); color: var(--muted); }
+.fig { color: var(--ink); }
+.fig text { font-family: var(--sans); font-size: 13px; fill: var(--ink2); }
+.fig .t { font-family: var(--serif); font-size: 17px; fill: var(--ink); }
+.fig .s { fill: var(--ink2); }
+.fig .k { font-size: 12px; fill: var(--muted); }
+.fig .c { font-size: 12px; fill: var(--muted); text-anchor: middle; }
+.fig .end { text-anchor: end; }
+.fig .m, .fig tspan.m { font-family: var(--mono); font-size: 12px; fill: var(--ink); white-space: pre; }
+.fig .m.o { fill: var(--muted); font-size: 11.5px; }
+.fig .m.b { font-weight: 500; }
+.fig .box { fill: var(--paper); stroke: var(--line-strong); stroke-width: 1; }
+.fig .box.trusted { stroke: var(--ink); }
+.fig .box2 { fill: var(--code-bg); stroke: var(--line); stroke-width: 1; }
+.fig .ln { stroke: var(--ink2); stroke-width: 1.3; fill: none; }
+.fig .ln.thin { stroke: var(--muted); stroke-width: 1; }
+.fig .ln.dash { stroke-dasharray: 4 4; stroke: var(--muted); }
+.fig .fill { fill: var(--ink2); }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 16px 12px; margin: 18px 0 26px; }
+.gallery figure { margin: 0; }
+.gallery img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; margin: 0; border-radius: 6px; border: 1px solid var(--line); }
+.gallery figcaption { margin-top: 6px; font-size: 12.5px; line-height: 1.35; }
 
 /* code */
 code { font-family: var(--mono); font-size: .84em; background: var(--code-bg); color: var(--ink2); padding: .1em .35em; border-radius: 4px; overflow-wrap: anywhere; }

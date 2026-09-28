@@ -2,12 +2,7 @@
 
 A task is a folder in BenchFlow's native task format:
 
-```
-<task-id>/
-  task.md            settings (YAML frontmatter) and the instruction the agent reads (markdown body)
-  oracle/solve.sh    reference solution; must score 1
-  verifier/test.sh   writes the episode server's verdict to reward.txt
-```
+![The `metaworld-push` task folder, trimmed. The frontmatter of `task.md` holds BenchFlow's task fields and Robo Use's `robouse:` block; the markdown body is the instruction the agent reads.](img/task-folder.svg)
 
 The frontmatter's `robouse:` block names the simulator backend and scene, the step budget, what the agent observes and how success is judged. The fields: [task.md reference](task-format.md).
 

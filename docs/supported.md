@@ -52,6 +52,8 @@ Per-suite results: [Suites](suites.md).
 
 ## Isolation
 
+BenchFlow is the environment framework whose task and trial formats Robo Use uses ([Robo Use and BenchFlow](index.md#robo-use-and-benchflow)). The released runner does not start BenchFlow; exported tasks run under `bench eval run`.
+
 | Mode | Status |
 |---|---|
 | Local runner, macOS: model harnesses under `sandbox-exec`, file access denied to `ROBOUSE_SANDBOX_DENY` paths | docs check: the profile blocks a listed path |

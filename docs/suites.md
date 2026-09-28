@@ -2,6 +2,25 @@
 
 The package bundles 341 tasks in 14 suites; each is a subfolder of `robouse tasks --path`. The last two columns are the results of running every reference solution and the no-op control, with MuJoCo 3.3.0.
 
+```gallery
+img/suites/metaworld.webp | `metaworld`
+img/suites/gymrobotics.webp | `gymrobotics`
+img/suites/libero.webp | `libero`
+img/suites/robosuite.webp | `robosuite`
+img/suites/libero-style.webp | `libero-style`
+img/suites/arc-style.webp | `arc-style`
+img/suites/robo-use-families.webp | `robo-use-families`
+img/suites/safety.webp | `safety`
+img/suites/vision.webp | `vision` (top camera, as the agent sees it)
+img/suites/hard.webp | `hard`
+img/suites/menagerie.webp | `menagerie`
+img/suites/roboharm.webp | `roboharm`
+img/suites/drone.webp | `drone`
+img/suites/dexjoco.webp | `dexjoco`
+```
+
+Stills from the recordings of one reference solution per suite; for `vision`, a camera image the agent receives.
+
 | Suite | From | Tasks | Needs | Oracle | No-op |
 |---|---|---|---|---|---|
 | `metaworld` | Meta-World MT50 | 50 | `[metaworld]` | 50/50 | 0/50 |
