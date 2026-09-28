@@ -30,7 +30,7 @@ One step is 50 ms (25 physics steps of 2 ms, RK4).
 
 | Tasks | Action groups | Values |
 |---|---|---|
-| single drone | `velocity_setpoint` [VX, VY, VZ, YAW_RATE] | each in [-1, 1]: x 1 m/s (world frame), x 90 deg/s |
+| single drone | `body.velocity_setpoint` [VX, VY, VZ, YAW_RATE] | each in [-1, 1]: x 1 m/s (world frame), x 90 deg/s |
 | swarm | `cf0.velocity_setpoint`, `cf1.velocity_setpoint`, `cf2.velocity_setpoint`, [VX, VY, VZ] each | x 1 m/s; headings fixed |
 
 The controller runs at every physics step, per drone, in the style of the Crazyflie firmware's cascade:
@@ -83,4 +83,4 @@ The reference solutions use only the skills and public positions; the no-skills 
 
 ## Embodiment declaration
 
-Every embodiment backend declares one `Embodiment` (in `backends/embodied.py`): the robot and its Menagerie folders, its sensors (observation fields and cameras), the action groups that make up `robo act`, the skills with typed arguments, and the budget (control period, step limit). `robo info` shows it under `embodiment`, and each skill's signature under `skills`. Skills are generators that yield one action per control step, which the episode server runs as ordinary steps.
+Every embodiment backend declares one `Embodiment` (in `backends/embodied.py`): the robot and its Menagerie folders, its sensors (observation fields and cameras), the action groups that make up `robo act`, the skills with typed arguments, and the budget (control period, step limit). `robo info` shows it under `embodiment` in the format of BenchFlow's embodiment spec (spec_version 1: action groups with control modes and hold policies, sensors, typed skills, budgets), and each skill's signature under `skills`. Skills are generators that yield one action per control step, which the episode server runs as ordinary steps.
