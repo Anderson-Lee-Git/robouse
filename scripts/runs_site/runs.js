@@ -350,20 +350,62 @@
           });
         });
       }
+      function parse(t) { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } }
+      function dl(key, label) {  // the sanitized JSON as a small download link, never shown raw
+        return '<a class="dl" href="#" data-dl="' + key + '">' + h(label) + "</a>";
+      }
+      function summary() {
+        var r = parse(d.result_json) || {}, c = parse(d.config_json) || {}, ep = r.episode || {}, meta = c.metadata || {};
+        var reward = r.verifier_result && r.verifier_result.rewards ? r.verifier_result.rewards.reward : d.reward;
+        var who = (c.harness || (r.agent_info || {}).name || "") + (c.model ? " with " + c.model : "");
+        var steps = ep.steps_used != null ? num(ep.steps_used) + (ep.max_steps ? " of " + num(ep.max_steps) : "") + " simulator steps" : "";
+        var parts = [];
+        if (reward != null) parts.push("Reward " + h(reward) + (ep.outcome ? ", outcome " + h(ep.outcome) : ""));
+        if (steps) parts.push(steps + (ep.requests != null ? " in " + num(ep.requests) + " robot requests" : ""));
+        var wall = r.wall_time_s != null ? dur(r.wall_time_s) : "";
+        var agent = [];
+        if (r.agent_return_code != null) agent.push("exit code " + h(r.agent_return_code));
+        if (r.agent_timed_out) agent.push("timed out");
+        if (r.exception_info) agent.push("stopped by an exception");
+        var result = '<section class="card sum"><h3>Result</h3><p class="big ' + (reward === 1 || reward === 1.0 ? "ok" : reward === 0 ? "no" : "warn") + '">' + (parts[0] || "Not scored") + "</p>" +
+          (parts[1] ? "<p>" + parts[1] + (wall ? ", " + wall + " in all" : "") + ".</p>" : "") +
+          (agent.length ? '<p class="muted">Agent: ' + agent.join(", ") + ".</p>" : "") +
+          (ep.agent_text ? '<blockquote>' + h(ep.agent_text) + "</blockquote>" : "") +
+          '<p class="dls">' + (d.result_json ? dl("result", "Download result.json") : "") + "</p></section>";
+        var chips = [meta.source_benchmark, meta.category && meta.category.replace(/-/g, " "), meta.difficulty].filter(Boolean)
+          .map(function (x) { return '<span class="chip">' + h(x) + "</span>"; }).join("") +
+          (meta.tags || []).map(function (x) { return '<span class="chip tag">' + h(x) + "</span>"; }).join("");
+        var setup = '<section class="card sum"><h3>Setup</h3><p>' + h(who || "Agent") +
+          (c.agent_timeout_s ? ", " + dur(c.agent_timeout_s) + " agent time limit" : "") + (c.seed != null ? ", seed " + h(c.seed) : "") + ".</p>" +
+          (c.task_path ? '<p class="muted">Task <code>' + h(c.task_path) + "</code></p>" : "") +
+          (chips ? '<p class="chips">' + chips + "</p>" : "") +
+          (c.sandbox ? '<p class="muted">Sandbox: ' + h(c.sandbox) + "</p>" : "") +
+          '<p class="dls">' + dl("config", "Download config.json") + "</p></section>";
+        return '<div class="sums">' + result + setup + "</div>";
+      }
       function files() {
         var rows = (d.files || []).map(function (f) {
-          var link = f[2] ? (f[2].charAt(0) === "#" ? '<a href="' + f[2] + '" data-view="' + f[2].slice(1) + '">view</a>' : '<a href="' + h(f[2]) + '">' + (f[0] === "agent/trajectory.json" ? "trial data (JSON)" : "open (re-encoded)") + "</a>") : '<span class="np">not published</span>';
+          var link = !f[2] ? '<span class="np">not published</span>'
+            : f[2] === "#result" ? dl("result", "download") : f[2] === "#config" ? dl("config", "download")
+            : f[2].charAt(0) === "#" ? '<a href="' + f[2] + '" data-view="' + f[2].slice(1) + '">view</a>'
+            : '<a href="' + h(f[2]) + '" download>' + (f[0] === "agent/trajectory.json" ? "download trial data" : "download (re-encoded)") + "</a>";
           return '<tr><td class="mono">' + h(f[0]) + '</td><td class="sz">' + kfmt(f[1]) + "B</td><td>" + link + "</td></tr>";
         }).join("");
-        return '<div class="scroll"><table class="list files"><thead><tr><th>Trial folder</th><th class="n">Size</th><th></th></tr></thead><tbody>' + rows + "</tbody></table></div>" +
-          '<p class="muted small">Raw agent logs, the robot request trace and server logs are not published; the Trajectory tab is built from them. Workspace paths read <code>&lt;workspace&gt;</code>.</p>' +
-          (d.result_json ? '<h2 class="lab" id="result">result.json</h2><pre class="code"><code>' + h(d.result_json) + "</code></pre>" : "") +
-          '<h2 class="lab" id="config">config.json</h2><pre class="code"><code>' + h(d.config_json) + "</code></pre>";
+        return summary() + '<h2 class="lab">Trial folder</h2><div class="scroll"><table class="list files"><thead><tr><th>File</th><th class="n">Size</th><th></th></tr></thead><tbody>' + rows + "</tbody></table></div>" +
+          '<p class="muted small">Raw agent logs, the robot request trace and server logs are not published; the Trajectory tab is built from them. Workspace paths read <code>&lt;workspace&gt;</code>.</p>';
       }
       panel.addEventListener("click", function (e) {
+        var g = e.target.closest("[data-dl]");
+        if (g) {
+          e.preventDefault();
+          var key = g.getAttribute("data-dl"), text = key === "result" ? d.result_json : d.config_json;
+          var url = URL.createObjectURL(new Blob([text || ""], {type: "application/json"})), x = document.createElement("a");
+          x.href = url; x.download = d.id + "." + key + ".json"; document.body.appendChild(x); x.click(); x.remove();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+          return;
+        }
         var a = e.target.closest("[data-view]"); if (!a) return;
         var k = a.getAttribute("data-view");
-        if (k === "result" || k === "config") { e.preventDefault(); var t = document.getElementById(k); if (t) t.scrollIntoView({block: "start"}); return; }
         if (k === "filmstrip" || k === "verdict") { e.preventDefault(); history.replaceState(null, "", "#" + (k === "verdict" ? "verdict" : "recording")); show(k === "verdict" ? "verdict" : "recording"); if (k === "filmstrip") { var fs = $("#filmstrip"); if (fs) fs.scrollIntoView(); } }
       });
       show(location.hash.slice(1) || "recording");
