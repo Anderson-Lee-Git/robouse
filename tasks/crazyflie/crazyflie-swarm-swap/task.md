@@ -46,7 +46,7 @@ You fly three Bitcraze Crazyflie 2 nano-quadrotors (cf0, cf1, cf2) (MuJoCo Menag
 
 Three drones rest on pads: cf0 on `S0`, cf1 on `S1`, cf2 on `S2`. Swap cf0 and cf2: cf0 must end on `S2` and cf2 on `S0`, both landed; cf1 must end on `S1` (it may move in between).
 
-**Success:** cf0 rests on `S2`, cf1 on `S1` and cf2 on `S0`; any crash, or two drones ever closer than 0.2 m (centre to centre), fails the task. Judged by the episode server from the simulated state after you call `robo done` and the drones have held still for 10 steps.
+**Success:** cf0 rests on `S2`, cf1 on `S1` and cf2 on `S0`; any crash, or two drones ever closer than 0.2 m (centre to centre), fails the task. Judged by the episode server from the simulated state after you call `robo done` and the drones have held still for 10 steps. A drone "rests on" a pad or the platform when it touches it, moves slower than 0.1 m/s and is tilted less than 20 degrees.
 
 **Controls.** `robo act VX0 VY0 VZ0 VX1 VY1 VZ1 VX2 VY2 VZ2` sets the velocity setpoints of drones cf0, cf1 and cf2 for the next step(s), each in [-1, 1] (x 1 m/s along world x, y, z); headings stay fixed. One step is 50 ms; `--repeat N` holds the setpoints for N steps. A drone whose three values are all zero holds its position; resting on a surface with VZ <= 0 its motors stay off. Skills: `takeoff_all [Z]`, `goto ID X Y Z [TOL]` (one drone flies in a straight line while the others hold position), `goto_all X0 Y0 Z0 X1 Y1 Z1 X2 Y2 Z2 [TOL]` (all at once, straight lines, no collision avoidance), `land ID`, `land_all` and `hover [SECONDS]`.
 
@@ -71,6 +71,6 @@ robo give-up "reason"              # end the episode without claiming success
 - Positions are in metres in the world frame (+z up); angles are in degrees unless a field says otherwise.
 - The episode has a fixed step budget (see `robo info`); every simulated control step counts, including the steps a skill runs.
 - Skills are ordinary controllers: they can fail, stop early or be blocked by the scene. Read what they report and re-observe.
-- Success is judged about 10 steps after you call `robo done`, with the robot holding still (zero action), so the goal must still be true when the robot stops.
+- Success is judged about 10 steps after you call `robo done`, with the robot holding still (each action group's hold value: zero for velocity and delta commands, full brake for a car), so the goal must still be true when the robot stops.
 - Call `robo done` exactly once when finished.
 

@@ -91,6 +91,8 @@ class Skill:
             k = k.lower().lstrip("-")
             if k not in {a.name for a in self.args}:
                 raise ValueError(f"{self.name} has no argument {k!r}: {self.signature()}")
+            if k in vals:
+                raise ValueError(f"{self.name}: {k.upper()} is given both by position and as {k}=...")
             vals[k] = v
         out = {}
         for a in self.args:
@@ -101,12 +103,21 @@ class Skill:
                 continue
             v = vals[a.name]
             if a.type == "float":
-                x = float(v)
+                try:
+                    x = float(v)
+                except ValueError:
+                    raise ValueError(f"{self.name}: {a.name.upper()} must be a number, got {v!r}") from None
                 if not math.isfinite(x):
-                    raise ValueError(f"{a.name} must be a finite number")
+                    raise ValueError(f"{self.name}: {a.name.upper()} must be a finite number")
                 out[a.name] = x
             elif a.type == "int":
-                out[a.name] = int(float(v))
+                try:
+                    x = float(v)
+                except ValueError:
+                    x = float("nan")
+                if not math.isfinite(x) or x != int(x):
+                    raise ValueError(f"{self.name}: {a.name.upper()} must be a whole number, got {v!r}")
+                out[a.name] = int(x)
             elif a.type == "enum":
                 if str(v) not in (a.choices or []):
                     raise ValueError(f"{a.name} must be one of {a.choices}")

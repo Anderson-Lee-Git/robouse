@@ -176,18 +176,24 @@ class CrazyflieBackend(EmbodiedBackend):
 
     def _declare(self) -> Embodiment:
         n = self.n
-        sensors = [Sensor("drones", "proprio", ["drones"], "per drone: pos, vel, yaw_deg, roll_deg, pitch_deg, landed_on, motors_on"),
-                   Sensor("arena", "world", ["arena"], "pads, gates, window, shelf platform, walls (public positions)"),
-                   Sensor("progress", "events", ["progress", "safety_events"], "task progress counters and crash/near-miss events"),
+        kind = self.task["kind"]
+        sensors = [Sensor("drones", "proprio", ["drones"], "per drone: pos, vel, yaw_deg, roll_deg, pitch_deg, landed_on, motors_on",
+                          units="m, m/s, deg", frame="world"),
+                   Sensor("arena", "world", ["arena"], "pads, gates, window, shelf platform, walls (public positions)", units="m", frame="world"),
+                   *([Sensor("progress", "events", ["progress"], "waypoints reached / gates passed in order so far")]
+                     if kind in ("waypoints", "gates") else []),
+                   Sensor("safety_events", "events", ["safety_events"], "crashes and near misses so far (any one fails the task)"),
                    *[Sensor(f"camera:{c}", "camera", mount="body" if c.startswith("cf") else "world") for c in self._cameras()]]
         if n == 1:
             groups = [ActionGroup("body.velocity_setpoint", "velocity_setpoint", ["VX", "VY", "VZ", "YAW_RATE"], [-1] * 4, [1] * 4,
                                   "x 1 m/s (world x, y, z); x 90 deg/s",
-                                  "zero = hold position; resting on a pad with VZ <= 0 the motors stay off", frame="world")]
+                                  "zero = hold position; touching the floor, a pad or the platform while not climbing switches the motors off until VZ > 0",
+                                  frame="world")]
             ID = []
         else:
             groups = [ActionGroup(f"cf{i}.velocity_setpoint", "velocity_setpoint", [f"VX{i}", f"VY{i}", f"VZ{i}"], [-1] * 3, [1] * 3,
-                                  "x 1 m/s (world)", "zero = hold position", frame="world") for i in range(n)]
+                                  "x 1 m/s (world)", "zero = hold position; touching the floor or a pad while not climbing switches the motors off until VZ > 0",
+                                  frame="world") for i in range(n)]
             ID = [SkillArg("id", "int", doc="drone index 0-2")]
         tol = SkillArg("tol", "float", "m", .05, doc="arrival tolerance")
         xyz = [SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("z", unit="m")]
@@ -273,12 +279,16 @@ class CrazyflieBackend(EmbodiedBackend):
         return self.data.qvel[k + 3:k + 6].copy()  # free joint angular velocity is in the body frame
 
     def _on_surface(self, i) -> str | None:
+        """The landing surface drone i touches; a pad or the platform wins over the floor."""
         d = self.data
+        hit = None
         for c in d.contact[:d.ncon]:
             for a, b in ((c.geom1, c.geom2), (c.geom2, c.geom1)):
                 if self.drone_of_geom.get(a) == i and b in self.surface:
-                    return self.gname[b]
-        return None
+                    if self.gname[b].startswith("pad_"):
+                        return self.gname[b]
+                    hit = self.gname[b]
+        return hit
 
     # ---- control -----------------------------------------------------------------------------------------------
     def control_step(self, a: np.ndarray) -> None:
@@ -360,8 +370,6 @@ class CrazyflieBackend(EmbodiedBackend):
         P = np.array([self._pos(i) for i in range(self.n)])
         for i in range(self.n):
             p = P[i]
-            if p[2] > ARENA["h"] - .05:
-                self.event(f"ceiling:cf{i}", "crash", f"cf{i} hit the ceiling")
             if self.n == 1:
                 self._progress(self.prev[i], p)
             for j in range(i + 1, self.n):
@@ -393,7 +401,8 @@ class CrazyflieBackend(EmbodiedBackend):
 
     # ---- observation -------------------------------------------------------------------------------------------
     def _landed_on(self, i) -> str | None:
-        if float(np.linalg.norm(self._vel(i))) > .1:
+        """Resting: touching a landing surface, slower than 0.1 m/s and tilted less than 20 degrees."""
+        if float(np.linalg.norm(self._vel(i))) > .1 or self._R(i)[2, 2] < math.cos(math.radians(20)):
             return None
         s = self._on_surface(i)
         if s is None:
@@ -414,8 +423,10 @@ class CrazyflieBackend(EmbodiedBackend):
             "partition": {"x": PARTITION_X, "thickness": .1, "window_center": list(WINDOW["c"]), "window_size": 2 * WINDOW["half"],
                           "note": "full-height wall; the window is the only opening between the west hall and the east room"},
             "pads": {k: [x, y, .01] for k, (x, y) in PADS.items()}, "pad_size": 2 * PAD_HALF,
-            "shelf": {"center": [*SHELF["c"], SHELF["h"]], "top_size": [2 * SHELF["half"][0], 2 * SHELF["half"][1]],
-                      "platform_center": [*SHELF["c"], SHELF["h"] + .005], "platform_size": 2 * SHELF["pad_half"]},
+            "pad_note": "pad positions are the centre of each pad's top surface",
+            "shelf": {"center_xy": list(SHELF["c"]), "top_z": round(SHELF["h"] - .01, 3), "top_size": [2 * SHELF["half"][0], 2 * SHELF["half"][1]],
+                      "platform_top_center": [*SHELF["c"], SHELF["h"] + .005], "platform_size": 2 * SHELF["pad_half"],
+                      "note": "only the platform is a landing surface; touching the rest of the shelf is a crash"},
             "gates": [{"name": g["name"], "center": list(g["c"]), "pass_direction": [*g["normal"], 0], "opening": 2 * GATE_HALF,
                        "frame_bar": 2 * GATE_BAR} for g in GATES],
         }
@@ -506,6 +517,8 @@ class CrazyflieBackend(EmbodiedBackend):
         return res
 
     def skill_turn(self, yaw_deg: float):
+        if self.landed[0]:
+            return {"error": "the drone is landed (motors off); take off first"}
         for _ in range(200):
             e = wrap(math.radians(yaw_deg) - self._yaw(0))
             if abs(e) < math.radians(2) and abs(self._omega(0)[2]) < .2:

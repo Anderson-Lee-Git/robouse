@@ -45,6 +45,13 @@ SWARM_OBS = ("**Observation.** `robo observe` reports `drones` (per drone: `id`,
              "`cf0/chase`, `cf1/chase`, `cf2/chase`, `overview` (the west hall) and `east_room`.")
 
 
+def _usage(t: dict) -> str:
+    if t.get("skills") is not False:
+        return EMBODIED_USAGE
+    lines = [l for l in EMBODIED_USAGE.split("\n") if not l.startswith(("robo skill", "- Skills are"))]
+    return "\n".join(lines)
+
+
 def _wp() -> str:
     return ", ".join(f"({x}, {y}, {z})" for x, y, z in WAYPOINTS)
 
@@ -112,11 +119,11 @@ def main() -> None:
                  SCENE.format(who="three Bitcraze Crazyflie 2 nano-quadrotors (cf0, cf1, cf2)" if swarm else "a Bitcraze Crazyflie 2 nano-quadrotor",
                               swarm_rule="; so does a collision between drones" if swarm else ""),
                  "## Task\n\n" + x["goal"],
-                 f"**Success:** {x['success']}. Judged by the episode server from the simulated state after you call `robo done` and the drones have held still for 10 steps.",
+                 f"**Success:** {x['success']}. Judged by the episode server from the simulated state after you call `robo done` and the drones have held still for 10 steps. A drone \"rests on\" a pad or the platform when it touches it, moves slower than 0.1 m/s and is tilted less than 20 degrees.",
                  SWARM_CONTROLS if swarm else (SINGLE_CONTROLS.split(" Skills (")[0] + " `robo skill` is disabled in this task."
                                                if t.get("skills") is False else SINGLE_CONTROLS),
                  SWARM_OBS if swarm else SINGLE_OBS,
-                 f"The step budget is {t['max_steps']} steps ({t['max_steps'] * 0.05:.0f} s of flight).", EMBODIED_USAGE]
+                 f"The step budget is {t['max_steps']} steps ({t['max_steps'] * 0.05:.0f} s of flight).", _usage(t)]
         write_embodied_task(out, task_id=tid, backend="crazyflie", suite="crazyflie", title=x["title"], instruction="\n\n".join(parts) + "\n",
                             robot="Bitcraze Crazyflie 2", category=x["category"], difficulty=x["difficulty"],
                             tags=["aerial", "quadrotor", "crazyflie", "menagerie", "mujoco"] + (["swarm"] if swarm else []),

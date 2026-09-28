@@ -43,7 +43,7 @@ You fly a Bitcraze Crazyflie 2 nano-quadrotor (MuJoCo Menagerie model; 27 g and 
 
 Take off from the `home` pad in the west hall, fly through the window in the partition wall into the east room, and land on pad `B` at (3.0, 1.8). In this task the skills are disabled: fly with `robo act` velocity setpoints only, closing the loop yourself with `robo observe`.
 
-**Success:** the drone rests on pad `B`, with no crash at any time. Judged by the episode server from the simulated state after you call `robo done` and the drones have held still for 10 steps.
+**Success:** the drone rests on pad `B`, with no crash at any time. Judged by the episode server from the simulated state after you call `robo done` and the drones have held still for 10 steps. A drone "rests on" a pad or the platform when it touches it, moves slower than 0.1 m/s and is tilted less than 20 degrees.
 
 **Controls.** `robo act VX VY VZ YAW_RATE` sets the velocity setpoint for the next step(s), each in [-1, 1]: VX, VY, VZ along world x, y, z (x 1 m/s) and YAW_RATE (x 90 deg/s, counter-clockwise seen from above). One step is 50 ms; `--repeat N` holds a setpoint for N steps. An onboard cascaded controller (velocity -> attitude -> thrust and body moments) tracks the setpoint. An all-zero action holds the current position; resting on a surface with VZ <= 0 the motors stay off, so take off with a positive VZ. `robo skill` is disabled in this task.
 
@@ -60,14 +60,12 @@ robo info                          # the robot, its sensors, action groups, skil
 robo observe                       # robot and scene state as numbers
 robo observe --image [--camera C]  # also saves a camera image and prints its path (open it to look)
 robo act V1 V2 ... [--repeat N]    # one low-level action (the action groups under Controls), applied N times (N <= 50)
-robo skill NAME ARG ...            # run a skill listed by `robo info`; it runs until it finishes and reports the result
 robo done "short summary"          # end the episode and ask for scoring
 robo give-up "reason"              # end the episode without claiming success
 ```
 
 - Positions are in metres in the world frame (+z up); angles are in degrees unless a field says otherwise.
 - The episode has a fixed step budget (see `robo info`); every simulated control step counts, including the steps a skill runs.
-- Skills are ordinary controllers: they can fail, stop early or be blocked by the scene. Read what they report and re-observe.
-- Success is judged about 10 steps after you call `robo done`, with the robot holding still (zero action), so the goal must still be true when the robot stops.
+- Success is judged about 10 steps after you call `robo done`, with the robot holding still (each action group's hold value: zero for velocity and delta commands, full brake for a car), so the goal must still be true when the robot stops.
 - Call `robo done` exactly once when finished.
 

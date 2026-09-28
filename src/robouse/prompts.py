@@ -42,6 +42,6 @@ robo give-up "reason"              # end the episode without claiming success
 - Positions are in metres in the world frame (+z up); angles are in degrees unless a field says otherwise.
 - The episode has a fixed step budget (see `robo info`); every simulated control step counts, including the steps a skill runs.
 - Skills are ordinary controllers: they can fail, stop early or be blocked by the scene. Read what they report and re-observe.
-- Success is judged about 10 steps after you call `robo done`, with the robot holding still (zero action), so the goal must still be true when the robot stops.
+- Success is judged about 10 steps after you call `robo done`, with the robot holding still (each action group's hold value: zero for velocity and delta commands, full brake for a car), so the goal must still be true when the robot stops.
 - Call `robo done` exactly once when finished.
 """

@@ -62,7 +62,7 @@ Single drone: `takeoff [Z]`, `goto X Y Z [TOL]`, `turn YAW_DEG`, `land`, `hover 
 | crazyflie-swarm-formation | three drones into a 0.6 m equilateral triangle at 1.2 m, centred on (-1.9, -0.3) | heights within 0.05 m, centroid within 0.10 m, sides 0.6 +- 0.06 m, all slower than 0.1 m/s | 1200 |
 | crazyflie-swarm-swap | swap cf0 and cf2 between `S0` and `S2`; cf1 ends on `S1` | all three resting on their target pads | 2000 |
 
-"Resting" means touching the pad and slower than 0.1 m/s. In every task, any contact with something other than the floor, a pad or the platform is a crash and fails the task. In swarm tasks, two drones closer than 0.2 m (centre to centre) also fail it.
+"Resting" means touching the pad (or platform), slower than 0.1 m/s and tilted less than 20 degrees. In every task, any contact with something other than the floor, a pad or the platform is a crash and fails the task. In swarm tasks, two drones closer than 0.2 m (centre to centre) also fail it.
 
 ## Validation
 
@@ -79,6 +79,7 @@ The reference solutions use only the skills and public positions; the no-skills 
 
 - There is no wind, no battery, no sensor noise and no downwash between drones; state is exact.
 - The drones have no onboard obstacle sensing; the arena map is given as numbers.
+- Crashes are detected from contacts only (walls, ceiling, gates, shelf sides, other drones).
 - The fpv camera is a rendering convenience; the stock Crazyflie has no camera (the AI-deck add-on does).
 
 ## Embodiment declaration

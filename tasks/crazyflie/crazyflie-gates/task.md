@@ -43,7 +43,7 @@ You fly a Bitcraze Crazyflie 2 nano-quadrotor (MuJoCo Menagerie model; 27 g and 
 
 Take off from the `home` pad and fly through the three gates in order, each in its pass direction: G1 centred at (-3.0, 0.2, 0.8), passed northward (+y); G2 centred at (-1.6, 2.0, 1.4), passed eastward (+x); G3 centred at (-0.4, 0.2, 1.0), passed southward (-y). Then land on pad `A`.
 
-**Success:** the drone's centre crossed each gate's plane inside its 0.5 m opening, in the pass direction and in the order G1, G2, G3 (a gate crossed out of order fails the course), and the drone rests on pad `A`; touching a gate frame or post is a crash; `progress.gates_passed_in_order` counts the gates passed. Judged by the episode server from the simulated state after you call `robo done` and the drones have held still for 10 steps.
+**Success:** the drone's centre crossed each gate's plane inside its 0.5 m opening, in the pass direction and in the order G1, G2, G3 (a gate crossed out of order fails the course), and the drone rests on pad `A`; touching a gate frame or post is a crash; `progress.gates_passed_in_order` counts the gates passed. Judged by the episode server from the simulated state after you call `robo done` and the drones have held still for 10 steps. A drone "rests on" a pad or the platform when it touches it, moves slower than 0.1 m/s and is tilted less than 20 degrees.
 
 **Controls.** `robo act VX VY VZ YAW_RATE` sets the velocity setpoint for the next step(s), each in [-1, 1]: VX, VY, VZ along world x, y, z (x 1 m/s) and YAW_RATE (x 90 deg/s, counter-clockwise seen from above). One step is 50 ms; `--repeat N` holds a setpoint for N steps. An onboard cascaded controller (velocity -> attitude -> thrust and body moments) tracks the setpoint. An all-zero action holds the current position; resting on a surface with VZ <= 0 the motors stay off, so take off with a positive VZ. Skills (`robo info` lists them with their arguments): `takeoff [Z]`, `goto X Y Z [TOL]` (straight line, stops at the point; it does not avoid obstacles), `turn YAW_DEG`, `land` (straight down onto whatever is below, then motors off) and `hover [SECONDS]`.
 
@@ -68,6 +68,6 @@ robo give-up "reason"              # end the episode without claiming success
 - Positions are in metres in the world frame (+z up); angles are in degrees unless a field says otherwise.
 - The episode has a fixed step budget (see `robo info`); every simulated control step counts, including the steps a skill runs.
 - Skills are ordinary controllers: they can fail, stop early or be blocked by the scene. Read what they report and re-observe.
-- Success is judged about 10 steps after you call `robo done`, with the robot holding still (zero action), so the goal must still be true when the robot stops.
+- Success is judged about 10 steps after you call `robo done`, with the robot holding still (each action group's hold value: zero for velocity and delta commands, full brake for a car), so the goal must still be true when the robot stops.
 - Call `robo done` exactly once when finished.
 

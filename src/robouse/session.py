@@ -228,6 +228,8 @@ class Episode:
         spec = self.backend.action_spec
         if not isinstance(action, list) or len(action) != spec.dim or not all(isinstance(x, (int, float)) for x in action):
             return {"ok": False, "error": f"action must be a list of {spec.dim} numbers {spec.names}"}
+        if not all(np.isfinite(x) for x in action):
+            return {"ok": False, "error": "action values must be finite numbers (no nan or inf)"}
         repeat = max(1, min(self.max_repeat, repeat))
         n = 0
         for _ in range(repeat):
@@ -320,6 +322,10 @@ class Episode:
                 action = next(gen)
             except StopIteration as e:
                 out = e.value or {}
+                break
+            except Exception as e:  # a skill that fails part-way reports it; the steps it ran still count
+                gen.close()
+                out = {"error": f"{type(e).__name__}: {e}"[:300]}
                 break
             self._env_step(action)
             n += 1
