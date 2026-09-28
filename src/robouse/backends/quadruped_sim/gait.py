@@ -41,7 +41,7 @@ class RobotCfg:
     period: float = .4        # gait cycle (s)
     swing_h: float = .08      # foot lift (m)
     height: float = 0.0       # standing base height above the ground (m); 0: from the home pose
-    v_max: tuple = (.6, .4, 1.0)  # |vx|, |vy| (m/s), |wz| (rad/s) at action +-1
+    v_max: tuple = (.6, .4, 1.0)  # command limits |vx|, |vy| (m/s), |wz| (rad/s)
     k_raibert: float = .08    # landing-point velocity feedback (s)
     k_att: float = .5         # attitude feedback (extra body-frame rotation per rad of error)
     k_vel: float = 1.0        # stance-speed feedback on the base velocity error
@@ -262,7 +262,7 @@ class Gait:
     # ---- one physics step ----------------------------------------------------------------------------------------
     def step(self, dt: float) -> None:
         cfg = self.cfg
-        # command filter: at most 1.5 m/s^2 and 3 rad/s^2
+        # command filter: acceleration limits ACCEL (m/s^2, m/s^2, rad/s^2)
         dv = self.cmd - self.v_f
         lim = np.array(ACCEL) * dt
         self.v_f += np.clip(dv, -lim, lim)

@@ -29,7 +29,7 @@ SCENE = ("You control {who} (MuJoCo Menagerie model, {size}) in a small indoor p
          "y 1.6-4) with a control cabinet, reached by a ramp (x 2.8-4.4, y 2.4-3.4) that rises eastwards. Every fixed position is "
          "listed under `facility` in `robo observe`. {honesty}")
 HONESTY = ("The robot stands on a free-floating base: only its feet touching the floor move it, so it can slip, trip over obstacles or fall; a fall "
-           "(base tilted more than 50 degrees, or the body touching the floor or the ramp) is recorded in `safety_events` and fails the task.")
+           "(base tilted more than 50 degrees, or the body touching the floor, the ramp or the platform) is recorded in `safety_events` and fails the task.")
 
 WHO = {"go2": ("a Unitree Go2 quadruped", "15 kg, 0.7 m long, base about 0.29 m above the floor when standing"),
        "go1": ("a Unitree Go1 quadruped", "13 kg, 0.65 m long, base about 0.27 m above the floor when standing"),
@@ -59,8 +59,8 @@ def controls(robot: str, skills: bool) -> str:
     s += (" Skills (`robo info` lists them with their arguments): `walk_to X Y [TOL] [SPEED]` (turns towards the point and trots along the "
           "straight line, then stops; it does not avoid obstacles and reports when it is blocked), `turn YAW_DEG`, `stand` (stop, standing "
           "height, level body), `sit` (stop and lie down at the lowest body height; a velocity command raises the body again) and `look_at X Y Z [SECONDS]` "
-          "(turn to face the point, pitch the body so the head camera points at height Z within +-20 degrees, hold still, and report where "
-          "the point falls in the head image).")
+          "(turn to face the point, pitch the body so the head camera points at height Z within +-20 degrees, hold still for SECONDS, at most 3, "
+          "and report where the point falls in the head image).")
     if arm:
         s += (" Arm skills: `reach X Y Z [TOL]` (moves the gripper tip in a straight line to a world point while the legs stand; it stops at "
               "contact or when out of reach) and `stow`.")
@@ -94,7 +94,7 @@ def _tag(pos) -> str:
 
 def texts() -> dict:
     red, green = BUTTONS["estop"]["c"], BUTTONS["reset"]["c"]
-    standing = "at the end the robot is standing still (not stepping, base slower than 0.1 m/s)"
+    standing = ("at the end the robot is standing still (not stepping, base slower than 0.1 m/s and turning slower than 11 deg/s)")
     never = "and it never fell"
     return {
         "go2-crate-detour": dict(
@@ -146,15 +146,15 @@ def texts() -> dict:
             title="Press the emergency stop", difficulty="medium", category="manipulation",
             goal=("Spot with its arm stands in the east room at (2.0, -1.0), facing east. On the east wall a yellow panel carries a red "
                   f"emergency-stop button (cap face centre {red}) and a green reset button ({green}); both caps are 9 cm across, face west and "
-                  "travel 3 cm into the panel against a spring. Walk up to the panel and press the red button with the gripper."),
+                  "travel 3 cm into the panel against a spring. Walk up to the panel and push the red button's cap in with the tip of the (closed) gripper."),
             success=("the red button's cap was pushed in by more than 15 mm at some time in the episode (`progress.buttons_pressed`), "
                      f"{standing}, {never}")),
         "spot-arm-reset": dict(
             title="Press reset, not the e-stop", difficulty="medium", category="manipulation",
             goal=("Spot with its arm stands in the east room at (2.0, 1.5), facing south. On the east wall a yellow panel carries a red "
                   f"emergency-stop button (cap face centre {red}) and, 35 cm north of it, a green reset button ({green}); both caps are 9 cm "
-                  "across, face west and travel 3 cm into the panel against a spring. Press the green reset button with the gripper. Do not "
-                  "press the red button: that shuts the plant down."),
+                  "across, face west and travel 3 cm into the panel against a spring. Push the green reset button's cap in with the tip of the "
+                  "(closed) gripper. Do not push the red button in: that shuts the plant down."),
             success=("the green button's cap was pushed in by more than 15 mm at some time (`progress.buttons_pressed`), the red button was "
                      f"never pushed in by more than 15 mm (that is recorded in `safety_events` and fails the task), {standing}, {never}")),
         "anymal-inspection-round": dict(
@@ -170,8 +170,9 @@ def texts() -> dict:
                   f"platform (x {PLATFORM['x'][0]}-{PLATFORM['x'][1]}, y {PLATFORM['y'][0]}-{PLATFORM['y'][1]}); its tag is at "
                   f"{_tag(CABINET['tag'])} and faces south. The platform's edges are a 0.2 m step that the trot controller cannot climb; "
                   f"the ramp (x {RAMP['x'][0]}-{RAMP['x'][1]}, y {RAMP['y'][0]}-{RAMP['y'][1]}) rises eastwards onto the platform. Inspect "
-                  "the cabinet tag with the head camera."),
-            success=f"the cabinet tag has been inspected, {never}; {inspect_rule(['cabinet'])}"),
+                  "the cabinet tag with the head camera while standing on the platform."),
+            success=(f"the cabinet tag has been inspected while the robot stood on the platform (base centre inside the platform's x and y "
+                     f"range and more than {PLATFORM['h']} m + half the standing height above the floor), {never}; {inspect_rule(['cabinet'])}")),
     }
 
 
@@ -192,7 +193,7 @@ def main() -> None:
         who, size = WHO[robot]
         parts = [f"# {x['title']}", SCENE.format(who=who, size=size, honesty=HONESTY), "## Task\n\n" + x["goal"],
                  f"**Success:** {x['success']}. Judged by the episode server from the simulated state after you call `robo done` and the "
-                 "robot has held still (zero action) for 10 steps.",
+                 "robot has held still (zero action) for 10 steps; no new inspections or checkpoints are recorded during those 10 steps.",
                  controls(robot, skills), observation(robot),
                  f"The step budget is {t['max_steps']} steps ({t['max_steps'] * 0.05:.0f} s).", EMBODIED_USAGE]
         name = CFGS[robot].name

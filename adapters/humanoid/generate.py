@@ -21,18 +21,18 @@ FRAME = ("World frame in metres: +x points forward from the robot, +y to the rob
 
 ROBOT = {
     "g1": ("You control a Unitree G1 humanoid (1.32 m; MuJoCo Menagerie `unitree_g1`, BSD-3-Clause) with Dex3-1 three-finger "
-           "hands (a thumb and two fingers per hand). The robot is fixed to a support stand at its pelvis: it does not balance or "
+           "hands (a thumb and two fingers per hand). The robot is mounted on a support stand (its pelvis is welded to the stand): it does not balance or "
            "walk, its legs hold a standing pose and its waist is bent 26 degrees forward over a table in front of it. Only the arms "
            "and fingers move."),
     "h1": ("You control a Unitree H1 humanoid (1.8 m; MuJoCo Menagerie `unitree_h1`, BSD-3-Clause). It has no hands: each 4-joint arm "
-           "ends in a round fist (6.6 cm ball). The robot is fixed to a support stand at its pelvis: it does not balance or walk, "
+           "ends in a round fist (6.6 cm ball). The robot is mounted on a support stand (its pelvis is welded to the stand): it does not balance or walk, "
            "its legs hold a standing pose and only the arms move. A counter stands in front of it."),
     "apollo": ("You control an Apptronik Apollo humanoid (1.73 m; MuJoCo Menagerie `apptronik_apollo`, Apache-2.0). Its hands are "
-               "rigid plates (about 8 cm wide, 17 cm long and 4 cm thick; the modelled fingers do not move). The robot is fixed to a "
-               "support stand at its pelvis: it does not balance or walk, its legs hold a standing pose and its torso is pitched 14 "
+               "rigid plates (about 8 cm wide, 17 cm long and 4 cm thick; the modelled fingers do not move). The robot is mounted on a "
+               "support stand (its pelvis is welded to the stand): it does not balance or walk, its legs hold a standing pose and its torso is pitched 14 "
                "degrees forward over a table. The arms and the neck move."),
     "t1": ("You control a Booster T1 humanoid (1.18 m; MuJoCo Menagerie `booster_t1`, Apache-2.0). Each 4-joint arm ends in a rigid "
-           "round hand (6 cm across, no fingers). The robot is fixed to a support stand at its trunk, leaning 20 degrees forward over "
+           "round hand (6 cm across, no fingers). The robot is mounted on a support stand (its trunk is welded to the stand), leaning 20 degrees forward over "
            "a low table: it does not balance or walk and its legs hold a standing pose. The arms and the neck move."),
 }
 
@@ -176,8 +176,8 @@ def main() -> None:
         be = HumanoidBackend({"env": tid})
         rk = be.rk
         parts = [f"# {t.title}",
-                 " ".join([ROBOT[rk], FRAME, x["scene"], "All positions and sizes are listed under `scene` and `objects` in `robo observe`. "
-                           "Knocking an object onto the floor is a safety event and fails the task.", HAND[rk]]),
+                 " ".join([ROBOT[rk], FRAME, x["scene"], "All positions and sizes are listed under `scene` and `objects` in `robo observe`." +
+                           ("" if not t.objects else " Knocking an object onto the floor is a safety event and fails the task."), HAND[rk]]),
                  "## Task\n\n" + x["goal"],
                  f"**Success:** {x['success']}; and no safety event. Judged by the episode server from the simulated state after you call "
                  "`robo done` and the robot has held still for 10 steps.",

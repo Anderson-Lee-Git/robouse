@@ -181,6 +181,9 @@ class G1CanToPlate(Task):
         L["plate"] = {"center": [*self.PLATE["pos"], self.table["h"] + .012], "radius": self.PLATE["r"]}
         return L
 
+    def object_info(self, name):
+        return {"diameter": 2 * self.CAN["r"], "height": self.CAN["h"]}
+
     def check(self, be):
         p = be.obj_pos("can")
         if be.obj_tilt("can") > 15:
@@ -232,7 +235,7 @@ class G1PassAcross(Task):
             return False, "the bottle is not upright"
         if not self.in_disc(p, self.COASTER["pos"], self.COASTER["r"]):
             return False, "the bottle is not on the coaster"
-        if abs(p[2] - (self.table["h"] + .008 + self.BOTTLE["h"] / 2)) > .01:
+        if abs(p[2] - (self.table["h"] + .008 + self.BOTTLE["h"] / 2)) > .005:
             return False, "the bottle is not resting on the coaster"
         if be.robot_touching("bottle"):
             return False, "the robot is still holding the bottle"
@@ -259,6 +262,9 @@ class G1DrawerStow(Task):
     def opening(self, be) -> float:
         return float(be.data.qpos[be.model.joint("drawer_slide").qposadr[0]])
 
+    def object_info(self, name):
+        return {"size": [2 * v for v in self.BOX["half"]], "note": "a bar of soap in a box"}
+
     def landmarks(self, be):
         L = super().landmarks(be)
         c = self.cab
@@ -269,7 +275,7 @@ class G1DrawerStow(Task):
                        "handle": {"center": r3([c["front_x"] - .013 - c["handle_standoff"] - o, c["handle_y"], c["handle_z"]]),
                                   "shape": HANDLE_SHAPE[c["handle"]]},
                        "tray_inside": {"x_range": r3([c["front_x"] - o, c["front_x"] - o + c["tray_depth"] - .012]),
-                                       "y_range": r3([c["cy"] - c["tray_half_width"] + .01, c["cy"] + c["tray_half_width"] - .01]),
+                                       "y_range": r3([c["cy"] - c["tray_half_width"] + .015, c["cy"] + c["tray_half_width"] - .015]),
                                        "floor_height": round(c["base_z"] + .012 + .002 + .008, 3), "wall_height": .06,
                                        "note": "only the part in front of the cabinet (x < front_x) is open from above"}}
         return L
@@ -452,8 +458,8 @@ class ApolloCarryTray(Task):
         tray = be.obj_geoms["tray"]
         cup = be.obj_geoms["cup"]
         for a, b in be.contacts():
-            if (a in cup and b not in tray and not be.robot_geom[b]) or (b in cup and a not in tray and not be.robot_geom[a]):
-                be.event("cup_off", "dropped", "the cup fell off the tray")
+            if (a in cup and b not in tray) or (b in cup and a not in tray):
+                be.event("cup_off", "dropped", "the cup touched something other than the tray (fell out or was hit)")
 
     def check(self, be):
         p = be.obj_pos("tray")

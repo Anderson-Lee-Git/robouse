@@ -40,7 +40,7 @@ robouse:
 
 # Lift the box onto the step with both hands
 
-You control a Booster T1 humanoid (1.18 m; MuJoCo Menagerie `booster_t1`, Apache-2.0). Each 4-joint arm ends in a rigid round hand (6 cm across, no fingers). The robot is fixed to a support stand at its trunk, leaning 20 degrees forward over a low table: it does not balance or walk and its legs hold a standing pose. The arms and the neck move. World frame in metres: +x points forward from the robot, +y to the robot's left, +z up; the floor is at z = 0 and the origin is on the floor below the robot's pelvis. A small box (10 x 14 x 10 cm, 0.3 kg) stands on the table in front of the robot and a green step, 6 cm high, stands further forward. The hands cannot grasp: lift the box by squeezing it between both hands. All positions and sizes are listed under `scene` and `objects` in `robo observe`. Knocking an object onto the floor is a safety event and fails the task. Each hand's control point is the tip of its round hand. The arms have four joints, so the hand's angle follows from where the tip is. Objects are pushed with the hand or squeezed between both hands; each hand works on its own side of the table (it reaches only a few centimetres past the midline y = 0).
+You control a Booster T1 humanoid (1.18 m; MuJoCo Menagerie `booster_t1`, Apache-2.0). Each 4-joint arm ends in a rigid round hand (6 cm across, no fingers). The robot is mounted on a support stand (its trunk is welded to the stand), leaning 20 degrees forward over a low table: it does not balance or walk and its legs hold a standing pose. The arms and the neck move. World frame in metres: +x points forward from the robot, +y to the robot's left, +z up; the floor is at z = 0 and the origin is on the floor below the robot's pelvis. A small box (10 x 14 x 10 cm, 0.3 kg) stands on the table in front of the robot and a green step, 6 cm high, stands further forward. The hands cannot grasp: lift the box by squeezing it between both hands. All positions and sizes are listed under `scene` and `objects` in `robo observe`. Knocking an object onto the floor is a safety event and fails the task. Each hand's control point is the tip of its round hand. The arms have four joints, so the hand's angle follows from where the tip is. Objects are pushed with the hand or squeezed between both hands; each hand works on its own side of the table (it reaches only a few centimetres past the midline y = 0).
 
 ## Task
 
@@ -71,6 +71,6 @@ robo give-up "reason"              # end the episode without claiming success
 - Positions are in metres in the world frame (+z up); angles are in degrees unless a field says otherwise.
 - The episode has a fixed step budget (see `robo info`); every simulated control step counts, including the steps a skill runs.
 - Skills are ordinary controllers: they can fail, stop early or be blocked by the scene. Read what they report and re-observe.
-- Success is judged about 10 steps after you call `robo done`, with the robot holding still (zero action), so the goal must still be true when the robot stops.
+- Success is judged about 10 steps after you call `robo done`, with the robot holding still (each action group's hold value: zero for velocity and delta commands, full brake for a car), so the goal must still be true when the robot stops.
 - Call `robo done` exactly once when finished.
 

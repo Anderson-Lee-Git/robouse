@@ -69,12 +69,13 @@ TASKS: dict[str, dict] = {
     "go2-pump-inspection": dict(robot="go2", start=(*DOCK["c"], 90), kind="inspect", tags=["pump"], max_steps=1400),
     "go1-corridor-charger": dict(robot="go1", start=(*DOCK["c"], 0), kind="charge", pad=(2.2, -3.2), pad_half=.35, max_steps=1400),
     "go1-patrol": dict(robot="go1", start=(*DOCK["c"], 0), kind="patrol", checkpoints=[("A", (-1.2, -2.8)), ("B", (4.0, 1.0)),
-                                                                                      ("C", (2.4, -3.0))], max_steps=2000),
+                                                                                      ("C", (2.4, -3.0))], max_steps=2400),
     "spot-gauge-reading": dict(robot="spot", start=(-2.9, 2.1, 0), kind="inspect", tags=["gauge"], max_steps=1200),
     "spot-arm-estop": dict(robot="spot_arm", start=(2.0, -1.0, 0), kind="press", button="estop", max_steps=900),
     "spot-arm-reset": dict(robot="spot_arm", start=(2.0, 1.5, -90), kind="press", button="reset", forbid=["estop"], max_steps=900),
     "anymal-inspection-round": dict(robot="anymal", start=(*DOCK["c"], 0), kind="round", tags=["valve", "pump"], max_steps=2400),
-    "anymal-mezzanine-cabinet": dict(robot="anymal", start=(2.0, 0.0, 90), kind="inspect", tags=["cabinet"], max_steps=1200),
+    "anymal-mezzanine-cabinet": dict(robot="anymal", start=(2.0, 0.0, 90), kind="inspect", tags=["cabinet"], max_steps=1200,
+                                     from_platform=True),
 }
 
 HEAD_CAM = {"go2": (.34, 0, .03), "go1": (.3, 0, .05), "spot": (.47, 0, .03), "spot_arm": (.47, 0, .03), "anymal": (.56, 0, .06)}
@@ -296,7 +297,7 @@ class QuadrupedBackend(EmbodiedBackend):
                   Skill("look_at", [SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("z", unit="m"),
                                     SkillArg("seconds", unit="s", default=1.0)],
                         "turn to face (X, Y), pitch the body so the head camera points at height Z (within +-20 deg), then hold "
-                        "still SECONDS; reports where the point falls in the head image", 200)]
+                        "still SECONDS (at most 3); reports where the point falls in the head image", 300)]
         if self.arm:
             skills += [Skill("reach", [SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("z", unit="m"),
                                        SkillArg("tol", "float", "m", .02)],
@@ -353,6 +354,7 @@ class QuadrupedBackend(EmbodiedBackend):
         self.head = m.camera("head").id
         self.events, self._event_keys = [], set()
         self.inspected: list[str] = []
+        self._settling = False
         self._view = {k: 0 for k in TAGS}
         self.next_cp = 0
         self.pressed: set[str] = set()
@@ -449,7 +451,7 @@ class QuadrupedBackend(EmbodiedBackend):
         self._monitor_step()
 
     def _clamp_reach(self, t: np.ndarray) -> np.ndarray:
-        """Keep the arm target within 1.0 m of the shoulder and above the body."""
+        """Keep the arm target within 1.0 m of the shoulder."""
         sh = np.array([.292, 0, .188])
         v = t - sh
         n = float(np.linalg.norm(v))
@@ -479,9 +481,22 @@ class QuadrupedBackend(EmbodiedBackend):
         self.fallen = True
         self.event("fall", "fall", f"the robot fell: {why}")
 
+    def hold_action(self) -> list[float]:
+        # The episode server calls this once, right before the post-`done` settle steps: from then on no new progress
+        # (inspections, checkpoints) is recorded, so the settle cannot complete a task.
+        self._settling = True
+        return super().hold_action()
+
+    def _on_platform(self) -> bool:
+        p = self.data.xpos[self.gait.base]
+        return (PLATFORM["x"][0] <= p[0] <= PLATFORM["x"][1] and PLATFORM["y"][0] <= p[1] <= PLATFORM["y"][1]
+                and p[2] > PLATFORM["h"] + .5 * self.gait.h_nom)
+
     def _monitor_step(self) -> None:
         t = self.task
         p = self.data.xpos[self.gait.base]
+        if getattr(self, "_settling", False):
+            return
         if t["kind"] == "patrol" and self.next_cp < len(t["checkpoints"]):
             _, c = t["checkpoints"][self.next_cp]
             if math.dist(p[:2], c) < .35:
@@ -489,7 +504,7 @@ class QuadrupedBackend(EmbodiedBackend):
         for k in TAGS:
             if k in self.inspected:
                 continue
-            ok = self._tag_in_view(k) and self._still()
+            ok = self._tag_in_view(k) and self._still() and (self._on_platform() or not t.get("from_platform"))
             self._view[k] = self._view[k] + 1 if ok else 0
             if self._view[k] >= INSPECT_STEPS:
                 self.inspected.append(k)
@@ -739,7 +754,7 @@ class QuadrupedBackend(EmbodiedBackend):
             dp = -self.pitch_up
             if abs(dh) < 1e-4 and abs(dp) < .05:
                 break
-            yield self._act(dh=dh if abs(dh) > 1e-4 else 1e-4, dp=dp)
+            yield self._act(dh=dh, dp=dp)
         yield self._act()
         return {"gait": "standing", "height_m": round(float(self.data.xpos[g.base][2]), 3)}
 
@@ -768,7 +783,7 @@ class QuadrupedBackend(EmbodiedBackend):
             if abs(e) < .5:
                 break
             yield self._act(dp=e)
-        for _ in range(max(1, round(seconds / CONTROL_DT))):
+        for _ in range(max(1, round(min(float(seconds), 3.0) / CONTROL_DT))):
             yield self._act()
         u, v, depth = self._project((x, y, z))
         in_img = depth > 0 and abs(u) <= 1 and abs(v) <= 1

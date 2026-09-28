@@ -40,7 +40,7 @@ robouse:
 
 # Lift the box onto the shelf with both arms
 
-You control a Unitree H1 humanoid (1.8 m; MuJoCo Menagerie `unitree_h1`, BSD-3-Clause). It has no hands: each 4-joint arm ends in a round fist (6.6 cm ball). The robot is fixed to a support stand at its pelvis: it does not balance or walk, its legs hold a standing pose and only the arms move. A counter stands in front of it. World frame in metres: +x points forward from the robot, +y to the robot's left, +z up; the floor is at z = 0 and the origin is on the floor below the robot's pelvis. A cardboard box (16 x 22 x 16 cm, 0.5 kg) stands on the left of the counter; a blue shelf block, 10 cm high, stands on the right. The fists cannot grasp: lift the box by squeezing it between both fists or forearms. All positions and sizes are listed under `scene` and `objects` in `robo observe`. Knocking an object onto the floor is a safety event and fails the task. Each hand's control point is the centre of its fist. The arms have four joints, so the forearm's angle follows from where the fist is; the forearms also touch things. Objects are pushed, pressed or squeezed between the two fists or forearms.
+You control a Unitree H1 humanoid (1.8 m; MuJoCo Menagerie `unitree_h1`, BSD-3-Clause). It has no hands: each 4-joint arm ends in a round fist (6.6 cm ball). The robot is mounted on a support stand (its pelvis is welded to the stand): it does not balance or walk, its legs hold a standing pose and only the arms move. A counter stands in front of it. World frame in metres: +x points forward from the robot, +y to the robot's left, +z up; the floor is at z = 0 and the origin is on the floor below the robot's pelvis. A cardboard box (16 x 22 x 16 cm, 0.5 kg) stands on the left of the counter; a blue shelf block, 10 cm high, stands on the right. The fists cannot grasp: lift the box by squeezing it between both fists or forearms. All positions and sizes are listed under `scene` and `objects` in `robo observe`. Knocking an object onto the floor is a safety event and fails the task. Each hand's control point is the centre of its fist. The arms have four joints, so the forearm's angle follows from where the fist is; the forearms also touch things. Objects are pushed, pressed or squeezed between the two fists or forearms.
 
 ## Task
 
@@ -71,6 +71,6 @@ robo give-up "reason"              # end the episode without claiming success
 - Positions are in metres in the world frame (+z up); angles are in degrees unless a field says otherwise.
 - The episode has a fixed step budget (see `robo info`); every simulated control step counts, including the steps a skill runs.
 - Skills are ordinary controllers: they can fail, stop early or be blocked by the scene. Read what they report and re-observe.
-- Success is judged about 10 steps after you call `robo done`, with the robot holding still (zero action), so the goal must still be true when the robot stops.
+- Success is judged about 10 steps after you call `robo done`, with the robot holding still (each action group's hold value: zero for velocity and delta commands, full brake for a car), so the goal must still be true when the robot stops.
 - Call `robo done` exactly once when finished.
 

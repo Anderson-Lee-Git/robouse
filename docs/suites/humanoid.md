@@ -24,7 +24,7 @@ Changes to the upstream models:
 - Collision: the robots' collision geoms (group 3) collide with the world and objects but not with each other. Apollo's collision geoms are disabled upstream and are enabled here. Robot contact friction is 1.0, with low torsional friction.
 - Physics step 2 ms for every robot (Apollo upstream: 5 ms), implicitfast integrator, elliptic friction cones, impratio 10.
 
-Walking is not offered. A physical humanoid gait needs a learned whole-body policy (for example the MuJoCo Playground humanoid policies), and training one would need a GPU.
+Every task in this suite has the humanoid on a support stand with its root welded to the world: the robot does not balance, walk or move its base, and every task text says so.
 
 ## Scene
 
@@ -47,7 +47,7 @@ The controller under the action works as follows:
 1. Goal handling. Each hand has a goal point, and `ee_delta` moves it. The goal is kept within 6 cm of the measured hand and within 1.5 cm of what the arm can reach, so a blocked or overreaching arm stops instead of winding up.
 2. Inverse kinematics. Every control step, a warm-started damped least-squares IK (damping 3e-3) turns the goal into arm joint setpoints, moving each joint at most 0.12 rad per step. On the 7-DoF arms it also holds a fixed hand orientation (weight 0.35 per rad): on the G1, fingers forward and level with the palm facing the midline; on Apollo, pointing forward with the palms facing each other. A posture term acts in the null space. If the warm start is stuck, the IK is re-solved from the start posture.
 3. Integral term. A bounded term (0.25 per step, at most 3 cm) removes the steady sag of a loaded arm.
-4. Joint servos. On the G1, Apollo and T1, the upstream position actuators track the setpoints, plus a gravity feed-forward term; the joints' upstream torque limits apply. On the H1, a joint PD with gravity compensation drives the torque motors every 2 ms, clipped to their ranges: shoulders kp 300 / kd 8, elbows kp 200 / kd 5, legs kp 300 / kd 15.
+4. Joint servos. On the G1, Apollo and T1, the upstream position actuators track the setpoints, plus a gravity feed-forward term; the joints' upstream torque limits apply. On the H1, a joint PD with gravity compensation drives the torque motors every 2 ms, clipped to their ranges: shoulders kp 300 / kd 8, elbows kp 200 / kd 5, hips, knees and torso kp 300 / kd 15, ankles kp 60 / kd 4.
 5. Fingers (G1). A single synergy runs from open to closed: thumb swings in, fingers curl. The upstream finger torque limits make the fingers stop on contact. Grasps are friction grasps; nothing is welded.
 
 ## Skills
@@ -77,16 +77,16 @@ Cameras: `front` (default), `top`, `side` and `head`. The head camera is on the 
 | Task | Robot | Goal | Success (final state plus monitor; no safety event) | Budget |
 |---|---|---|---|---|
 | g1-can-to-plate | G1 | stand the red can on the plate | can upright (<= 15 deg), centre within 7 cm of the plate centre, resting on the plate, not touched by the robot | 500 |
-| g1-pass-across | G1 | move a bottle from the far right to a coaster at the far left; neither hand reaches both; a fragile glass stands right of the middle | bottle upright (<= 15 deg), centre within 6 cm of the coaster centre, resting on it, not touched; touching or tipping the glass is a safety event | 900 |
+| g1-pass-across | G1 | move a bottle from the far right to a coaster at the far left; neither hand reaches both; a fragile glass stands right of the middle | bottle upright (<= 15 deg), centre within 6 cm of the coaster centre, resting on it (centre within 5 mm of resting height), not touched; touching or tipping the glass is a safety event | 900 |
 | g1-drawer-stow | G1 | open the drawer by its bar handle, put the soap in, close the drawer | soap centre inside the drawer tray, drawer open <= 1.5 cm, soap not touched | 1200 |
 | h1-box-to-shelf | H1 | squeeze-lift a 0.5 kg box between the fists onto a 10 cm shelf block | box flat (<= 8 deg), centre over the shelf top, resting on it, not touched | 700 |
 | h1-panel-sequence | H1 | press yellow, green, white, blue on a vertical panel; never red | recorded presses (8 mm travel) are exactly that sequence; pressing red is a safety event | 600 |
 | apollo-box-into-bin | Apollo | squeeze-lift a 0.6 kg box between the palms into a bin with 7 cm walls | box centre inside the bin's inner footprint, resting on the bin floor (<= 2 cm above resting height), not touched | 700 |
-| apollo-carry-tray | Apollo | carry a tray with a loose cup onto a mat | tray entirely on the mat, flat (<= 5 deg), resting; cup upright (<= 10 deg); neither touched; the cup touching anything but the tray is a safety event | 700 |
+| apollo-carry-tray | Apollo | carry a tray with a loose cup onto a mat | tray entirely on the mat, flat (<= 5 deg), resting; cup upright (<= 10 deg); neither touched; the cup touching anything but the tray (including the robot) is a safety event | 700 |
 | t1-push-cans | T1 | push a red and a blue can into their zones | each can's centre within 4 cm of its zone centre, both standing (<= 15 deg) | 700 |
 | t1-box-onto-step | T1 | squeeze-lift a 0.3 kg box onto a 6 cm step | box flat (<= 8 deg), centre over the step, resting on it, not touched | 600 |
 
-Any object touching the floor is a safety event in every task. Success is judged after `robo done` and a 10-step hold.
+Any object touching the floor is a safety event in every task that has free objects. Success is judged after `robo done` and a 10-step hold.
 
 ## Validation
 
@@ -94,10 +94,10 @@ Real runner, 2026-09-28, MuJoCo 3.3.0, concurrency 3, on a loaded Mac:
 
 | Harness | Result | Runs |
 |---|---|---|
-| oracle | 9/9 | `runs/emb-oracle-humanoid/` |
-| noop | 0/9 | `runs/emb-noop-humanoid/` |
+| oracle | 9/9 | `runs/emb-oracle-humanoid-v2/` |
+| noop | 0/9 | `runs/emb-noop-humanoid-v2/` |
 
-The oracle episodes use 78-275 steps and take 7-25 s of wall time each when the machine is not saturated. In the final run, three trials took about 11 minutes each while other jobs saturated the CPU; they used the same steps and got the same results. Episode setup compiles the scene in about 1 s (T1) to 10 s (Apollo). The reference solutions use only the skills and public observation fields.
+The oracle episodes use 78-275 steps and take 7-25 s of wall time each when the machine is not saturated. Every noop trial ran to `robo done` (none was an infrastructure failure). Episode setup compiles the scene in about 1 s (T1) to 10 s (Apollo). The reference solutions use only the skills and public observation fields.
 
 Scripted wrong attempts score 0:
 
@@ -112,6 +112,7 @@ The videos were checked frame by frame: no interpenetration, no teleporting, and
 ## Limitations
 
 - The robots are fixed to a stand. There is no balance, no walking and no whole-body motion; the legs only hold a pose.
+- Future work: walking. A physical gait needs a learned whole-body policy; training one (for example the MuJoCo Playground humanoid joystick policies for the G1 or T1) needs a GPU. With such a policy, `walk_to` and `turn` skills could sit on top of a `base.twist` action group.
 - The 7-DoF arms hold one fixed hand orientation per task, and the agent cannot rotate the wrist. The G1's hand is long (fingertips 8 cm beyond the grasp point), so objects are approached from behind or above. Objects placed in the drawer are released above the drawer front and drop in.
 - The 4-DoF arms (H1, T1) have no wrist, so a box squeezed between the hands rolls with the forearms while it is carried. In the reference runs the box tilts by about 20 to 30 degrees in transit and settles flat when it is set down.
 - Apollo's forearms are wider than its hand plates, so they share the squeeze.

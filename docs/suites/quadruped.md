@@ -58,13 +58,13 @@ Every fixed position is public under `facility` in `robo observe`; task objects 
 
 A non-zero velocity command raises a lowered body to at least 85 % of the standing height.
 
-Skills (closed-loop generators that yield the same actions as `robo act`): `walk_to X Y [TOL] [SPEED]` (turn, trot along the straight line, stop; not obstacle-aware; stops and reports when it has moved less than 8 cm in 3 s), `turn YAW_DEG`, `stand`, `sit` (lowest body height), `look_at X Y Z [SECONDS]` (face the point, pitch to aim the head camera, hold still, report the point's image position), and with the arm `reach X Y Z [TOL]` (straight-line tip motion that re-targets as the body sways; stops at contact) and `stow`.
+Skills (closed-loop generators that yield the same actions as `robo act`): `walk_to X Y [TOL] [SPEED]` (turn, trot along the straight line, stop; not obstacle-aware; stops and reports when it has moved less than 8 cm in 3 s), `turn YAW_DEG`, `stand`, `sit` (lowest body height), `look_at X Y Z [SECONDS]` (face the point, pitch to aim the head camera, hold still for SECONDS, clipped to 3 s, report the point's image position; at most 300 steps), and with the arm `reach X Y Z [TOL]` (straight-line tip motion that re-targets as the body sways; stops at contact) and `stow`.
 
 `robo observe` gives `robot` (pose, body-frame velocity, gait state, setpoints, foot contacts, head camera pose, fallen flag), `arm`, `facility`, `objects`, `progress` (inspected tags, checkpoints, pressed buttons, touched obstacles) and `safety_events`. Cameras: `chase` (default video; follows the robot, fixed orientation), `head` (on the front of the base, 70 degree field of view), `overview`, `west_hall`, `east_room`.
 
 ## Tasks
 
-A fall is the base tilting beyond 50 degrees or any base geom touching the floor, ramp or platform. It is recorded as an event and fails every task. "Standing still" means not stepping, base slower than 0.1 m/s and turning slower than 0.2 rad/s. A tag is inspected when, for 20 consecutive steps (1 s) while standing still, its centre is in the central half of the head image (|u|, |v| <= 0.5), 0.3 m to the depth limit in front of the camera, unoccluded (ray cast from the camera), and seen from within 60 degrees of its facing.
+A fall is the base tilting beyond 50 degrees or any base geom touching the floor, ramp or platform. It is recorded as an event and fails every task. "Standing still" means not stepping, base slower than 0.1 m/s and turning slower than 0.2 rad/s (11 deg/s). Inspections and checkpoints are not recorded during the 10 settle steps after `robo done`. A tag is inspected when, for 20 consecutive steps (1 s) while standing still, its centre is in the central half of the head image (|u|, |v| <= 0.5), 0.3 m to the depth limit in front of the camera, unoccluded (ray cast from the camera), and seen from within 60 degrees of its facing.
 
 | Task | Robot | Goal | Success (judged after `robo done` and 10 hold steps; inspections, checkpoints and button presses are latched when they happen) | Budget |
 |---|---|---|---|---|
@@ -73,12 +73,12 @@ A fall is the base tilting beyond 50 degrees or any base geom touching the floor
 | go2-push-box | Go2 | push a 0.4 m, 3 kg box 2 m into a 1 m zone | all four footprint corners inside the zone, box upright, robot standing still | 1200 |
 | go2-pump-inspection | Go2 | dock, corridor and doorway to the pump tag | pump tag inspected (depth <= 2.0 m) | 1400 |
 | go1-corridor-charger | Go1 | dock, corridor and doorway to the charging pad; lie down on it | base over the 0.7 m pad, height setpoint at minimum, stopped, base <= 0.20 m above the floor | 1400 |
-| go1-patrol | Go1 | checkpoints A (west hall, behind crates), B, C (east room), back to the dock | A, B, C reached in order (within 0.35 m), base on the dock, standing still | 2000 |
+| go1-patrol | Go1 | checkpoints A (west hall, behind crates), B, C (east room), back to the dock | A, B, C reached in order (within 0.35 m), base on the dock, standing still | 2400 |
 | spot-gauge-reading | Spot | corridor and doorway to the gauge 1.4 m up; pitch the body | gauge inspected (depth <= 1.6 m; needs the body pitched up) | 1200 |
 | spot-arm-estop | Spot + arm | press the red e-stop | red cap pushed in > 15 mm at some time, robot standing still | 900 |
 | spot-arm-reset | Spot + arm | press the green reset button, 35 cm from the e-stop | green pressed; red never pressed (pressing it is a "plant shut down" event) | 900 |
 | anymal-inspection-round | ANYmal C | valve tag (west wall) and pump tag (east room), then back to the dock | both inspected, base on the dock, standing still | 2400 |
-| anymal-mezzanine-cabinet | ANYmal C | up the ramp to the cabinet tag on the 0.2 m platform | cabinet tag inspected | 1200 |
+| anymal-mezzanine-cabinet | ANYmal C | up the ramp to the cabinet tag on the 0.2 m platform | cabinet tag inspected while the base is on the platform (x, y inside it, base higher than 0.2 m + half the standing height) | 1200 |
 
 ## Validation
 
@@ -86,8 +86,8 @@ Real runner, 2026-09-28, concurrency 3:
 
 | Harness | Result | Runs |
 |---|---|---|
-| oracle | 11/11 (13-43 s wall time per episode) | `runs/emb-oracle-quadruped/` |
-| noop | 0/11 | `runs/emb-noop-quadruped/` |
+| oracle | 11/11 (9-28 s wall time per episode) | `runs/emb-oracle-quadruped-v2/` |
+| noop | 0/11 | `runs/emb-noop-quadruped-v2/` |
 
 The reference solutions use only the socket: waypoints with `walk_to`, `turn`, `look_at`, `sit`, and `reach` / `stow` for the buttons. Box pushing re-reads the box position and re-aligns behind it after each 0.6 m push at 0.2 m/s. The manual task uses a heading-controlled waypoint follower on `robo act`. Frames of every recording were checked: no falls, no interpenetration, and the box slides and yaws a little as expected.
 
@@ -108,7 +108,8 @@ Plausible-but-wrong attempts all scored 0:
 - Go1 standing (not lying) on the charger, and lying 0.6 m beside it;
 - gauge viewed from 2.1 m away (outside the 1.6 m limit), and from 1.3 m without pitching;
 - reset task pressing the red button first, then the green one ("plant shut down" event);
-- detour stopping 0.55 m short of the mat.
+- detour stopping 0.55 m short of the mat;
+- cabinet tag viewed from the floor below the platform at (5.29, 1.14) with `look_at` (1.96 m away, in the image centre).
 
 Walking Go2 or ANYmal off the platform edge produced a fall event.
 
