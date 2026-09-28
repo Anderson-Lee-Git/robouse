@@ -89,6 +89,18 @@ Real runner, 2026-09-28, MuJoCo 3.3.0, concurrency 3:
 
 Oracle episodes use 628 to 2885 steps and 3 to 25 s of episode wall time on an unloaded run; in the v2 run three trials that ran at the same moment took about 15 minutes each while the machine was saturated by other jobs (load average near 70), which happened in earlier runs of other suites too. The reference solutions use only `robo observe` fields, `robo act` and the skills, with waypoints through the doorways. Scripted wrong attempts score 0: pulling the drawer only 0.13 m; opening it fully but still holding the handle; bringing the cup to the table without letting go; throwing the cup into the bin as well; dropping the juice box; putting the can on the floor next to the dining table; driving TIAGo (0.45 m/s), Stretch (0.25 m/s) or the Google Robot (0.5 m/s) into a wall (184 to 2452 N, a crash).
 
+## Model probe
+
+One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28. Codex with GPT-6 Astra was not probed: every account in the maintainers' Codex pool had hit its usage limit (until 2026-10-03). These are probes, not rates. Runs: `runs/emb-probe-mobile-manip-kimi/, runs/emb-probe-mobile-manip-kimi-r2/`.
+
+| Task | Kimi K3 |
+|---|---|
+| stretch-fetch-cup | 1 |
+| google-sort-bottle-can | 1 |
+| tiago-drawer-stow | 0 (2985 of 3000 steps used; spice box not in the drawer) |
+
+google-sort-bottle-can and tiago-drawer-stow were rerun on the fixed tasks (`-r2`): the first attempts ran out of wall time during machine-wide stalls of about 15 minutes.
+
 ## Limitations
 
 - The Google Robot's base is a holonomic abstraction (the real one is a two-wheel differential drive); its wheels do not touch the floor.

@@ -109,6 +109,18 @@ Scripted wrong attempts score 0:
 
 The videos were checked frame by frame: no interpenetration, no teleporting, and objects move only through contact.
 
+## Model probe
+
+One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28. Codex with GPT-6 Astra was not probed: every account in the maintainers' Codex pool had hit its usage limit (until 2026-10-03). These are probes, not rates. Runs: `runs/emb-probe-humanoid-kimi/, runs/emb-probe-humanoid-kimi-r2/`.
+
+| Task | Kimi K3 |
+|---|---|
+| h1-panel-sequence | 1 |
+| g1-drawer-stow | 1 |
+| apollo-carry-tray | 1 |
+
+g1-drawer-stow and apollo-carry-tray were rerun on the fixed tasks (`-r2`): the first attempts ran out of wall time during a machine-wide stall of about 17 minutes with no requests (visible as one gap in both traces).
+
 ## Limitations
 
 - The robots are fixed to a stand. There is no balance, no walking and no whole-body motion; the legs only hold a pose.

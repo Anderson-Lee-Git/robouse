@@ -106,6 +106,18 @@ Real runner, 2026-09-28, on this Mac's CPU:
   - cube face-up: 6/6 cube positions within 2 cm (tripod grasp; the power grasp failed 2/6 on release);
   - in-hand flip: 6/7 cube offsets within 1.5 cm.
 
+## Model probe
+
+One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28. Codex with GPT-6 Astra was not probed: every account in the maintainers' Codex pool had hit its usage limit (until 2026-10-03). These are probes, not rates. Runs: `runs/emb-probe-dexhand-kimi/`.
+
+| Task | Kimi K3 |
+|---|---|
+| shadow-turn-valve | 1 |
+| leap-cube-in-hand | 1 (81 steps; wrist pitch stayed within 12 degrees) |
+| shadow-pour-balls | 0 (agent timeout after 30 min) |
+
+The probes ran before the review fixes; since then the in-hand wrist and table rules are checked at every physics step.
+
 ## Limitations
 
 - The positioner is an idealised Cartesian-plus-Euler stage, not a real arm. It has no reach limits beyond its joint ranges and no link collisions.

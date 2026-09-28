@@ -113,6 +113,18 @@ Plausible-but-wrong attempts all scored 0:
 
 Walking Go2 or ANYmal off the platform edge produced a fall event.
 
+## Model probe
+
+One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28. Codex with GPT-6 Astra was not probed: every account in the maintainers' Codex pool had hit its usage limit (until 2026-10-03). These are probes, not rates. Runs: `runs/emb-probe-quadruped-kimi/`.
+
+| Task | Kimi K3 |
+|---|---|
+| go2-push-box | 1 |
+| go1-corridor-charger | 1 |
+| spot-arm-reset | 1 |
+
+The probes ran before the review fixes (mezzanine platform rule, settle-step recording, go1-patrol budget), none of which touch these three tasks' success rules.
+
 ## Limitations
 
 - The controller is a hand-tuned position-based trot, not a learned policy. It is robust on flat floors, the ramp and 5 cm steps, but it has no terrain perception and cannot climb stairs.

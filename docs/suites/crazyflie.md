@@ -75,6 +75,19 @@ Real runner, 2026-09-28, MuJoCo 3.3.0:
 
 The reference solutions use only the skills and public positions; the no-skills task's reference solution runs its own proportional controller through `robo observe` and `robo act`. Scripted wrong attempts score 0: flying straight at pad `B` crashes into the partition; passing G2 before G1 sets the out-of-order flag; swapping the swarm with one `goto_all` (straight, simultaneous lines) brings cf0 and cf2 into contact.
 
+## Model probe
+
+One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28. Codex with GPT-6 Astra was not probed: every account in the maintainers' Codex pool had hit its usage limit (until 2026-10-03). These are probes, not rates. Runs: `runs/emb-probe-crazyflie-kimi/`.
+
+| Task | Kimi K3 |
+|---|---|
+| crazyflie-window | 1 |
+| crazyflie-gates | 1 |
+| crazyflie-swarm-swap | 1 (deconflicted by height and order) |
+| crazyflie-window-manual | 1 (877 steps of velocity setpoints) |
+
+The probes ran before the review fixes (rest-on and landmark wording); the physics and success rules did not change.
+
 ## Limitations
 
 - There is no wind, no battery, no sensor noise and no downwash between drones; state is exact.
