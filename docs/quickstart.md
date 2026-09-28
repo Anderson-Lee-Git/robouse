@@ -29,7 +29,7 @@ arc-gravity tabletop
 arc-gravity-vision tabletop
 ```
 
-`robouse tasks` lists all 341 bundled tasks, with their simulator backend. `arc-gravity` is a rule-inference task on a table: the agent sees example grids of blocks before and after, has to work out the rule (blocks fall toward the front, like gravity) and then move the real blocks with a gripper. It reads the task in `instruction.md` and acts only through the `robo` command.
+`robouse tasks` lists all 392 bundled tasks, with their simulator backend. `arc-gravity` is a rule-inference task on a table: the agent sees example grids of blocks before and after, has to work out the rule (blocks fall toward the front, like gravity) and then move the real blocks with a gripper. It reads the task in `instruction.md` and acts only through the `robo` command.
 
 ## Run the agent
 

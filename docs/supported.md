@@ -17,7 +17,7 @@ Other models work wherever the harness accepts them through `--model`; they were
 
 | Harness | Status |
 |---|---|
-| `oracle`, `noop` | docs check: 341 of 341 reference solutions score 1, 341 of 341 no-op runs score 0 |
+| `oracle`, `noop` | docs check: 392 of 392 reference solutions score 1, 392 of 392 no-op runs score 0 |
 | `claude-code` | docs check (Quickstart trial, with `CLAUDE_CODE_OAUTH_TOKEN`); v1 runs |
 | `codex` | v1 runs; command line checked against Codex 0.155.1, not re-run for these docs |
 | `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` | v1 runs |
