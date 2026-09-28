@@ -74,6 +74,7 @@ exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes
 "tasks/libero-style" = "robouse/bundled_tasks/libero-style"
 "tasks/menagerie" = "robouse/bundled_tasks/menagerie"
 "tasks/metaworld" = "robouse/bundled_tasks/metaworld"
+"tasks/quadruped" = "robouse/bundled_tasks/quadruped"
 "tasks/robo-use-families" = "robouse/bundled_tasks/robo-use-families"
 "tasks/roboharm" = "robouse/bundled_tasks/roboharm"
 "tasks/robosuite" = "robouse/bundled_tasks/robosuite"

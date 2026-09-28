@@ -11,7 +11,7 @@ PAIRS=("codex:gpt-6-astra:4:astra" "claude-code-glm::3:cc-glm" "codex-glm::2:cod
 if [ -n "${FINAL_PAIRS:-}" ]; then read -r -a PAIRS <<< "$FINAL_PAIRS"; fi
 # Embodiment suites (not arms): quadruped humanoid mobile-manip dexhand crazyflie (robot models: `robouse fetch-assets`).
 SUITES=("$@"); [ ${#SUITES[@]} -gt 0 ] || SUITES=(metaworld gymrobotics libero libero-style arc-style robo-use-families safety vision hard
-  crazyflie)
+  crazyflie quadruped)
 for spec in "${PAIRS[@]}"; do
   IFS=: read h m c tag <<< "$spec"
   (
