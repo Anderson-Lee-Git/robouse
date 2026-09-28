@@ -18,12 +18,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from . import __version__
 from .tasks import bundled_tasks_root, find_tasks, load_task, resolve_task_path
 
+HARNESS_HELP = ("oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm or molmoact2 "
+                "(see https://robouse.ai/docs/harnesses/)")
 SIM_HINT = ("robouse: the simulator dependencies are not installed ({err}).\n"
             "Install the extra for this suite, e.g. `pip install 'robouse[sim]'` (MuJoCo tabletop suites), "
             "`robouse[metaworld]`, `robouse[gymrobotics]`, `robouse[robosuite]` or `robouse[all]`.")
@@ -36,38 +39,42 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("serve", help="run one trusted episode server (used by `run`)")
-    s.add_argument("--task", required=True)
-    s.add_argument("--run-dir", required=True)
-    s.add_argument("--socket", required=True)
-    s.add_argument("--workspace")
-    s.add_argument("--seed", type=int)
-    s.add_argument("--max-wall-s", type=float, default=1800)
-    s.add_argument("--ready-file")
+    s.add_argument("--task", required=True, help="task folder or bundled task id")
+    s.add_argument("--run-dir", required=True, help="where the episode record is written")
+    s.add_argument("--socket", required=True, help="Unix socket path to listen on")
+    s.add_argument("--workspace", help="agent workspace (camera images are saved in its observations/)")
+    s.add_argument("--seed", type=int, help="override the task's seed")
+    s.add_argument("--max-wall-s", type=float, default=1800, help="wall-clock budget in seconds (default 1800)")
+    s.add_argument("--ready-file", help="file created once the server is listening")
 
-    def run_opts(p):
+    def run_opts(p, many: bool):
         p.add_argument("--agent", "--harness", dest="agent", required=True,
-                       help="BenchFlow agent (oracle, noop, claude, codex, ... see `bench agent list`); "
-                            "with --engine local a robouse harness")
-        p.add_argument("--model", default="")
-        p.add_argument("--out", required=True, help="jobs directory")
-        p.add_argument("--timeout", type=float, help="agent timeout in seconds (default: the task's)")
-        p.add_argument("--engine", choices=("benchflow", "local"), default="benchflow")
+                       help="BenchFlow agent (oracle, noop, claude, codex, ... see `bench agent list`; claude-code is "
+                            "an alias for claude); with --engine local, a robouse harness: " + HARNESS_HELP)
+        p.add_argument("--model", default="", help="model for the agent (default: the agent's default)")
+        p.add_argument("--out", required=True,
+                       help="jobs folder; the BenchFlow job is written to OUT/<job>/<task>__<id>/ "
+                            "(--engine local: OUT/<task>__<harness>__<id>/)")
+        p.add_argument("--timeout", type=float, help="agent wall-clock limit in seconds (default: "
+                       + ("each task's" if many else "the task's agent.timeout_sec") + ")")
+        p.add_argument("--seed", type=int, help="override the task's seed")
+        p.add_argument("--engine", choices=("benchflow", "local"), default="benchflow",
+                       help="benchflow (default): BenchFlow with Docker; local: host processes, macOS Seatbelt "
+                            "sandbox, no Docker")
         p.add_argument("--sandbox", default="docker", help="BenchFlow sandbox (default docker)")
         p.add_argument("--reasoning-effort", help="agent reasoning effort (BenchFlow agents that expose one)")
         p.add_argument("--job-name", help="BenchFlow job name (default: a timestamp)")
 
     r = sub.add_parser("run", help="run one trial end to end")
-    r.add_argument("--task", required=True)
-    run_opts(r)
-    r.add_argument("--seed", type=int)
+    r.add_argument("--task", required=True, help="task folder or bundled task id")
+    run_opts(r, many=False)
 
     m = sub.add_parser("run-many", help="run a set of trials")
     m.add_argument("--tasks", help="task root (default: the bundled tasks)")
-    run_opts(m)
-    m.add_argument("--filter", default="")
-    m.add_argument("--limit", type=int, default=0)
-    m.add_argument("--concurrency", type=int, default=1)
-    m.add_argument("--seed", type=int)
+    run_opts(m, many=True)
+    m.add_argument("--filter", default="", help="only task ids containing this substring")
+    m.add_argument("--limit", type=int, default=0, help="run at most this many tasks (0: all)")
+    m.add_argument("--concurrency", type=int, default=1, help="trials run in parallel (default 1)")
     m.add_argument("--task-list", help="file with one task id per line (subset of --tasks)")
     m.add_argument("--resume", action="store_true", help="(--engine local) skip tasks that already have a finished, non-infra-failed trial in --out")
 
@@ -150,8 +157,12 @@ def main(argv=None) -> int:
         if a.path:
             print(bundled_tasks_root())
             return 0
-        for task in find_tasks(a.root or bundled_tasks_root()):
-            print(task.id, task.spec.get("backend"), task.spec.get("env", ""))
+        try:
+            for task in find_tasks(a.root or bundled_tasks_root()):
+                print(task.id, task.spec.get("backend"), task.spec.get("env", ""))
+            sys.stdout.flush()
+        except BrokenPipeError:  # e.g. `robouse tasks | head`
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         return 0
     return 2
 

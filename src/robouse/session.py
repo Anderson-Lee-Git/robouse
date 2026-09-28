@@ -398,7 +398,10 @@ def serve(spec: dict, run_dir: Path, sock_path: str, workspace: Path | None = No
                     resp = ep.handle(req)
                 except Exception as e:
                     resp = {"ok": False, "error": f"bad request: {e}"[:300]}
-                conn.sendall((json.dumps(resp) + "\n").encode())
+                try:
+                    conn.sendall((json.dumps(resp) + "\n").encode())
+                except OSError:  # the client went away (e.g. its shell command timed out); keep serving the episode
+                    pass
     finally:
         ep.close()
         srv.close()

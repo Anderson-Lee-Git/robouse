@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import textwrap
 from pathlib import Path
 
 from robouse.tasks import write_task
@@ -35,19 +34,24 @@ TASKS = [
     dict(activity="rearranging_kitchen_furniture", scene="house_double_floor_lower", difficulty="medium", max_steps=45,
          instruction="Move the toaster, food processor, and French press from the kitchen countertop into the same kitchen "
                      "cabinet, and make sure that cabinet is closed at the end.",
-         plan=None),  # filled in below once the cabinet is chosen
+         plan=[["navigate_to", "cabinet.n.01_1"], ["open", "cabinet.n.01_1"]] + [step for o in (
+             "toaster.n.02_1", "food_processor.n.01_1", "french_press.n.01_1") for step in (
+             ["navigate_to", o], ["grasp", o], ["navigate_to", "cabinet.n.01_1"], ["place_inside", "cabinet.n.01_1"])]
+         + [["close", "cabinet.n.01_1"]]),
     dict(activity="bringing_water", scene="house_single_floor", difficulty="medium", max_steps=40,
          instruction="Retrieve the two bottles from the refrigerator in the kitchen, bring them to the living room, and "
                      "place both on the coffee table. Make sure the refrigerator is closed at the end.",
          plan=[["navigate_to", "electric_refrigerator.n.01_1"], ["open", "electric_refrigerator.n.01_1"],
                ["grasp", "bottle.n.01_1"], ["navigate_to", "coffee_table.n.01_1"], ["place_on_top", "coffee_table.n.01_1"],
                ["navigate_to", "electric_refrigerator.n.01_1"], ["grasp", "bottle.n.01_2"],
-               ["close", "electric_refrigerator.n.01_1"],
-               ["navigate_to", "coffee_table.n.01_1"], ["place_on_top", "coffee_table.n.01_1"]]),
+               ["navigate_to", "coffee_table.n.01_1"], ["place_on_top", "coffee_table.n.01_1"],
+               ["navigate_to", "electric_refrigerator.n.01_1"], ["close", "electric_refrigerator.n.01_1"]]),
     dict(activity="putting_dishes_away_after_cleaning", scene="house_single_floor", difficulty="hard", max_steps=90,
          instruction="In the kitchen, gather all eight plates from the two countertops, place them all inside a single "
                      "cabinet (either one), and make sure all cabinets are closed when you are done.",
-         plan=None),
+         plan=[["navigate_to", "cabinet.n.01_2"], ["open", "cabinet.n.01_2"]] + [step for i in range(1, 9) for step in (
+             ["navigate_to", f"plate.n.04_{i}"], ["grasp", f"plate.n.04_{i}"], ["navigate_to", "cabinet.n.01_2"],
+             ["place_inside", "cabinet.n.01_2"])] + [["close", "cabinet.n.01_2"]]),
 ]
 ROOMS = {"house_double_floor_lower": ["corridor_0", "garden_0", "kitchen_0", "living_room_0"],
          "house_single_floor": ["corridor_0", "dining_room_0", "entryway_0", "garden_0", "kitchen_0", "living_room_0",
@@ -140,7 +144,7 @@ def write(t: dict, out: Path, bddl_root: Path | None) -> str:
         "robouse": {"id": tid, "backend": "behavior", "env": t["activity"], "scene": t["scene"],
                     "rooms": ROOMS[t["scene"]], "instance": 0, "seed": 0, "max_steps": t["max_steps"],
                     "camera": "follow", "cameras": ["follow", "head"], "skills": True, "success_mode": "final",
-                    "obs_mode": "state", "frame_every": 1, "linger_s": 5},
+                    "obs_mode": "state", "frame_every": 1, "linger_s": 5, "ready_timeout_s": 900, "rpc_timeout_s": 600},
     }
     d = out / tid
     if d.exists():

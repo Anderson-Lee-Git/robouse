@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robouse"
-version = "0.1.0"
+version = "0.1.1"
 description = "Agent as a policy for embodied agents"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -33,7 +33,9 @@ dependencies = ["numpy>=1.24", "pyyaml>=6", "benchflow>=0.7.9.dev0"]
 [project.optional-dependencies]
 # MuJoCo and video recording: the built-in tabletop, ARC-style, hard, safety, vision, robo-use-families, RoboHarm,
 # menagerie and drone suites.
-sim = ["mujoco>=3.3", "imageio>=2.34", "imageio-ffmpeg>=0.5", "pillow>=10"]
+# MuJoCo is pinned: with 3.14, robosuite, menagerie, gymrobotics and drone episodes crash and some reference solutions fail
+# (docs/dogfood.md). 3.3.0 is also the version Meta-World requires.
+sim = ["mujoco==3.3.0", "imageio>=2.34", "imageio-ffmpeg>=0.5", "pillow>=10"]
 metaworld = ["robouse[sim]", "metaworld>=3.1", "packaging"]
 gymrobotics = ["robouse[sim]", "gymnasium-robotics>=1.4"]
 # robosuite 1.5 conflicts with LIBERO's robosuite==1.4.0 pin. In an environment that also runs LIBERO, install it
@@ -69,10 +71,25 @@ exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes
 # The task folders ship inside the wheel as robouse/bundled_tasks, so `robouse tasks` and
 # `robouse run --task <id>` work without a checkout.
 [tool.hatch.build.targets.wheel.force-include]
-"tasks" = "robouse/bundled_tasks"
+# One entry per suite that is self-contained. Left out: robocasa (its recorded episode layouts are machine-specific
+# and not distributed) and any suite still in development.
+"tasks/arc-style" = "robouse/bundled_tasks/arc-style"
+"tasks/dexjoco" = "robouse/bundled_tasks/dexjoco"
+"tasks/drone" = "robouse/bundled_tasks/drone"
+"tasks/gymrobotics" = "robouse/bundled_tasks/gymrobotics"
+"tasks/hard" = "robouse/bundled_tasks/hard"
+"tasks/libero" = "robouse/bundled_tasks/libero"
+"tasks/libero-style" = "robouse/bundled_tasks/libero-style"
+"tasks/menagerie" = "robouse/bundled_tasks/menagerie"
+"tasks/metaworld" = "robouse/bundled_tasks/metaworld"
+"tasks/robo-use-families" = "robouse/bundled_tasks/robo-use-families"
+"tasks/roboharm" = "robouse/bundled_tasks/roboharm"
+"tasks/robosuite" = "robouse/bundled_tasks/robosuite"
+"tasks/safety" = "robouse/bundled_tasks/safety"
+"tasks/vision" = "robouse/bundled_tasks/vision"
 "assets/menagerie/provenance.json" = "robouse/assets_provenance/menagerie.json"
 "assets/menagerie/skydio_x2/PROVENANCE.json" = "robouse/assets_provenance/skydio_x2.json"
 
 [tool.hatch.build.targets.sdist]
 include = ["/src/robouse", "/tasks", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/README.md", "/LICENSE", "/pyproject.toml"]
-exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/src/robouse/backends/robocasa_episodes"]
+exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/src/robouse/backends/robocasa_episodes", "/tasks/robocasa", "/tasks/behavior"]

@@ -26,7 +26,7 @@ FPS = 30
 LLM_HARNESSES = ("claude-code", "claude-code-glm", "codex", "codex-glm", "mini-swe-agent-glm")
 NO_LLM = ("oracle", "noop")
 OUTCOMES = {"done", "gave_up", "budget_exhausted", "success_reached", "wall_time_exhausted", "agent_exited", "agent_timeout"}
-MOTION_OPS = {"act", "move_to", "grip"}
+MOTION_OPS = {"act", "move_to", "grip", "skill"}  # skill: named high-level skills (BEHAVIOR primitives)
 RUNNING_WINDOW_S = 20 * 60
 # what the harnesses run when config.json leaves the model empty (see src/robouse/harnesses.py)
 DEFAULT_MODELS = {"claude-code": "claude-opus-5-5", "codex": "gpt-6-astra", "claude-code-glm": "zai-org/GLM-5.3",

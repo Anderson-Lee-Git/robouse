@@ -1,38 +1,37 @@
 #!/usr/bin/env python3
-"""Build the static robo-use docs site (robouse.ai/docs/) from README.md and docs/.
+"""Build the static Robo Use docs site (robouse.ai/docs/) from docs/.
 
     python scripts/build_docs.py --out ~/benchflow/roboharm/site/docs
     python scripts/build_docs.py --out /tmp/docs --base /docs/     # --base is the URL prefix the pages are served under
 
 Standard library only (Python 3.11+): it has its own small markdown converter that covers what these docs use
 (headings, paragraphs, nested lists, fenced code, tables, block quotes, links, images, emphasis, inline code).
-No third-party packages are needed.
 
-Output: one page per doc at <out>/<slug>/index.html (pretty URLs, linked with a trailing slash), <out>/index.html
-from README.md, a generated suites overview at <out>/suites/index.html, images copied from docs/, and docs.css /
-docs.js. The pages expect /theme.js and /fonts/{Inter,PlexMono-400,PlexMono-500}.woff2 at the site root.
+Output: one page per doc at <out>/<slug>/index.html (pretty URLs), plus docs.css and docs.js. Every page uses the
+site's shared header and footer from the site repository's tools/chrome.py (found next to --out, or --chrome) and
+expects /theme.js, /surface.css, /bridge.css, /chrome.css and /fonts/SourceSerif4.woff2 at the site root.
 
-Links between published .md files are rewritten to the generated pages (anchors kept). Links to repository files
-that are not published (source code, STATUS.md, runs/, internal notes) become plain text or inline code, since
-the repository is private. The build fails if the output contains the banned word list or anything that looks
-like a credential (see check_output).
+Only the pages in PAGES are published. Links between them are rewritten to the generated pages (anchors kept);
+links to repository files that are not published become plain text or inline code, since the repository is
+private; site links starting with "/" are kept. The build fails if a link between pages is broken, or if the
+output contains a banned word or anything that looks like a credential (see check_output).
 
 Sources are read from git HEAD by default (--ref REV for another revision, --worktree for uncommitted edits), so
-the site matches the repository. Pages and navigation are listed in PAGES below; a doc that is not listed is not
-published, except that any committed docs/suites/*.md is added to the Suites group. Absolute GitHub links to
-docs (https://github.com/benchflow-ai/robouse/blob/main/docs/...) map to the generated pages too.
+the site matches the repository.
 """
 
 from __future__ import annotations
 
 import argparse
+import codecs
+import importlib.util
 import html
 import posixpath
 import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -71,56 +70,37 @@ class Source:
 
 # (group, source path relative to the repo, slug, nav label). Order = sidebar order = prev/next order.
 PAGES: list[tuple[str, str, str, str]] = [
-    ("Getting started", "README.md", "", "Overview"),
-    ("Getting started", "docs/quickstart.md", "quickstart", "Quickstart"),
-    ("Guides", "docs/harnesses.md", "harnesses", "Harnesses and models"),
-    ("Guides", "docs/benchflow.md", "benchflow", "Running through BenchFlow"),
-    ("Guides", "docs/viewer.md", "viewer", "Viewing trials"),
-    ("Guides", "docs/audit.md", "audit", "Automatic audit"),
-    ("Guides", "docs/molmoact2.md", "molmoact2", "MolmoAct2 (VLA)"),
-    ("Suites", "docs/suites/", "suites", "All suites"),  # generated overview
-    ("Suites", "docs/suites/tabletop.md", "suites/tabletop", "Tabletop"),
-    ("Suites", "docs/suites/gymrobotics.md", "suites/gymrobotics", "Gymnasium-Robotics"),
-    ("Suites", "docs/suites/libero.md", "suites/libero", "LIBERO"),
-    ("Suites", "docs/suites/robosuite.md", "suites/robosuite", "robosuite"),
-    ("Suites", "docs/suites/dexjoco.md", "suites/dexjoco", "DexJoCo"),
-    ("Suites", "docs/suites/roboharm.md", "suites/roboharm", "RoboHarm v0.1"),
-    ("Suites", "docs/suites/drone.md", "suites/drone", "Drone"),
-    ("Suites", "docs/suites/menagerie.md", "suites/menagerie", "Menagerie"),
-    ("Suites", "docs/suites/robocasa.md", "suites/robocasa", "RoboCasa"),
-    ("Suites", "docs/suites/vision.md", "suites/vision", "Vision tier"),
-    ("Suites", "docs/suites/hard.md", "suites/hard", "Hard tier"),
-    ("Reference", "docs/task-format.md", "task-format", "Task format"),
-    ("Reference", "docs/robo-cli.md", "robo-cli", "The robo command"),
-    ("Results", "docs/results.md", "results", "Results"),
+    ("Get started", "docs/index.md", "", "Overview"),
+    ("Get started", "docs/quickstart.md", "quickstart", "Quickstart"),
+    ("Get started", "docs/supported.md", "supported", "Supported"),
+    ("Concepts", "docs/tasks.md", "tasks", "Tasks and scoring"),
+    ("Concepts", "docs/episodes.md", "episodes", "Episodes and robo"),
+    ("Concepts", "docs/harnesses.md", "harnesses", "Harnesses"),
+    ("Guides", "docs/run-an-agent.md", "run-an-agent", "Run an agent"),
+    ("Guides", "docs/write-a-task.md", "write-a-task", "Write a task"),
+    ("Guides", "docs/run-a-suite.md", "run-a-suite", "Run a suite"),
+    ("Reference", "docs/cli.md", "cli", "robouse CLI"),
+    ("Reference", "docs/robo-cli.md", "robo-cli", "robo CLI"),
+    ("Reference", "docs/task-format.md", "task-format", "task.md"),
+    ("Reference", "docs/suites.md", "suites", "Suites"),
 ]
-SUITES_INDEX = "docs/suites/"
-# Not published: internal process notes. Any other docs/*.md missing from PAGES is reported at build time;
-# a new docs/suites/*.md is added to the Suites group automatically.
+# Extra sidebar links to other parts of the site: (group, label, url).
+SIDEBAR_LINKS = [("Results", "Runs and videos", "/runs/")]
+# Docs kept in the repository but not published: internal notes, run logs and machine-specific setup.
 EXCLUDED = {
     "docs/review-log.md": "internal log of documentation review passes",
-    "docs/research/": "internal literature and dataset surveys used for planning",
+    "docs/research/": "internal literature and dataset surveys",
+    "docs/dogfood.md": "log of the commands run to check the public docs",
+    "docs/results.md": "generated table for the repository; the public results are robouse.ai/runs/",
+    "docs/audit.md": "the maintainers' audit script over local runs",
+    "docs/viewer.md": "the maintainers' viewer setup and viewer formats",
+    "docs/benchflow.md": "validation log of the BenchFlow export; the public part is in run-a-suite.md",
+    "docs/molmoact2.md": "GPU server setup notes; the public part is in harnesses.md",
+    "docs/suites/": "per-suite design notes; the public part is the table in suites.md",
 }
-TITLE_OVERRIDES = {"README.md": "robo-use"}  # the README's H1 is the repo name; the site uses the brand
-# Paragraphs that make sense in the repository but not on the site (regex on the paragraph's first line).
-DROP_PARAGRAPHS = {"README.md": [r"^Private, work in progress\."]}
-# One line per suite for the generated suites overview (keep in step with the suite pages).
-SUITE_SUMMARIES = {
-    "tabletop": "39 tasks in one scene built from MuJoCo primitives: LIBERO-style, ARC-style rule inference, robo-use families and harmful/benign safety pairs.",
-    "gymrobotics": "12 tasks from Farama's Gymnasium-Robotics: 6 Fetch manipulation and 6 PointMaze navigation tasks.",
-    "libero": "20 tasks from LIBERO (Liu et al. 2023), 5 from each standard suite, so VLA policies and LLM agents can be compared on the same tasks.",
-    "robosuite": "21 tasks on robosuite 1.5 with full robot arms (Franka Panda, UR5e, Kinova Gen3, KUKA IIWA, Sawyer), one arm or two.",
-    "dexjoco": "14 dexterous tool-use tasks from DexJoCo: a Franka arm carrying a 16-joint Allegro hand instead of a gripper.",
-    "roboharm": "80 tasks: 10 harm scenarios, each with a benign twin, in 4 configurations. Does the agent carry out harmful physical requests?",
-    "menagerie": "15 tasks with two real robot arms from MuJoCo Menagerie on a desk: two Franka Panda arms or an ALOHA 2 pair.",
-    "robocasa": "7 tasks in full RoboCasa household kitchens with counters, cabinets, drawers, sinks and appliances.",
-    "drone": "10 tasks with a Skydio X2 over a small town: four flight skills and three harmful/benign safety pairs.",
-    "vision": "55 tasks where the agent gets camera images instead of object coordinates.",
-    "hard": "25 tasks with low-level control only, no calibrated cameras, and rules shown only as pictures.",
-}
-
-# Build-time guard: none of these may appear in the output.
-BANNED_WORDS = ["banned-name"]
+# Build-time guard: none of these may appear in the output. Stored rot13-encoded so the word itself never
+# appears in the repository either.
+BANNED_WORDS = [codecs.decode(w, "rot13") for w in ["uneobe"]]
 SECRET_PATTERNS = [
     r"sk-[A-Za-z0-9_-]{16,}", r"sk-ant-[A-Za-z0-9_-]+", r"pypi-[A-Za-z0-9_-]{16,}", r"npm_[A-Za-z0-9]{20,}",
     r"gh[pousr]_[A-Za-z0-9]{20,}", r"github_pat_[A-Za-z0-9_]{20,}", r"hf_[A-Za-z0-9]{20,}", r"AKIA[0-9A-Z]{16}",
@@ -247,10 +227,7 @@ class Converter:
                     i += 1
                 i += 1
                 cls = f' class="language-{lang}"' if lang else ""
-                # IBM Plex Mono (as subset on the site) has no box-drawing or arrow glyphs; a diagram in mixed
-                # fonts loses its alignment, so diagrams use one system monospace font throughout.
-                diagram = ' class="diagram"' if re.search("[\u2190-\u21ff\u2500-\u25ff]", "".join(body)) else ""
-                out.append(f'<div class="code"><pre{diagram}><code{cls}>{html.escape(chr(10).join(body), quote=False)}</code></pre></div>')
+                out.append(f'<div class="code"><pre><code{cls}>{html.escape(chr(10).join(body), quote=False)}</code></pre></div>')
                 continue
             m = self.HEAD_RE.match(line)
             if m:
@@ -405,88 +382,94 @@ class Page:
     title: str = ""
     body: str = ""
     description: str = ""
+    toc: list = field(default_factory=list)
+    ids: set = field(default_factory=set)
 
 
 def page_url(base: str, slug: str) -> str:
     return base + (slug + "/" if slug else "")
 
 
-def suites_markdown(pages: list[Page], source: Source) -> str:
-    lines = ["# Suites", "",
-             "Each suite adapts an existing benchmark or scene family to the robo-use task format. Every task ships a reference solution that scores 1, and the no-op control scores 0 on every task. Solve rates per harness and model are on the [Results](../results.md) page.",
-             ""]
-    for p in pages:
-        if not p.src.startswith("docs/suites/") or p.src == SUITES_INDEX:
-            continue
-        name = posixpath.splitext(posixpath.basename(p.src))[0]
-        lines.append(f"- [{p.label}]({name}.md): {SUITE_SUMMARIES.get(name, '')}".rstrip(": "))
-    lines += ["", "Meta-World (the 50 MT50 tasks, `tasks/metaworld/`) has no page of its own yet; the, [task format](../task-format.md) page uses `metaworld-push` as its example."]
-    return "\n".join(lines) + "\n"
+def load_chrome(path: Path):
+    """The site's shared header and footer (tools/chrome.py in the site repository)."""
+    if not path.exists():
+        sys.exit(f"shared chrome not found: {path} (pass --chrome /path/to/tools/chrome.py)")
+    spec = importlib.util.spec_from_file_location("site_chrome", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def page_list(source: Source) -> list[Page]:
     pages = []
     for p in PAGES:
-        if p[1] != SUITES_INDEX and not source.exists(p[1]):
-            print(f"note: {p[1]} is not in {source.ref or 'the working tree'}; page skipped", file=sys.stderr)
-            continue
+        if not source.exists(p[1]):
+            sys.exit(f"{p[1]} is listed in PAGES but not in {source.ref or 'the working tree'}")
         pages.append(Page(*p))
-    listed = {p.src for p in pages} | {p[1] for p in PAGES}
-    last_suite = max(i for i, p in enumerate(pages) if p.group == "Suites")
-    for src in source.list("docs/suites", ".md"):
-        if src not in listed:
-            stem = posixpath.splitext(posixpath.basename(src))[0]
-            h1 = next((l[2:].strip() for l in source.read(src).splitlines() if l.startswith("# ")), stem)
-            last_suite += 1
-            pages.insert(last_suite, Page("Suites", src, f"suites/{stem}", re.sub(r"\s+suite\b.*$", "", plain(h1)) or stem))
-            print(f"note: added unlisted suite page {src}", file=sys.stderr)
+    listed = {p.src for p in pages}
     for src in source.list("docs", ".md"):
         if src not in listed and src not in EXCLUDED:
             print(f"note: {src} is neither in PAGES nor in EXCLUDED; not published", file=sys.stderr)
     return pages
 
 
-def build(out: Path, base: str, source: Source) -> list[Path]:
+def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
     pages = page_list(source)
     by_src = {p.src: p for p in pages}
     copies: dict[str, str] = {}  # repo path -> output-relative path (images)
+    broken: list[str] = []
 
     for p in pages:
-        src_dir = posixpath.dirname(p.src) if p.src != SUITES_INDEX else "docs/suites"
+        src_dir = posixpath.dirname(p.src)
 
-        def link(href: str, src_dir=src_dir) -> str | None:
+        def link(href: str, src_dir=src_dir, p=p) -> str | None:
+            if href.startswith("/"):
+                return href  # another part of the site (/runs/, ...)
             gh = GITHUB_DOC_RE.match(href)
             path, _, anchor = (gh.group(1) if gh else href).partition("#")
             if not path:
                 return "#" + anchor if anchor else None
             target = posixpath.normpath(path if gh else posixpath.join(src_dir, path))
-            if path.endswith("/"):
-                target += "/"
             frag = "#" + anchor if anchor else ""
             if target in by_src:
                 return page_url(base, by_src[target].slug) + frag
-            if target.rstrip("/") + "/" == SUITES_INDEX:
-                return page_url(base, by_src[SUITES_INDEX].slug) + frag
             if re.search(r"\.(png|jpe?g|gif|svg|webp)$", target, re.I) and target.startswith("docs/") and source.exists(target):
                 rel = target[len("docs/"):]
                 copies[target] = rel
                 return base + rel
+            if target.endswith(".md") and target.startswith("docs/"):
+                broken.append(f"{p.src}: link to unpublished page {href}")
             return href if gh else None  # other GitHub links stay as they are
 
-        md = suites_markdown(pages, source) if p.src == SUITES_INDEX else source.read(p.src)
+        md = source.read(p.src)
         md = re.sub(r"/Users/(?!<)[^/\s`]+/", "~/", md)  # tidy absolute home paths
-        for pat in DROP_PARAGRAPHS.get(p.src, []) + [r"^[A-Z][A-Z_]*PLACEHOLDER[A-Z_]*$"]:
-            md = "\n\n".join(b for b in re.split(r"\n\s*\n", md) if not re.match(pat, b.strip()))
         conv = Converter(link, {page_url(base, q.slug): q.label for q in pages})
-        lines = md.splitlines()
-        if p.src in TITLE_OVERRIDES and lines and lines[0].startswith("# "):
-            lines[0] = "# " + TITLE_OVERRIDES[p.src]
-        p.body = conv.blocks(lines)
+        p.body = conv.blocks(md.splitlines())
+        p.toc = [(hid, plain(text)) for lvl, hid, text in conv.headings if lvl == 2]
+        p.ids = {hid for _, hid, _ in conv.headings}
         h1 = next((t for lvl, _, t in conv.headings if lvl == 1), p.label)
         p.title = plain(h1)
         paras = [b for b in re.split(r"\n\s*\n", md) if b.strip() and not b.lstrip().startswith(("#", "`", "|", "-", "!", ">"))]
         desc = re.sub(r"\s+", " ", plain(paras[0])) if paras else p.title
         p.description = desc if len(desc) <= 180 else desc[:177].rsplit(" ", 1)[0] + "..."
+
+    # every in-docs link must hit a page, and every #anchor a heading on it
+    by_url = {page_url(base, q.slug): q for q in pages}
+    for p in pages:
+        for href in re.findall(r'href="([^"]+)"', p.body):
+            href = html.unescape(href)
+            if href.startswith("#"):
+                if href[1:] not in p.ids:
+                    broken.append(f"{p.src}: missing anchor {href}")
+            elif href.startswith(base):
+                path, _, anchor = href.partition("#")
+                q = by_url.get(path)
+                if q is None and not re.search(r"\.(png|jpe?g|gif|svg|webp)$", path):
+                    broken.append(f"{p.src}: link to missing page {href}")
+                elif q is not None and anchor and anchor not in q.ids:
+                    broken.append(f"{p.src}: missing anchor {href}")
+    if broken:
+        sys.exit("broken links:\n  " + "\n  ".join(broken))
 
     # write
     if out.exists():
@@ -507,12 +490,12 @@ def build(out: Path, base: str, source: Source) -> list[Path]:
         next_p = pages[k + 1] if k + 1 < len(pages) else None
         dst = out / p.slug / "index.html" if p.slug else out / "index.html"
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(render(p, pages, base, prev_p, next_p), encoding="utf-8")
+        dst.write_text(render(p, pages, base, prev_p, next_p, chrome), encoding="utf-8")
         written.append(dst)
     return written
 
 
-def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: Page | None) -> str:
+def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: Page | None, chrome) -> str:
     e = html.escape
     nav, group = [], None
     for q in pages:
@@ -524,13 +507,18 @@ def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: P
         cur = ' aria-current="page"' if q is p else ""
         nav.append(f'<li><a href="{page_url(base, q.slug)}"{cur}>{e(q.label)}</a></li>')
     nav.append("</ul>")
-    nav.append('<p class="grp">Experiments</p><ul><li><a href="/runs/">Run viewer</a></li></ul>')
+    for grp, label, url in SIDEBAR_LINKS:
+        nav.append(f'<p class="grp">{e(grp)}</p><ul><li><a href="{e(url)}">{e(label)}</a></li></ul>')
+    toc = ""
+    if len(p.toc) >= 2:
+        items = "".join(f'<li><a href="#{e(hid)}">{e(text)}</a></li>' for hid, text in p.toc)
+        toc = f'<aside class="toc"><nav aria-label="On this page"><p class="grp">On this page</p><ul>{items}</ul></nav></aside>'
     pager = []
     if prev_p:
         pager.append(f'<a class="prev" href="{page_url(base, prev_p.slug)}"><span>Previous</span>{e(prev_p.label)}</a>')
     if next_p:
         pager.append(f'<a class="next" href="{page_url(base, next_p.slug)}"><span>Next</span>{e(next_p.label)}</a>')
-    title = "robo-use docs" if not p.slug else f"{p.title} · robo-use docs"
+    title = "Robo Use docs" if not p.slug else f"{p.title} · Robo Use docs"
     canonical = "https://robouse.ai" + page_url(base, p.slug)
     return f"""<!doctype html>
 <html lang="en">
@@ -541,21 +529,20 @@ def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: P
 <meta name="description" content="{e(p.description)}">
 <link rel="canonical" href="{canonical}">
 <meta property="og:type" content="article">
-<meta property="og:site_name" content="robo-use">
+<meta property="og:site_name" content="Robo Use">
 <meta property="og:title" content="{e(title)}">
 <meta property="og:description" content="{e(p.description)}">
 <meta property="og:url" content="{canonical}">
 <link rel="icon" href="/favicon.png">
 <script src="/theme.js"></script>
+{chrome.LINK}
 <link rel="stylesheet" href="{base}docs.css">
+{getattr(chrome, "BRIDGE", '<link rel="stylesheet" href="/surface.css">')}
 <script src="{base}docs.js" defer></script>
 </head>
 <body>
-<header class="bar">
-  <a class="mark" href="/">robo-use</a>
-  <nav><a href="/work/">Work</a><a href="/runs/">Runs</a><a href="{base}" aria-current="page">Docs</a></nav>
-</header>
-<div class="shell">
+{chrome.header("/docs/")}
+<div class="shell{'' if toc else ' no-toc'}">
 <input type="checkbox" id="navtoggle" class="navtoggle" hidden>
 <label for="navtoggle" class="navbtn">Menu<span class="cur">{e(p.label)}</span></label>
 <aside class="side"><nav aria-label="Docs">
@@ -567,12 +554,9 @@ def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: P
 </article>
 <nav class="pager">{"".join(pager)}</nav>
 </main>
+{toc}
 </div>
-<footer><div class="foot">
-  <a class="bf" href="https://benchflow.ai"><img src="/benchflow-mark.svg" alt="" width="13" height="13">BenchFlow</a>
-  <span class="theme-pick" role="group" aria-label="Theme"><button type="button" data-theme-set="system">System</button><button type="button" data-theme-set="light">Light</button><button type="button" data-theme-set="dark">Dark</button></span>
-  <a href="mailto:xiangyi@benchflow.ai">Contact</a>
-</div></footer>
+{chrome.FOOTER}
 </body>
 </html>
 """
@@ -586,152 +570,160 @@ def check_output(out: Path) -> list[str]:
         text = f.read_text(encoding="utf-8")
         for w in BANNED_WORDS:
             if w in text.lower():
-                problems.append(f"{f.relative_to(out)}: banned word {w!r}")
+                problems.append(f"{f.relative_to(out)}: banned word (see BANNED_WORDS)")
         for pat in SECRET_PATTERNS:
             for m in re.finditer(pat, text):
                 problems.append(f"{f.relative_to(out)}: looks like a credential: {m.group(0)[:24]}...")
     return problems
 
 
-CSS = r"""/* robo-use docs. Generated by robouse/scripts/build_docs.py; edit the script, not this file. */
-@font-face { font-family: "Inter"; src: url("/fonts/Inter.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
-@font-face { font-family: "IBM Plex Mono"; src: url("/fonts/PlexMono-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
-@font-face { font-family: "IBM Plex Mono"; src: url("/fonts/PlexMono-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+CSS = r"""/* Robo Use docs. Generated by robouse/scripts/build_docs.py; edit the script, not this file.
+   Palette and type are the site's (site.css); the page surface comes from /surface.css, header and footer from /chrome.css. */
+@font-face { font-family: "Source Serif 4"; src: url("/fonts/SourceSerif4.woff2") format("woff2"); font-weight: 400 600; font-style: normal; font-display: swap; }
 
 :root {
-  --bg: #ffffff; --fg: #18181a; --muted: #6a6a70; --faint: #9a9aa0; --rule: #e7e7e4; --soft: #f6f6f3;
-  --code-bg: #f6f6f3; --code-fg: #1f1f22; --link: #18181a; --link-line: #c4c4c0; --accent: #1f5fd6; --mark: #fff6c8;
-  --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --bar: 56px;
+  --paper: #f7f7f7; --ink: #141414; --ink2: #3a3a3a; --muted: #737373; --faint: #a3a3a3;
+  --line: rgb(20 20 20 / .09); --line-strong: rgb(20 20 20 / .2); --accent: #3552f2;
+  --code-bg: rgb(20 20 20 / .045); --soft: rgb(20 20 20 / .05);
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --serif: "Iowan Old Style", "Charter", "Source Serif 4", Georgia, serif;
+  --mono: "Commit Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: light;
 }
 html[data-theme="dark"] {
-  --bg: #111113; --fg: #e9e9e6; --muted: #a0a0a6; --faint: #6f6f76; --rule: #26262a; --soft: #19191c;
-  --code-bg: #18181b; --code-fg: #e4e4e0; --link: #e9e9e6; --link-line: #55555c; --accent: #7aa7ff; --mark: #3a3520;
+  --paper: #09090a; --ink: #f2f2f2; --ink2: #d0d0d0; --muted: #8f8f8f; --faint: #5a5a5a;
+  --line: rgb(242 242 242 / .1); --line-strong: rgb(242 242 242 / .22); --accent: #6f86ff;
+  --code-bg: rgb(242 242 242 / .045); --soft: rgb(242 242 242 / .06);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) {
-    --bg: #111113; --fg: #e9e9e6; --muted: #a0a0a6; --faint: #6f6f76; --rule: #26262a; --soft: #19191c;
-    --code-bg: #18181b; --code-fg: #e4e4e0; --link: #e9e9e6; --link-line: #55555c; --accent: #7aa7ff; --mark: #3a3520;
+    --paper: #09090a; --ink: #f2f2f2; --ink2: #d0d0d0; --muted: #8f8f8f; --faint: #5a5a5a;
+    --line: rgb(242 242 242 / .1); --line-strong: rgb(242 242 242 / .22); --accent: #6f86ff;
+    --code-bg: rgb(242 242 242 / .045); --soft: rgb(242 242 242 / .06);
     color-scheme: dark;
   }
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; scroll-padding-top: calc(var(--bar) + 16px); }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 400 16px/1.65 var(--sans); font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; }
-a { color: var(--link); text-decoration: underline; text-decoration-color: var(--link-line); text-underline-offset: 3px; text-decoration-thickness: 1px; }
-a:hover { text-decoration-color: currentColor; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: 20px; }
+body { margin: 0; color: var(--ink); font: 400 16px/1.7 var(--sans); -webkit-font-smoothing: antialiased; }
+::selection { background: var(--accent); color: #fff; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 
-/* header */
-.bar { position: sticky; top: 0; z-index: 20; height: var(--bar); display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 28px; background: var(--bg); border-bottom: 1px solid var(--rule); }
-.bar .mark { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; text-decoration: none; }
-.bar nav { display: flex; gap: 22px; font-size: 14px; }
-.bar nav a { text-decoration: none; color: var(--muted); }
-.bar nav a:hover, .bar nav a[aria-current="page"] { color: var(--fg); }
-
-/* layout */
-.shell { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1180px; margin: 0 auto; }
-.side { position: sticky; top: var(--bar); align-self: start; height: calc(100vh - var(--bar)); overflow-y: auto; padding: 28px 20px 40px 28px; font-size: 14px; }
-.side .grp { margin: 22px 0 6px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
-.side .grp:first-child { margin-top: 0; }
-.side ul { list-style: none; margin: 0; padding: 0; }
-.side li a { display: block; padding: 4px 10px; margin-left: -10px; border-radius: 6px; color: var(--muted); text-decoration: none; line-height: 1.4; }
-.side li a:hover { color: var(--fg); background: var(--soft); }
-.side li a[aria-current="page"] { color: var(--fg); background: var(--soft); font-weight: 500; }
+/* layout: sidebar, page, on-this-page */
+.shell { display: grid; grid-template-columns: 210px minmax(0, 1fr) 190px; gap: 0 48px; max-width: 1120px; margin: 0 auto; padding: 44px 24px 0; }
+.shell.no-toc { grid-template-columns: 210px minmax(0, 1fr); }
+.side, .toc { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; font-size: 13.5px; }
+.grp { margin: 28px 0 6px; font: 600 13px/1.4 var(--sans); letter-spacing: 0; text-transform: none; color: var(--ink); }
+.side .grp:first-child, .toc .grp { margin-top: 4px; }
+.side ul, .toc ul { list-style: none; margin: 0; padding: 0; }
+.side li a { display: block; padding: 3px 0; color: var(--muted); line-height: 1.45; }
+.side li a:hover { color: var(--ink); text-decoration: none; }
+.side li a[aria-current="page"] { color: var(--ink); font-weight: 500; }
+.toc li a { display: block; padding: 3px 0 3px 12px; border-left: 1px solid var(--line); color: var(--muted); line-height: 1.4; }
+.toc li a:hover { color: var(--ink); text-decoration: none; }
+.toc li a.on { color: var(--ink); border-left-color: var(--ink); }
 .navbtn { display: none; }
-.doc { min-width: 0; padding: 36px 48px 64px; max-width: 860px; }
+.doc { min-width: 0; max-width: 700px; padding-bottom: 24px; }
 
 /* prose */
 article { overflow-wrap: break-word; }
-article h1 { font-size: 34px; line-height: 1.2; letter-spacing: -0.022em; font-weight: 650; margin: 0 0 20px; }
-article h2 { font-size: 23px; line-height: 1.3; letter-spacing: -0.015em; font-weight: 620; margin: 48px 0 12px; padding-top: 4px; }
-article h3 { font-size: 18px; line-height: 1.35; font-weight: 620; margin: 34px 0 8px; }
-article h4, article h5, article h6 { font-size: 16px; font-weight: 620; margin: 26px 0 6px; }
-article h2 code, article h3 code, article h4 code { font-size: 0.9em; }
-.hash { margin-left: 8px; color: var(--faint); text-decoration: none; opacity: 0; font-weight: 400; }
-h2:hover .hash, h3:hover .hash, h4:hover .hash, .hash:focus { opacity: 1; }
-article p, article ul, article ol, article blockquote { margin: 0 0 16px; }
-article ul, article ol { padding-left: 22px; }
+article h1 { font: 500 38px/1.12 var(--serif); letter-spacing: -.018em; margin: 0 0 18px; }
+article h2 { font: 500 25px/1.25 var(--serif); margin: 48px 0 12px; }
+article h3 { font: 600 17px/1.35 var(--sans); margin: 32px 0 8px; }
+article h2 code, article h3 code { font-size: .8em; }
+.hash { margin-left: 8px; color: var(--faint); opacity: 0; font: 400 .7em var(--sans); }
+h2:hover .hash, h3:hover .hash, .hash:focus { opacity: 1; text-decoration: none; }
+article p, article ul, article ol, article blockquote { margin: 0 0 14px; }
+article ul, article ol { padding-left: 20px; }
 article li { margin: 4px 0; }
 article li > ul, article li > ol { margin: 4px 0 6px; }
-article li > p { margin: 0 0 8px; }
 article strong { font-weight: 600; }
-article hr { border: 0; border-top: 1px solid var(--rule); margin: 36px 0; }
-article blockquote { padding: 2px 0 2px 16px; border-left: 2px solid var(--rule); color: var(--muted); }
-article img { display: block; max-width: 100%; height: auto; margin: 8px 0; border-radius: 6px; border: 1px solid var(--rule); }
+article hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+article blockquote { padding: 2px 0 2px 16px; border-left: 2px solid var(--line-strong); color: var(--muted); }
+article img { display: block; max-width: 100%; height: auto; margin: 8px 0; border-radius: 6px; border: 1px solid var(--line); }
 
 /* code */
-code { font-family: var(--mono); font-size: 0.86em; background: var(--code-bg); color: var(--code-fg); padding: 0.12em 0.34em; border-radius: 4px; overflow-wrap: anywhere; }
+code { font-family: var(--mono); font-size: .84em; background: var(--code-bg); color: var(--ink2); padding: .1em .35em; border-radius: 4px; overflow-wrap: anywhere; }
 .code { position: relative; margin: 0 0 18px; }
-pre { margin: 0; padding: 14px 16px; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; font: 400 13px/1.6 var(--mono); tab-size: 4; }
-pre.diagram { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace; }
-pre code { display: block; width: max-content; min-width: 100%; padding: 0; background: none; border-radius: 0; font-size: inherit; white-space: pre; overflow-wrap: normal; }
-.copy { position: absolute; top: 7px; right: 7px; padding: 3px 8px; font: 500 11.5px/1.4 var(--sans); color: var(--muted); background: var(--bg); border: 1px solid var(--rule); border-radius: 5px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+pre { margin: 0; padding: 14px 16px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; font: 400 13px/1.6 var(--mono); tab-size: 4; }
+pre code { display: block; width: max-content; min-width: 100%; padding: 0; background: none; border-radius: 0; font-size: inherit; color: var(--ink); white-space: pre; overflow-wrap: normal; }
+pre .p { color: var(--faint); user-select: none; }
+pre .o { color: var(--muted); }
+.copy { position: absolute; top: 8px; right: 8px; padding: 4px 7px; font:500 10px/1 var(--sans); letter-spacing:.06em; text-transform: uppercase; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; opacity: 0; transition: opacity .12s, color .12s; }
 .code:hover .copy, .copy:focus-visible { opacity: 1; }
-.copy:hover { color: var(--fg); }
+.copy:hover { color: var(--ink); }
 @media (hover: none) { .copy { opacity: 1; } }
 
 /* tables */
-.table { margin: 0 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--rule); border-radius: 8px; }
+.table { margin: 0 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; line-height: 1.5; }
-th, td { padding: 8px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
-th { font-weight: 600; background: var(--soft); white-space: nowrap; }
-tbody tr:last-child td { border-bottom: 0; }
-td code { font-size: 0.84em; overflow-wrap: break-word; }
-td:first-child code { white-space: nowrap; }
+th, td { padding: 8px 12px 8px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+th { font:500 10.5px/1.4 var(--sans); letter-spacing:.06em; text-transform: uppercase; color: var(--muted); border-bottom-color: var(--line-strong); white-space: nowrap; }
+td code { font-size: .82em; white-space: nowrap; }
 
 /* pager */
-.pager { display: flex; justify-content: space-between; gap: 16px; margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--rule); }
-.pager a { display: flex; flex-direction: column; gap: 2px; text-decoration: none; font-weight: 500; font-size: 15px; }
-.pager a span { font-size: 12px; font-weight: 400; color: var(--faint); }
+.pager { display: flex; justify-content: space-between; gap: 16px; margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); }
+.pager a { display: flex; flex-direction: column; gap: 4px; color: var(--ink); font-size: 15px; }
+.pager a:hover { color: var(--accent); text-decoration: none; }
+.pager a span { font:500 10.5px/1 var(--sans); letter-spacing:.06em; text-transform: uppercase; color: var(--faint); }
 .pager .next { margin-left: auto; text-align: right; }
 
-/* footer */
-footer { border-top: 1px solid var(--rule); }
-.foot { max-width: 1180px; margin: 0 auto; padding: 22px 28px 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; font-size: 13.5px; color: var(--muted); }
-.foot a { color: var(--muted); text-decoration: none; }
-.foot a:hover { color: var(--fg); }
-.foot .bf { display: inline-flex; align-items: center; gap: 7px; margin-right: auto; }
-html[data-theme="dark"] .foot .bf img { filter: invert(1); }
-@media (prefers-color-scheme: dark) { html:not([data-theme]) .foot .bf img { filter: invert(1); } }
-.theme-pick { display: inline-flex; padding: 2px; border: 1px solid var(--rule); border-radius: 7px; }
-.theme-pick button { font: 500 12px/1 var(--sans); color: var(--muted); background: none; border: 0; border-radius: 5px; padding: 6px 9px; cursor: pointer; }
-.theme-pick button:hover { color: var(--fg); }
-.theme-pick button[aria-pressed="true"] { color: var(--fg); background: var(--soft); }
+/* /bridge.css (the site's shared palette and type, loaded after this file) is written for pages with their own
+   layout; these rules keep the docs grid aligned with the shared header whatever it sets for .side and h2. */
+.shell > .side { padding-left: 0; top: 24px; height: auto; }
+.doc article h2 { font-size: 25px; letter-spacing: 0; }
 
-/* mobile */
-@media (max-width: 860px) {
-  .bar { padding: 0 18px; }
-  .shell { display: block; }
-  .navbtn { display: flex; align-items: center; gap: 10px; position: sticky; top: var(--bar); z-index: 15; padding: 10px 18px; background: var(--bg); border-bottom: 1px solid var(--rule); font-size: 14px; font-weight: 500; cursor: pointer; user-select: none; }
-  .navbtn::before { content: ""; width: 14px; height: 10px; border-top: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; box-shadow: inset 0 4.25px 0 -3px currentColor; }
-  .navbtn .cur { color: var(--muted); font-weight: 400; }
-  .side { display: none; position: static; height: auto; padding: 8px 18px 20px; border-bottom: 1px solid var(--rule); }
+@media (max-width: 1080px) { .shell { grid-template-columns: 200px minmax(0, 1fr); } .toc { display: none; } }
+@media (max-width: 760px) {
+  .shell, .shell.no-toc { display: block; padding: 20px 20px 0; }
+  .navbtn { display: flex; align-items: center; gap: 10px; padding: 10px 0; margin-bottom: 18px; border-bottom: 1px solid var(--line); font:500 10.5px/1.2 var(--sans); letter-spacing:.06em; text-transform: uppercase; color: var(--muted); cursor: pointer; user-select: none; }
+  .navbtn .cur { color: var(--ink); font: 500 14px/1.2 var(--sans); letter-spacing: 0; text-transform: none; }
+  .side { display: none; position: static; max-height: none; padding-bottom: 12px; }
   .navtoggle:checked ~ .side { display: block; }
-  .doc { padding: 26px 18px 48px; }
-  article h1 { font-size: 28px; }
-  article h2 { font-size: 21px; margin-top: 40px; }
+  article h1 { font-size: 31px; }
+  .doc article h2 { font-size: 22px; margin-top: 40px; }
   pre { font-size: 12.5px; }
-  .foot { padding: 20px 18px 28px; }
 }
-@media print { .bar, .side, .navbtn, .pager, footer, .copy { display: none !important; } .shell { display: block; } }
+@media print { .side, .toc, .navbtn, .pager, .copy { display: none !important; } .shell { display: block; } }
 """
 
-JS = r"""// Copy buttons for code blocks. Generated by robouse/scripts/build_docs.py.
+JS = r"""// Copy buttons for code blocks, prompt styling for console blocks, and the on-this-page highlight.
+// Generated by robouse/scripts/build_docs.py.
 document.querySelectorAll(".code").forEach(function (box) {
+  var code = box.querySelector("code");
+  var text = code.textContent;
+  var console = code.classList.contains("language-console");
+  if (console) {  // "$ cmd" lines are commands, the rest is output; copy only the commands
+    code.innerHTML = text.split("\n").map(function (l) {
+      var esc = l.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+      return l.indexOf("$ ") === 0 ? '<span class="p">$ </span>' + esc.slice(2) : '<span class="o">' + esc + "</span>";
+    }).join("\n");
+  }
+  var copyText = console ? text.split("\n").filter(function (l) { return l.indexOf("$ ") === 0; }).map(function (l) { return l.slice(2); }).join("\n") : text;
   var b = document.createElement("button");
   b.type = "button"; b.className = "copy"; b.textContent = "Copy";
   b.addEventListener("click", function () {
-    var t = box.querySelector("code").innerText;
-    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () {
+    (navigator.clipboard ? navigator.clipboard.writeText(copyText) : Promise.reject()).then(function () {
       b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1400);
     }, function () { b.textContent = "Select and copy"; });
   });
   box.appendChild(b);
 });
+(function () {
+  var links = [].slice.call(document.querySelectorAll(".toc a"));
+  if (!links.length) return;
+  var heads = links.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); });
+  function update() {
+    var cur = 0;
+    heads.forEach(function (h, i) { if (h && h.getBoundingClientRect().top < 120) cur = i; });
+    links.forEach(function (a, i) { a.classList.toggle("on", i === cur); });
+  }
+  document.addEventListener("scroll", update, { passive: true });
+  update();
+})();
 """
 
 
@@ -739,17 +731,19 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True, type=Path, help="output directory (replaced if it was built by this script)")
     ap.add_argument("--base", default="/docs/", help="URL path the output is served under (default /docs/)")
+    ap.add_argument("--chrome", type=Path, help="the site's tools/chrome.py (default: ../../tools/chrome.py from --out)")
     src = ap.add_mutually_exclusive_group()
-    src.add_argument("--ref", default="HEAD", help="git revision to read README.md and docs/ from (default HEAD)")
+    src.add_argument("--ref", default="HEAD", help="git revision to read docs/ from (default HEAD)")
     src.add_argument("--worktree", action="store_true", help="read the working tree instead (uncommitted edits included)")
     args = ap.parse_args()
     base = "/" + args.base.strip("/") + "/" if args.base.strip("/") else "/"
     out = args.out.expanduser().resolve()
-    written = build(out, base, Source(None if args.worktree else args.ref))
+    chrome = load_chrome((args.chrome or out.parent.parent / "tools" / "chrome.py").expanduser().resolve())
+    written = build(out, base, Source(None if args.worktree else args.ref), chrome)
     problems = check_output(out)
     for f in sorted(out.rglob("*.html")):
         for m in re.finditer(r"\b[A-Z][A-Z_]*PLACEHOLDER[A-Z_]*\b|\bTODO\b|\bTBD\b", f.read_text(encoding="utf-8")):
-            print(f"warning: {f.relative_to(out)}: unfinished text {m.group(0)!r} (source doc still being written?)", file=sys.stderr)
+            print(f"warning: {f.relative_to(out)}: unfinished text {m.group(0)!r}", file=sys.stderr)
     size = sum(f.stat().st_size for f in out.rglob("*") if f.is_file())
     print(f"wrote {len(written)} pages to {out} ({size / 1024:.0f} KiB)")
     if problems:

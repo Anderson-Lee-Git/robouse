@@ -1,41 +1,39 @@
-# The `robo` command
+# robo CLI
 
-`robo` is the agent's only way to act. It is a single standard-library Python file that sends one JSON request per call over the episode's Unix socket (`$ROBOUSE_SOCKET`). The runner puts it first on the agent's `PATH`.
+`robo` is the agent's only way to act. It is one standard-library Python file that sends one JSON request per call to the episode server at `$ROBOUSE_SOCKET`. The runner puts it first on the agent's `PATH`; `pip install robouse` also installs it.
 
-| Command | What it does |
+```console
+$ robo help
+`robo`: the only way an agent touches the robot. Standard library only.
+
+Finds the episode socket from $ROBOUSE_SOCKET (set by the runner) and sends one JSON request.
+
+  robo info                          action space, skills, step budget
+  robo observe [--image] [--camera C] robot and object state; --image also saves a camera PNG and prints its path
+  robo act A1 A2 ... [--repeat N]    apply one low-level action N times (N <= 50)
+  robo move-to X Y Z [--grip G]      move the hand toward a point (skill; may be disabled per task)
+  robo grip G [--steps N]            hold position and set the gripper (+1 close, -1 open)
+  robo skill NAME [ARG ...]          run a named high-level skill listed by `robo info` (only some tasks have them)
+  robo done ["message"]              end the episode and ask for scoring
+  robo give-up ["message"]           end the episode without claiming success
+Add --json to any command for raw JSON output.
+```
+
+## Commands
+
+| Command | Notes |
 |---|---|
-| `robo info` | Action space (names, bounds, meaning), available skills, steps used and budget |
-| `robo observe` | Robot and object state as numbers |
-| `robo observe --image [--camera C]` | Also saves a camera image into `observations/` in the workspace and prints its path; `--camera` picks one of the task's cameras |
-| `robo act A1 A2 ... [--repeat N]` | Apply one low-level action N times (N ≤ 50, or the task's `max_repeat`) |
-| `robo move-to X Y Z [--grip G] [--max-steps N] [--tol T]` | Skill: move the gripper toward a point with a proportional controller; stops within `--tol` metres (default 0.01) or after `--max-steps` steps (default 100, at most 150) |
-| `robo grip G [--steps N]` | Skill: hold position and set the gripper (+1 close, -1 open) for N steps (default 15) |
-| `robo done "summary"` | End the episode and ask for scoring |
-| `robo give-up "reason"` | End the episode without claiming success |
+| `robo info` | Action names and bounds, available skills, steps used and budget. On vision tasks also the visible fields and each camera's size and projection matrix. |
+| `robo observe` | State as numbers. `--image` also saves a PNG from the task's camera into the workspace's `observations/` and prints its path. On vision tasks it saves one image per camera on every call; `--camera C` picks one of them. |
+| `robo act A1 A2 ...` | One low-level action, applied `--repeat N` times. N is clipped to 50, or to the task's `max_repeat`. |
+| `robo move-to X Y Z` | Skill: moves the hand toward a point. `--grip G` sets the gripper during the move; stops within `--tol` metres (default 0.01) or after `--max-steps` steps (default 100, at most 150). |
+| `robo grip G` | Skill: holds position and sets the gripper for `--steps N` steps (default 15). |
+| `robo skill NAME` | A named skill, when `robo info` lists one. No task in the 0.1.0 package has them. |
+| `robo done "message"` | Ends the episode and asks for scoring. |
+| `robo give-up "reason"` | Ends the episode without claiming success. |
 
-Add `--json` to any command for the raw response. `robo help` prints the command list.
-
-Skills are ordinary sequences of low-level actions executed by the server; each simulated step counts against the budget. A task can disable them (`skills: false` in the `robouse:` block of `task.md`), in which case only `robo act` moves the robot. A task can also lower the limit on `--repeat` (and on `grip --steps`) with `max_repeat`; larger values are clipped to the limit, not rejected.
+Skills are sequences of low-level actions run by the server, and each simulated step counts against the budget. A task can turn skills off (`skills: false`), leaving only `robo act`. Without an episode, commands print an error and exit 1: `error: no episode: ROBOUSE_SOCKET is not set`, or `error: episode server is not running (episode may have finished)`.
 
 ## Protocol
 
-Request: one JSON object per connection, newline-terminated, e.g. `{"op": "act", "action": [0, 0, -1, 1], "repeat": 5}`. Response: `{"ok": true, "result": {...}}` or `{"ok": false, "error": "..."}`. When an action ends the episode (goal reached in `first` mode, budget exhausted), the result carries `"episode": "finished: ..."` and further motion requests are rejected.
-
-Operations: `info`, `status`, `observe`, `act`, `move_to`, `grip`, `done`, `give_up`, and `shutdown`, which `robo` does not expose: it stops the server, which closes an unfinished episode as `agent_exited` and judges it like any other ending (the BenchFlow verifier uses it). There is no reset, teleport, state-setting or code-evaluation operation.
-
-## Example session
-
-```
-$ robo observe
-state:
-  hand_pos: [0.0046, 0.6014, 0.1951]
-  gripper_open: 1.0
-  obj1_pos: [-0.0125, 0.6892, 0.02]
-  goal_pos: [-0.0233, 0.8792, 0.1822]
-steps_used: 0
-max_steps: 500
-$ robo move-to -0.0125 0.6892 0.05 --grip -1
-reached: True
-...
-$ robo done "placed the puck at the goal"
-```
+One JSON object per connection, newline-terminated, for example `{"op": "act", "action": [0, 0, -1, 1], "repeat": 5}`. The response is `{"ok": true, "result": {...}}` or `{"ok": false, "error": "..."}`. Operations: `info`, `status`, `observe`, `act`, `move_to`, `grip`, `skill`, `done`, `give_up` and `shutdown`. `robo` does not expose `shutdown`, which ends the episode as `agent_exited`. There is no reset, teleport or state-setting operation.
