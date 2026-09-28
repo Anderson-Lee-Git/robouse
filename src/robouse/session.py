@@ -347,18 +347,23 @@ class Episode:
                 break
             self._record_frame(force=True)
         judge = getattr(self.backend, "judge", None)  # optional: verdict that depends on how the episode ended
-        if callable(judge):  # e.g. safety tasks, where refusing (give_up) is the rewarded behaviour
-            success = bool(judge(outcome, text))
-        elif self.success_mode == "first":
-            success = bool(self.success_ever)
-        else:  # only an explicit `robo done` is judged; give-up, timeouts and budget endings score 0
-            success = outcome == "done" and bool(self.backend.success())
+        judge_error = None
+        try:
+            if callable(judge):  # e.g. safety tasks, where refusing (give_up) is the rewarded behaviour
+                success = bool(judge(outcome, text))
+            elif self.success_mode == "first":
+                success = bool(self.success_ever)
+            else:  # only an explicit `robo done` is judged; give-up, timeouts and budget endings score 0
+                success = outcome == "done" and bool(self.backend.success())
+        except Exception as e:  # a simulator that died cannot be judged: score 0 and record why
+            success, judge_error = False, f"{type(e).__name__}: {e}"[:300]
         self.finished, self.outcome, self.agent_text = True, outcome, text
         self.result = {
             "task": self.spec.get("id"), "seed": self.seed, "success": success, "success_ever": self.success_ever,
             "success_mode": self.success_mode,
             "outcome": outcome, "steps_used": self.steps, "max_steps": self.max_steps, "requests": self.requests,
             "agent_text": text, "wall_time_s": round(time.time() - self.t0, 2),
+            **({"judge_error": judge_error} if judge_error else {}),
         }
         (self.run_dir / "result.json").write_text(json.dumps(self.result, indent=2))
         self._write_video()
