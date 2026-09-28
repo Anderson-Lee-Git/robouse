@@ -66,6 +66,7 @@ exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes
 # and not distributed) and any suite still in development.
 "tasks/arc-style" = "robouse/bundled_tasks/arc-style"
 "tasks/crazyflie" = "robouse/bundled_tasks/crazyflie"
+"tasks/dexhand" = "robouse/bundled_tasks/dexhand"
 "tasks/dexjoco" = "robouse/bundled_tasks/dexjoco"
 "tasks/drone" = "robouse/bundled_tasks/drone"
 "tasks/driving" = "robouse/bundled_tasks/driving"

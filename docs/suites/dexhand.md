@@ -1,0 +1,115 @@
+# Dexhand suite (Shadow Hand and LEAP Hand on a positioner)
+
+The dexhand suite has 7 tasks in `tasks/dexhand/`: three for the Shadow Dexterous Hand and four for the LEAP Hand. The hand is the robot: it hangs from a 6-axis positioner above a table and does dexterous manipulation (regrasping, pouring, turning a wheel, pressing buttons, an in-hand flip). It is distinct from the DexJoCo suite, where Allegro hands sit on Panda arms.
+
+- Backend: `src/robouse/backends/dexhand.py` (declaration, controllers, skills, monitor, judge, reference solutions) and `src/robouse/backends/dexhand_sim/scene.py` (scene builder and hand mounting).
+- Generator: `python adapters/dexhand/generate.py`.
+- Shared embodiment base: `src/robouse/backends/embodied.py`.
+
+![Shadow Hand pouring balls from a cup into a bowl](../img/suites/dexhand.webp)
+
+## Models and licences
+
+Both hands come from MuJoCo Menagerie at commit `8161bba2...` (hashes in `assets/menagerie/embodiments.json`). Each is the upstream `right_hand.xml` attached unchanged: kinematics, position actuators, gains, force ranges, joint damping, contact exclusions, geom friction and solver parameters are as shipped.
+
+| Hand | Menagerie folder | Licence | Joints / actuators |
+|---|---|---|---|
+| Shadow Dexterous Hand E3M5, right | `shadow_hand` | Apache-2.0 | 24 joints, 20 position actuators: 2 wrist, 5 thumb, 3 each for index/middle/ring (the two distal joints are tendon-coupled and share one `..J0` actuator whose target is their sum), 4 for the little finger |
+| LEAP Hand, right | `leap_hand` | MIT | 16 joints, 16 position actuators: index/middle/ring `mcp`, `rot`, `pip`, `dip`; thumb `cmc`, `axl`, `mcp`, `ipl` |
+
+## Scene and mounting
+
+World frame: +x forward (away from the positioner's home), +y left, +z up. Floor at z = 0; the table top is at z = 0.40 and spans x -0.35..0.55, y -0.35..0.35.
+
+The hand hangs from a positioner, as in lab setups where a hand is carried by an arm or gantry. The instructions say so. The positioner has three prismatic joints (x, y, z) and three revolute joints in yaw-pitch-roll order. At zero angles the palm faces down and the fingers point along +x. ROLL turns the hand about its long axis (+90: palm faces +y; 180: palm up), PITCH tips the fingers down (+), YAW turns about the vertical. The Shadow Hand is mounted at its wrist joint; the LEAP Hand at the centre of the back of its palm. Only the hand has collision geometry; the grey link behind it is visual.
+
+Objects are free rigid bodies. Their sliding friction is raised to 1.2 (rubber-coated; the small balls 0.8), because MuJoCo uses the larger coefficient of a pair; the hands keep their upstream friction (Shadow 1.0, LEAP 0.2 body / 0.5 fingertips). Grasps are friction grasps only: no welds, no teleports, no mocap.
+
+Physics: 2 ms steps, `implicitfast` integrator, elliptic friction cones, each hand's upstream `impratio` (Shadow 10, LEAP 100), no noslip iterations (grasps held without them). Container bottoms are 15 mm thick and the table is 8 cm thick, because thinner plates let fast small balls and the marker tunnel through.
+
+## Action and controllers
+
+One step is 40 ms (20 physics steps). The action is two groups, 26 values for Shadow and 22 for LEAP, each in [-1, 1]. All zeros holds.
+
+| Group | Mode | Components | Scale |
+|---|---|---|---|
+| `wrist.pose_delta` | `ee_delta_pose`, world frame | DX DY DZ DROLL DPITCH DYAW | x 1 cm on the positioner's x, y, z target; x 4 degrees on its roll, pitch, yaw target |
+| `hand.joints` | `joint_delta` | one per hand actuator (upstream order) | added to the actuator's position target, x 10 % of its control range per step |
+
+Controllers:
+
+- Positioner: joint-space PD with gravity feed-forward (`qfrc_bias`), recomputed every physics step. Gains come from the joint-space inertia at the start pose (40 rad/s, damping ratio 0.9). Motor limits are 200 N (x, y), 300 N (z) and 40 N m (rotations). The target never runs more than 3 cm or 15 degrees ahead of the measured pose, so pushing into the table stalls instead of building up force.
+- Hand: the upstream position servos. A finger stopped by an object keeps squeezing with a force set by the remaining target error and the actuator's gain and force range.
+
+## Observation, skills, events
+
+`robo observe` returns:
+
+- `hand`: wrist pose and targets, `palm_pos` (a point about 3.5 cm in front of the palm), `palm_normal`, `finger_dir`, fingertip positions, joint positions and targets normalised to [-1, 1], and per-finger contacts;
+- `objects`: pose and what each object touches, cube face normals, and the marker's end points;
+- `table`, `landmarks` (bowl, holders, valve angle, buttons with depth), `progress`, `safety_events`.
+
+Cameras: `front` (default), `side`, `top`, `back`.
+
+Skills are generators that yield ordinary actions, so they share the budget and the video:
+
+- `move_to X Y Z [SPEED]`, `move_by DX DY DZ [SPEED]`: straight line of the palm point with the orientation held. Each reports `reached` or `blocked`.
+- `rotate ROLL PITCH YAW [SPEED]`: absolute positioner angles, turning about the palm point.
+- `turn_about X Y DEG [SPEED]`: swing the hand about a vertical line, yawing with it.
+- `grasp power|pinch|tripod`: close those fingers toward a fully closed posture until they stall. Reports which fingers touch what.
+- `open` (gentle), `pose NAME` (`open`, `flat`, `relaxed`, `point`, `fist`, `power_ready`, `pinch_ready`, `tripod_ready`), `set_joint NAME DEG`, `wait [SECONDS]`.
+
+None of the skills attaches anything or reads hidden state. They only read public observation fields and the controller's own targets.
+
+Events: an object reaching the floor is recorded as "dropped" if the hand had lifted it, else "knocked off the table". In the in-hand task, the cube touching the table is an event. Any event fails the task.
+
+## Tasks
+
+Success is judged from the physical state after `robo done` and a 10-step hold.
+
+| Task | Hand | Goal | Success rule | Budget |
+|---|---|---|---|---|
+| shadow-cube-face-up | Shadow | Turn a 5.6 cm coloured cube so red is up (reorient by regrasp) | Red normal within 20 degrees of up; cube on the table, not touched by the hand; never fell off | 1200 |
+| shadow-pour-balls | Shadow | Lift a cup holding six balls, pour into a bowl, set the cup down | At least 4 balls inside the bowl; cup upright (within 20 degrees) on the table | 1200 |
+| shadow-turn-valve | Shadow | Turn a three-spoke hand wheel (friction 0.15 N m) at least 180 degrees counter-clockwise | Wheel angle at least 180 degrees from its start (yaw range forces two strokes) | 1000 |
+| leap-lift-ball | LEAP | Lift a 6.6 cm ball out of a ring stand | Ball centre at least 0.15 m above the table, touching the hand, not the table, slower than 5 cm/s | 700 |
+| leap-pen-to-holder | LEAP | Move a 16.6 cm marker from a narrow stand into a pen cup | Marker's lower end inside the cup (radius, below rim); hand not touching it | 1000 |
+| leap-press-buttons | LEAP | Press spring buttons green, blue, green; never red | Click sequence exactly [green, blue, green] (a click is at least 8 mm of travel) | 800 |
+| leap-cube-in-hand | LEAP | Palm up, flip a cube lying on the palm so red is up (in-hand, large tolerance) | Red normal within 25 degrees of up; cube on the hand, not the table; wrist angles within 15 degrees of start; cube never touched the table | 600 |
+
+In-hand versus regrasp:
+
+- `leap-cube-in-hand` is the in-hand task. The fingers roll the cube over its rear edge onto the palm while the wrist stays put, and the tolerance is large (25 degrees).
+- `shadow-cube-face-up` is reorientation by regrasp: pick up, turn the forearm, put down, let go.
+
+A scripted in-hand rotation about the vertical (finger gaits, pushes, couples) never exceeded about 10 degrees without the cube tumbling, so that version is not included.
+
+## Validation
+
+Real runner, 2026-09-28, on this Mac's CPU:
+
+| Harness | Result | Runs |
+|---|---|---|
+| oracle | 7/7 | `runs/emb-oracle-dexhand/` |
+| noop | 0/7 | `runs/emb-noop-dexhand/` |
+
+- Oracle episodes take 8-14 s wall time and 45-586 steps. The reference solutions use only the socket: skills plus raw `robo act` for the in-hand flip.
+- Frames from every recording were checked. They show no interpenetration, no flying objects and no teleports.
+- Plausible-but-wrong attempts all scored 0:
+  - ball lifted only 8 cm;
+  - cube held red-up in the hand instead of put down;
+  - cup poured beside the bowl;
+  - marker released beside the pen cup;
+  - buttons pressed green, red, blue;
+  - valve turned about 70 degrees.
+- Sensitivity of the regrasp and in-hand solutions to the start pose:
+  - cube face-up: 6/6 cube positions within 2 cm (tripod grasp; the power grasp failed 2/6 on release);
+  - in-hand flip: 6/7 cube offsets within 1.5 cm.
+
+## Limitations
+
+- The positioner is an idealised Cartesian-plus-Euler stage, not a real arm. It has no reach limits beyond its joint ranges and no link collisions.
+- The Shadow Hand's upstream actuators are low-gain (kp 0.5-1, 1 N m force limit). Thin objects slip or are squeezed out of its grasps, so the marker task uses the LEAP Hand.
+- The LEAP Hand's upstream contacts are very stiff (`solref` 1e-4, `impratio` 100). Fast finger motions can flick objects, which is why `open` ramps slowly.
+- Contacts per finger are exact simulator contacts, a stand-in for tactile sensing. State is exact, with no sensor noise.
+- The reference solutions are scripts tuned on the default scene; the simulation is deterministic, so they reproduce exactly.

@@ -12,7 +12,7 @@ if [ -n "${FINAL_PAIRS:-}" ]; then read -r -a PAIRS <<< "$FINAL_PAIRS"; fi
 # Embodiment suites (not arms): quadruped humanoid mobile-manip dexhand crazyflie (robot models: `robouse fetch-assets`);
 # driving needs MetaDrive in its own venv (docs/suites/driving.md).
 SUITES=("$@"); [ ${#SUITES[@]} -gt 0 ] || SUITES=(metaworld gymrobotics libero libero-style arc-style robo-use-families safety vision hard
-  crazyflie quadruped driving)
+  crazyflie quadruped driving dexhand)
 for spec in "${PAIRS[@]}"; do
   IFS=: read h m c tag <<< "$spec"
   (
