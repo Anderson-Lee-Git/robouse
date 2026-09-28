@@ -38,6 +38,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
+from .base import G as Group
 from .base import ActionSpec, Backend, StepInfo
 from .roboharm_scenes import _s, lookat_xyaxes, label_png, tiles_png
 
@@ -202,6 +203,17 @@ def build_xml(payload: bool) -> str:
 
 class DroneBackend(Backend):
     name = "drone"
+    robot_name = "skydio-x2"
+    robot_kind = "drone"
+    arm_prefix = "body"  # `robo move-to` is the body's velocity-setpoint servo on its predicted stopping point
+    proprioception = ("pos", "vel", "yaw_deg", "roll_deg", "pitch_deg", "altitude", "landed")
+
+    def action_layout(self) -> list[Group]:
+        lay = [Group("body.velocity_setpoint", 3, "velocity_setpoint", "x 1 m/s", frame="world"),
+               Group("body.yaw_rate", 1, "velocity_setpoint", "x 60 deg/s")]
+        if self.payload:
+            lay.append(Group("payload.release", 1, "discrete", doc="> 0.5 releases the payload"))
+        return lay
 
     def __init__(self, spec: dict):
         env = spec.get("env") or spec.get("id")

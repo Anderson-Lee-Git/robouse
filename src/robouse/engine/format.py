@@ -1,125 +1,46 @@
-"""robouse tasks as a BenchFlow task format.
+"""robouse tasks as a BenchFlow task format, on BenchFlow's embodied layer.
 
-A robouse task folder (``task.md`` with a ``robouse:`` block, ``oracle/solve.sh``, ``verifier/test.sh``) is
-the source form. BenchFlow loads it through the ``benchflow.task_formats`` entry point, which calls
-:meth:`RobouseTaskFormat.materialize` to write an ordinary BenchFlow task package:
+A robouse task folder (``task.md`` with a ``robouse:`` block, ``oracle/solve.sh``, ``verifier/test.sh``) is the
+source form. BenchFlow loads it through the ``benchflow.task_formats`` entry point. The package layout, the agent
+image, the compose topology (agent + trusted ``simulator`` sidecar), the physical verifier and seeded variants come
+from `benchflow.embodied.sidecar.EmbodiedTaskFormat` (BenchFlow's docs/embodied.md). robouse supplies:
 
-    <out_root>/runtime-<hash>/          simulator image build context (shared by every task built from it)
-      Dockerfile  requirements.txt  sim-entry.sh  robouse/src/robouse/   (this robouse package)
-    <out_root>/tasks/<key>/<task-id>/   the native package; <key> hashes the task, the runtime and the options
-      task.md                           schema 1.3: the robouse block moves to metadata.robouse; verifier.service
-                                        is `simulator`
-      environment/Dockerfile            agent (`main`) image: python + numpy + the `robo` client only
-      environment/robo                  copy of robouse/agent_cli.py (standard library only)
-      environment/docker-compose.yaml   `main` + trusted `simulator` service (embeds the task definition)
-      verifier/{verifier.md,test.sh,verify.py}   runs in `simulator`
-      oracle/solve.sh + oracle/vendor/  reference solution; drives the robot through the socket only
+  - the simulator image: templates/sim/Dockerfile + requirements.txt + this robouse package (the backends);
+  - the episode factory ``robouse.embodied:episode_from_task``;
+  - the reference solutions: oracle/solve.sh with the robouse oracle code vendored (and, for Meta-World, the
+    scripted expert policies), driving the robot only through the socket.
 
-The build is deterministic for the same inputs and cached: a second load of an unchanged task reuses the
-package. ``noop=True`` writes a negative-control oracle that only looks (`robo info`, `robo observe`) and
-exits without `robo done`; it must score 0.
+``materialize_variant(noop=True)`` writes a negative-control oracle that only looks (`robo info`, `robo observe`)
+and exits without `robo done`; it must score 0. ``seed=N`` writes ``<task-id>--seed-N`` (``bench eval run --seeds``).
 """
 from __future__ import annotations
 
-import hashlib
 import io
 import json
-import os
 import re
-import secrets
 import shutil
-import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
 
-import yaml
+from benchflow.embodied.sidecar import EmbodiedTaskFormat, vendor_embodied
 
 from ..tasks import load_task
 
 PKG = Path(__file__).resolve().parents[1]  # the robouse package
 TEMPLATES = Path(__file__).resolve().parent / "templates"
-FORMAT_VERSION = "2"
-WALL_MARGIN_S = 900  # the episode clock starts when the simulator is up, before BenchFlow installs the harness
 METAWORLD_VERSION = "3.1.1"  # the version pinned in templates/sim/requirements.txt
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "bundled_tasks", "robocasa_episodes", "engine")
 
 
-def _frontmatter(task_md: Path) -> dict | None:
-    text = task_md.read_text()
-    if not text.startswith("---"):
-        return None
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return None
-    meta = yaml.safe_load(parts[1])
-    return meta if isinstance(meta, dict) else None
+def _asset_manifests() -> dict[str, Path]:
+    """Provenance manifests of the robot meshes (the image downloads the files at build time)."""
+    shipped = PKG / "assets_provenance"
+    if shipped.is_dir():
+        return {p.name: p for p in sorted(shipped.glob("*.json"))}
+    root = PKG.parents[1] / "assets" / "menagerie"
+    return {"menagerie.json": root / "provenance.json", "skydio_x2.json": root / "skydio_x2" / "PROVENANCE.json"}
 
-
-def is_robouse_task(task_dir: Path) -> bool:
-    """A robouse source task: task.md whose frontmatter has a top-level `robouse:` block."""
-    md = Path(task_dir) / "task.md"
-    try:
-        if not md.is_file():
-            return False
-        meta = _frontmatter(md)
-    except (OSError, yaml.YAMLError):
-        return False
-    return bool(meta) and isinstance(meta.get("robouse"), dict)
-
-
-def _tree_files(root: Path, ignore=_IGNORE) -> list[Path]:
-    out = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        skip = ignore(dirpath, dirnames + filenames)
-        dirnames[:] = sorted(d for d in dirnames if d not in skip)
-        out += [Path(dirpath) / f for f in sorted(filenames) if f not in skip]
-    return out
-
-
-def _hash_tree(h, root: Path, ignore=_IGNORE) -> None:
-    for f in _tree_files(root, ignore):
-        h.update(str(f.relative_to(root)).encode() + b"\0" + f.read_bytes() + b"\0")
-
-
-def _atomic_dir(dst: Path, build) -> Path:
-    """Build a directory in a temp sibling, then rename it into place (safe under concurrent loads)."""
-    if dst.exists():
-        return dst
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = Path(tempfile.mkdtemp(prefix=f".{dst.name}.", dir=dst.parent))
-    try:
-        build(tmp)
-        try:
-            tmp.rename(dst)
-        except OSError:
-            if not dst.exists():
-                raise
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-    return dst
-
-
-# ---- simulator runtime ----------------------------------------------------------------------------------
-
-def runtime_hash() -> str:
-    h = hashlib.sha256(FORMAT_VERSION.encode())
-    _hash_tree(h, PKG)
-    _hash_tree(h, Path(__file__).resolve().parent, shutil.ignore_patterns("__pycache__", "*.pyc"))  # this module + templates
-    return h.hexdigest()[:16]
-
-
-def ensure_runtime(out_root: Path) -> Path:
-    """The simulator build context for this robouse package (written once per package version/content)."""
-    def build(d: Path) -> None:
-        for name in ("Dockerfile", "requirements.txt", "sim-entry.sh"):
-            shutil.copy2(TEMPLATES / "sim" / name, d / name)
-        shutil.copytree(PKG, d / "robouse" / "src" / "robouse", ignore=_IGNORE)
-
-    return _atomic_dir(Path(out_root) / f"runtime-{runtime_hash()}", build)
-
-
-# ---- oracle vendoring -----------------------------------------------------------------------------------
 
 def _metaworld_policies(dst: Path) -> None:
     """Copy Meta-World's scripted expert policies (pure numpy) to dst/metaworld/policies.
@@ -155,154 +76,81 @@ def _metaworld_policies(dst: Path) -> None:
         '"""Vendored subset of Meta-World (MIT): only the scripted expert policies (numpy only)."""\n')
 
 
-NOOP_SOLVE = """#!/bin/bash
-# Negative control (noop oracle): look at the robot, never move it, exit without `robo done`.
-# The verifier must close the episode itself (outcome agent_exited) and the reward must be 0.
-set -euo pipefail
-robo info
-robo observe
-"""
+class RobouseTaskFormat(EmbodiedTaskFormat):
+    """BenchFlow task format (entry point `benchflow.task_formats: robouse`)."""
 
+    name = "robouse"
+    block_key = "robouse"
+    episode_factory = "robouse.embodied:episode_from_task"
+    format_version = "3"
+    task_name_prefix = "robouse/"
+    sim_cpus = "2"
+    sim_memory = "3G"
 
-def _write_oracle(task, dst: Path, token: str, noop: bool) -> None:
-    dst.mkdir(parents=True)
-    if noop:
-        (dst / "solve.sh").write_text(NOOP_SOLVE)
+    @property
+    def prompt_prefix(self) -> str:  # the same preamble a local robouse run gives every harness
+        from ..harnesses import PROMPT_PREFIX
+
+        return PROMPT_PREFIX
+
+    def runtime_hash_inputs(self) -> list[Path]:
+        return [PKG, TEMPLATES, *_asset_manifests().values()]
+
+    def build_runtime(self, dst: Path) -> None:
+        for name in ("Dockerfile", "requirements.txt"):
+            shutil.copy2(TEMPLATES / "sim" / name, dst / name)
+        pkg = dst / "robouse" / "src" / "robouse"
+        shutil.copytree(PKG, pkg, ignore=_IGNORE)
+        prov = pkg / "assets_provenance"
+        prov.mkdir(exist_ok=True)
+        for name, src in _asset_manifests().items():
+            if src.exists() and not (prov / name).exists():
+                shutil.copy2(src, prov / name)
+
+    def task_id(self, task_dir: Path, meta: dict) -> str:
+        return load_task(task_dir).id
+
+    def write_oracle(self, task_dir: Path, meta: dict, dst: Path, token: str) -> None:
+        task = load_task(task_dir)
+        dst.mkdir(parents=True)
+        vendor = dst / "vendor"
+        shutil.copytree(PKG, vendor / "robouse", ignore=_IGNORE)
+        vendor_embodied(vendor)  # robouse's oracles import benchflow.embodied (the socket client)
+        if task.spec.get("backend") == "metaworld":
+            _metaworld_policies(vendor)
+        extra = task.oracle_script.parent
+        for f in sorted(extra.iterdir()):  # data the oracle reads (e.g. DexJoCo demo.json, BEHAVIOR plan.json)
+            if f.name != "solve.sh" and f.is_file():
+                shutil.copy2(f, dst / f.name)
+        body = [ln for ln in task.oracle_script.read_text().splitlines()
+                if ln.strip() and not ln.startswith("#") and not ln.startswith("set ")]
+        body = [re.sub(r"^python3? ", "python3 ", ln) for ln in body]
+        (dst / "solve.sh").write_text("\n".join([
+            "#!/bin/bash",
+            "# Reference solution. Runs in the agent container and drives the robot only through the robo socket",
+            "# ($ROBO_SOCKET), like an agent would. vendor/ holds the robouse oracle code and BenchFlow's embodied",
+            "# client (and, for Meta-World, the scripted expert policies). BenchFlow hides /oracle from agents.",
+            "set -euo pipefail",
+            'export PYTHONPATH="$(cd "$(dirname "$0")" && pwd)/vendor${PYTHONPATH:+:$PYTHONPATH}"',
+            f"export ROBO_ORACLE_TOKEN={token}",
+            *body,
+            "",
+        ]))
         (dst / "solve.sh").chmod(0o755)
-        return
-    vendor = dst / "vendor"
-    shutil.copytree(PKG, vendor / "robouse", ignore=_IGNORE)
-    if task.spec.get("backend") == "metaworld":
-        _metaworld_policies(vendor)
-    body = [ln for ln in task.oracle_script.read_text().splitlines()
-            if ln.strip() and not ln.startswith("#") and not ln.startswith("set ")]
-    body = [re.sub(r"^python3? ", "python3 ", ln) for ln in body]
-    (dst / "solve.sh").write_text("\n".join([
-        "#!/bin/bash",
-        "# Reference solution. Runs in the agent container and drives the robot only through the robo socket",
-        "# ($ROBOUSE_SOCKET), like an agent would. vendor/ holds the robouse oracle code (and, for Meta-World,",
-        "# the scripted expert policies). BenchFlow hides /oracle from agents.",
-        "set -euo pipefail",
-        'export PYTHONPATH="$(cd "$(dirname "$0")" && pwd)/vendor${PYTHONPATH:+:$PYTHONPATH}"',
-        f"export ROBOUSE_ORACLE_TOKEN={token}",
-        *body,
-        "",
-    ]))
-    (dst / "solve.sh").chmod(0o755)
-
-
-# ---- the native package ---------------------------------------------------------------------------------
-
-def _dump(d: dict) -> str:
-    return yaml.safe_dump(d, sort_keys=False, allow_unicode=True, width=10**6)
-
-
-def native_task_md(meta: dict, instruction: str) -> str:
-    rb = meta["robouse"]
-    task = dict(meta.get("task") or {})
-    task.setdefault("name", f"robouse/{rb.get('id')}")
-    metadata = {"author_name": "benchflow", **(meta.get("metadata") or {}), "robouse": rb}
-    verifier_timeout = max(300, int((meta.get("verifier") or {}).get("timeout_sec", 0) or 0))
-    fm = {
-        "schema_version": "1.3",
-        "task": task,
-        "metadata": metadata,
-        "agent": {"timeout_sec": int(float((meta.get("agent") or {}).get("timeout_sec", 900)))},
-        "verifier": {"service": "simulator", "user": "root", "timeout_sec": verifier_timeout},
-        "sandbox": {"cpus": 1, "memory_mb": 2048, "build_timeout_sec": 1800},
-    }
-    # the same preamble a local robouse run gives every harness
-    from ..harnesses import PROMPT_PREFIX
-
-    return "---\n" + _dump(fm) + "---\n\n" + PROMPT_PREFIX + instruction.strip() + "\n"
-
-
-def sim_task_md(meta: dict) -> str:
-    """The task definition the simulator needs (frontmatter only; the prompt is not in it)."""
-    fm = {k: meta[k] for k in ("schema_version", "task", "metadata", "agent", "verifier", "robouse") if k in meta}
-    return "---\n" + _dump(fm) + "---\n"
-
-
-def compose(meta: dict, sim_context: str, token: str) -> str:
-    # compose interpolates $VARS in values; `$$` is a literal dollar sign
-    block = "\n".join("        " + ln.replace("$", "$$") for ln in sim_task_md(meta).rstrip().splitlines())
-    agent_timeout = float((meta.get("agent") or {}).get("timeout_sec", 900))
-    text = (TEMPLATES / "docker-compose.yaml").read_text()
-    return (text.replace("__SIM_CONTEXT__", json.dumps(sim_context))
-                .replace("__MAX_WALL_S__", str(int(agent_timeout + WALL_MARGIN_S)))
-                .replace("__ORACLE_TOKEN__", token)
-                .replace("__TASK_MD__", block))
 
 
 def materialize(task_dir: Path, out_root: Path, *, noop: bool = False, seed: int | None = None,
                 timeout: float | None = None, flat: bool = False) -> Path:
-    """Write (or reuse) the native BenchFlow package for one robouse task and return its folder.
-
-    noop: negative-control oracle. seed / timeout: override the task's seed and agent timeout (seconds).
-    flat: write <out_root>/tasks/<task-id> (replacing an older copy) instead of the content-addressed cache
-    layout, for a bundle meant to be moved or published; a flat package refers to the simulator runtime by a
-    relative path inside out_root, so out_root can be moved as a whole.
-    """
-    task_dir, out_root = Path(task_dir).resolve(), Path(out_root).resolve()
-    task = load_task(task_dir)
-    if "robouse" not in task.meta:
-        raise ValueError(f"{task_dir}: not a robouse task (no robouse: block in task.md)")
-    meta = json.loads(json.dumps(task.meta))  # deep copy
-    if seed is not None:
-        meta["robouse"]["seed"] = int(seed)
-    if timeout is not None:
-        meta.setdefault("agent", {})["timeout_sec"] = int(timeout)
-    runtime = ensure_runtime(out_root)
-    h = hashlib.sha256(f"{FORMAT_VERSION}|{runtime.name}|noop={noop}|seed={seed}|timeout={timeout}".encode())
-    _hash_tree(h, task_dir, shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store"))
-    key = h.hexdigest()[:16]
-    parent = out_root / "tasks" if flat else out_root / "tasks" / key
-
-    def write(pkg: Path) -> None:
-        env = pkg / "environment"
-        env.mkdir(parents=True)
-        token = secrets.token_hex(16)
-        (pkg / "task.md").write_text(native_task_md(meta, task.instruction))
-        shutil.copy2(TEMPLATES / "agent.Dockerfile", env / "Dockerfile")
-        (env / "robo").write_text("#!/usr/bin/env python3\n" + (PKG / "agent_cli.py").read_text())
-        (env / "robo").chmod(0o755)
-        # absolute in the cache (BenchFlow may stage a task copy elsewhere); relative in a movable bundle
-        context = os.path.relpath(runtime, parent / task.id / "environment") if flat else str(runtime)
-        (env / "docker-compose.yaml").write_text(compose(meta, context, token))
-        shutil.copytree(TEMPLATES / "verifier", pkg / "verifier", ignore=shutil.ignore_patterns("__pycache__"))
-        _write_oracle(task, pkg / "oracle", token, noop)
-        (pkg / ".robouse-source.json").write_text(json.dumps(
-            {"source": str(task_dir), "key": key, "runtime": runtime.name, "noop": noop, "seed": seed,
-             "timeout": timeout, "format_version": FORMAT_VERSION}, indent=2))
-
-    if flat:
-        dst = parent / task.id
-        marker = dst / ".robouse-source.json"
-        if marker.exists() and json.loads(marker.read_text()).get("key") == key:
-            return dst
-        if dst.exists():
-            shutil.rmtree(dst)
-        return _atomic_dir(dst, write)
-    return _atomic_dir(parent, lambda d: write(d / task.id)) / task.id
+    """Write (or reuse) the native BenchFlow package for one robouse task and return its folder."""
+    return RobouseTaskFormat().materialize_variant(task_dir, out_root, seed=seed, noop=noop, timeout=timeout, flat=flat)
 
 
-class RobouseTaskFormat:
-    """BenchFlow task format (entry point `benchflow.task_formats: robouse`)."""
-
-    name = "robouse"
-
-    def detect(self, task_dir: Path) -> bool:
-        return is_robouse_task(task_dir)
-
-    def materialize(self, task_dir: Path, out_root: Path) -> Path:
-        return materialize(task_dir, out_root)
+def is_robouse_task(task_dir: Path) -> bool:
+    return RobouseTaskFormat().detect(Path(task_dir))
 
 
 def task_format_root() -> Path:
     """The cache BenchFlow uses for robouse packages (so `robouse run` and `bench eval run` share builds)."""
-    try:
-        from benchflow.task.formats import task_format_cache_root
+    from benchflow.task.formats import task_format_cache_root
 
-        return task_format_cache_root() / RobouseTaskFormat.name
-    except ImportError:
-        return Path.home() / ".cache" / "benchflow" / "task-formats" / RobouseTaskFormat.name
+    return task_format_cache_root() / RobouseTaskFormat.name

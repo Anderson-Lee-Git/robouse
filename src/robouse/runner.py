@@ -37,7 +37,7 @@ from pathlib import Path
 from . import harnesses
 from .tasks import Task, find_tasks
 
-AGENT_CLI = Path(__file__).with_name("agent_cli.py")
+from .agent_cli import SCRIPT as AGENT_CLI  # noqa: E402  BenchFlow's standalone `robo` (benchflow/embodied/robo.py)
 
 
 def sandbox_profile(workspace: str | Path | None = None, local_ports: tuple[int, ...] = ()) -> str:

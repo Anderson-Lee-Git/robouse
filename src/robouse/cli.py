@@ -58,6 +58,8 @@ def main(argv=None) -> int:
         p.add_argument("--timeout", type=float, help="agent wall-clock limit in seconds (default: "
                        + ("each task's" if many else "the task's agent.timeout_sec") + ")")
         p.add_argument("--seed", type=int, help="override the task's seed")
+        p.add_argument("--seeds", help="seeded rollouts (BenchFlow engine): one trial per task and seed, e.g. 0-4 or "
+                       "0,3,7; summary.json gets pass@k, mean and std per task")
         p.add_argument("--engine", choices=("benchflow", "local"), default="benchflow",
                        help="benchflow (default): BenchFlow with Docker; local: host processes, macOS Seatbelt "
                             "sandbox, no Docker")
@@ -111,7 +113,11 @@ def main(argv=None) -> int:
         print(f"{n} task(s) -> {Path(a.out).resolve()}   run: bench eval run --tasks-dir {Path(a.out) / 'tasks'} --agent oracle --sandbox docker")
         return 0 if n else 1
     if a.cmd in ("run", "run-many") and a.engine == "benchflow":
+        from benchflow.embodied.rollouts import parse_seeds
+
         from .engine.run import run_job, select_tasks
+
+        seeds = parse_seeds(a.seeds) if a.seeds else None
 
         if a.cmd == "run":
             tasks = [load_task(resolve_task_path(a.task))]
@@ -120,7 +126,7 @@ def main(argv=None) -> int:
             tasks = select_tasks(Path(a.tasks) if a.tasks else bundled_tasks_root(), a.filter, ids, a.limit)
         res = run_job(tasks, a.agent, a.model, Path(a.out), sandbox=a.sandbox,
                       concurrency=getattr(a, "concurrency", 1), timeout=a.timeout, seed=a.seed,
-                      job_name=a.job_name, reasoning_effort=a.reasoning_effort)
+                      job_name=a.job_name, reasoning_effort=a.reasoning_effort, seeds=seeds)
         return 0 if res["errored"] == 0 else 1
     if a.cmd in ("serve", "run", "run-many"):
         import importlib.util

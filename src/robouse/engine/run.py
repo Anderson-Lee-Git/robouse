@@ -60,8 +60,12 @@ def _agent_env(agent: str) -> dict[str, str]:
 
 def run_job(tasks: list[Task], agent: str, model: str = "", out: Path = Path("jobs"), *, sandbox: str = "docker",
             concurrency: int = 1, timeout: float | None = None, seed: int | None = None,
-            job_name: str | None = None, reasoning_effort: str | None = None) -> dict:
-    """Run tasks x one agent as one BenchFlow job and return a short summary."""
+            job_name: str | None = None, reasoning_effort: str | None = None,
+            seeds: list[int] | None = None) -> dict:
+    """Run tasks x one agent as one BenchFlow job and return a short summary.
+
+    seeds: one trial per task and seed (packages `<task>--seed-<n>`); the job's summary.json then carries
+    BenchFlow's seeded-rollout report (pass@k, mean, std per task)."""
     from benchflow import Evaluation, EvaluationConfig
 
     noop = agent == "noop"
@@ -69,9 +73,10 @@ def run_job(tasks: list[Task], agent: str, model: str = "", out: Path = Path("jo
     cache = task_format_root()
     staged = Path(tempfile.mkdtemp(prefix="robouse-job-"))
     try:
-        for t in tasks:  # one folder per task, named by task id, pointing at its materialized package
-            pkg = materialize(t.path, cache, noop=noop, seed=seed, timeout=timeout)
-            (staged / pkg.name).symlink_to(pkg, target_is_directory=True)
+        for t in tasks:  # one folder per task (and seed), named by task id, pointing at its materialized package
+            for s in (seeds or [seed]):
+                pkg = materialize(t.path, cache, noop=noop, seed=s, timeout=timeout)
+                (staged / pkg.name).symlink_to(pkg, target_is_directory=True)
         cfg = EvaluationConfig(agent=bf_agent, model=model or None, environment=sandbox, concurrency=concurrency,
                                agent_env=_agent_env(bf_agent), reasoning_effort=reasoning_effort)
         job_name = job_name or datetime.now().strftime("%Y-%m-%d__%H-%M-%S") + ("__noop" if noop else "")
@@ -90,6 +95,15 @@ def run_job(tasks: list[Task], agent: str, model: str = "", out: Path = Path("jo
     for row in rows:
         print(f"{row['task']:<40} reward={row['reward']} outcome={row['outcome']} steps={row['steps']}"
               + (f" ERROR {row['error']}" if row["error"] else ""), flush=True)
+    if seeds:  # the staged folders are already the seeded packages; add BenchFlow's seeded-rollout report
+        from benchflow.embodied.rollouts import format_report, seed_report
+
+        report = seed_report(job)
+        summary_path = job / "summary.json"
+        summary = json.loads(summary_path.read_text()) if summary_path.exists() else {}
+        summary.update({"seeds": list(seeds), "seeded": report})
+        summary_path.write_text(json.dumps(summary, indent=2))
+        print(format_report(report))
     print(f"{agent}/{model or '-'}: {res.passed}/{res.total} solved, errors={res.errored} -> {job}")
     return {"job_dir": str(job), "total": res.total, "passed": res.passed, "errored": res.errored,
             "mean_reward": res.mean_reward, "trials": rows}

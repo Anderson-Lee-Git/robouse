@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .base import ActionSpec, Backend, StepInfo
+from .base import ActionSpec, Backend, StepInfo, G, arm_layout
 
 
 
@@ -25,6 +25,11 @@ def _env_class(env_name: str):
 
 class MetaWorldBackend(Backend):
     name = "metaworld"
+    robot_name = "sawyer-2f"
+    dense_reward = "shaped"  # Meta-World's own shaped reward
+
+    def action_layout(self) -> list[G]:
+        return arm_layout("end-effector velocity, about 1 cm per unit per step")
 
     def __init__(self, env_name: str, camera: str = "corner", max_steps: int = 500, width: int = 320, height: int = 320):
         import metaworld
