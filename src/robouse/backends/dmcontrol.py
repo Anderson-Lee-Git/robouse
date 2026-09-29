@@ -78,9 +78,9 @@ TASKS: dict[str, dict] = {
     "dmcontrol-reacher-hard-b": dict(kind="suite", domain="reacher", task="hard", seed=4, hold=25, max_steps=500, camera="fixed"),
     "dmcontrol-point-mass-easy": dict(kind="suite", domain="point_mass", task="easy", seed=9, hold=25, max_steps=500, camera="fixed"),
     # contact-rich planar manipulation
-    "dmcontrol-finger-turn-easy": dict(kind="suite", domain="finger", task="turn_easy", seed=1, hold=25, max_steps=1000, camera="cam0"),
-    "dmcontrol-finger-turn-hard": dict(kind="suite", domain="finger", task="turn_hard", seed=0, hold=25, max_steps=1000, camera="cam0"),
-    "dmcontrol-ball-in-cup-catch": dict(kind="suite", domain="ball_in_cup", task="catch", seed=3, hold=50, max_steps=1000, camera="cam0"),
+    "dmcontrol-finger-turn-easy": dict(kind="suite", domain="finger", task="turn_easy", seed=1, hold=25, max_steps=1000, camera="cam1"),
+    "dmcontrol-finger-turn-hard": dict(kind="suite", domain="finger", task="turn_hard", seed=0, hold=25, max_steps=1000, camera="cam1"),
+    "dmcontrol-ball-in-cup-catch": dict(kind="suite", domain="ball_in_cup", task="catch", seed=3, hold=50, max_steps=1000, camera="cam1"),
     "dmcontrol-manipulator-bring-ball": dict(kind="suite", domain="manipulator", task="bring_ball", seed=2, hold=25, max_steps=2000, camera="fixed"),
     # dm_control.manipulation: Kinova Jaco arm with the three-finger Jaco hand
     "dmcontrol-jaco-reach-site": dict(kind="manipulation", task="reach_site_features", seed=4, hold=10, max_steps=300, camera="front_close"),
@@ -115,10 +115,12 @@ class DMControlBackend(EmbodiedBackend):
         self._success = False
         self.last_judge: dict = {}
 
-    def _declare(self) -> Embodiment:
+    def _declare(self, fields: list[str] | None = None) -> Embodiment:
         dom = DOMAINS[self.domain]
-        state_doc = "the task's own observation (dm_control's observation dict, same key names) plus the positions named in the instruction"
-        sensors = [Sensor("task_state", "world", ["(see instruction)"], state_doc, frame="world"),
+        state_doc = ("the task's own observation (dm_control's observation dict, same key names) plus the positions named in the instruction"
+                     if self.domain != "jaco" else "the hand, the fingers and the objects (positions in metres, world frame)")
+        skip = {"reward", "in_target", "hold_steps", "hold_required"}
+        sensors = [Sensor("task_state", "world", [f for f in (fields or []) if f not in skip], state_doc, frame="world"),
                    Sensor("success", "events", ["reward", "in_target", "hold_steps", "hold_required"],
                           "the task's reward, whether the success condition holds now, and for how many consecutive steps")]
         sensors += [Sensor(f"camera:{c}", "camera", mount="world") for c in dom["cameras"]]
@@ -174,6 +176,7 @@ class DMControlBackend(EmbodiedBackend):
                                hold=int(t["hold"]), **kw)
         self._state = None
         self._success = False
+        self.decl = self._declare(list(self.observe()))  # `robo info` lists the observation's field names
 
     def control_step(self, a: np.ndarray) -> None:
         r = self._call("step", action=[float(x) for x in a])

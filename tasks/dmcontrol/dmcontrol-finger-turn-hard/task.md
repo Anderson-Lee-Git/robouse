@@ -25,7 +25,7 @@ robouse:
   env: dmcontrol-finger-turn-hard
   seed: 0
   max_steps: 1000
-  camera: cam0
+  camera: cam1
   cameras:
   - cam0
   - cam1

@@ -158,7 +158,8 @@ JACO = dict(
            "from dm_control.manipulation (MuJoCo). World frame in metres, z up, the table top at z = 0. The hand is controlled at its pinch "
            "point, the point between the fingertips (dm_control's tool centre point), and always points straight down; you set its "
            "position and its yaw (turn about the vertical). The objects are Duplo 2x4 bricks (6.4 x 3.2 cm, 1.9 cm tall plus studs); a "
-           "brick's `_pos` is the centre of its bottom face and `_yaw_deg` the direction of its long side."),
+           "brick's `_pos` is the centre of its bottom face and `_yaw_deg` the direction of its long side. The fingers close along the "
+           "hand's yaw direction: with `hand_yaw_deg` at a brick's yaw + 90 degrees they grip the brick across its 3.2 cm width."),
     controls=("**Controls.** `robo act DX DY DZ DYAW GRIP [--repeat N]` applies one 40 ms step N times. DX DY DZ in [-2, 2] move the "
               "commanded pinch point by 1 cm per unit along world x, y, z; DYAW in [-2, 2] turns the commanded hand yaw by 0.1 rad per "
               "unit (positive = counter-clockwise seen from above). A Jacobian controller drives the arm's joint velocities towards the "
