@@ -50,7 +50,6 @@ def _t(env: str, layout: int, seed: int, style: int | None = None) -> dict:
 # task id -> RoboCasa env, kitchen layout/style (styles 1-10 need no AI-generated textures), seed of the recorded layout
 # (robocasa_episodes/<task id>.json is what every reset replays)
 TASKS: dict[str, dict] = {
-    "robocasa-close-drawer": _t("CloseDrawer", 1, 0),
     "robocasa-close-drawer-kitchen2": _t("CloseDrawer", 2, 0),
     "robocasa-close-drawer-kitchen7": _t("CloseDrawer", 7, 1),
     "robocasa-close-drawer-kitchen10": _t("CloseDrawer", 10, 4),
