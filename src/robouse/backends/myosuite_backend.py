@@ -61,6 +61,11 @@ TASKS: dict[str, dict] = {
     "myosuite-hand-pose-9": dict(env="myoHandPose9Fixed-v0", seed=0, max_steps=500, oracle="pose", camera=HAND_CAM),
     "myosuite-hand-reach-fixed": dict(env="myoHandReachFixed-v0", seed=0, max_steps=500, oracle="reach", camera=HAND_CAM),
     "myosuite-hand-reach-random": dict(env="myoHandReachRandom-v0", seed=0, max_steps=500, oracle="reach", camera=HAND_CAM),
+    # muscles only (skills disabled): the agent sends raw excitations; the reference solution runs MyoSuite's NPG baseline
+    "myosuite-elbow-pose-muscles": dict(env="myoElbowPose1D6MRandom-v0", seed=9, max_steps=300, oracle="policy", policy_steps=100,
+                                        skills=False, camera=ELBOW_CAM),
+    "myosuite-finger-pose-muscles": dict(env="myoFingerPoseFixed-v0", seed=0, max_steps=300, oracle="policy", policy_steps=100,
+                                         skills=False, camera=FINGER_CAM),
     "myosuite-hand-key-turn": dict(env="myoHandKeyTurnFixed-v0", seed=0, max_steps=500, oracle="policy", policy_steps=200, camera=HAND_CAM),
 }
 
@@ -125,8 +130,8 @@ class MyoSuiteBackend(EmbodiedBackend):
         meta = self.meta
         kind = meta["kind"]
         sensors = [
-            Sensor("joints", "proprio", ["joint_angles_rad", "joint_velocities_rad_s", "joint_targets_rad"],
-                   "angle (rad) and velocity (rad/s) of each muscle-driven joint, and the controller's current joint targets"),
+            Sensor("joints", "proprio", ["joint_angles_rad", "joint_velocities_rad_s"] + ([] if self.spec.get("skills") is False else ["joint_targets_rad"]),
+                   "angle (rad) and velocity (rad/s) of each muscle-driven joint" + ("" if self.spec.get("skills") is False else ", and the controller's current joint targets")),
             Sensor("muscles", "proprio", ["muscle_activations"], "activation of each muscle in [0, 1], in the action's muscle order"),
         ]
         if kind == "pose":
@@ -229,6 +234,8 @@ class MyoSuiteBackend(EmbodiedBackend):
     def observe(self) -> dict:
         if self._state is None:
             self._state = self._call("observe")
+            if self.spec.get("skills") is False:  # no controller in this task: its targets mean nothing
+                self._state.pop("joint_targets_rad", None)
         return json.loads(json.dumps(self._state))
 
     def success(self) -> bool:

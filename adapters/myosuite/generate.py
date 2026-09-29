@@ -25,7 +25,8 @@ from robouse.backends.myosuite_backend import CONTROL_DT, TASKS, MyoSuiteBackend
 from robouse.prompts import EMBODIED_USAGE
 
 VERSION = "MyoSuite 2.12.2"
-POLICY_SEED = {"myoHandKeyTurnFixed-v0": 1}  # which of the three NPG baseline seeds the reference solution runs
+# which of the three NPG baseline seeds each policy-driven reference solution runs (checked to hold the goal through the settle)
+POLICY_SEED = {"myoHandKeyTurnFixed-v0": 1, "myoElbowPose1D6MRandom-v0": 2, "myoFingerPoseFixed-v0": 1}
 
 HAND_SCENE = ("You control MyoHand, MyoSuite's musculoskeletal model of a right human hand and forearm (MuJoCo physics), only through its "
               "39 muscles. The forearm is fixed in space. 23 joints move: the wrist (`pro_sup` pronation/supination, `deviation`, `flexion`), "
@@ -77,7 +78,7 @@ def _pose_text(env: str, st: dict, meta: dict) -> tuple[str, str]:
     goal = (f"Bring the joints to the target angles in `target_pose_rad` (MyoSuite env `{env}`). The target is "
             + ", ".join(f"`{k}` = {v:.3f}" for k, v in st["target_pose_rad"].items()) + " rad. "
             + f"At the start the pose error norm is {st['pose_error_norm']:.2f} rad.")
-    succ = (f"MyoSuite's own `solved` check for this env: the Euclidean norm of the joint-angle error over all {n} joint(s) (target "
+    succ = (f"MyoSuite's own `solved` check for this env: the Euclidean norm of the joint-angle error over {'the one joint' if n == 1 else f'all {n} joints'} (target "
             f"minus current, `pose_error_norm`) must be below {thr} rad (`threshold`, the env's pose_thd), judged by the episode "
             "server from the simulated state after you call `robo done` and the 10-step settle.")
     return goal, succ
@@ -121,6 +122,15 @@ TEXT = {
                                       intro="The targets bring all five fingertips close together in front of the palm, a pinch of all fingers. The hand starts open (all joints 0)."),
     "myosuite-hand-reach-random": dict(title="All five fingertips to random points", difficulty="medium", scene=HAND_SCENE, kind="reach", category="reaching",
                                        intro="The targets were drawn at random from MyoSuite's per-fingertip target boxes (fixed here by the episode seed). The hand starts open (all joints 0)."),
+    "myosuite-elbow-pose-muscles": dict(title="Elbow to a target angle, muscles only", difficulty="medium", scene=ELBOW_SCENE, kind="pose",
+                                        category="posture",
+                                        intro="The arm starts at a random elbow angle and the target angle was drawn at random (MyoSuite's "
+                                              "random-target elbow task, fixed here by the episode seed). This task has no skills: you "
+                                              "drive the six muscles directly."),
+    "myosuite-finger-pose-muscles": dict(title="Index finger to a fixed pose, muscles only", difficulty="medium", scene=FINGER_SCENE, kind="pose",
+                                         category="posture",
+                                         intro="Bend the middle and end joints of the straight finger while keeping the knuckle straight. "
+                                               "This task has no skills: you drive the five muscles directly."),
     "myosuite-hand-key-turn": dict(title="Turn a key", difficulty="hard", scene=HAND_SCENE, kind="key", category="manipulation", intro=""),
 }
 for k in (4, 5, 7, 8, 9):
@@ -194,11 +204,16 @@ def main() -> None:
         be.close()
         goal, succ = {"pose": _pose_text, "reach": _reach_text, "key": _key_text}[x["kind"]](t["env"], st, meta)
         steps = int(t["max_steps"])
-        controls = "**Controls.** " + MUSCLE_ACT + " " + SKILLS + (REACH_SKILL if x["kind"] == "reach" else "")
+        skills_on = t.get("skills", True)
+        controls = "**Controls.** " + MUSCLE_ACT + " " + (
+            (SKILLS + (REACH_SKILL if x["kind"] == "reach" else "")) if skills_on else
+            "There are no skills in this task (`robo skill` is disabled): find excitation patterns yourself, e.g. co-contract an agonist "
+            "and its antagonist to hold a joint, and watch `joint_angles_rad` and `joint_velocities_rad_s` as you adjust.")
         extra_obs = {"pose": "`target_pose_rad` (the goal angles), `pose_error_norm` and `threshold`",
                      "reach": "`fingertips` and `fingertip_targets` (positions, m), `reach_error_norm` and `threshold`",
                      "key": "`key_angle_rad`, `key_goal_angle_rad`, the positions (m) of `key_head`, `index_tip` and `thumb_tip`"}[x["kind"]]
-        obs = ("**Observation.** `robo observe` reports " + extra_obs + "; " + COMMON_OBS.format(keys=", ".join(meta["obs_keys"]))
+        common = COMMON_OBS if skills_on else COMMON_OBS.replace(", `joint_velocities_rad_s` and `joint_targets_rad` (the controller's current targets)", " and `joint_velocities_rad_s`")
+        obs = ("**Observation.** `robo observe` reports " + extra_obs + "; " + common.format(keys=", ".join(meta["obs_keys"]))
                + " `robo observe --image` saves a picture from a fixed camera (muscle paths are not drawn).")
         parts = [f"# {x['title']}", x["scene"], "## Task\n\n" + (x["intro"] + " " if x["intro"] else "") + goal,
                  f"**Success:** {succ} Simulated time advances only when you act (one step = {CONTROL_DT * 1000:.0f} ms).",
@@ -213,7 +228,7 @@ def main() -> None:
                             instruction="\n\n".join(parts) + "\n", robot=be.decl.robot, category=x["category"],
                             difficulty=x["difficulty"], tags=["myosuite", "musculoskeletal", "muscles", x["kind"]],
                             max_steps=steps, camera="view", cameras=["view"], oracle_note=note,
-                            extra_robouse={"seed": int(t["seed"])},
+                            extra_robouse={"seed": int(t["seed"]), "skills": bool(skills_on)},
                             extra_metadata={"source_benchmark": f"MyoSuite ({VERSION}, MyoHub)", "source_task": t["env"],
                                             "simulator": f"{VERSION} (Apache-2.0), MuJoCo 3.6.0"})
         d = out / tid

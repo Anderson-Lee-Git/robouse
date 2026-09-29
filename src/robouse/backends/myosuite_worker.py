@@ -28,6 +28,7 @@ import sys
 sys.path = [p for p in sys.path if os.path.abspath(p or ".") != os.path.dirname(os.path.abspath(__file__))]
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("GIT_PYTHON_REFRESH", "quiet")  # myosuite imports gitpython; the runtime image has no git executable
 os.environ.setdefault("MUJOCO_GL", "egl" if sys.platform.startswith("linux") else "glfw")
 
 import numpy as np  # noqa: E402
@@ -262,7 +263,7 @@ class Worker:
         out["contacts"] = sorted({"-".join(sorted((m.body(int(m.geom_bodyid[c.geom1])).name, m.body(int(m.geom_bodyid[c.geom2])).name)))
                                   for c in d.contact[:d.ncon]})
         out["time_s"] = round(float(d.time), 3)
-        out["obs_vector"] = r(u.get_obs(), 5)  # MyoSuite's own observation vector (its obs_keys, in order)
+        out["obs_vector"] = [float(x) for x in np.ravel(u.get_obs())]  # MyoSuite's own observation vector (its obs_keys, in order), full precision
         _ = mujoco
         return out
 
