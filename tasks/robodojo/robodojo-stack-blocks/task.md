@@ -59,7 +59,7 @@ You control RoboDojo's simulated **ARX X5 bimanual platform** in NVIDIA Isaac Si
 
 **Goal.** Three wooden blocks of the same size but different textures lie on the table. Stack them into a single tower of three, then move both arms back to their starting pose.
 
-**Success.** Sorted by height, each block's centre is within 1.5 to 2 cm (depending on the block size: 1.5 cm for the smallest set, 2 cm for the largest) of the one below it horizontally and more than 5 mm above it, and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees). This is RoboDojo's own `run_reward()` for `stack_blocks`, checked after every step.
+**Success.** Sorted by height, each block's centre is within 1.5, 1.75 or 2 cm of the one below it horizontally (RoboDojo's tolerance for the block set in the scene, from `block_0`'s `model_id`) and more than 5 mm above it, and both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees). This is RoboDojo's own `run_reward()` for `stack_blocks`, checked after every step.
 
 **Controls.** `robo act` takes 16 numbers, RoboDojo's own end-effector action: for the left arm, then the right arm, the absolute target pose of the end-effector link (`link6`) as x y z and a quaternion qw qx qy qz, then the gripper opening (0 closed, 1 fully open). RoboDojo solves each target with its cuRobo inverse kinematics; a target the arm cannot reach leaves that arm where it is (the step result's `ik` field says `Fail`). One step is one RoboDojo policy step: 40 ms, 10 physics steps of 4 ms, with RoboDojo's interpolation. The skills are easier to use; each runs as a series of such steps and every step counts against the budget:
 
@@ -68,7 +68,7 @@ You control RoboDojo's simulated **ARX X5 bimanual platform** in NVIDIA Isaac Si
 - `robo skill home [ARM]`: move one arm or both (default) back to the starting pose.
 - `robo skill wait [STEPS]`: hold both arms still.
 
-ARM is `left` or `right`.
+ARM is `left` or `right`. A skill call returns after at most 90 s of wall time; if it has not finished, its result says `stopped` and the same call continues from where the arm is.
 
 **Observation.** `robo observe` reports, per arm under `robot`: `ee_pos` / `ee_quat` (the end-effector link pose), `ee_axes` (its x axis is the finger direction, its y axis the closing direction), `tcp_pos` (the grasp point), `gripper_open` (0..1), `joints`, and `home_pos` / `home_quat` (the starting pose). Under `objects`, every task object with its RoboDojo `label`, `category`, `description`, centre `pos`, `quat` (w, x, y, z), `up_axis` (the object's local z axis in the world), `yaw_deg`, its axis-aligned bounding box `bbox_min` / `bbox_max` and its `size` in its own frame; articulated objects (buttons, lids) also list their `joints`. `instruction` is RoboDojo's instruction for this episode, and `steps` / `step_lim` / `stages_left` show progress (`stages_left` counts RoboDojo's remaining success stages, which must be passed in order). `robo observe --image` saves RoboDojo's head camera (`cam_head`); `--camera cam_left_wrist` and `--camera cam_right_wrist` give the wrist cameras.
 

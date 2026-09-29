@@ -4,8 +4,8 @@ Each task is one RoboDojo simulation task on its own evaluation layouts (`Assets
 RoboDojo's own evaluation environment in a remote GPU worker (src/robouse/backends/robodojo_worker.py). The `seed` in
 the `robouse:` block is the RoboDojo layout index. Success is RoboDojo's own `run_reward()`; the budget is the task's
 own `step_lim`. Reference solutions (src/robouse/backends/robodojo_oracles.py) drive the robot only through the robo
-socket. Instructions quote RoboDojo's instruction for the default layout (`instructions.json`, recorded from the
-worker by `--record-instructions`).
+socket. Instructions quote RoboDojo's instruction for the default layout (`instructions.json`, recorded from episode
+traces by `record_instructions.py`).
 
 Usage: python adapters/robodojo/generate.py [--out tasks/robodojo]
 """
@@ -64,7 +64,8 @@ CONTROL = (
     "(default 12).\n"
     "- `robo skill home [ARM]`: move one arm or both (default) back to the starting pose.\n"
     "- `robo skill wait [STEPS]`: hold both arms still.\n\n"
-    "ARM is `left` or `right`.")
+    "ARM is `left` or `right`. A skill call returns after at most 90 s of wall time; if it has not finished, its result says "
+    "`stopped` and the same call continues from where the arm is.")
 
 OBSERVATION = (
     "**Observation.** `robo observe` reports, per arm under `robot`: `ee_pos` / `ee_quat` (the end-effector link pose), "

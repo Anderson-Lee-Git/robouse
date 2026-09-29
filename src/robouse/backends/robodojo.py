@@ -39,6 +39,9 @@ REMOTE_FILE = REPO / "runs" / "_robodojo" / "remote.json"
 RETRY_METHODS = {"info", "observe", "render", "success", "status"}
 ARMS = ("left", "right")
 STEP_S = 0.04  # one RoboDojo action: 10 physics steps of 4 ms
+# A skill call returns after at most this much wall time (the robo client waits 120 s for a reply); the result then
+# says `stopped` and the same call continues from where the arm is.
+SKILL_WALL_S = float(os.environ.get("ROBOUSE_ROBODOJO_SKILL_WALL_S", 90))
 
 
 def _remote() -> dict:
@@ -191,8 +194,8 @@ def _decl(max_steps: int) -> Embodiment:
     sensors = [
         Sensor("arms", "proprio", ["robot"], doc="per arm: gripper pose (ee_pos, ee_quat, ee_axes), gripper_open, joints, "
                "home pose"),
-        Sensor("objects", "world", ["objects"], doc="every task object: label, category, description, pos, quat, up_axis, "
-               "yaw_deg, bbox_min/bbox_max, size; articulated objects add their joints"),
+        Sensor("objects", "world", ["objects"], doc="every task object: label, type, category, model_id, description, pos, "
+               "quat, up_axis, yaw_deg, bbox_min/bbox_max, size; articulated objects add their joints"),
         Sensor("progress", "world", ["instruction", "steps", "step_lim", "stages_left", "score", "ended", "failed"],
                doc="RoboDojo's instruction and progress counters"),
         Sensor("camera:cam_head", "camera", mount="head", doc="RoboDojo's head camera"),
@@ -374,7 +377,10 @@ class RoboDojoBackend(EmbodiedBackend):
         dist = float(np.linalg.norm(pos - start_p))
         ang = quat_angle_deg(start_q, quat)
         n = max(1, int(math.ceil(max(dist / speed, ang / 4.0))))
+        t0 = time.time()
         for i in range(1, n + 1):
+            if time.time() - t0 > SKILL_WALL_S:
+                return False
             t = i / n
             p = start_p + t * (pos - start_p)
             q = slerp(start_q, quat, t)
@@ -385,13 +391,16 @@ class RoboDojoBackend(EmbodiedBackend):
             if cur and np.linalg.norm(np.asarray(cur[:3]) - pos) < 0.004:
                 break
             yield self._vec()
+        return True
 
     def skill_move(self, arm: str, x: float, y: float, z: float, pitch: float = 90.0, yaw: float = 90.0, speed: float = 0.012):
         speed = min(0.03, max(0.002, speed))
         quat = hand_quat(pitch, yaw)
         ee = ee_for_tcp([x, y, z], quat)
-        yield from self._line(arm, ee, quat, speed)
+        finished = yield from self._line(arm, ee, quat, speed)
         st = self._reach_status(arm, ee, quat)
+        if not finished:
+            st["stopped"] = f"wall-time limit of one call ({SKILL_WALL_S:.0f} s) reached; call move again to continue"
         if self._ee.get(arm):
             st["grasp_point"] = [round(float(v), 4) for v in tcp_of(self._ee[arm][:7])]
         return st
@@ -410,7 +419,10 @@ class RoboDojoBackend(EmbodiedBackend):
             p0, q0 = starts[a]
             h = self._home[a]
             n = max(n, int(math.ceil(max(np.linalg.norm(np.asarray(h[:3]) - p0) / 0.012, quat_angle_deg(q0, h[3:7]) / 4.0))))
+        t0 = time.time()
         for i in range(1, n + 1):
+            if time.time() - t0 > SKILL_WALL_S:
+                return {"stopped": f"wall-time limit of one call ({SKILL_WALL_S:.0f} s) reached; call home again to continue"}
             t = i / n
             for a in arms:
                 p0, q0 = starts[a]
@@ -439,4 +451,14 @@ def oracle_main(env: str) -> None:
 
     task = os.environ.get("ROBOUSE_ROBODOJO_TASK") or env
     o = Oracle()
+    plain = o.skill
+
+    def skill(name, *args):  # a long skill on a slow worker returns early (SKILL_WALL_S): repeat it until it finishes
+        for _ in range(10):
+            r = plain(name, *args)
+            if "wall-time limit" not in str(r.get("stopped", "")):
+                return r
+        return r
+
+    o.skill = skill
     o.run(PLANS.get(task) or PLANS[task.removesuffix("_random")])  # a _random variant has its base task's objective

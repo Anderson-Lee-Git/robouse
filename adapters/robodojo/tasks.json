@@ -36,7 +36,7 @@
   "press_by_number": {
     "title": "Press the buttons as many times as the number cards say",
     "step_lim": 700,
-    "goal": "Two number cards stand behind two red buttons, and a blue button stands to the right. Press the left red button (`button0`) as many times as the number on the card behind it (`num0`), then press the blue button (`button2`) once, then press the right red button (`button1`) as many times as its card (`num1`) shows, then press the blue button once more, then move both arms back to their starting pose. A card's number is its `model_id` in `robo observe` (1 to 9).",
+    "goal": "Two number cards stand behind two red buttons, and a blue button stands to the right. Press the left red button (`button0`) as many times as the number on the card behind it (`num0`), then press the blue button (`button2`) once, then press the right red button (`button1`) as many times as its card (`num1`) shows, then press the blue button once more, then move both arms back to their starting pose. (RoboDojo's instruction below does not spell out this order; the check requires it.) A card's number is its `model_id` in `robo observe` (1 to 9).",
     "success": "RoboDojo counts a press each time a button's travel goes from above 95% to below 50% of its range. The stages must happen in this order: `button0` pressed and released (back above 90%) exactly num0 times, then `button2` pressed and released, then `button1` pressed and released exactly num1 times, then `button2` pressed and released again, and finally both grippers back at their starting pose (within 15 cm along each axis and 20 degrees). Pressing any button more often than required (more than num0, num1 or 2 presses) fails the episode at once.",
     "oracle": "close the gripper above each button, push the cap down until its travel is below 50%, lift until it springs back, repeat the required number of times in the required order; both arms home",
     "tags": [
@@ -57,7 +57,7 @@
     "title": "Stack the three blocks",
     "step_lim": 550,
     "goal": "Three wooden blocks of the same size but different textures lie on the table. Stack them into a single tower of three, then move both arms back to their starting pose.",
-    "success": "Sorted by height, each block's centre is within 1.5 to 2 cm (depending on the block size: 1.5 cm for the smallest set, 2 cm for the largest) of the one below it horizontally and more than 5 mm above it, and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "success": "Sorted by height, each block's centre is within 1.5, 1.75 or 2 cm of the one below it horizontally (RoboDojo's tolerance for the block set in the scene, from `block_0`'s `model_id`) and more than 5 mm above it, and both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees).",
     "oracle": "keep the block nearest the middle as the base; pick each other block from above across its narrow side and set it centred on the top of the tower; both arms home",
     "tags": [
       "stacking",
@@ -130,8 +130,8 @@
   "cover_blocks": {
     "title": "Cover the blocks left to right, then uncover them red, green, blue",
     "step_lim": 800,
-    "goal": "Three coloured blocks (labels `red`, `green`, `blue`) stand in a row, with three upside-down cups in front of them. Cover the blocks with the cups one at a time from left to right (smallest x first), then lift the cups off again in the order red, green, blue. The cups must stay upside down.",
-    "success": "RoboDojo's stages, in order (a block counts as covered when a cup's footprint contains the block's footprint, the block's top is below the cup's top and the cup's bottom is less than 3 cm below the block's bottom; every cup must be upside down within 10 degrees at each stage): only the leftmost block covered; the left and middle blocks covered; all three covered; red uncovered with green and blue still covered; red and green uncovered with blue covered; all three uncovered. The arms need not go home.",
+    "goal": "Three coloured blocks (labels `red`, `green`, `blue`) stand in a row, with three upside-down cups in front of them. Cover the blocks with the cups one at a time from left to right (smallest x first), then lift the cups off again in the order red, green, blue, and finally move both arms back to their starting pose. The cups must stay upside down, and the blocks must stay where they are.",
+    "success": "RoboDojo's stages, in order (a block counts as covered when a cup's footprint contains the block's footprint, the block's top is below the cup's top, and the cup's bottom is less than 3 cm above the block's bottom; every cup must be upside down within 10 degrees at each stage): only the leftmost block covered; the left and middle blocks covered; all three covered; red uncovered with green and blue still covered; red and green uncovered with blue covered; all three uncovered and both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees). Moving any block more than 5 cm from where it started fails the episode at once.",
     "oracle": "carry the cup in front of each block onto it, left to right; then carry the cups back, red, green, blue",
     "tags": [
       "memory",
@@ -205,7 +205,7 @@
     "title": "Put the four bottles into the dustbin",
     "step_lim": 700,
     "goal": "Four bottles stand on the table and a dustbin stands on the floor to the left of the table (x = -0.63). Put all four bottles into the dustbin, handing bottles over from the right arm to the left arm where needed, then move both arms back to their starting pose.",
-    "success": "Every bottle is inside the dustbin (its centre within the dustbin's footprint and at most 40 cm above the dustbin's bottom), and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "success": "Every bottle is inside the dustbin: seen from above, the bottle's whole bounding box lies within the dustbin's; the bottle's top is below the dustbin's top; and the bottle's bottom is 0 to 40 cm above the dustbin's bottom. Also both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees).",
     "oracle": "the right arm sets each right-side bottle down on the left half of the table (a handover through the table); the left arm carries each bottle low over the table edge and releases it over the dustbin; both arms home",
     "tags": [
       "handover",
@@ -260,7 +260,7 @@
     "title": "Stack the three blocks (random layout)",
     "step_lim": 550,
     "goal": "Three wooden blocks of the same size but different textures lie on the table. Stack them into a single tower of three, then move both arms back to their starting pose. Unrelated clutter objects also lie on the table; RoboDojo's check ignores them.",
-    "success": "Sorted by height, each block's centre is within 1.5 cm of the one below it horizontally and more than 5 mm above it, and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "success": "Sorted by height, each block's centre is within 1.5 cm of the one below it horizontally and more than 5 mm above it, and both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees).",
     "oracle": "keep the block nearest the middle as the base; pick each other block from above across its narrow side and set it centred on the top of the tower; both arms home",
     "tags": [
       "stacking",

@@ -69,7 +69,7 @@ You control RoboDojo's simulated **ARX X5 bimanual platform** in NVIDIA Isaac Si
 - `robo skill home [ARM]`: move one arm or both (default) back to the starting pose.
 - `robo skill wait [STEPS]`: hold both arms still.
 
-ARM is `left` or `right`.
+ARM is `left` or `right`. A skill call returns after at most 90 s of wall time; if it has not finished, its result says `stopped` and the same call continues from where the arm is.
 
 **Observation.** `robo observe` reports, per arm under `robot`: `ee_pos` / `ee_quat` (the end-effector link pose), `ee_axes` (its x axis is the finger direction, its y axis the closing direction), `tcp_pos` (the grasp point), `gripper_open` (0..1), `joints`, and `home_pos` / `home_quat` (the starting pose). Under `objects`, every task object with its RoboDojo `label`, `category`, `description`, centre `pos`, `quat` (w, x, y, z), `up_axis` (the object's local z axis in the world), `yaw_deg`, its axis-aligned bounding box `bbox_min` / `bbox_max` and its `size` in its own frame; articulated objects (buttons, lids) also list their `joints`. `instruction` is RoboDojo's instruction for this episode, and `steps` / `step_lim` / `stages_left` show progress (`stages_left` counts RoboDojo's remaining success stages, which must be passed in order). `robo observe --image` saves RoboDojo's head camera (`cam_head`); `--camera cam_left_wrist` and `--camera cam_right_wrist` give the wrist cameras.
 
