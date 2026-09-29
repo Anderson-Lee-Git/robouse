@@ -567,10 +567,14 @@ class Robo:
             ext = max(sx, sy) / 2
             dvec = zc - b
             dist = float(np.linalg.norm(dvec))
-            if np.all(np.abs(dvec) < zh - .1):
+            if np.all(np.abs(dvec) < zh - .08):
                 break
-            u = dvec / dist
             stand = ext + nose + .15
+            # push straight at the zone centre, or along one axis when the robot has no room behind the carton
+            cands = [dvec / dist] + [np.array(v, float) for v in (((np.sign(dvec[0]), 0), (0, np.sign(dvec[1])))) if np.any(v)]
+            cands = [c for c in cands if np.any(c)]
+            u = next((c for c in cands if self._free(*(b - c * (stand + .1)))), cands[0])
+            dist = float(np.dot(dvec, u))
             behind = b - u * stand
             yaw = math.degrees(math.atan2(u[1], u[0]))
             self.travel_to(*(behind - u * .1), yaw=yaw)

@@ -211,6 +211,36 @@ def floor_free(L: Layout, x: float, y: float, r: float) -> bool:
     return True
 
 
+def reachable(L: Layout, start, goal, r: float, boxes: list | None = None, res: float = .05) -> bool:
+    """Is there a path for a disc of radius r from start to goal on the floor (4-connected grid), keeping clear of the
+    scene's footprints and the extra boxes (x0, x1, y0, y1)?"""
+    from collections import deque
+
+    x0, x1, y0, y1 = L.bounds
+    nx, ny = int((x1 - x0) / res) + 1, int((y1 - y0) / res) + 1
+    X, Y = np.meshgrid(x0 + np.arange(nx) * res, y0 + np.arange(ny) * res, indexing="ij")
+    blocked = (X < x0 + r) | (X > x1 - r) | (Y < y0 + r) | (Y > y1 - r)
+    for fx0, fx1, fy0, fy1, *_ in L.footprints() + list(boxes or []):
+        blocked |= (X > fx0 - r) & (X < fx1 + r) & (Y > fy0 - r) & (Y < fy1 + r)
+    cell = lambda p: (int(np.clip(round((p[0] - x0) / res), 0, nx - 1)), int(np.clip(round((p[1] - y0) / res), 0, ny - 1)))
+    s, g = cell(start), cell(goal)
+    if blocked[g]:
+        return False
+    blocked[s] = False
+    seen = {s}
+    q = deque([s])
+    while q:
+        c = q.popleft()
+        if c == g:
+            return True
+        for d in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = (c[0] + d[0], c[1] + d[1])
+            if 0 <= n[0] < nx and 0 <= n[1] < ny and not blocked[n] and n not in seen:
+                seen.add(n)
+                q.append(n)
+    return False
+
+
 def floor_spot(ctx: Ctx, r: float, avoid: list | None = None, tries: int = 600) -> tuple[float, float]:
     """A free floor point with clearance r from furniture, walls, the robot start and `avoid` circles."""
     L = ctx.layout
@@ -552,13 +582,17 @@ class PushToZone(Template):
         else:
             for _ in range(300):
                 zx, zy = floor_spot(ctx, .6)
-                cx, cy = floor_spot(ctx, .65, avoid=[(zx, zy, .55)])
+                cx, cy = floor_spot(ctx, .72, avoid=[(zx, zy, .55)])  # room on every side to walk round and re-align
                 d = math.hypot(zx - cx, zy - cy)
                 if not 1.2 <= d <= 2.6:
                     continue
                 ux, uy = (zx - cx) / d, (zy - cy) / d
-                # the robot lines up behind the carton: that spot must be free floor
-                if floor_free(ctx.layout, cx - ux * .85, cy - uy * .85, .5) and floor_free(ctx.layout, cx - ux * .5, cy - uy * .5, .3):
+                # the robot lines up behind the carton: that spot must be free floor, reachable from the start around the carton
+                behind = (cx - ux * .8, cy - uy * .8)
+                k = W.footprint_radius("carton")
+                start = ctx.layout.mounts["floor"]["start"][:2]
+                if (floor_free(ctx.layout, *behind, .5) and floor_free(ctx.layout, cx - ux * .5, cy - uy * .5, .3)
+                        and reachable(ctx.layout, start, behind, .42, [(cx - k, cx + k, cy - k, cy + k)])):
                     break
             else:
                 raise Incompatible("no free floor for the carton, the zone and the robot behind the carton")

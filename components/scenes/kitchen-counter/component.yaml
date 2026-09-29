@@ -75,15 +75,6 @@ object_kinds:
     grip_width_m: 0.074
     height_m: 0.095
     pick_and_place: true
-  bottle:
-    label: bottle
-    size:
-      diameter_m: 0.06
-      height_m: 0.19
-    mass_kg: 0.35
-    grip_width_m: 0.06
-    height_m: 0.19
-    pick_and_place: true
   crate:
     label: crate
     size:

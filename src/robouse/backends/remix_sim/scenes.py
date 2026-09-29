@@ -76,7 +76,7 @@ class Layout:
     containers: list = field(default_factory=list)     # container kinds it stocks
     walls: bool = True
     floor_rgba: tuple = (.6, .6, .6)
-    wall_rgba: tuple = (.92, .91, .88, 1)
+    wall_rgba: tuple = (.92, .91, .88, .35)
     cams: list = field(default_factory=list)          # (name, pos, target, fovy)
     decor: list = field(default_factory=list)         # extra visual boxes (name, c, half, rgba)
     ground_texture: str = "checker"
@@ -124,7 +124,7 @@ class Layout:
         w.add_geom(name="floor", type=mujoco.mjtGeom.mjGEOM_PLANE, pos=[cx, cy, 0], size=[(x1 - x0) / 2 + 3, (y1 - y0) / 2 + 3, .1],
                    material="floor", friction=[1, .005, .0001])
         T, H = .1, min(self.ceiling, 2.6)
-        if self.walls:
+        if self.walls:  # drawn see-through (collisions are unchanged), so outside cameras can look in
             box(w, "wall_west", (x0 - T / 2, cy, H / 2), (T / 2, (y1 - y0) / 2 + T, H / 2), self.wall_rgba)
             box(w, "wall_east", (x1 + T / 2, cy, H / 2), (T / 2, (y1 - y0) / 2 + T, H / 2), self.wall_rgba)
             box(w, "wall_south", (cx, y0 - T / 2, H / 2), ((x1 - x0) / 2, T / 2, H / 2), self.wall_rgba)
@@ -215,9 +215,9 @@ def kitchen() -> Layout:
         floor_slots=[(-2.2, -1.2, -1.9, -.9), (1.3, 2.2, -1.9, -.9), (1.2, 2.2, .1, .9)],
         tag_spots=[(2.45, .6, .7, -1, 0, "on the east wall next to the fridge", False),
                    (-2.45, -.2, .7, 1, 0, "on the west wall", False)],
-        object_kinds=["block", "tall_block", "can", "cup", "bottle", "crate", "carton"],
+        object_kinds=["block", "tall_block", "can", "cup", "crate", "carton"],
         containers=["bowl", "tray", "tote"],
-        floor_rgba=(.66, .6, .52), wall_rgba=(.95, .93, .86, 1),
+        floor_rgba=(.66, .6, .52), wall_rgba=(.95, .93, .86,.35),
         decor=[("backsplash", (-.4, 2.44, 1.2), (1.5, .01, .3), (.85, .88, .9, 1)),
                ("stove", (.75, 1.8, .902), (.25, .22, .002), (.12, .12, .12, 1)),
                ("wall_cabinets", (-.4, 2.3, 1.95), (1.5, .15, .3), (.8, .78, .72, 1))],
@@ -243,7 +243,7 @@ def workshop() -> Layout:
         tag_spots=[(2.55, .6, .6, -1, 0, "on the east wall", False), (-1.84, .2, .7, 1, 0, "on the front of the tool cabinet", False)],
         object_kinds=["block", "small_block", "large_block", "tall_block", "bolt", "ring", "crate", "carton"],
         containers=["tote", "tray"],
-        floor_rgba=(.5, .52, .54), wall_rgba=(.86, .87, .85, 1),
+        floor_rgba=(.5, .52, .54), wall_rgba=(.86, .87, .85,.35),
         decor=[("pegboard", (0.0, 1.93, 1.35), (1.0, .015, .35), (.8, .68, .5, 1))],
         cams=[_cam("overview", (0, -2.0, 2.4), (0, .3, .6), 68), _cam("bench_cam", (0, .1, 1.75), (0, 1.2, .9), 62),
               _cam("top", (0, -.2, 4.6), (0, -.2, 0), 60)],
@@ -268,7 +268,7 @@ def warehouse() -> Layout:
                    (-1.5, .88, 1.1, 0, -1, "on rack A above its low shelf", False)],
         object_kinds=["parcel", "tall_block", "can", "block", "crate", "carton"],
         containers=["tote"],
-        floor_rgba=(.62, .62, .6), wall_rgba=(.8, .82, .84, 1),
+        floor_rgba=(.62, .62, .6), wall_rgba=(.8, .82, .84,.35),
         decor=[("aisle_line_s", (0, -.35, .001), (3.4, .03, .001), (.95, .8, .1, 1)),
                ("rack_a_upright_w", (-2.7, 1.2, 1.5), (.04, .3, .9), (.2, .3, .5, 1)),
                ("rack_a_upright_e", (-.3, 1.2, 1.5), (.04, .3, .9), (.2, .3, .5, 1))],
@@ -315,7 +315,7 @@ def lab() -> Layout:
         tag_spots=[(2.35, .7, .9, -1, 0, "on the east wall above the side bench", False)],
         object_kinds=["tube", "block", "small_block", "cup", "ring"],
         containers=["tote", "tray", "bin"],
-        floor_rgba=(.78, .8, .8), wall_rgba=(.95, .96, .97, 1),
+        floor_rgba=(.78, .8, .8), wall_rgba=(.95, .96, .97,.35),
         decor=[("biohazard_sign", (2.39, -.4, 1.3), (.005, .12, .12), (.95, .75, .1, 1))],
         cams=[_cam("overview", (0, -1.9, 2.3), (0, .4, .7), 68), _cam("bench_cam", (0, .2, 1.7), (0, 1.15, .9), 62),
               _cam("top", (0, -.2, 4.4), (0, -.2, 0), 60)],

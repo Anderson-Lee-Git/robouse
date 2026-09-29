@@ -224,6 +224,9 @@ SUITES = {
                      track="mobile-manipulation", capabilities=["pick-and-place", "long-horizon"]),
     "behavior": dict(embodiments=["behavior-r1"], scene="upstream-scenes", scenario="household", track="mobile-manipulation",
                      capabilities=["long-horizon", "navigation"]),
+    "remix": dict(embodiments=["franka-panda", "aloha-2", "pal-tiago", "google-robot", "unitree-go2", "crazyflie-2"],
+                  scene="tabletop", scenario="tabletop", track="arm",
+                  capabilities=["pick-and-place"]),  # each remixed task carries its own tags in its metadata
     "gymrobotics": dict(embodiments=["fetch", "shadow-hand"], scene="upstream-scenes", scenario="tabletop", track="arm",
                         capabilities=["pick-and-place", "dexterous"]),
 }

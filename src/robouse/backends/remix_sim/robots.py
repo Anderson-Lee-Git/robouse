@@ -863,7 +863,7 @@ class Tiago(MobileManip):
 
 
 class GoogleRobot(MobileManip):
-    max_grip = .062
+    max_grip = .068
     key = "google-robot"
     name = "Google Robot (on a holonomic base)"
     caps = ("reach", "grasp", "front-grasp", "locomote", "wheeled", "holonomic", "head-camera")

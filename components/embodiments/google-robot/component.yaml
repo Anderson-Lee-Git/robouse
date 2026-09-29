@@ -15,7 +15,7 @@ capabilities:
 - holonomic
 - head-camera
 grasp: front
-max_grip_m: 0.062
+max_grip_m: 0.068
 payload_kg: 1.0
 assets:
 - google_robot
@@ -85,6 +85,7 @@ cameras:
 - robot/head
 suites:
 - mobile-manip
+- remix
 reach:
   grasp_heights_m:
   - 0.35
