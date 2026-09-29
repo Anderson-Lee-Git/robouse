@@ -252,7 +252,7 @@ class AdroitBackend(Backend):
     def _skill_move_palm(self, args):
         """move_palm X Y Z [SPEED]: move the palm point (`palm_pos`) in a straight line with the arm slides (m/s, default 0.1).
         A reference point runs along the line at SPEED; the slide targets follow it with integral action (the upstream arm
-        servos are weak and sag under gravity), then the skill waits up to 100 steps for the palm to settle within 1 cm."""
+        servos are weak and sag under gravity), then the skill waits up to 50 steps for the palm to settle within 1 cm."""
         import mujoco
 
         if len(args) not in (3, 4):
@@ -284,7 +284,7 @@ class AdroitBackend(Backend):
         q_ref = self.d.qpos[qa].copy()
         integ = self.target[slides] - q_ref  # keep the current gravity offset
         ref_prev = start
-        for k in range(1, n_move + 100 + 1):
+        for k in range(1, n_move + 50 + 1):
             ref = start + (goal - start) * min(1.0, k / n_move)
             jp = np.zeros((3, self.m.nv))
             mujoco.mj_jacSite(self.m, self.d, jp, None, self._palm)
@@ -318,7 +318,11 @@ class AdroitBackend(Backend):
         import mujoco
 
         if self._renderer is None:
+            # Software rendering (OSMesa, in the hub's simulator image) spends most of a frame on shadow maps and
+            # multisampling (about 3.4 s instead of 0.2-0.5 s per kitchen frame), so both are off; physics is unaffected.
+            self.m.vis.quality.offsamples = 0
             self._renderer = mujoco.Renderer(self.m, self._h, self._w)
+            self._renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 0
         self._renderer.update_scene(self.d, camera=self.camera)
         return self._renderer.render().copy()
 

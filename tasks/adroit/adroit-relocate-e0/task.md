@@ -23,8 +23,9 @@ robouse:
   backend: adroit
   env: AdroitHandRelocate-v1
   seed: 0
-  max_steps: 900
+  max_steps: 1500
   camera: fixed
+  frame_every: 5
   skills: true
   success_mode: final
   init_source: Minari farama-minari/D4RL@a0fd465d1d9d relocate/human-v2 episode_0 (options/initial_state_dict)
@@ -115,13 +116,13 @@ robouse:
 
 # Adroit Relocate (start state 0)
 
-The robot is the ADROIT hand: a 24-joint, human-sized, Shadow-style right hand (wrist WRJ1 side-to-side and WRJ0 up-down; first (FF), middle (MF) and ring (RF) fingers with J3 spread, J2 knuckle, J1 middle and J0 tip joints; the little finger (LF) with an extra J4 palm joint; the thumb (TH) with J4 rotation, J3, J2, J1 and J0 tip joints). Finger joints J2, J1, J0 bend the finger toward the palm as they increase (0 = straight, 1.6 rad = fully bent). Every joint is driven by a position servo toward its target (the joint position it should settle at). The arm servos are weak (upstream gains): an arm joint settles near, not exactly at, its target, and gravity makes the hand sag (the vertical slide and the tilt settle a little low). World frame in metres: z up, the table top at z = 0, the forearm lies along +y behind the hand. The hand is on an arm with 6 actuators: three slides (m) that move the whole arm, ARTx along world -x (increasing it moves the hand toward -x), ARTy along world +z (up) and ARTz along world +y (away from the forearm), and three rotations (rad), ARRx (tilts the forearm about world x at its base, 0.5 m behind the palm: increasing it lowers the hand), ARRy (swings the forearm about the vertical: increasing it moves the hand toward -x) and ARRz (rolls the forearm about its own axis, world y).
+The robot is the ADROIT hand: a 24-joint, human-sized, Shadow-style right hand (wrist WRJ1 side-to-side and WRJ0 up-down; first (FF), middle (MF) and ring (RF) fingers with J3 spread, J2 knuckle, J1 middle and J0 tip joints; the little finger (LF) with an extra J4 palm joint; the thumb (TH) with J4 rotation, J3, J2, J1 and J0 tip joints). Finger joints J2, J1, J0 bend the finger toward the palm as they increase (0 = straight, 1.6 rad = fully bent). Every joint is driven by a position servo toward its target (the joint position it should settle at). The arm servos are weak (upstream gains): an arm joint settles near, not exactly at, its target, and gravity makes the hand sag (the vertical slide and the tilt settle a little low). World frame in metres: z up, the table top at z = 0, the forearm lies along +y behind the hand and the straight fingers point along +y, about 10 cm beyond the palm. The hand is on an arm with 6 actuators: three slides (m) that move the whole arm, ARTx along world -x (increasing it moves the hand toward -x), ARTy along world +z (up) and ARTz along world +y (away from the forearm), and three rotations (rad), ARRx (tilts the forearm about world x at its base, 0.5 m behind the palm: increasing it lowers the hand), ARRy (swings the forearm about the vertical: increasing it moves the hand toward -x) and ARRz (rolls the forearm about its own axis, world y).
 
 A ball (radius 3.5 cm) lies on the table (`ball_pos`); the green sphere shows the target (`target_pos`) in the air above the table. Grasp the ball, lift it and hold it at the target. The ball starts at [0.1957, -0.1693, 0.0356] and the target is at [0.1677, -0.1422, 0.1601].
 
 **Goal:** Pick up the ball and move it to the target position.
 
-Success: the ball's centre is within 10 cm of the target (`ball_target_distance` < 0.1), which is the env's own success signal (`info['success']`). It is judged after you call `robo done` and the hand has held its targets for 10 more steps, so the goal must still hold then. The step budget is 900 steps (9 s of simulated time).
+Success: the ball's centre is within 10 cm of the target (`ball_target_distance` < 0.1), which is the env's own success signal (`info['success']`). It is judged after you call `robo done` and the hand has held its targets for 10 more steps, so the goal must still hold then. The step budget is 1500 steps (15 s of simulated time).
 
 This task is adapted from Gymnasium-Robotics `AdroitHandRelocate-v1` and starts from the initial state of human demonstration 0 of the Minari dataset `D4RL/relocate/human-v2`.
 

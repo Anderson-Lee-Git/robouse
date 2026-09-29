@@ -202,7 +202,13 @@ class KitchenBackend(Backend):
         import mujoco
 
         if self._renderer is None:
+            # Software rendering (OSMesa, in the hub's simulator image) spends most of a frame on shadow maps and
+            # multisampling (about 3.4 s instead of 0.2-0.5 s per kitchen frame), so both are off; physics is unaffected.
+            self.m.vis.quality.offsamples = 0
             self._renderer = mujoco.Renderer(self.m, self._h, self._w)
+            self._renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 0
+            # without shadows the oven hood's spotlight would flood the stove top: switch that light off (visual only)
+            self.m.light_active[mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_LIGHT, "ovenlight")] = 0
             cam = mujoco.MjvCamera()
             cam.type = mujoco.mjtCamera.mjCAMERA_FREE
             cam.distance, cam.azimuth, cam.elevation = 2.2, 70.0, -35.0  # the upstream default view

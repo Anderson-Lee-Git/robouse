@@ -28,18 +28,18 @@ HF_REVISION = "a0fd465d1d9d253b075d532b270e03d8fb4f46e6"
 
 # task id -> (env kind, Minari human-v2 episode index, step budget)
 TASKS = {
-    "adroit-door-e11": ("door", 11, 600),
-    "adroit-door-e18": ("door", 18, 600),
-    "adroit-door-e23": ("door", 23, 600),
-    "adroit-hammer-e14": ("hammer", 14, 900),
-    "adroit-hammer-e18": ("hammer", 18, 900),
-    "adroit-hammer-e19": ("hammer", 19, 900),
-    "adroit-pen-e1": ("pen", 1, 400),
-    "adroit-pen-e7": ("pen", 7, 400),
-    "adroit-pen-e11": ("pen", 11, 400),
-    "adroit-relocate-e0": ("relocate", 0, 900),
-    "adroit-relocate-e5": ("relocate", 5, 900),
-    "adroit-relocate-e17": ("relocate", 17, 900),
+    "adroit-door-e11": ("door", 11, 1000),
+    "adroit-door-e18": ("door", 18, 1000),
+    "adroit-door-e23": ("door", 23, 1000),
+    "adroit-hammer-e14": ("hammer", 14, 1500),
+    "adroit-hammer-e18": ("hammer", 18, 1500),
+    "adroit-hammer-e19": ("hammer", 19, 1500),
+    "adroit-pen-e1": ("pen", 1, 600),
+    "adroit-pen-e7": ("pen", 7, 600),
+    "adroit-pen-e11": ("pen", 11, 600),
+    "adroit-relocate-e0": ("relocate", 0, 1500),
+    "adroit-relocate-e5": ("relocate", 5, 1500),
+    "adroit-relocate-e17": ("relocate", 17, 1500),
 }
 
 VERIFY = """\
@@ -65,7 +65,8 @@ HAND = (
     "palm as they increase (0 = straight, 1.6 rad = fully bent). Every joint is driven by a position servo toward its target (the "
     "joint position it should settle at). The arm servos are weak (upstream gains): an arm joint settles near, not exactly at, its "
     "target, and gravity makes the hand sag (the vertical slide and the tilt settle a little low). "
-    "World frame in metres: z up, the table top at z = 0, the forearm lies along +y behind the hand."
+    "World frame in metres: z up, the table top at z = 0, the forearm lies along +y behind the hand and the straight fingers point "
+    "along +y, about 10 cm beyond the palm."
 )
 
 ENV_TEXT = {
@@ -198,7 +199,7 @@ def main() -> None:
             "agent": {"timeout_sec": 1800},
             "verifier": {"timeout_sec": 120},
             "robouse": {"id": task_id, "backend": "adroit", "env": t["upstream"], "seed": 0, "max_steps": max_steps,
-                        "camera": "fixed", "skills": True, "success_mode": "final",
+                        "camera": "fixed", "frame_every": 5, "skills": True, "success_mode": "final",
                         "init_source": f"Minari {source} (options/initial_state_dict)", "init_state": init},
         }
         body = (

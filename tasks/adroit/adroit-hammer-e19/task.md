@@ -23,8 +23,9 @@ robouse:
   backend: adroit
   env: AdroitHandHammer-v1
   seed: 0
-  max_steps: 900
+  max_steps: 1500
   camera: fixed
+  frame_every: 5
   skills: true
   success_mode: final
   init_source: Minari farama-minari/D4RL@a0fd465d1d9d hammer/human-v2 episode_19 (options/initial_state_dict)
@@ -105,13 +106,13 @@ robouse:
 
 # Adroit Hammer (start state 19)
 
-The robot is the ADROIT hand: a 24-joint, human-sized, Shadow-style right hand (wrist WRJ1 side-to-side and WRJ0 up-down; first (FF), middle (MF) and ring (RF) fingers with J3 spread, J2 knuckle, J1 middle and J0 tip joints; the little finger (LF) with an extra J4 palm joint; the thumb (TH) with J4 rotation, J3, J2, J1 and J0 tip joints). Finger joints J2, J1, J0 bend the finger toward the palm as they increase (0 = straight, 1.6 rad = fully bent). Every joint is driven by a position servo toward its target (the joint position it should settle at). The arm servos are weak (upstream gains): an arm joint settles near, not exactly at, its target, and gravity makes the hand sag (the vertical slide and the tilt settle a little low). World frame in metres: z up, the table top at z = 0, the forearm lies along +y behind the hand. The hand is on an arm with 2 actuators (rad): ARRx (tilts the forearm about world x at its base, 0.5 m behind the palm: increasing it lowers the hand) and ARRy (swings the forearm about the vertical: increasing it moves the hand toward -x); the arm cannot slide.
+The robot is the ADROIT hand: a 24-joint, human-sized, Shadow-style right hand (wrist WRJ1 side-to-side and WRJ0 up-down; first (FF), middle (MF) and ring (RF) fingers with J3 spread, J2 knuckle, J1 middle and J0 tip joints; the little finger (LF) with an extra J4 palm joint; the thumb (TH) with J4 rotation, J3, J2, J1 and J0 tip joints). Finger joints J2, J1, J0 bend the finger toward the palm as they increase (0 = straight, 1.6 rad = fully bent). Every joint is driven by a position servo toward its target (the joint position it should settle at). The arm servos are weak (upstream gains): an arm joint settles near, not exactly at, its target, and gravity makes the hand sag (the vertical slide and the tilt settle a little low). World frame in metres: z up, the table top at z = 0, the forearm lies along +y behind the hand and the straight fingers point along +y, about 10 cm beyond the palm. The hand is on an arm with 2 actuators (rad): ARRx (tilts the forearm about world x at its base, 0.5 m behind the palm: increasing it lowers the hand) and ARRy (swings the forearm about the vertical: increasing it moves the hand toward -x); the arm cannot slide.
 
 A hammer lies on the table under the hand, its handle along x (`hammer_pos` is its centre, `hammer_head_pos` the striking face of its head). A board stands to the side with a nail sticking out of it toward the hammer (`nail_pos` is the nail head; `nail_goal_pos` is where the nail head is when it is driven fully in). Pick up the hammer and strike the nail head along the nail's axis. The nail head starts at [-0.0441, -0.0366, 0.2301], 0.091 m out of the board; the hammer lies at [0.0, -0.2, 0.035].
 
 **Goal:** Pick up the hammer and drive the nail into the board.
 
-Success: the nail head is within 1 cm of its fully-driven position (`nail_goal_distance` < 0.01), which is the env's own success signal (`info['success']`). It is judged after you call `robo done` and the hand has held its targets for 10 more steps, so the goal must still hold then. The step budget is 900 steps (9 s of simulated time).
+Success: the nail head is within 1 cm of its fully-driven position (`nail_goal_distance` < 0.01), which is the env's own success signal (`info['success']`). It is judged after you call `robo done` and the hand has held its targets for 10 more steps, so the goal must still hold then. The step budget is 1500 steps (15 s of simulated time).
 
 This task is adapted from Gymnasium-Robotics `AdroitHandHammer-v1` and starts from the initial state of human demonstration 19 of the Minari dataset `D4RL/hammer/human-v2`.
 

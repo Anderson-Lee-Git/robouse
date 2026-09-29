@@ -23,8 +23,9 @@ robouse:
   backend: adroit
   env: AdroitHandPen-v1
   seed: 0
-  max_steps: 400
+  max_steps: 600
   camera: fixed
+  frame_every: 5
   skills: true
   success_mode: final
   init_source: Minari farama-minari/D4RL@a0fd465d1d9d pen/human-v2 episode_7 (options/initial_state_dict)
@@ -100,13 +101,13 @@ robouse:
 
 # Adroit Pen (start state 7)
 
-The robot is the ADROIT hand: a 24-joint, human-sized, Shadow-style right hand (wrist WRJ1 side-to-side and WRJ0 up-down; first (FF), middle (MF) and ring (RF) fingers with J3 spread, J2 knuckle, J1 middle and J0 tip joints; the little finger (LF) with an extra J4 palm joint; the thumb (TH) with J4 rotation, J3, J2, J1 and J0 tip joints). Finger joints J2, J1, J0 bend the finger toward the palm as they increase (0 = straight, 1.6 rad = fully bent). Every joint is driven by a position servo toward its target (the joint position it should settle at). The arm servos are weak (upstream gains): an arm joint settles near, not exactly at, its target, and gravity makes the hand sag (the vertical slide and the tilt settle a little low). World frame in metres: z up, the table top at z = 0, the forearm lies along +y behind the hand. The hand has no arm joints: the forearm is fixed and only the wrist and fingers move.
+The robot is the ADROIT hand: a 24-joint, human-sized, Shadow-style right hand (wrist WRJ1 side-to-side and WRJ0 up-down; first (FF), middle (MF) and ring (RF) fingers with J3 spread, J2 knuckle, J1 middle and J0 tip joints; the little finger (LF) with an extra J4 palm joint; the thumb (TH) with J4 rotation, J3, J2, J1 and J0 tip joints). Finger joints J2, J1, J0 bend the finger toward the palm as they increase (0 = straight, 1.6 rad = fully bent). Every joint is driven by a position servo toward its target (the joint position it should settle at). The arm servos are weak (upstream gains): an arm joint settles near, not exactly at, its target, and gravity makes the hand sag (the vertical slide and the tilt settle a little low). World frame in metres: z up, the table top at z = 0, the forearm lies along +y behind the hand and the straight fingers point along +y, about 10 cm beyond the palm. The hand has no arm joints: the forearm is fixed and only the wrist and fingers move.
 
 The hand is held palm-up and holds a pen (a cylinder about 23 cm long) lying across its fingers. A second, floating pen beside the hand (the target, not touchable) shows the goal orientation. Turn the pen in the hand (in-hand manipulation) so it points the same way, without dropping it or letting it drift away. At the start the pen points along [1.0, 0.0, 0.0008] and the target along [-0.3007, 0.4953, 0.815] (similarity -0.3001).
 
 **Goal:** Rotate the pen in the hand to match the target orientation.
 
-Success: the pen's direction matches the target's (`orientation_similarity`, the dot product of the two unit vectors, above 0.95) and the pen's centre is within 7.5 cm of its starting point `pen_home_pos` (`pen_home_distance` < 0.075), which is the env's own success signal (`info['success']`). It is judged after you call `robo done` and the hand has held its targets for 10 more steps, so the goal must still hold then. The step budget is 400 steps (4 s of simulated time).
+Success: the pen's direction matches the target's (`orientation_similarity`, the dot product of the two unit vectors, above 0.95) and the pen's centre is within 7.5 cm of its starting point `pen_home_pos` (`pen_home_distance` < 0.075), which is the env's own success signal (`info['success']`). It is judged after you call `robo done` and the hand has held its targets for 10 more steps, so the goal must still hold then. The step budget is 600 steps (6 s of simulated time).
 
 This task is adapted from Gymnasium-Robotics `AdroitHandPen-v1` and starts from the initial state of human demonstration 7 of the Minari dataset `D4RL/pen/human-v2`.
 
