@@ -234,6 +234,6 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
         env["ROBOUSE_TASK_LANGUAGE"] = str(task.metadata.get("language_instruction") or task.meta.get("real", {}).get("goal_text")
                                            or task.spec.get("real", {}).get("goal_text") or task.meta.get("task", {}).get("description", ""))
         return Launch([os.environ.get("ROBOUSE_VLA_PYTHON", "python3"), str(client)], env,
-                      notes={"model": cfg["preset"], "wire": cfg["wire"], "server": env["ROBOUSE_VLA_URL"]})
+                      notes={"model": cfg["preset"], "wire": cfg["wire"], "server": env["ROBOUSE_VLA_URL"], "provider": "vla"})
 
     raise KeyError(f"unknown harness {harness!r}")

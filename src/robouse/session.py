@@ -73,6 +73,13 @@ class Episode:
         self._frame_meta: list[dict] = []
         self._trace = open(self.run_dir / "trace.jsonl", "w")
         self._obs_count = 0
+        self._phys: list[dict] = []  # per env step: end-effector point, sim time, max contact force on the robot
+        self._phys_geoms = None
+        md = getattr(self.backend, "mj_model_data", None)
+        try:
+            self._phys_mj = callable(md) and md() is not None
+        except Exception:  # noqa: BLE001 - some worker backends cannot answer before their first step
+            self._phys_mj = False
         self._record_frame(force=True)
 
     def _save_workspace_images(self) -> None:
@@ -95,9 +102,48 @@ class Episode:
             self._frames.append(np.asarray(img, dtype=np.uint8))
             self._frame_meta.append({"i": len(self._frames) - 1, "t": round(time.time() - self.t0, 3), "step": self.steps})
 
+    def _probe(self) -> None:
+        """One physics sample for the episode metrics (metrics.py); never fails the step."""
+        b, rec = self.backend, {"i": self.steps}
+        try:
+            if callable(getattr(b, "metrics_point", None)):
+                pt = b.metrics_point()
+            elif self._phys_mj and callable(getattr(b, "hand_pos", None)):
+                pt = b.hand_pos()
+            else:
+                pt = None
+            if pt is not None:
+                rec["ee"] = [round(float(x), 5) for x in pt]
+            if self._phys_mj:
+                from .metrics import max_robot_contact_force, robot_geoms
+
+                m, d = b.mj_model_data()
+                if self._phys_geoms is None:
+                    self._phys_geoms = robot_geoms(m)
+                rec["t"] = round(float(d.time), 5)
+                rec["f"] = round(max_robot_contact_force(m, d, self._phys_geoms), 3)
+        except Exception:  # noqa: BLE001
+            pass
+        self._phys.append(rec)
+
+    def _control_dt(self) -> float | None:
+        ts = [r["t"] for r in self._phys if "t" in r]
+        if len(ts) >= 3:
+            d = np.diff(ts)
+            d = d[d > 0]
+            if len(d):
+                return float(np.median(d))
+        decl = getattr(self.backend, "decl", None)
+        if decl is not None and getattr(getattr(decl, "budget", None), "control_dt", None):
+            return float(decl.budget.control_dt)
+        if getattr(self.backend, "hz", None):
+            return 1.0 / float(self.backend.hz)
+        return float(self.spec["control_dt"]) if self.spec.get("control_dt") else None
+
     def _env_step(self, action) -> Any:
         info = self.backend.step(action)
         self.steps += 1
+        self._probe()
         self.success_ever = self.success_ever or info.success
         self._record_frame()
         if info.success and self.success_mode == "first" and not self.finished:
@@ -380,8 +426,21 @@ class Episode:
             **({"safety_events": list(self.backend.events)} if getattr(self.backend, "events", None) else {}),
             **({"session": self.backend.session_summary()} if callable(getattr(self.backend, "session_summary", None)) else {}),
             **({"judge_error": judge_error} if judge_error else {}),
+            **({"placement": self.backend.placement_record} if getattr(self.backend, "placement_record", None) else {}),
             **({"judge_detail": getattr(self.backend, "last_judge")} if getattr(self.backend, "last_judge", None) else {}),
         }
+        try:
+            from .metrics import episode_metrics
+
+            prog = self.backend.progress() if callable(getattr(self.backend, "progress", None)) else None
+            stages = len(getattr(self.backend, "stages", None) or []) or None
+            extra = self.backend.episode_metrics() if callable(getattr(self.backend, "episode_metrics", None)) else None
+            self.result["metrics"] = episode_metrics(self.result, self._phys, self._control_dt(), prog, stages, extra)
+            with open(self.run_dir / "physics.jsonl", "w") as f:
+                for r in self._phys:
+                    f.write(json.dumps(r) + "\n")
+        except Exception as e:  # noqa: BLE001 - metrics never change the verdict
+            self.result["metrics_error"] = f"{type(e).__name__}: {e}"[:300]
         (self.run_dir / "result.json").write_text(json.dumps(self.result, indent=2))
         self._write_video()
         return {"outcome": outcome, "episode": "finished"}

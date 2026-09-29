@@ -44,6 +44,7 @@ def main(argv=None) -> int:
     s.add_argument("--seed", type=int, help="override the task's seed")
     s.add_argument("--max-wall-s", type=float, default=1800, help="wall-clock budget in seconds (default 1800)")
     s.add_argument("--ready-file", help="file created once the server is listening")
+    s.add_argument("--split", help="placement split for backends with seeded placements: nominal, interpolation or extrapolation")
 
     r = sub.add_parser("run", help="run one trial end to end")
     r.add_argument("--task", required=True, help="task folder or bundled task id")
@@ -53,6 +54,9 @@ def main(argv=None) -> int:
     r.add_argument("--timeout", type=float, help="agent wall-clock limit in seconds (default: the task's agent.timeout_sec)")
     r.add_argument("--seed", type=int, help="override the task's seed")
     r.add_argument("--rig", help="real-robot rig file (YAML, keyed by robot): runs real tasks on live hardware instead of the mock")
+    r.add_argument("--split", help="placement split: nominal, interpolation or extrapolation (tabletop pick-and-place tasks)")
+    r.add_argument("--extra-instruction", default="", help="text appended to the task instruction (recorded in config.json)")
+    r.add_argument("--prior-learnings", help="markdown notes (e.g. from `robouse summarize`) appended to the instruction")
 
     m = sub.add_parser("run-many", help="run a set of trials")
     m.add_argument("--tasks", help="task root (default: the bundled tasks)")
@@ -66,6 +70,19 @@ def main(argv=None) -> int:
     m.add_argument("--task-list", help="file with one task id per line (subset of --tasks)")
     m.add_argument("--resume", action="store_true", help="skip tasks that already have a finished, non-infra-failed trial in --out")
     m.add_argument("--rig", help="real-robot rig file (YAML, keyed by robot): real tasks run on live hardware, one at a time")
+    m.add_argument("--include", action="append", help="only task ids matching this glob (repeatable), e.g. 'libero-10-*'")
+    m.add_argument("--exclude", action="append", help="skip task ids matching this glob (repeatable)")
+    m.add_argument("--sample", type=int, default=0, help="run a seeded random sample of N tasks")
+    m.add_argument("--sample-seed", type=int, default=0, help="seed for --sample (default 0)")
+    m.add_argument("--seeds", help="episode seeds per task, e.g. 0-4 or 0,3,7 (default: the task's own seed); gives pass@k")
+    m.add_argument("--epochs", type=int, default=1, help="repeat each (task, seed) N times (real robots: repeated trials)")
+    m.add_argument("--retries", type=int, default=0, help="rerun a trial up to N times after an infrastructure failure "
+                   "(exponential backoff; the failed trial is kept in OUT/_infra_failed)")
+    m.add_argument("--split", help="placement split: nominal, interpolation or extrapolation (identical placements per seed)")
+    m.add_argument("--mode", choices=["sim", "real"], help="only simulated or only real-robot tasks")
+    m.add_argument("--extra-instruction", default="", help="text appended to every task instruction")
+    m.add_argument("--prior-learnings", help="markdown notes appended to every instruction (retry with learning)")
+    m.add_argument("--dry-run", action="store_true", help="print the resolved trial plan and exit")
 
     e = sub.add_parser("estop", help="latch the real-robot e-stop (every real episode stops at its next command); --clear releases it")
     e.add_argument("reason", nargs="?", default="operator e-stop")
@@ -81,6 +98,19 @@ def main(argv=None) -> int:
 
     sub.add_parser("robots", help="list real-robot profiles, drivers and hardware-in-the-loop fixtures")
 
+    rp = sub.add_parser("report", help="metrics with 95%% confidence intervals over job folders, grouped by trial attributes")
+    rp.add_argument("jobs", nargs="+", help="job folders (run-many --out)")
+    rp.add_argument("--by", action="append", help="group keys, comma-separated (repeatable): harness, model, suite, category, "
+                    "difficulty, task, split, seed, mode, job, regime, released (default harness,model)")
+    rp.add_argument("--metrics", action="append", help="metrics to show, comma-separated (default: the nine robot metrics + cost)")
+    rp.add_argument("--json", help="write the full report as JSON")
+    rp.add_argument("--cost-quality", help="write cost-vs-success points (JSON) for groups with a known cost")
+    rp.add_argument("--svg", help="write a cost-vs-success scatter (SVG)")
+
+    su = sub.add_parser("summarize", help="distil a trial into learnings (markdown) for --prior-learnings")
+    su.add_argument("trial", help="trial folder (OUT/<task>__<harness>__<id>)")
+    su.add_argument("-o", "--out", help="output file (default: <trial>/learnings.md; - for stdout)")
+
     t = sub.add_parser("tasks", help="list tasks (default: the bundled tasks)")
     t.add_argument("root", nargs="?", help="task root (default: the bundled tasks)")
     t.add_argument("--path", action="store_true", help="print the bundled task directory and exit")
@@ -94,6 +124,21 @@ def main(argv=None) -> int:
         os.environ["ROBOUSE_RIG"] = str(Path(a.rig).resolve())
     if a.cmd in ("estop", "operator", "hil-check", "robots"):
         return _real_cmd(a)
+    if a.cmd == "report":
+        from .report import main as report_main
+
+        return report_main(a.jobs, a.by, a.metrics, a.json, a.cost_quality, a.svg)
+    if a.cmd == "summarize":
+        from .summarize import summarize
+
+        text = summarize(Path(a.trial))
+        if a.out == "-":
+            print(text)
+        else:
+            out = Path(a.out) if a.out else Path(a.trial) / "learnings.md"
+            out.write_text(text)
+            print(out)
+        return 0
     if a.cmd == "fetch-assets":
         from .assets import fetch
 
@@ -113,6 +158,8 @@ def main(argv=None) -> int:
         spec = task.spec
         if a.seed is not None:
             spec["seed"] = a.seed
+        if a.split:
+            spec["placement"] = {**(spec.get("placement") or {}), "split": a.split}
         res = serve(spec, Path(a.run_dir), a.socket, Path(a.workspace) if a.workspace else None,
                     max_wall_s=a.max_wall_s, ready_file=Path(a.ready_file) if a.ready_file else None)
         print(json.dumps(res))
@@ -120,15 +167,29 @@ def main(argv=None) -> int:
     if a.cmd == "run":
         from .runner import run_trial
 
-        res = run_trial(load_task(resolve_task_path(a.task)), a.harness, a.model, Path(a.out), timeout=a.timeout, seed=a.seed)
+        res = run_trial(load_task(resolve_task_path(a.task)), a.harness, a.model, Path(a.out), timeout=a.timeout, seed=a.seed,
+                        split=a.split, extra_instruction=a.extra_instruction, prior_learnings=a.prior_learnings)
         print(json.dumps(res, indent=2))
         return 0
     if a.cmd == "run-many":
         from .runner import run_many
 
         ids = [l.strip() for l in open(a.task_list) if l.strip() and not l.startswith("#")] if a.task_list else None
-        run_many(Path(a.tasks) if a.tasks else bundled_tasks_root(), a.harness, a.model, Path(a.out), filt=a.filter, limit=a.limit,
-                 concurrency=1 if a.rig else a.concurrency, timeout=a.timeout, ids=ids, resume=a.resume)
+        root = Path(a.tasks) if a.tasks else bundled_tasks_root()
+        if a.dry_run:
+            from .runner import _parse_seeds, select_tasks
+
+            ts = select_tasks(root, a.filter, ids, a.include, a.exclude, a.limit, a.sample, a.sample_seed, a.mode)
+            seeds = _parse_seeds(a.seeds)
+            print(json.dumps({"harness": a.harness, "model": a.model, "tasks": [t.id for t in ts], "seeds": seeds,
+                              "epochs": a.epochs, "trials": len(ts) * len(seeds) * max(1, a.epochs), "split": a.split,
+                              "concurrency": 1 if a.rig else a.concurrency, "rig": a.rig, "retries": a.retries}, indent=2))
+            return 0
+        run_many(root, a.harness, a.model, Path(a.out), filt=a.filter, limit=a.limit,
+                 concurrency=1 if a.rig else a.concurrency, timeout=a.timeout, ids=ids, resume=a.resume, seeds=a.seeds,
+                 epochs=a.epochs, include=a.include, exclude=a.exclude, sample=a.sample, sample_seed=a.sample_seed,
+                 retries=a.retries, split=a.split, mode=a.mode, extra_instruction=a.extra_instruction,
+                 prior_learnings=a.prior_learnings)
         return 0
     if a.cmd == "tasks":
         if a.path:

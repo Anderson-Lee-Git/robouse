@@ -223,6 +223,9 @@ class RealArmBackend(EmbodiedBackend):
         return [float(x) for x in (self.guard.last_cmd if self.guard.last_cmd is not None else self.q)]
 
     # ---- observation ------------------------------------------------------------------------------------------------
+    def metrics_point(self):
+        return self._tool() if self.guard.env.chain is not None else None
+
     def _tool(self, q=None) -> np.ndarray:
         return self.guard.env.chain.tool(self.q if q is None else q)
 
