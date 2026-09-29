@@ -1,6 +1,6 @@
 # Suites
 
-The package bundles 392 tasks in 20 suites; each is a subfolder of `robouse tasks --path`. The last two columns are the results of running every reference solution and the no-op control, with MuJoCo 3.3.0.
+The package bundles 599 tasks in 28 suites; each is a subfolder of `robouse tasks --path`. The last two columns are the results of running every reference solution and the no-op control, with MuJoCo 3.3.0.
 
 ```gallery
 img/suites/metaworld.webp | `metaworld`
@@ -23,6 +23,14 @@ img/suites/mobile-manip.webp | `mobile-manip`
 img/suites/dexhand.webp | `dexhand`
 img/suites/crazyflie.webp | `crazyflie`
 img/suites/driving.webp | `driving`
+img/suites/libero-90.webp | `libero-90`
+img/suites/kitchen.webp | `kitchen`
+img/suites/adroit.webp | `adroit`
+img/suites/dmcontrol.webp | `dmcontrol`
+img/suites/myosuite.webp | `myosuite`
+img/suites/humanoidbench.webp | `humanoidbench`
+img/suites/maniskill.webp | `maniskill`
+img/suites/robocasa.webp | `robocasa`
 ```
 
 Stills from the recordings of one reference solution per suite; for `vision`, a camera image the agent receives.
@@ -31,7 +39,8 @@ Stills from the recordings of one reference solution per suite; for `vision`, a 
 |---|---|---|---|---|---|
 | `metaworld` | Meta-World MT50 | 50 | `[metaworld]` | 50/50 | 0/50 |
 | `gymrobotics` | Gymnasium-Robotics: Fetch, PointMaze | 12 | `[gymrobotics]` | 12/12 | 0/12 |
-| `libero` | LIBERO, 5 tasks per suite | 20 | [see below](#libero) | 20/20 | 0/20 |
+| `libero` | LIBERO: Spatial, Object, Goal, Long (10 each) | 40 | [see below](#libero) | 40/40 | 0/40 |
+| `libero-90` | LIBERO-90 | 90 | [see below](#libero) | 90/90 | 0/90 |
 | `robosuite` | robosuite 1.5, five arm models | 21 | `[robosuite]` | 21/21 | 0/21 |
 | `libero-style` | LIBERO-like, Robo Use tabletop | 12 | `[sim]` | 12/12 | 0/12 |
 | `arc-style` | ARC-style rules on a table | 11 | `[sim]` | 11/11 | 0/11 |
@@ -49,6 +58,13 @@ Stills from the recordings of one reference solution per suite; for `vision`, a 
 | `dexhand` | Shadow Hand, LEAP hand | 7 | `[sim]`, assets | 7/7 | 0/7 |
 | `crazyflie` | Crazyflie 2, single and swarm of three | 7 | `[sim]`, assets | 7/7 | 0/7 |
 | `driving` | MetaDrive car in traffic | 7 | MetaDrive, [see below](#driving) | 7/7 | 0/7 |
+| `kitchen` | Gymnasium-Robotics Franka Kitchen | 10 | `[gymrobotics]` | 10/10 | 0/10 |
+| `adroit` | Gymnasium-Robotics Adroit hand (D4RL human-demo starts) | 12 | `[gymrobotics]` | 12/12 | 0/12 |
+| `dmcontrol` | DeepMind dm_control: Control Suite, Kinova Jaco arm | 17 | dm_control virtualenv, `docs/suites/dmcontrol.md` | 17/17 | 0/17 |
+| `myosuite` | MyoSuite: muscle-driven elbow, finger and hand | 15 | MyoSuite virtualenv, `docs/suites/myosuite.md` | 15/15 | 0/15 |
+| `humanoidbench` | HumanoidBench: Unitree H1 with two Shadow hands | 7 | HumanoidBench virtualenv, `docs/suites/humanoidbench.md` | 7/7 | 0/7 |
+| `maniskill` | ManiSkill3 tabletop, Franka Panda (CPU physics) | 12 | ManiSkill virtualenv, `docs/suites/maniskill.md` | 12/12 | 0/12 |
+| `robocasa` | RoboCasa kitchens, Franka Panda on a parked mobile base | 24 | RoboCasa virtualenv, `docs/suites/robocasa.md` | 24/24 | 0/24 |
 
 "Assets" means `robouse fetch-assets`, which downloads the MuJoCo Menagerie robot models once (`--robot NAME` for one robot; the embodiment suites need about 350 MB).
 
@@ -120,6 +136,10 @@ robouse run --task driving-winding-road --harness oracle --out runs/try
 
 Set `ROBOUSE_METADRIVE_PYTHON` to use another interpreter.
 
+## Suites with their own simulator environment
+
+`dmcontrol`, `myosuite`, `humanoidbench`, `maniskill` and `robocasa` pin simulator versions that conflict with the main environment, so each runs in a virtual environment of its own that the episode server starts as a subprocess (the DexJoCo pattern). The setup for each is in the repository under `docs/suites/<suite>.md`. Every suite also runs without local setup from the [hub](https://robouse.ai/hub/), where each simulator image is built from pinned sources.
+
 ## Not in the package
 
-RoboCasa (7 kitchen tasks) needs recorded scene layouts that are not distributed yet, so it runs only from a checkout of the Robo Use repository, which is private for now.
+BEHAVIOR-1K needs an NVIDIA RTX GPU for its simulator worker, so it runs only from a checkout of the Robo Use repository.
