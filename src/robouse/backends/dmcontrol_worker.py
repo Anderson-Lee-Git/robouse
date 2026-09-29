@@ -330,6 +330,11 @@ class Worker:
 
     # ---- rendering -----------------------------------------------------------------------------------------------
     def render(self, camera: str, width: int, height: int) -> bytes:
+        g = self.physics.model.vis.global_  # the offscreen buffer must hold the frame (visual only; recordings)
+        if width > g.offwidth or height > g.offheight:
+            if getattr(self.physics, "_contexts", None):
+                self.physics._free_rendering_contexts()  # noqa: SLF001  rebuilt at the new size on the next render
+            g.offwidth, g.offheight = max(g.offwidth, width), max(g.offheight, height)
         img = self.physics.render(height=height, width=width, camera_id=camera)
         return np.ascontiguousarray(img, dtype=np.uint8).tobytes()
 

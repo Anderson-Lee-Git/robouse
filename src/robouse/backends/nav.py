@@ -439,9 +439,10 @@ class NavBackend(EmbodiedBackend):
         dr.polygon([(c[0], c[1] - 10), (c[0] - 6, c[1] + 6), (c[0] + 6, c[1] + 6)], fill=(30, 150, 80))
         return np.asarray(img)
 
-    def render_overview(self) -> np.ndarray:
+    def render_overview(self, fit: int = 640) -> np.ndarray:
         x0, y0, x1, y1 = self.bounds
-        ppm = min(40.0, 640.0 / max(x1 - x0, y1 - y0))
+        ppm = min(40.0 * fit / 640, fit / max(x1 - x0, y1 - y0))
+        lw = max(2, round(2 * fit / 640))
         img, dr, P = self._canvas(ppm, self.bounds)
         for w in self.walls:
             cx, cy, sx, sy = w
@@ -456,12 +457,24 @@ class NavBackend(EmbodiedBackend):
             cx, cy, sx, sy = self.target["box"]
             dr.rectangle([P(cx - sx / 2, cy + sy / 2), P(cx + sx / 2, cy - sy / 2)], fill=(220, 90, 70))
         if len(self.path) > 1:
-            dr.line([P(*q) for q in self.path], fill=(30, 150, 80), width=2)
+            dr.line([P(*q) for q in self.path], fill=(30, 150, 80), width=lw)
         x, y = P(*self.pos)
         r = RADIUS * ppm
-        dr.ellipse([x - r, y - r, x + r, y + r], outline=(20, 110, 60), width=2)
-        dr.line([(x, y), (x + 1.5 * r * math.cos(self.yaw), y - 1.5 * r * math.sin(self.yaw))], fill=(20, 110, 60), width=2)
+        dr.ellipse([x - r, y - r, x + r, y + r], outline=(20, 110, 60), width=lw)
+        dr.line([(x, y), (x + 1.5 * r * math.cos(self.yaw), y - 1.5 * r * math.sin(self.yaw))], fill=(20, 110, 60), width=lw)
         return np.asarray(img)
+
+    def render_record(self, width: int, height: int) -> np.ndarray:
+        """The overview map for the episode video, drawn at the frame's scale (not enlarged) and centred on it."""
+        from PIL import Image
+
+        x0, y0, x1, y1 = self.bounds
+        fit = int(min(width / (x1 - x0), height / (y1 - y0)) * max(x1 - x0, y1 - y0) * 0.94)
+        img = Image.fromarray(self.render_overview(fit))
+        img.thumbnail((width, height))
+        out = Image.new("RGB", (width, height), (245, 243, 238))
+        out.paste(img, ((width - img.width) // 2, (height - img.height) // 2))
+        return np.asarray(out)
 
     def render_video(self) -> np.ndarray:
         return self.render_overview()

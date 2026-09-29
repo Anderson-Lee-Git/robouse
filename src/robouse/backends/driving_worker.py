@@ -533,11 +533,11 @@ class Worker:
                 out[self._sid(name, "v")] = [_r(x, 4) for x in obj.position]
         return out
 
-    def render(self, width: int, height: int, camera: str = "topdown") -> np.ndarray:
+    def render(self, width: int, height: int, camera: str = "topdown", scale: float = 5.0) -> np.ndarray:
         """`topdown`: follows the ego car, north (+y) up, 5 px per metre. `route_map`: the whole route, fixed."""
         from metadrive.engine.top_down_renderer import TopDownRenderer
 
-        key = (camera, int(width), int(height))
+        key = (camera, int(width), int(height), float(scale))
         r = self._renderers.get(key)
         if r is None:
             if camera == "route_map":
@@ -551,7 +551,7 @@ class Worker:
                 r = TopDownRenderer(film_size=(int(max(hi - lo) * sc) + 400,) * 2, scaling=sc, screen_size=(int(width), int(height)),
                                     camera_position=tuple((lo + hi) / 2), num_stack=1, window=False)
             else:
-                r = TopDownRenderer(film_size=(3200, 3200), scaling=5.0, screen_size=(int(width), int(height)), num_stack=1,
+                r = TopDownRenderer(film_size=(int(640 * scale),) * 2, scaling=float(scale), screen_size=(int(width), int(height)), num_stack=1,
                                     window=False)
             self._renderers[key] = r
         text = {"t": f"{self.step_i * DT:5.1f} s", "speed": f"{self.v.speed_km_h:5.1f} km/h"}
@@ -577,7 +577,7 @@ def main(out):
                 out.flush()
                 break
             if cmd == "render":
-                img = w.render(req["width"], req["height"], req.get("camera", "topdown"))
+                img = w.render(req["width"], req["height"], req.get("camera", "topdown"), float(req.get("scale", 5.0)))
                 data = img.tobytes()
                 out.write((json.dumps({"ok": True, "nbytes": len(data), "shape": list(img.shape)}) + "\n").encode())
                 out.write(data)

@@ -218,6 +218,11 @@ class KitchenBackend(Backend):
         self._renderer.update_scene(self.d, camera=self._cam)
         return self._renderer.render().copy()
 
+    def record_camera(self):
+        if self._renderer is None:  # sets up the free camera (and the visual-only light tweak)
+            self.render()
+        return self._cam
+
     def skills(self) -> list[str]:
         return ["move_to", "grip"]
 
