@@ -90,10 +90,11 @@ Real runner, 2026-09-28, on this Mac's CPU:
 
 | Harness | Result | Runs |
 |---|---|---|
-| oracle | 7/7 | `runs/emb-oracle-dexhand-v2/` |
-| noop | 0/7 | `runs/emb-noop-dexhand-v2/` |
+| oracle | 7/7 | `runs/emb-oracle-dexhand-v2/`, `runs/emb-oracle-dexhand-v3/` |
+| noop | 0/7 | `runs/emb-noop-dexhand-v2/`, `runs/emb-noop-dexhand-v3/` |
 
 - Oracle episodes take 8-14 s wall time and 45-586 steps. The reference solutions use only the socket: skills plus raw `robo act` for the in-hand flip.
+- MuJoCo's results differ slightly between platforms, and the pour is sensitive to them: in the linux/arm64 hub image (robohub runtime `embodied`) five of the six balls stayed caught behind the thumb after the first 45-degree pour, so the reference solution failed there. It now reads `progress.balls_in_bowl` after the pour and, while fewer than 5 are in the bowl, rolls the cup further (to -65 and -75 degrees) and back to shake them out. On the Mac the first pour already puts 5 in the bowl and nothing changes (586 steps, v3 run); in the Docker image the reference solution takes 675 steps and scores 1.
 - Frames from every recording were checked. They show no interpenetration, no flying objects and no teleports.
 - Plausible-but-wrong attempts all scored 0:
   - ball lifted only 8 cm;

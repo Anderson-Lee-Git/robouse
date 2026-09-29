@@ -783,6 +783,13 @@ def _solve_pour(o: Oracle, t: dict) -> None:
     o.skill("move_to", *goal)
     o.skill("rotate", -45, 15, 0, 30)       # roll the forearm: the cup mouth turns toward +y, over the bowl
     o.skill("wait", 1.5)
+    # balls can stay caught behind the thumb (the outcome differs between platforms' MuJoCo builds): roll further and
+    # shake until nearly all are in the bowl
+    for roll in (-65, -45, -75, -45, -75):
+        if o.state()["progress"]["balls_in_bowl"] >= t["need"] + 1:
+            break
+        o.skill("rotate", roll, 15, 0, 60)
+        o.skill("wait", .5)
     o.skill("rotate", 90, 15, 0, 40)
     o.skill("move_to", c[0], c[1] - .01, Z + .22)
     o.skill("move_to", c[0], c[1] - .01, Z + .075)
