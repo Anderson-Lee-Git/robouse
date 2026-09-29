@@ -130,8 +130,10 @@ class Episode:
             import imageio.v2 as imageio
 
             self._video_size = (img.shape[1], img.shape[0])
-            hq = {"quality": None, "output_params": ["-crf", "18", "-preset", "medium"]} if self.record_size else {"quality": 7}
-            self._writer = imageio.get_writer(self.run_dir / "recording.mp4", fps=FPS, codec="libx264", macro_block_size=16,
+            # a chosen size is kept exactly (even sizes only) and encoded near-lossless; the native path is unchanged
+            hq = ({"quality": None, "macro_block_size": 2, "output_params": ["-crf", "18", "-preset", "medium"]} if self.record_size
+                  else {"quality": 7, "macro_block_size": 16})
+            self._writer = imageio.get_writer(self.run_dir / "recording.mp4", fps=FPS, codec="libx264",
                                               ffmpeg_log_level="error", **hq)
         elif (img.shape[1], img.shape[0]) != self._video_size:
             from PIL import Image
