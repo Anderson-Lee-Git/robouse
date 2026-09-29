@@ -124,3 +124,7 @@ Found by surveying 24 RoboCasa atomic tasks in all ten layouts (scene creation, 
 - From the first version, still not attempted with this interface: StartCoffeeMachine, TurnOnMicrowave, OpenDrawer, CloseCabinet, CloseMicrowave (layout 1: the arm could not reach the button, handle or door edge with the gripper pointing down; RoboCasa's demonstrations drive the mobile base and change the gripper orientation for these), PickPlaceCounterToStove (no reliable reference solution in 7 recorded layouts).
 - Letting the base move or the gripper turn: the worker already supports a per-task gripper orientation (`tool="forward"`, fingers pointing along the robot's forward direction) and RoboCasa's composite controller has base and torso channels. Adding a base or yaw channel to the action would likely unlock the kettle switch (yaw), OpenDrawer and the microwave and coffee-machine buttons (forward orientation plus a base step toward the fixture). It was not done in this revision so that all 25 tasks keep one action space (`DX DY DZ GRIP`) and one instruction; it is the obvious next step for a larger RoboCasa set.
 - The tasks are state-mode only (the backend does not expose `mj_model_data`, so no calibrated vision variant yet).
+
+## On the hub
+
+The hub dataset `robocasa/robocasa@0.1` has 23 of these tasks. It leaves out `robocasa-close-kettle-lid-kitchen6`: its reference solution passes on macOS and in Colima on an M2 Max, but on a c4a (Arm Neoverse V2) linux/arm64 cloud VM the lid did not close within the 400-step budget, in two separate runs.
