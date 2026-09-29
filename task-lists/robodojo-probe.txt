@@ -1,0 +1,5 @@
+robodojo-general-pickup
+robodojo-stack-blocks
+robodojo-press-by-number
+robodojo-cover-blocks
+robodojo-put-bottles-into-dustbin

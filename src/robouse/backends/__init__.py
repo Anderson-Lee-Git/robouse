@@ -70,4 +70,5 @@ UPSTREAM = {"kitchen": ("kitchen", "KitchenBackend"),  # Gymnasium-Robotics Fran
             "dmcontrol": ("dmcontrol", "DMControlBackend"),  # DeepMind Control Suite and manipulation
             "myosuite": ("myosuite_backend", "MyoSuiteBackend"),  # MyoSuite musculoskeletal models
             "humanoidbench": ("humanoidbench", "HumanoidBenchBackend"),  # HumanoidBench
-            "maniskill": ("maniskill", "ManiSkillBackend")}  # ManiSkill3 (CPU backend)
+            "maniskill": ("maniskill", "ManiSkillBackend"),  # ManiSkill3 (CPU backend)
+            "robodojo": ("robodojo", "RoboDojoBackend")}  # RoboDojo (Isaac Sim 5.1); remote GPU worker (robodojo_worker.py)
