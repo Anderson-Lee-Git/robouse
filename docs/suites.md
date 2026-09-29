@@ -74,3 +74,7 @@ The episode server looks for DexJoCo's Python at `~/.cache/robouse/dexjoco-venv/
 ## Not in the package
 
 RoboCasa (7 kitchen tasks) needs recorded scene layouts that are not distributed yet, so it runs only from a checkout of the Robo Use repository, which is private for now.
+
+## GPU track
+
+25 more tasks whose simulators need an NVIDIA GPU: ManiSkill3 (12), Genesis (3), MuJoCo Playground (5) and Isaac Lab Factory (5). They run from a checkout of the `gpu-track` branch against remote GPU workers, not from the package; see [the GPU track](suites/gpu-track.md).
