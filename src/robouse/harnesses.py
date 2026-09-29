@@ -20,6 +20,9 @@ Harnesses
   mini-swe-agent-glm     mini-swe-agent (litellm) with GLM-5.3 on Baseten
   molmoact2              MolmoAct2 VLA policy: molmoact2/client.py drives `robo` with action chunks from a GPU policy
                          server (molmoact2/server.py) at $ROBOUSE_MOLMOACT2_URL; model e.g. allenai/MolmoAct2-LIBERO-LeRobot
+  vla                    any served VLA (vla/client.py): --model is a preset from vla/presets.json (openpi/pi05_libero,
+                         openvla/openvla-7b-libero, gr00t/so101, xpolicylab/metal-joint, lerobot/smolvla_libero, ...);
+                         server at $ROBOUSE_VLA_URL; overrides from $ROBOUSE_VLA_POLICY_CONFIG (JSON file)
 """
 from __future__ import annotations
 
@@ -211,5 +214,26 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
         env["ROBOUSE_TASK_LANGUAGE"] = str(task.metadata.get("language_instruction") or task.meta.get("task", {}).get("description", ""))
         m = model or "allenai/MolmoAct2-LIBERO-LeRobot"
         return Launch(["python3", str(client)], env, notes={"model": m, "server": os.environ["ROBOUSE_MOLMOACT2_URL"]})
+
+    if harness == "vla":
+        import json as _json
+
+        from . import vla
+
+        url = os.environ.get("ROBOUSE_VLA_URL", "")
+        over = _json.loads(Path(os.environ["ROBOUSE_VLA_POLICY_CONFIG"]).read_text()) if os.environ.get("ROBOUSE_VLA_POLICY_CONFIG") else {}
+        cfg = vla.resolve(model or "openpi/pi05_libero", over)
+        if not url and not cfg.get("url"):
+            raise RuntimeError("vla needs ROBOUSE_VLA_URL (the policy server, e.g. ws://gpu-box:8000 for openpi)")
+        client = workspace / ".robouse" / "vla_client.py"
+        client.write_text(vla.CLIENT.read_text())
+        env["ROBOUSE_VLA_CONFIG"] = _json.dumps(cfg)
+        env["ROBOUSE_VLA_URL"] = url or cfg["url"]
+        if os.environ.get("ROBOUSE_VLA_TOKEN"):
+            env["ROBOUSE_VLA_TOKEN"] = os.environ["ROBOUSE_VLA_TOKEN"]
+        env["ROBOUSE_TASK_LANGUAGE"] = str(task.metadata.get("language_instruction") or task.meta.get("real", {}).get("goal_text")
+                                           or task.spec.get("real", {}).get("goal_text") or task.meta.get("task", {}).get("description", ""))
+        return Launch([os.environ.get("ROBOUSE_VLA_PYTHON", "python3"), str(client)], env,
+                      notes={"model": cfg["preset"], "wire": cfg["wire"], "server": env["ROBOUSE_VLA_URL"]})
 
     raise KeyError(f"unknown harness {harness!r}")
