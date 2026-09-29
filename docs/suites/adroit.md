@@ -75,13 +75,19 @@ Through the real runner (`robouse run-many`, macOS, the shared dev venv):
 | oracle | `runs/adroit-oracle` | 12/12 solved (200 to 527 steps; 7 to 9 s of wall time per episode) |
 | noop | `runs/adroit-noop` | 0/12 solved |
 
-In Docker with the hub runtime `base`: RESULTS_DOCKER.
+In Docker with the hub runtime `base`: oracle 12/12 (the first attempt errored on the three door tasks with a Docker compose failure, `No such container`, while other agents shared the VM; rerun, all three passed) and the no-op control 0/2 on adroit-relocate-e0 and adroit-pen-e1. The simulator image is the shared `base` runtime, 1.12 GB.
 
 ## Model probe
 
-Claude Code harness with Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), `task-lists/adroit-probe.txt`: PROBE_SCORE.
+Claude Code harness with Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), `task-lists/adroit-probe.txt`, run folder `runs/adroit-probe-kimi` (an earlier run with smaller budgets, 600/900/400 steps, is `runs/adroit-probe-kimi-v1`, also 0/3): **0/3**.
 
-PROBE_TABLE
+| Task | Result | Steps | What happened |
+|---|---|---|---|
+| adroit-relocate-e0 | failed (budget) | 1500 | `hand open`, `move_palm`, `hand close`: the first two grasps with the palm straight above the ball pushed it away; the third, with the palm 3 cm on the ball's -y side, held it, and `move_palm` was carrying it to the target (3.5 cm away) when the budget ran out |
+| adroit-door-e11 | failed | 989 | Turned the latch fully (1.46 rad) by hooking the lever, opened the door to 0.10 rad, lost the grip, and ran out of budget re-grasping; called `robo done` honestly reporting the door shut |
+| adroit-pen-e7 | failed (gave up) | 175 | Rolled the pen with finger curls and wrist moves (similarity reached 0.8 in the earlier run), then dropped it off the palm; gave up since it was out of reach |
+
+Adroit is hard for a model driving 24-30 servos from a shell: the probe got furthest where a skill layer exists (Relocate). The trajectories showed no instruction bugs; the relocate budget was raised from 900 to 1500 steps after the first run ended one move short.
 
 ## What was left out and why
 

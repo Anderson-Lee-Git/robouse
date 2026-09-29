@@ -89,13 +89,20 @@ Through the real runner (`robouse run-many`, macOS, the shared dev venv):
 | oracle | `runs/kitchen-oracle` | 10/10 solved (88 to 583 steps; 8 to 15 s of wall time per episode) |
 | noop | `runs/kitchen-noop` | 0/10 solved |
 
-In Docker with the hub runtime `base` (scratch hub copy, `bench eval run --agent oracle`, bench 0.7.4, Colima on linux/arm64): RESULTS_DOCKER.
+In Docker with the hub runtime `base` (scratch hub copy, `bench eval run --agent oracle`, bench 0.7.4, Colima on linux/arm64): oracle 10/10 (4.7 min for the 10 tasks at concurrency 3) and the no-op control (a `solve.sh` that only runs `robo info` and `robo observe`) 0/2 on kitchen-microwave and kitchen-complete. The simulator image is 1.12 GB (the shared `base` runtime; kitchen and adroit add no dependencies).
 
 ## Model probe
 
-Claude Code harness with Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), `task-lists/kitchen-probe.txt`, run folder `runs/kitchen-probe-kimi`: PROBE_SCORE.
+Claude Code harness with Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), `task-lists/kitchen-probe.txt`, run folder `runs/kitchen-probe-kimi`: **4/4**.
 
-PROBE_TABLE
+| Task | Result | Steps | What happened |
+|---|---|---|---|
+| kitchen-top-burner | solved | 90 | `move-to` in front of the knob, closed on the grip bar, turned with DROLL +1 until the knob read -0.76 rad, released and backed off |
+| kitchen-slide-cabinet | solved | 131 | Closed on the handle and pulled the door along +x |
+| kitchen-microwave | solved | 261 | Grasped the handle and pulled it round the hinge in several `move-to` arcs, re-grasping once when the handle slipped |
+| kitchen-complete | solved | 838 | All four subtasks in one episode (microwave, kettle carried with a quarter-turned grip, light switch, slide cabinet) |
+
+The single-subtask tasks are within reach of a current model once the interface exposes the handles and hinge axes; the four-subtask task took 838 of 1500 steps. No instruction bugs showed up in the trajectories (the knob and kettle roll conventions were used correctly).
 
 ## What was left out and why
 
