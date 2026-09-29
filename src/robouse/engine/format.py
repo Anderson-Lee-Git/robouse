@@ -88,7 +88,8 @@ def _asset_manifests() -> dict[str, Path]:
     if shipped.is_dir():
         return {p.name: p for p in sorted(shipped.glob("*.json"))}
     root = PKG.parents[1] / "assets" / "menagerie"
-    return {"menagerie.json": root / "provenance.json", "skydio_x2.json": root / "skydio_x2" / "PROVENANCE.json"}
+    return {"menagerie.json": root / "provenance.json", "skydio_x2.json": root / "skydio_x2" / "PROVENANCE.json",
+            "embodiments.json": root / "embodiments.json"}  # the embodiment suites' and remix's robots
 
 
 def _metaworld_policies(dst: Path) -> None:
