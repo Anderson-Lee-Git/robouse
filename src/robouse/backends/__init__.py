@@ -50,6 +50,10 @@ def make_backend(spec: dict) -> Backend:
         from .dexjoco import DexjocoBackend
 
         return DexjocoBackend(spec)
+    if kind == "remix":  # tasks composed from components (robouse remix): embodiment x scene x task x modifiers
+        from .remix import RemixBackend
+
+        return RemixBackend(spec)
     # embodiment suites (backends/embodied.py): quadrupeds, humanoids, mobile manipulators, dexterous hands, Crazyflie, driving
     if kind in EMBODIED:
         import importlib

@@ -93,10 +93,11 @@ exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes
 "tasks/robosuite" = "robouse/bundled_tasks/robosuite"
 "tasks/safety" = "robouse/bundled_tasks/safety"
 "tasks/vision" = "robouse/bundled_tasks/vision"
+"components" = "robouse/bundled_components"
 "assets/menagerie/provenance.json" = "robouse/assets_provenance/menagerie.json"
 "assets/menagerie/skydio_x2/PROVENANCE.json" = "robouse/assets_provenance/skydio_x2.json"
 "assets/menagerie/embodiments.json" = "robouse/assets_provenance/embodiments.json"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/robouse", "/tasks", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/README.md", "/LICENSE", "/pyproject.toml"]
+include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/README.md", "/LICENSE", "/pyproject.toml"]
 exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/src/robouse/backends/robocasa_episodes", "/tasks/robocasa", "/tasks/behavior"]

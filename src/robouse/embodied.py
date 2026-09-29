@@ -20,7 +20,7 @@ from benchflow.embodied.spec import Embodiment
 from .backends import make_backend
 from .backends.base import Backend
 
-_FORWARD = ("judge", "run_skill", "start_skill", "pop_frames", "workspace_images")
+_FORWARD = ("judge", "run_skill", "start_skill", "pop_frames", "workspace_images", "privileged_state")
 
 
 class RobouseSim:

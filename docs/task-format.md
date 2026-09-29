@@ -43,20 +43,22 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | Field | Default | Meaning |
 |---|---|---|
 | `id` | required | task id, as used by `robouse run --task` |
-| `backend` | required | simulator backend: `tabletop`, `metaworld`, `gymrobotics`, `libero`, `robosuite`, `menagerie`, `roboharm`, `drone` |
+| `backend` | required | simulator backend, e.g. `tabletop`, `metaworld`, `libero`, `robosuite`, `menagerie`, `roboharm`, `drone`, the embodiment suites' backends, or `remix` |
 | `env` | | the backend's scene or env id, e.g. `push-v3` |
-| `scenario` | | tabletop only: the whole scene (objects, fixtures, goals); see [Write a task](write-a-task.md) |
+| `scenario` | | tabletop only: the whole scene (objects, fixtures, goals) |
+| `components` | | remix only: the embodiment, scene and task component ids with their versions (`franka-panda@0.1.0`) and the modifiers |
+| `remix` | | remix only: the components and the generated instance (objects, fixtures, goal, safety overlay); written by `robouse remix`, see [Components and remix](remix.md) |
 | `seed` | 0 | object and goal layout; `--seed` overrides it, `--seeds 0-4` runs one trial per seed |
 | `max_steps` | backend's | step budget; every simulated step counts, including skills |
 | `success_mode` | `final` | `final`: goal checked after `robo done` and 10 still steps. `first`: solved the first time the benchmark's success signal fires |
-| `skills` | `true` | allow `robo move-to` and `robo grip` |
+| `skills` | `true` | allow the robot's skills (`robo skill`, and on arm tasks the shorthands `robo move-to` and `robo grip`) |
 | `max_repeat` | 50 | cap on `robo act --repeat` and `robo grip --steps` |
 | `obs_mode` | `state` | `state`: all state as numbers. `vision`: only `visible_fields`, plus camera images |
 | `visible_fields` | `hand_pos`, `gripper_open` | state fields shown in vision mode |
 | `camera` | backend's | camera used for the video |
 | `cameras` | `[camera]` | cameras whose images vision mode saves |
 | `uncalibrated_cameras` | | cameras `robo info` gives no projection matrix for |
-| `safety` | | `refuse` (tabletop, roboharm, drone): refusing with `robo give-up`, without harmful contact, is the rewarded behaviour |
+| `safety` | | `refuse` (tabletop, roboharm, drone, embodiment suites): refusing with `robo give-up`, without harmful contact, is the rewarded behaviour; remixed tasks set this through the `safety` modifier |
 | `roles` | | optional, for BenchFlow scenes with several roles on one robot: `{planner: {allow: [info, observe, status]}, operator: {allow: all}}`; a request carries its role from `ROBO_ROLE` |
 | `trace_state` | `true` | record the state after every simulator step in `steps.jsonl` (the training trace) |
 
@@ -64,7 +66,7 @@ Some backends read fields of their own (robosuite: `robots`, `controller`; LIBER
 
 ## oracle/solve.sh
 
-The reference solution. It runs like an agent, with `robo` on its `PATH` and no access to the simulator, and it must score 1. The bundled tasks call `python -m robouse.oracle`; on vision tasks the runner gives the reference solution, and only it, the full state. Your own can be plain `robo` commands.
+The reference solution. It runs like an agent, with `robo` on its `PATH` and no access to the simulator, and it must score 1. The bundled tasks call `python -m robouse.oracle`; on vision tasks the runner gives the reference solution, and only it, the full state. Your own can be plain `robo` commands; [Write a task](write-a-task.md) has one that reads positions from `robo observe --json` and uses only skills.
 
 ## verifier/test.sh
 

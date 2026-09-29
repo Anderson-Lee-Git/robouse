@@ -76,6 +76,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("Concepts", "docs/tasks.md", "tasks", "Tasks and scoring"),
     ("Concepts", "docs/episodes.md", "episodes", "Episodes and robo"),
     ("Concepts", "docs/harnesses.md", "harnesses", "Harnesses"),
+    ("Concepts", "docs/remix.md", "remix", "Components and remix"),
     ("Guides", "docs/run-an-agent.md", "run-an-agent", "Run an agent"),
     ("Guides", "docs/write-a-task.md", "write-a-task", "Write a task"),
     ("Guides", "docs/run-a-suite.md", "run-a-suite", "Run a suite"),
@@ -89,6 +90,7 @@ SIDEBAR_LINKS = [("Results", "Runs and videos", "/runs/")]
 # Docs kept in the repository but not published: internal notes, run logs and machine-specific setup.
 EXCLUDED = {
     "docs/review-log.md": "internal log of documentation review passes",
+    "docs/components.md": "design of components and remix; the public part is remix.md",
     "docs/research/": "internal literature and dataset surveys",
     "docs/dogfood.md": "log of the commands run to check the public docs",
     "docs/results.md": "generated table for the repository; the public results are robouse.ai/runs/",
