@@ -198,8 +198,11 @@ def write(out: Path, tasks: list[dict], home: dict, suite: str, source: str, org
                                     "geodesic_m": t["geodesic_m"], "success_radius": 1.0,
                                     **({"reference": t["reference"]} if t.get("reference") else {})}}}
         oracle = ("#!/bin/bash\n# Reference solution: follow the geodesic distance field to the target with `robo act`, then `robo done`.\n"
-                  "set -euo pipefail\npython -m robouse.oracle --backend nav --env \"$(dirname \"$0\")/..\"\n")
+                  "set -euo pipefail\npython -m robouse.oracle --backend nav --env \"$(dirname \"$0\")/nav_spec.json\"\n")
         write_task(out / t["id"], meta, instruction(t, t["target"]["label"], budget), oracle, VERIFY_SH)
+        import json
+
+        (out / t["id"] / "oracle" / "nav_spec.json").write_text(json.dumps({**meta["robouse"]}, separators=(",", ":")))
 
 
 def main() -> int:

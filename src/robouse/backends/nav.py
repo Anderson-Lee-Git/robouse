@@ -474,10 +474,14 @@ def oracle_main(env: str) -> None:
     """Reference solution: follow the geodesic distance field downhill with the body-velocity action (turn toward the
     next waypoint, drive forward), then stop and claim done. It reads only its own privileged state via the oracle token
     (world coordinates), which agents do not get."""
-    from ..agent_cli import _send
-    from ..tasks import load_task
+    import json
+    from pathlib import Path
 
-    spec = load_task(env).spec  # env = the task folder (oracle/solve.sh passes it)
+    from ..agent_cli import _send
+
+    # env = oracle/nav_spec.json (the task's robouse block, written by the generator; JSON so the reference solution
+    # needs no YAML parser in the agent image)
+    spec = json.loads(Path(env).read_text())
     b = NavBackend(spec)
     b.reset(0)
     xs, ys, dist = b._distance_field()

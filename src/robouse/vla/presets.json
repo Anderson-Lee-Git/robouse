@@ -144,7 +144,38 @@
   "lerobot/smolvla_libero": {
     "inherit": "molmoact2/libero",
     "licence": "SmolVLA Apache-2.0 (Hugging Face LeRobot)",
-    "doc": "SmolVLA fine-tuned on LIBERO (HuggingFaceVLA/smolvla_libero) behind `robouse policy-server -- --policy.path=HuggingFaceVLA/smolvla_libero --env.type=libero ...` (runs on CPU, slowly, or GPU)."
+    "doc": "SmolVLA fine-tuned on LIBERO (HuggingFaceVLA/smolvla_libero) behind `robouse policy-server -- --policy.path=HuggingFaceVLA/smolvla_libero --env.type=libero ...` (runs on CPU, slowly, or GPU). SmolVLA-LIBERO names its cameras image and image2.",
+    "obs": {
+      "task": {
+        "text": true
+      },
+      "images.image": {
+        "camera": "agentview",
+        "encoding": "png_b64"
+      },
+      "images.image2": {
+        "camera": "robot0_eye_in_hand",
+        "encoding": "png_b64"
+      },
+      "state.eef_pos": {
+        "state": [
+          "hand_pos"
+        ],
+        "encoding": "list"
+      },
+      "state.eef_quat": {
+        "state": [
+          "eef_quat"
+        ],
+        "encoding": "list"
+      },
+      "state.gripper_qpos": {
+        "state": [
+          "gripper_qpos"
+        ],
+        "encoding": "list"
+      }
+    }
   },
   "lerobot/pi05_libero": {
     "inherit": "molmoact2/libero",

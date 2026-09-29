@@ -23,7 +23,7 @@ from pathlib import Path
 from . import __version__
 from .tasks import bundled_tasks_root, find_tasks, load_task, resolve_task_path
 
-HARNESS_HELP = ("oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm or molmoact2 "
+HARNESS_HELP = ("oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or vla "
                 "(see https://robouse.ai/docs/harnesses/)")
 SIM_HINT = ("robouse: the simulator dependencies are not installed ({err}).\n"
             "Install the extra for this suite, e.g. `pip install 'robouse[sim]'` (MuJoCo tabletop suites), "
