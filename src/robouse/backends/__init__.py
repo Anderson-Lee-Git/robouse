@@ -51,10 +51,10 @@ def make_backend(spec: dict) -> Backend:
 
         return DexjocoBackend(spec)
     # embodiment suites (backends/embodied.py): quadrupeds, humanoids, mobile manipulators, dexterous hands, Crazyflie, driving
-    if kind in EMBODIED:
+    if kind in EMBODIED or kind in UPSTREAM:
         import importlib
 
-        mod, cls = EMBODIED[kind]
+        mod, cls = EMBODIED.get(kind) or UPSTREAM[kind]
         return getattr(importlib.import_module(f".{mod}", __package__), cls)(spec)
     raise KeyError(f"unknown backend {kind!r}")
 
@@ -63,3 +63,11 @@ EMBODIED = {"quadruped": ("quadruped", "QuadrupedBackend"), "humanoid": ("humano
             "mobile_manip": ("mobile_manip", "MobileManipBackend"), "dexhand": ("dexhand", "DexHandBackend"),
             "crazyflie": ("crazyflie", "CrazyflieBackend"),
             "driving": ("driving", "DrivingBackend")}  # MetaDrive in its own virtualenv (driving_worker.py)
+
+# more upstream benchmarks; each simulator that conflicts with the main environment runs in its own virtualenv as a worker
+UPSTREAM = {"kitchen": ("kitchen", "KitchenBackend"),  # Gymnasium-Robotics Franka Kitchen
+            "adroit": ("adroit", "AdroitBackend"),  # Gymnasium-Robotics Adroit hand
+            "dmcontrol": ("dmcontrol", "DMControlBackend"),  # DeepMind Control Suite and manipulation
+            "myosuite": ("myosuite_backend", "MyoSuiteBackend"),  # MyoSuite musculoskeletal models
+            "humanoidbench": ("humanoidbench", "HumanoidBenchBackend"),  # HumanoidBench
+            "maniskill": ("maniskill", "ManiSkillBackend")}  # ManiSkill3 (CPU backend)
