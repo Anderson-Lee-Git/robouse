@@ -115,7 +115,7 @@ class RealArmBackend(EmbodiedBackend):
         e = self.guard.e
         spec["kind"] = "arm"
         spec["mode"] = self.mode
-        spec["safety"] = {"joint_limits": {"low": self.prof.low, "high": self.prof.high}, "max_joint_speed_deg_s": e.joint_speed_deg_s,
+        spec["safety"] = {"joint_limits": {"low": self.prof.low, "high": self.prof.high}, "max_joint_speed": e.joint_speed_deg_s,
                           "slow_joint_speed_deg_s": e.slow_joint_speed_deg_s, "slow_zone_m": e.slow_zone,
                           "workspace": {"table_z": e.table_z, "x": [e.x_min, e.x_max], "y_abs_max": e.y_abs_max, "z_max": e.z_max}
                           if self.guard.env.chain is not None else None,

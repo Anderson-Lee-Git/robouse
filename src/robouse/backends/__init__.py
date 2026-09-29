@@ -72,4 +72,5 @@ UPSTREAM = {"kitchen": ("kitchen", "KitchenBackend"),  # Gymnasium-Robotics Fran
             "dmcontrol": ("dmcontrol", "DMControlBackend"),  # DeepMind Control Suite and manipulation
             "myosuite": ("myosuite_backend", "MyoSuiteBackend"),  # MyoSuite musculoskeletal models
             "humanoidbench": ("humanoidbench", "HumanoidBenchBackend"),  # HumanoidBench
-            "maniskill": ("maniskill", "ManiSkillBackend")}  # ManiSkill3 (CPU backend)
+            "maniskill": ("maniskill", "ManiSkillBackend"),  # ManiSkill3 (CPU backend)
+            "cubepick": ("cubepick", "CubePickBackend")}  # inspect-robots' CubePick mock world
