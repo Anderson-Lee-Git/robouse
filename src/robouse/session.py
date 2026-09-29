@@ -98,7 +98,8 @@ class Episode:
     # ---- recording -------------------------------------------------------------------------
     def _record_frame(self, force: bool = False) -> None:
         if force or self.steps % self.frame_every == 0:
-            img = self.backend.render()
+            rv = getattr(self.backend, "render_video", None)  # a backend may record a different view than agents see
+            img = rv() if callable(rv) else self.backend.render()
             self._frames.append(np.asarray(img, dtype=np.uint8))
             self._frame_meta.append({"i": len(self._frames) - 1, "t": round(time.time() - self.t0, 3), "step": self.steps})
 
