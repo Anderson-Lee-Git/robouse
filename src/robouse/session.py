@@ -102,7 +102,8 @@ class Episode:
         return info
 
     def _state(self, privileged: bool = False) -> dict:
-        st = self.backend.observe()
+        hook = getattr(self.backend, "observe_privileged", None)  # reference-solution hints (oracle token only)
+        st = hook() if privileged and callable(hook) else self.backend.observe()
         if self.obs_mode == "vision" and not privileged:
             st = {k: v for k, v in st.items() if k in self.visible_fields}
         return st
@@ -110,6 +111,10 @@ class Episode:
     def camera_info(self) -> list[dict]:
         """Per camera: a 3x4 projection matrix P with [u*w, v*w, w] = P @ [x, y, z, 1] in the saved image's pixels."""
         out = []
+        hook = getattr(self.backend, "camera_info", None)  # backends that are not MuJoCo compute their own calibration
+        if callable(hook):
+            return [c if c.get("name") not in self.uncalibrated else {**c, "projection": None, "position": None}
+                    for c in hook(self.cameras)]
         m_d = getattr(self.backend, "mj_model_data", lambda: None)()
         if not m_d:
             return out
@@ -199,6 +204,7 @@ class Episode:
             "observation_mode": self.obs_mode,
             **({"max_repeat": self.max_repeat} if "max_repeat" in self.spec else {}),
             **({"visible_fields": self.visible_fields, "cameras": self.camera_info()} if self.obs_mode == "vision" else {}),
+            **({"embodiment": self.backend.embodiment()} if callable(getattr(self.backend, "embodiment", None)) else {}),
         }
 
     def observe(self, image: bool, privileged: bool = False, camera: str | None = None) -> dict:

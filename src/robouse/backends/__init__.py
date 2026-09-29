@@ -50,4 +50,8 @@ def make_backend(spec: dict) -> Backend:
         from .dexjoco import DexjocoBackend
 
         return DexjocoBackend(spec)
+    if kind == "gpu":  # GPU track (ManiSkill3, Genesis, MuJoCo Playground, Isaac Lab); simulator in a remote GPU worker
+        from .gpu import GpuBackend
+
+        return GpuBackend(spec)
     raise KeyError(f"unknown backend {kind!r}")
