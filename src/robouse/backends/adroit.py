@@ -76,7 +76,6 @@ class AdroitBackend(Backend):
                 f"{self.u.dt * 1000:.0f} ms",
         )
         self._sid = lambda n: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, n)
-        self._bid = lambda n: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, n)
         self._palm = self._sid("S_grasp")
         self._tips = {f: self._sid(f"S_{f}tip") for f in FINGERS}
         self.arm = [i for i, n in enumerate(self.act_names) if n.startswith("AR")]
@@ -214,8 +213,7 @@ class AdroitBackend(Backend):
         for n, v in zip(pairs[::2], pairs[1::2]):
             goal[self._index(n)] = float(v)
         yield from self._ramp(goal, steps)
-        return {"targets": {self.act_names[i]: round(float(self.target[i]), 4) for i in range(self.m.nu)
-                            if abs(goal[i] - self.target[i]) > 1e-9 or self.act_names[i] in [p.removeprefix("A_") for p in pairs[::2]]}}
+        return {"targets": {n.removeprefix("A_"): round(float(self.target[self._index(n)]), 4) for n in pairs[::2]}}
 
     def _skill_hand(self, args):
         """hand open|close|pinch [AMOUNT] [steps=N]: finger synergy. open: all finger joints straight; close AMOUNT (0..1,
