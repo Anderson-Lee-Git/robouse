@@ -126,9 +126,6 @@ class RobocasaBackend(Backend):
         w, h = (width, height) if width and height else self.render_size
         return self._call("render", camera=self.camera, width=int(w), height=int(h))
 
-    def render_record(self, width: int, height: int) -> np.ndarray:
-        return self.render(width, height)  # the worker keeps one renderer per size
-
     def close(self) -> None:
         try:
             self.proc.stdin.write(b'{"cmd": "close"}\n')

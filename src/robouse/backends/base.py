@@ -65,6 +65,13 @@ class Backend:
         md = getattr(self, "mj_model_data", None)
         md = md() if callable(md) else None
         if not md:
+            # worker-process backends (dm_control, MyoSuite, HumanoidBench, ManiSkill, MetaDrive, ...) declare
+            # render(width=None, height=None) and forward the size to their worker, which renders at any size
+            import inspect
+
+            p = inspect.signature(type(self).render).parameters
+            if "width" in p and "height" in p and p["width"].default is None and p["height"].default is None:
+                return self.render(width, height)
             return None
         model, data = md
         return self._mj_record(model, data, self.record_camera(), width, height, self.record_scene_option(),
