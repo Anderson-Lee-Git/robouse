@@ -105,7 +105,7 @@ Local runner (`robouse run-many`, macOS, M2 Max):
 
 Docker (robohub runtime `dmcontrol`, exported from a scratch robohub copy with `scripts/export.py`, run with `bench eval run --agent oracle`, bench 0.7.4, Colima linux/arm64, no network in the simulator container):
 
-- Reference solutions: **17/17** in 9.8 min at concurrency 2 (26 to 177 s per task including container start; the first build of the image took about 100 s).
+- Reference solutions: **17/17** in 9.8 min at concurrency 2 (26 to 177 s per task including container start; the first build of the image took about 100 s). After the last changes (cameras, instruction text, `robo info` fields) a re-export passed 4/4 of `dmcontrol-finger-turn-easy`, `dmcontrol-ball-in-cup-catch`, `dmcontrol-jaco-lift-brick` and `dmcontrol-jaco-stack-2-bricks`.
 - No-op control (`google-deepmind/dm-control-noop-control`, reference solution replaced by `robo info; robo observe`): **0/2** on `dmcontrol-cartpole-balance` and `dmcontrol-jaco-reach-site`.
 - Simulator image: 1.69 GB (python:3.12-slim-bookworm, OSMesa, the episode server's packages and the dm_control virtualenv with MuJoCo 3.14.0). All dm_control wheels have linux/aarch64 builds, so nothing is compiled.
 
