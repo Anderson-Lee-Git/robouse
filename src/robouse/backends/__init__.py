@@ -46,6 +46,10 @@ def make_backend(spec: dict) -> Backend:
         from .drone import DroneBackend
 
         return DroneBackend(spec)
+    if kind == "remix":  # tasks composed from components (robouse remix), from the components branch
+        from .remix import RemixBackend
+
+        return RemixBackend(spec)
     if kind == "dexjoco":  # DexJoCo dexterous tool use; the simulator runs in its own virtualenv (dexjoco_worker.py)
         from .dexjoco import DexjocoBackend
 
