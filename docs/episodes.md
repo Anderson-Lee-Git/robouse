@@ -65,6 +65,9 @@ Every simulated step counts against `max_steps`, including the steps a skill suc
 | `agent/trajectory.json` | the agent's steps in ATIF v1.7, the trajectory format BenchFlow reads |
 | `episode/result.json` | the episode server's verdict: `success`, `outcome`, `steps_used`, the seed used |
 | `episode/trace.jsonl` | every `robo` request and response, with times |
+| `episode/episode.json` | header: task, seed, the robot's embodiment, observation mode, the initial state and its hash |
+| `episode/steps.jsonl` | one line per simulator step: action by group, reward, success, the state after the step, the video frame (the training trace) |
+| `episode/frames.jsonl`, `episode/video_index.json` | per video frame: wall time and the steps completed when it was rendered |
 | `verifier/reward.txt` | `1` or `0` |
 | `artifacts/recording.mp4` | the episode video |
 | `artifacts/observations/` | camera images from the episode's workspace |

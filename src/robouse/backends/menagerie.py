@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .base import ActionSpec, Backend, StepInfo
+from .base import ActionSpec, Backend, StepInfo, G
 
 STEP_M = .02
 YAW_STEP = np.deg2rad(10.)
@@ -84,6 +84,34 @@ def _yaw_quat(yaw: float, down) -> np.ndarray:
 
 class MenagerieBackend(Backend):
     name = "menagerie"
+    @property
+    def robot_name(self) -> str:
+        return str(self.task.get("embodiment", "aloha")).replace("_", "-")
+
+    @property
+    def robot_kind(self) -> str:
+        return "arm" if self.arms_mode in ("left", "right") else "bimanual"
+
+    @property
+    def proprioception(self) -> tuple[str, ...]:
+        if self.arms_mode in ("left", "right"):
+            return ("hand_pos", "gripper_open")
+        return tuple(f"{s}_{f}" for s in ("left", "right") for f in ("hand_pos", "gripper_open"))
+
+    def action_layout(self) -> list[G]:
+        def arm(prefix: str, gripper: str, doc: str = "") -> list[G]:
+            lay = [G(f"{prefix}.ee_delta", 3, "ee_delta_pos", "gripper target, 2 cm per unit per step", frame="world", doc=doc)]
+            if self.yaw_enabled:
+                lay.append(G(f"{prefix}.yaw_delta", 1, "ee_delta_rot", "10 degrees per unit"))
+            lay.append(G(gripper, 1, "gripper", "normalized", doc="0 keeps the fingers, > 0 closes, -f opens to fraction f"))
+            return lay
+
+        if self.arms_mode == "both":
+            return arm("left", "left.gripper") + arm("right", "right.gripper")
+        if self.arms_mode == "switch":
+            return [G("arm.select", 1, "select", doc="-1 left arm, +1 right arm, 0 keep the selected arm")] + arm(
+                "arm", "gripper", doc="drives the selected arm")
+        return arm("arm", "gripper")
 
     def __init__(self, spec: dict):
         env = spec.get("env") or spec.get("id")

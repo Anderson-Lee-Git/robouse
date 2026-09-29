@@ -1,10 +1,16 @@
 """`robouse`: trusted-side commands.
 
-  robouse serve --task TASK --run-dir DIR --socket PATH [--workspace DIR]  run one episode server
-  robouse run --task TASK --harness NAME [--model M] --out JOBDIR           run one trial end to end
-  robouse run-many [--tasks ROOT] --harness NAME ... --out JOBDIR          run a set of trials
-  robouse tasks [ROOT] [--path]                                            list tasks
-  robouse fetch-assets [--dest DIR] [--robot NAME]                        download robot meshes (MuJoCo Menagerie)
+  robouse run --task TASK --agent NAME [--model M] --out JOBS         run one trial (a BenchFlow job)
+  robouse run-many [--tasks ROOT] --agent NAME ... --out JOBS         run a set of trials (one BenchFlow job)
+  robouse export --tasks ROOT... --out DIR [--noop]                   write native BenchFlow task packages
+  robouse serve --task TASK --run-dir DIR --socket PATH               run one episode server (the simulator)
+  robouse tasks [ROOT] [--path]                                       list tasks
+  robouse fetch-assets [--dest DIR] [--robot NAME]                    download robot meshes (MuJoCo Menagerie)
+
+`run` and `run-many` run on BenchFlow (`--engine benchflow`, the default): BenchFlow's agents, sandboxes, verifier
+and trial layout; the same as `bench eval run --tasks-dir <tasks> --agent NAME --sandbox docker`. `--engine local`
+is the older in-process runner (host processes under a macOS Seatbelt profile, no Docker), kept for machines
+without Docker and for the local-only harnesses (claude-code-glm, codex-glm, mini-swe-agent-glm, molmoact2).
 
 TASK is a task folder or the id of a bundled task (e.g. `arc-gravity`); ROOT defaults to the bundled tasks.
 """
@@ -41,25 +47,44 @@ def main(argv=None) -> int:
     s.add_argument("--max-wall-s", type=float, default=1800, help="wall-clock budget in seconds (default 1800)")
     s.add_argument("--ready-file", help="file created once the server is listening")
 
+    def run_opts(p, many: bool):
+        p.add_argument("--agent", "--harness", dest="agent", required=True,
+                       help="BenchFlow agent (oracle, noop, claude, codex, ... see `bench agent list`; claude-code is "
+                            "an alias for claude); with --engine local, a robouse harness: " + HARNESS_HELP)
+        p.add_argument("--model", default="", help="model for the agent (default: the agent's default)")
+        p.add_argument("--out", required=True,
+                       help="jobs folder; the BenchFlow job is written to OUT/<job>/<task>__<id>/ "
+                            "(--engine local: OUT/<task>__<harness>__<id>/)")
+        p.add_argument("--timeout", type=float, help="agent wall-clock limit in seconds (default: "
+                       + ("each task's" if many else "the task's agent.timeout_sec") + ")")
+        p.add_argument("--seed", type=int, help="override the task's seed")
+        p.add_argument("--seeds", help="seeded rollouts (BenchFlow engine): one trial per task and seed, e.g. 0-4 or "
+                       "0,3,7; summary.json gets pass@k, mean and std per task")
+        p.add_argument("--engine", choices=("benchflow", "local"), default="benchflow",
+                       help="benchflow (default): BenchFlow with Docker; local: host processes, macOS Seatbelt "
+                            "sandbox, no Docker")
+        p.add_argument("--sandbox", default="docker", help="BenchFlow sandbox (default docker)")
+        p.add_argument("--reasoning-effort", help="agent reasoning effort (BenchFlow agents that expose one)")
+        p.add_argument("--job-name", help="BenchFlow job name (default: a timestamp)")
+
     r = sub.add_parser("run", help="run one trial end to end")
     r.add_argument("--task", required=True, help="task folder or bundled task id")
-    r.add_argument("--harness", required=True, help=HARNESS_HELP)
-    r.add_argument("--model", default="", help="model for the harness (default: the harness's default)")
-    r.add_argument("--out", required=True, help="job folder; the trial is written to OUT/<task>__<harness>__<id>/")
-    r.add_argument("--timeout", type=float, help="agent wall-clock limit in seconds (default: the task's agent.timeout_sec)")
-    r.add_argument("--seed", type=int, help="override the task's seed")
+    run_opts(r, many=False)
 
     m = sub.add_parser("run-many", help="run a set of trials")
     m.add_argument("--tasks", help="task root (default: the bundled tasks)")
-    m.add_argument("--harness", required=True, help=HARNESS_HELP)
-    m.add_argument("--model", default="", help="model for the harness (default: the harness's default)")
-    m.add_argument("--out", required=True, help="job folder; one trial folder per task")
+    run_opts(m, many=True)
     m.add_argument("--filter", default="", help="only task ids containing this substring")
     m.add_argument("--limit", type=int, default=0, help="run at most this many tasks (0: all)")
     m.add_argument("--concurrency", type=int, default=1, help="trials run in parallel (default 1)")
-    m.add_argument("--timeout", type=float, help="agent wall-clock limit per trial in seconds (default: each task's)")
     m.add_argument("--task-list", help="file with one task id per line (subset of --tasks)")
-    m.add_argument("--resume", action="store_true", help="skip tasks that already have a finished, non-infra-failed trial in --out")
+    m.add_argument("--resume", action="store_true", help="(--engine local) skip tasks that already have a finished, non-infra-failed trial in --out")
+
+    e = sub.add_parser("export", help="write robouse tasks as native BenchFlow task packages (a movable bundle)")
+    e.add_argument("--tasks", required=True, nargs="+", help="task folders, suite folders or a task root")
+    e.add_argument("--out", required=True, help="bundle directory: <out>/tasks/<id>/ and <out>/runtime-<hash>/")
+    e.add_argument("--filter", default="", help="comma-separated substrings; keep tasks whose id matches one")
+    e.add_argument("--noop", action="store_true", help="noop oracle (negative control: must score 0)")
 
     t = sub.add_parser("tasks", help="list tasks (default: the bundled tasks)")
     t.add_argument("root", nargs="?", help="task root (default: the bundled tasks)")
@@ -75,6 +100,38 @@ def main(argv=None) -> int:
 
         fetch(Path(a.dest) if a.dest else None, robots=a.robot)
         return 0
+    if a.cmd == "export":
+        from .engine.format import materialize
+
+        keys = [k for k in a.filter.split(",") if k]
+        n = 0
+        for root in a.tasks:
+            for t in find_tasks(root):
+                if keys and not any(k in t.id for k in keys):
+                    continue
+                print("exported", materialize(t.path, Path(a.out), noop=a.noop, flat=True))
+                n += 1
+        print(f"{n} task(s) -> {Path(a.out).resolve()}   run: bench eval run --tasks-dir {Path(a.out) / 'tasks'} --agent oracle --sandbox docker")
+        return 0 if n else 1
+    if a.cmd in ("run", "run-many") and a.engine == "benchflow":
+        from benchflow.embodied.rollouts import parse_seeds
+
+        from .engine.run import run_job, select_tasks
+
+        seeds = parse_seeds(a.seeds) if a.seeds else None
+        if seeds and a.seed is not None:
+            print("robouse: use --seed or --seeds, not both", file=sys.stderr)
+            return 2
+
+        if a.cmd == "run":
+            tasks = [load_task(resolve_task_path(a.task))]
+        else:
+            ids = [l.strip() for l in open(a.task_list) if l.strip() and not l.startswith("#")] if a.task_list else None
+            tasks = select_tasks(Path(a.tasks) if a.tasks else bundled_tasks_root(), a.filter, ids, a.limit)
+        res = run_job(tasks, a.agent, a.model, Path(a.out), sandbox=a.sandbox,
+                      concurrency=getattr(a, "concurrency", 1), timeout=a.timeout, seed=a.seed,
+                      job_name=a.job_name, reasoning_effort=a.reasoning_effort, seeds=seeds)
+        return 0 if res["errored"] == 0 else 1
     if a.cmd in ("serve", "run", "run-many"):
         import importlib.util
 
@@ -93,18 +150,21 @@ def main(argv=None) -> int:
                     max_wall_s=a.max_wall_s, ready_file=Path(a.ready_file) if a.ready_file else None)
         print(json.dumps(res))
         return 0
+    if getattr(a, "seeds", None):
+        print("robouse: --seeds needs the BenchFlow engine (drop --engine local, or use --seed)", file=sys.stderr)
+        return 2
     if a.cmd == "run":
         from .runner import run_trial
 
-        res = run_trial(load_task(resolve_task_path(a.task)), a.harness, a.model, Path(a.out), timeout=a.timeout, seed=a.seed)
+        res = run_trial(load_task(resolve_task_path(a.task)), a.agent, a.model, Path(a.out), timeout=a.timeout, seed=a.seed)
         print(json.dumps(res, indent=2))
         return 0
     if a.cmd == "run-many":
         from .runner import run_many
 
         ids = [l.strip() for l in open(a.task_list) if l.strip() and not l.startswith("#")] if a.task_list else None
-        run_many(Path(a.tasks) if a.tasks else bundled_tasks_root(), a.harness, a.model, Path(a.out), filt=a.filter, limit=a.limit,
-                 concurrency=a.concurrency, timeout=a.timeout, ids=ids, resume=a.resume)
+        run_many(Path(a.tasks) if a.tasks else bundled_tasks_root(), a.agent, a.model, Path(a.out), filt=a.filter, limit=a.limit,
+                 concurrency=a.concurrency, timeout=a.timeout, ids=ids, resume=a.resume, seed=a.seed)
         return 0
     if a.cmd == "tasks":
         if a.path:

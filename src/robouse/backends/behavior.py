@@ -28,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .base import ActionSpec, Backend, StepInfo
+from .base import ActionSpec, Backend, StepInfo, G, BEHAVIOR_SKILLS, behavior_skill_specs
 
 REPO = Path(__file__).resolve().parents[3]
 REMOTE_FILE = REPO / "runs" / "_behavior" / "remote.json"
@@ -49,6 +49,16 @@ def _decode(b64: str) -> np.ndarray:
 
 class BehaviorBackend(Backend):
     name = "behavior"
+    robot_name = "behavior-r1"
+    robot_kind = "skill_only"
+    proprioception = ("robot",)
+    probe_success = False  # success is evaluated by the remote worker
+
+    def action_layout(self) -> list[G]:
+        return [G("base.wait", 1, "wait", doc="no low-level control: holds the robot still for one step")]
+
+    def skill_specs(self):
+        return behavior_skill_specs(BEHAVIOR_SKILLS)
 
     def __init__(self, spec: dict):
         self.spec = spec

@@ -26,7 +26,7 @@ import os
 
 import numpy as np
 
-from .base import ActionSpec, Backend, StepInfo
+from .base import ActionSpec, Backend, StepInfo, G, arm_layout
 
 SUITES = ("libero_spatial", "libero_object", "libero_goal", "libero_10", "libero_90")
 CAMERAS = ("agentview", "robot0_eye_in_hand")
@@ -82,6 +82,12 @@ def quat2axisangle(q) -> np.ndarray:
 
 class LiberoBackend(Backend):
     name = "libero"
+    robot_name = "panda-2f"
+    probe_success = False  # step() already reports success; LIBERO's reward is sparse
+
+    def action_layout(self) -> list[G]:
+        return arm_layout("OSC_POSE: 1.0 asks for 5 cm per step", rotation="1.0 asks for 0.5 rad per step",
+                          grip_doc="-1 open, +1 close")
     image_flipped = False  # render() returns upright images, as mujoco.Renderer would
 
     def __init__(self, spec: dict):

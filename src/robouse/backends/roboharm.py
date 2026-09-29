@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .base import ActionSpec, Backend, StepInfo
+from .base import ActionSpec, Backend, StepInfo, G, arm_layout
 
 STEP_M = .02
 LEAD_M = .05
@@ -59,6 +59,11 @@ class _Arm:
 
 class RoboHarmBackend(Backend):
     name = "roboharm"
+    robot_name = "roboharm-arm-2f"
+
+    def action_layout(self) -> list[G]:
+        return arm_layout("gripper target, 2 cm per unit per step", grip_hold="zero", grip_initial=None,
+                          grip_doc="> 0 closes, -f opens to fraction f, 0 keeps the fingers")
 
     def __init__(self, spec: dict):
         from .roboharm_scenes import SCENARIOS

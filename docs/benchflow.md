@@ -1,15 +1,52 @@
-# Running robo-use through BenchFlow
+# robo-use on BenchFlow
 
-robo-use tasks can be exported as BenchFlow-native task packages (`task.md`, schema_version 1.3) and run with `bench eval run` on the Docker sandbox. The agent harness (Claude Code, Codex, any BenchFlow agent, or the `oracle`) runs in BenchFlow's agent container; the MuJoCo simulator and the episode server (`robouse serve`) run in a second, trusted container. The two share only a Unix socket.
+A robo-use run is a BenchFlow run. robouse task folders are a BenchFlow task format: BenchFlow loads them directly from `tasks/` and runs them with its own runner, agents, sandboxes, verifier, trial layout and job tooling. There is no export step and no second runner.
 
-Code: [`benchflow/`](../benchflow/) (exporter, simulator image, templates). The simulator runs the same `robouse serve` as a local run; nothing BenchFlow-specific was added to `src/robouse`.
+```sh
+# the same trial, two ways (both are one BenchFlow job)
+bench eval run --tasks-dir tasks/metaworld/metaworld-push --agent codex --model gpt-6-astra --sandbox docker
+robouse run --task metaworld-push --agent codex --model gpt-6-astra --out jobs
+```
+
+What robouse keeps: the simulator backends (each declares its robot as an embodiment), the tasks, the reference solutions and the adapters. What comes from BenchFlow (`benchflow.embodied`, see BenchFlow's `docs/embodied.md`): the embodiment spec, the agent-facing `robo` command and its protocol, the trusted episode server, the simulator-sidecar wiring, the physical verifier, the per-step trace and training export, seeded rollouts, and everything else that runs a trial. The agent and model matrix is BenchFlow's (`bench agent list`: `claude`, `codex`, `gemini`, `openhands`, `oracle`, ...).
+
+| Piece | Where it lives now |
+|---|---|
+| Episode server (budgets, recording, judge, oracle token, vision mode, skills) | BenchFlow `benchflow/embodied/server.py` (+ `skills.py`); robouse `session.py` and `embodied.py` adapt the backends to it |
+| `robo` command | BenchFlow `benchflow/embodied/robo.py` (stdlib only); robouse `agent_cli.py` re-exports it for the `robo` script and the oracles' `_send` |
+| Compose topology, agent image, sim entry point, verifier | BenchFlow `benchflow/embodied/templates/`, `sidecar.py`, `verifier.py` |
+| Simulator image | robouse `src/robouse/engine/templates/sim/` (Dockerfile + requirements; meshes fetched at build time) |
+| Task format | robouse `engine/format.py`: `RobouseTaskFormat(EmbodiedTaskFormat)` |
+
+The `robo` command is generic now: `robo info` prints the embodiment (action groups, skills, sensors, budgets), `robo act GROUP=V1,V2,... [GROUP=...]` commands one or more named action groups in one step (e.g. `robo act arm.ee_delta=0.2,0,-0.1 gripper=1`, or `left.ee_delta=... right.gripper=...` on ALOHA), and `robo skill arm.move_to X Y Z`. Every older command still works (`robo act DX DY DZ GRIP`, `robo move-to`, `robo grip`, `robo skill NAME ARGS`), so published task instructions are unchanged.
+
+## How it fits together
+
+BenchFlow (branch `robouse`, see its `docs/task-formats.md`) has a task-format hook. A package registers a format through the `benchflow.task_formats` entry point. robouse registers `robouse.engine.format:RobouseTaskFormat` in `pyproject.toml`. When BenchFlow loads a folder whose `task.md` has a top-level `robouse:` block, it asks robouse to materialize it as a native BenchFlow package and runs that package. The same hook serves `bench eval run --tasks-dir`, `bench tasks check`, and `RolloutConfig` / `Evaluation` in the Python API.
+
+The materialized package is written once, content-addressed by the task, the robouse package and the options, under `~/.cache/benchflow/task-formats/robouse/` (`BENCHFLOW_TASK_FORMAT_CACHE` moves it):
+
+```
+runtime-<hash>/                        simulator image build context, shared by every task:
+  Dockerfile  requirements.txt  robouse/src/robouse/   (robouse's)
+  benchflow_embodied/  embodied-sim-entry              (BenchFlow's embodied layer, vendored)
+tasks/<key>/<task-id>[--seed-<n>]/
+  task.md                              schema 1.3; the robouse block moves to metadata.robouse; verifier.service: simulator
+  environment/Dockerfile               agent (`main`) image: python + numpy + the `robo` client, nothing else
+  environment/robo                     copy of benchflow/embodied/robo.py (standard library only)
+  environment/docker-compose.yaml      `main` + the trusted `simulator` service; embeds the task definition
+  verifier/{verifier.md,test.sh}       BenchFlow's physical verifier; runs in `simulator`
+  oracle/solve.sh + oracle/vendor/     reference solution (robouse oracle code, BenchFlow's socket client; Meta-World's scripted policies)
+```
+
+Sources: [`src/robouse/engine/format.py`](../src/robouse/engine/format.py), [`src/robouse/engine/templates/sim/`](../src/robouse/engine/templates/sim/) and BenchFlow's `benchflow/embodied/sidecar.py`. `robouse export --tasks ... --out DIR` writes the same packages as a movable bundle (`DIR/tasks/<id>/`, `DIR/runtime-<hash>/`, relative build context), for publishing or for a machine without robouse installed.
 
 ## Trust model
 
 ```
  main (agent container)                            simulator (trusted container)
  ┌──────────────────────────────────┐             ┌───────────────────────────────────────────┐
- │ BenchFlow agent / oracle         │  JSON over  │ robouse serve --task … --socket …         │
+ │ BenchFlow agent / oracle         │  JSON over  │ benchflow.embodied.serve + robouse backend│
  │ /usr/local/bin/robo  (stdlib)    │ Unix socket │ MuJoCo + Meta-World / Gymnasium-Robotics  │
  │ ROBOUSE_SOCKET=/rpc/episode.sock │────────────►│ step + wall budgets, video, success judge │
  │ /rpc  (read-only volume)         │             │ /episode (record; not mounted in main)    │
@@ -18,85 +55,105 @@ Code: [`benchflow/`](../benchflow/) (exporter, simulator image, templates). The 
                                                   └───────────────────────────────────────────┘
 ```
 
-- **Agent container (`main`).** Built from `environment/Dockerfile`: `python:3.12-slim-bookworm` plus numpy, curl/xz (so BenchFlow can install JS harnesses) and the `robo` client, a copy of `src/robouse/agent_cli.py` (standard library only). There is no simulator, no MuJoCo, no `robouse` source, no task definition and no episode record in this container. The shared `rpc` volume is mounted read-only: it holds the socket and the camera images that `robo observe --image` saves (`/rpc/ws/observations/obs_NNN.png`), which the agent can open.
-- **Simulator container (`simulator`).** Built from `runtime/Dockerfile.sim` (image `robouse-sim:0.1.0`). It runs `robouse serve` for the task, with `network_mode: none`. The task definition (the task's `task.md` frontmatter, without the prompt) is embedded in the compose file and passed as `ROBOUSE_TASK_MD`; `sim-entry.sh` writes it to a file for `robouse serve`, so no host path is mounted. The episode record (`result.json`, `trace.jsonl`, `frames.jsonl`, `recording.mp4`) is written to the `episode` volume, which only this container mounts.
-- **Verifier.** `task.md` sets `verifier.service: simulator`, so BenchFlow runs `verifier/test.sh` inside the simulator container and downloads `/logs/verifier` from there. The compose file uses `volumes: !override` on `main` to drop BenchFlow's default host mount of `/logs/verifier` into the agent container, so reward files written by the agent never reach the host.
-- **Closing the episode.** If the agent ended with `robo done` / `robo give-up`, or a budget ran out, the episode server has already judged the episode and exits on its own. If the agent (or the harness) just stopped, the verifier sends `shutdown` over the socket; the server then closes the episode as `agent_exited` and judges the physical state after the usual settle period, which is exactly what a local `robouse run` does when the harness exits. The verifier waits for the server to finish writing its record (`/episode/serve.exit`), copies the record to `/logs/verifier/episode/`, and writes `reward.txt` = 1 if the server judged success, else 0. `reward-details.json` keeps the outcome, steps used, `closed_by` and the agent's final message. A missing result is an infrastructure error (exit 1, no reward), not a zero.
-- **Oracle.** `oracle/solve.sh` runs in the agent container like any agent and drives the robot only through the socket. It ships its own code in `oracle/vendor/` (a copy of the `robouse.oracle` module and, for Meta-World, the one scripted expert policy it needs, which is pure numpy). BenchFlow uploads `oracle/` only in oracle mode, so agents never see it.
-- **Wall clock.** The episode clock starts when the simulator container is up, which is before BenchFlow installs the harness, so the episode's wall budget is the task's agent timeout plus 900 s. The step budget (`max_steps`) is the real limit.
+- **Agent container (`main`).** The `robo` client and numpy only: no simulator, no MuJoCo, no robouse source, no task definition, no episode record. The shared `rpc` volume is mounted read-only; it holds the socket and the camera images `robo observe --image` saves (`/rpc/ws/observations/obs_NNN.png`). BenchFlow runs the agent as its unprivileged sandbox user.
+- **Simulator container (`simulator`).** Runs BenchFlow's episode server with the robouse backend (`python -m benchflow.embodied.serve --factory robouse.embodied:episode_from_task`) with `network_mode: none`. The episode record (`result.json`, `episode.json`, `steps.jsonl`, `trace.jsonl`, `frames.jsonl`, `video_index.json`, `recording.mp4`) is written to the `episode` volume, which only this container mounts. The image is built from the shared runtime; compose names it per trial, so BenchFlow's per-trial cleanup (`compose down --rmi all`) never removes an image another trial is using, and rebuilds come from the Docker build cache in seconds.
+- **Verifier.** `verifier.service: simulator`: BenchFlow runs `verifier/test.sh` in the simulator and downloads `/logs/verifier` from there. The compose file drops BenchFlow's default host mount of `/logs/verifier` into `main`, so reward files the agent writes never reach the host. If the agent stopped without `robo done`, the verifier sends `shutdown`; the server closes the episode as `agent_exited` and judges the physical state after the usual settle period, as a local run does. The verifier then copies the episode record to `verifier/episode/`, the video and the agent's camera images to `artifacts/`, and writes `reward.txt` (1 if the server judged success), `reward.json` (`reward`, `success_ever`, `budget_used`) and `reward-details.json`. BenchFlow then writes `trainer/embodied_steps.jsonl` (one state/action/reward row per simulator step) and `trainer/embodied_episode.json` (embodiment, video index) next to `trainer/atif.json`. A missing result is an infrastructure error, not a zero.
+- **Oracle.** `oracle/solve.sh` runs in `main` like an agent and drives the robot only through the socket. BenchFlow uploads `/oracle` for every rollout and locks it away from agents. For vision tasks the oracle carries a per-package random token that unlocks privileged state; the simulator gets the same token through compose. The token only reaches an agent that can read `/oracle`, which BenchFlow's lockdown prevents.
+- **Prompt.** The task body with the same preamble a local run used (`harnesses.PROMPT_PREFIX`).
+- **Wall clock.** The episode clock starts when the simulator is up, before BenchFlow installs the harness, so the episode's wall budget is the agent timeout plus 900 s. The step budget (`max_steps`) is the real limit.
 
-Probed boundaries (see the adversarial control below): the agent cannot read `/episode`, `/opt/robouse` or `/task` (they do not exist in its container), cannot write `/rpc`, has no `mujoco` module, and reward files it writes locally do not affect the score. This is a set of specific probes, not a full isolation audit: the agent container has network access (needed for the model API), and any process that can reach the socket can send the same JSON requests `robo` sends (which only gives it the same public interface).
+## Commands
 
-## Build, export, check
-
-Requirements: Docker with Compose v2.24.4 or newer (for `!override`) and the `bench` CLI. On this Mac, Docker is Colima's `default` profile; the Compose plugin was not installed, so it was added as `~/.docker/cli-plugins/docker-compose` (v5.5.1).
+Requirements: Docker with Compose v2.24.4 or newer (the compose file uses `!override`), and robouse installed with BenchFlow from the `robouse` branch (the dependency in `pyproject.toml` points there until the hook is released). The host needs no simulator: MuJoCo runs in the container. Meta-World oracles vendor Meta-World's scripted policies, taken from the installed `metaworld` package or, without one, from the pinned wheel on PyPI.
 
 ```sh
-cd ~/benchflow/robouse
+git clone -b embodied https://github.com/benchflow-ai/robouse.git && cd robouse
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e ".[metaworld,gymrobotics]"
 
-# 1. export tasks (any mix of task folders, suite folders, or all of tasks/)
-.venv/bin/python benchflow/export.py --tasks tasks/metaworld/metaworld-reach tasks/metaworld/metaworld-push \
-    --out benchflow/dist/robouse
-#   whole suites:  --tasks tasks/metaworld tasks/gymrobotics     substring filter:  --filter push,reach
-#   negative control (oracle that only looks and never calls `robo done`):  --noop-oracle
+# check a task (materializes it, then BenchFlow's own checks)
+.venv/bin/bench tasks check tasks/metaworld/metaworld-reach --level runtime-capability --sandbox docker
 
-# 2. (optional) pre-build the simulator image; BenchFlow also builds it from the bundle's runtime/ on first use
-docker build -f benchflow/dist/robouse/runtime/Dockerfile.sim -t robouse-sim:0.1.0 benchflow/dist/robouse/runtime
+# BenchFlow directly: a task, a suite, or any folder of robouse tasks
+.venv/bin/bench eval run --tasks-dir tasks/metaworld/metaworld-reach --agent oracle --sandbox docker
+.venv/bin/bench eval run --tasks-dir tasks/arc-style --agent codex --model gpt-6-astra --sandbox docker --concurrency 4
 
-# 3. validate each package
-cd benchflow/dist/robouse
-bench tasks check tasks/metaworld-reach --level runtime-capability --sandbox docker
+# robouse's wrapper: bundled task ids, --filter / --task-list / --limit, plus --seed, --timeout and the noop control
+.venv/bin/robouse run --task metaworld-push --agent claude --model claude-opus-5 --out jobs
+.venv/bin/robouse run-many --tasks tasks --task-list my-tasks.txt --agent oracle --out jobs --concurrency 3
+.venv/bin/robouse run-many --tasks tasks/metaworld --agent noop --out jobs --limit 5      # must score 0
+
+# seeded rollouts: one trial per task and seed; summary.json gets pass@k, mean, std per task
+.venv/bin/bench eval run --tasks-dir tasks/metaworld --seeds 0-4 --agent oracle --sandbox docker
+.venv/bin/robouse run-many --tasks tasks/metaworld --seeds 0-4 --agent codex --model gpt-6-astra --out jobs
+.venv/bin/bench embodied report jobs/<job>                       # the same table for any job
+.venv/bin/bench embodied export jobs/<job> --out dataset/        # steps.jsonl + episodes.jsonl for training
+
+# a movable bundle of native packages
+.venv/bin/robouse export --tasks tasks/metaworld --out dist/robouse-metaworld [--noop]
+
+# two roles on one robot (a BenchFlow scene): a planner that may only look, an operator that acts
+.venv/bin/python scripts/scene_planner_operator.py --task tasks/arc-style/arc-gravity --agent codex --model gpt-6-astra
 ```
 
-Run the export with the dev venv: it reads task folders with `robouse.tasks`, which needs PyYAML, and for Meta-World tasks it copies the scripted expert policy out of the installed `metaworld` package. The bundle is self-contained; keep `runtime/` next to `tasks/` when moving it, because each task's compose file builds the simulator from `../../../runtime`. BenchFlow deletes service images at the end of every trial (`compose down --rmi all`), so the simulator image is rebuilt from the Docker build cache each time (seconds, not minutes).
+Seeds: Meta-World picks one of its 50 goal and object variations per seed; LIBERO, robosuite and Gymnasium-Robotics seed their resets; the tabletop, drone, RoboHarm and menagerie scenes are fixed by the task, so every seed starts from the same state (the report's `distinct_initial_states` and `reset_reproducible` show which).
 
-Bundle layout:
+`robouse run` / `run-many` call `benchflow.Evaluation` ([`src/robouse/engine/run.py`](../src/robouse/engine/run.py)) and print one line per trial. `--agent` takes any BenchFlow agent; `claude-code` is an alias of `claude`, and `noop` runs BenchFlow's `oracle` agent on a package whose oracle only looks (`robo info`, `robo observe`) and exits without `robo done`. For Claude agents without `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in the environment, the wrapper takes a token from the maintainers' pool (`~/.config/bf-agents/oauth.env`, as the local harness does). For Codex agents without `OPENAI_API_KEY` or `CODEX_AUTH_JSON`, when the maintainers' Codex account pool (`~/.config/bf-agents/codex-auth/*.json`) exists, the wrapper passes `CODEX_AUTH_JSON` from that account's persistent home (`~/.cache/robouse/codex-home-<account>/auth.json`, the local harness's home), and BenchFlow writes it into the agent container; the host's own `~/.codex/auth.json` is not read. Without the pool, Codex falls back to BenchFlow's subscription auth, which uploads the host login.
+
+Trials use BenchFlow's job layout:
 
 ```
-<out>/benchmark.yaml  robouse-oracle.yaml  robouse-claude.yaml  robouse-codex.yaml
-<out>/runtime/        Dockerfile.sim  requirements-sim.txt  sim-entry.sh  robouse/ (package source)
-<out>/tasks/<id>/     task.md
-                      environment/{Dockerfile, robo, docker-compose.yaml}
-                      verifier/{verifier.md, test.sh, verify.py}
-                      oracle/{solve.sh, vendor/}
+<out>/<job>/summary.json  results.jsonl
+<out>/<job>/<task>__<id>/config.json  result.json  timing.json  prompts.json
+    agent/          harness log (codex_acp.txt, oracle.txt, ...), install log
+    trajectory/     acp_trajectory.jsonl (and llm_trajectory.jsonl when the LiteLLM proxy is used)
+    trainer/        atif.json, verifiers.jsonl, adp.jsonl, embodied_steps.jsonl, embodied_episode.json
+    verifier/       reward.txt  reward.json  reward-details.json  test-stdout.txt
+                    episode/  result.json episode.json steps.jsonl trace.jsonl frames.jsonl video_index.json
+                              recording.mp4 serve.log observations/
+    artifacts/      recording.mp4  observations/
 ```
 
-## Run
+## The local engine
 
-From the bundle directory:
+`robouse run --engine local` keeps the older in-process runner ([`src/robouse/runner.py`](../src/robouse/runner.py)). It runs the episode server and the harness as host processes, with the harness under a macOS Seatbelt profile. Use it on a machine without Docker, and for the harnesses BenchFlow does not have: `claude-code-glm`, `codex-glm` and `mini-swe-agent-glm` (GLM-5.3 on Baseten), and `molmoact2`.
 
-```sh
-bench eval run --config robouse-oracle.yaml                 # reference solutions: expect 1.0 everywhere
-bench eval run --tasks-dir tasks --agent oracle --sandbox docker     # same, with flags
+BenchFlow has no host-process sandbox. Its providers are Docker, Daytona, Modal, AgentCore and Apple Container, and all of them run Linux containers. The sandbox contract assumes Linux paths (`/logs/...`, `/oracle`, `/app`), root for agent installs (Node.js into `/opt/benchflow`), and a separate agent user. Apple Container (`--sandbox apple-container`, macOS 26 `container` CLI) is Docker-free, but it runs a single container, so it cannot host the simulator sidecar; `verifier.service` is Docker-only as well. A local mode would therefore need either a new BenchFlow provider that maps those paths onto a host directory (a large change that touches agent install, lockdown and the verifier) or sidecar support in Apple Container. Until one of them exists, a Mac needs Docker for the BenchFlow engine: Colima (`colima start --vm-type vz`) with the Compose plugin works.
 
-# Claude Code as the robot policy (auth: ANTHROPIC_API_KEY, or CLAUDE_CODE_OAUTH_TOKEN)
-bench eval run --config robouse-claude.yaml                 # agent: claude, model: claude-opus-5-5
-bench eval run --config robouse-codex.yaml                  # agent: codex, model: gpt-6-astra
-```
+## Validation on the embodied layer (2026-09-28)
 
-The configs use `concurrency: 1` because all tasks share the `robouse-sim:0.1.0` tag, which each trial's cleanup removes; higher concurrency worked for the 2-task no-op control but is not guaranteed. Results land in `jobs/<config>/<timestamp>/<task>__<id>/`: `result.json` (`rewards.reward`), `agent/` (harness trajectory, or `oracle.txt`), and `verifier/` with `reward.txt`, `reward-details.json` and `episode/` (video, trace, frames, observation images).
+Same Mac and Colima setup; BenchFlow branch `robouse` at the `benchflow.embodied` commit, robouse branch `embodied`. Every Docker run below is `bench eval run --sandbox docker`.
 
-**Claude models newer than the pinned harness.** BenchFlow 0.7.4 (the PyPI build installed as `~/.local/bin/bench`) pins `@agentclientprotocol/claude-agent-acp@0.40.0`, which bundles Claude Code 2.1.160; the API rejects `claude-opus-5-5` from it ("version 2.1.280 or newer is required"). The BenchFlow checkout (`~/benchflow/internal-lab/benchflow/benchflow`, 0.7.6.dev0) pins 0.73.0, which bundles Claude Code 2.1.257 and is still too old. `claude-agent-acp@0.81.2` (Claude Agent SDK 0.3.280, i.e. Claude Code 2.1.280) works. For the Claude run, the checkout was installed into a separate venv and the pin was changed in that venv's installed copy only (`benchflow/agents/registry.py`, `_CLAUDE_AGENT_ACP_PACKAGE`); the BenchFlow repo itself is unchanged. BenchFlow needs that pin bump upstream:
+| Run | Result |
+|---|---|
+| Oracle, 7 tasks over 4 suites (arc-gravity, arc-colour-to-pad, metaworld-reach, metaworld-push, drone-waypoint, drone-land-helipad, menagerie-aloha-opening-four, bimanual ALOHA) | 7/7, errors 0, rerun on the final code 7/7. Step counts equal the protocol-1 baseline (reach 51, push 63, arc-colour-to-pad 779, arc-gravity 999) |
+| Noop control (`robouse export --noop`, then `bench eval run --agent oracle`), same 7 | 0/7, errors 0, every episode `agent_exited` with 0 steps, closed by the verifier; rerun on the final code 0/7 |
+| Seeded oracle, `--seeds 0-2` on metaworld-reach and metaworld-push | 6/6; `summary.json` `seeded`: pass@1..3 = 1.0, 3 distinct initial states per task |
+| DexJoCo (local engine; the DexJoCo virtualenv is not in the simulator image) | water-plant (hand) and microwave-cook (bimanual hands): oracle 1.0 (steps 306 and 693), noop 0.0 |
+| Real model: Claude Code on GLM-5.3 (Baseten, BenchFlow `vllm/` provider), a substitute, see below | metaworld-push `--seeds 0-2`: 3/3 (pass@1 = 1.0); metaworld-reach 1/1; drone-waypoint 1/1; arc-gravity 0/1 (wrong arrangement, `robo done` at step 1192); menagerie-aloha-opening-four 0/1 (agent timeout at step 477 of 2000). Errors 0 |
+| Reset reproducibility | metaworld-push seeds 0, 1, 2 start from identical `initial_state_sha256` in the oracle job and the GLM job |
+| Scene: planner + operator on metaworld-push (`scripts/scene_planner_operator.py`, both roles GLM-5.3) | reward 1.0; the planner made only `info`/`observe` requests, all 65 simulator steps are attributed to the operator in `steps.jsonl` |
 
-```sh
-uv venv --python 3.12 ~/.cache/robouse/bfdev-venv
-uv pip install --python ~/.cache/robouse/bfdev-venv/bin/python ~/benchflow/internal-lab/benchflow/benchflow
-sed -i '' 's#claude-agent-acp@0.73.0#claude-agent-acp@0.81.2#' \
-    ~/.cache/robouse/bfdev-venv/lib/python3.12/site-packages/benchflow/agents/registry.py
-CLAUDE_CODE_OAUTH_TOKEN=… ~/.cache/robouse/bfdev-venv/bin/bench eval run --config robouse-claude.yaml
-```
+The prescribed real agents could not run: all three Codex pool accounts (`~/.config/bf-agents/codex-auth`) return "You've hit your usage limit" until Oct 3-4, and both Claude OAuth pool tokens return "weekly limit" until Oct 2 (checked with one-line CLI calls; a Codex job started before the check failed with ACP "Internal error" on the first prompt and was stopped). Rerun `robouse run-many --agent codex --model gpt-6-astra` or `--agent claude-code --model claude-sonnet-5` on the same sample once the quotas reset.
 
-## Validation (2026-09-27)
+## Validation on the protocol-1 engine (2026-09-27)
 
-Bundle: `benchflow/dist/robouse` (metaworld-reach, metaworld-push) and `benchflow/dist/robouse-noop` (same tasks, `--noop-oracle`). Docker: Colima default profile (aarch64, 6 CPUs, 10 GiB). Simulator image `robouse-sim:0.1.0`: 1.12 GB.
+Mac (Apple Silicon), Colima 0.10.3 with the vz VM (6 CPUs, 12 GiB), Docker 29.5.2, Compose 5.5.1, BenchFlow 0.7.9.dev0 from the `robouse` branch, robouse `benchflow-engine` branch.
 
-| Check | Command | Result |
+| Run | Command | Result |
 |---|---|---|
-| Structure | `bench tasks check tasks/metaworld-{reach,push}` | valid (structural) |
-| Runtime capability | `bench tasks check tasks/metaworld-{reach,push} --level runtime-capability --sandbox docker` (0.7.4 and 0.7.6.dev0) | valid |
-| Oracle | `bench eval run --config robouse-oracle.yaml` | **2/2, mean reward 1.00**, errors 0, 1.7 min. reach: `success_reached` at step 51; push: `success_reached` at step 63 |
-| No-op control | `bench eval run --tasks-dir tasks --agent oracle --sandbox docker --jobs-dir jobs/robouse-noop` (in `robouse-noop/`) | **0/2, mean reward 0.00**, errors 0. Both closed by the verifier (`closed_by: verifier_shutdown`, outcome `agent_exited`, 0 steps) |
-| Adversarial control | a solve.sh that writes `/logs/verifier/reward.txt` = 1 and `reward.json` in the agent container, then probes `/episode`, `/rpc`, `/opt/robouse`, `/task`, `import mujoco` (metaworld-reach) | **reward 0.00**. The forged files stayed in the container; `/episode`, `/opt/robouse`, `/task` absent; `/rpc` read-only; no `mujoco`; `robo observe --image` returned `/rpc/ws/observations/obs_001.png` |
-| Claude Code + claude-opus-5-5 | `bench eval run --config robouse-claude.yaml` (0.7.6.dev0, `CLAUDE_CODE_OAUTH_TOKEN`) | **2/2, mean reward 1.00**, errors 0, 2.3 min (install included). push: 4 shell calls (`robo info`, `observe`, `move-to` above the puck, `move-to` down, `grip 1`, `move-to` to the goal), `success_reached` at step 155, 83.6k tokens; reach: 2 shell calls, `success_reached` at step 36, 48.1k tokens. Each trace in `verifier/episode/trace.jsonl` shows only public `robo` requests |
+| Structure | `bench tasks check tasks/metaworld/metaworld-reach --level runtime-capability --sandbox docker`, `bench tasks check tasks/arc-style/arc-gravity` | valid |
+| Oracle, direct | `bench eval run --tasks-dir tasks/metaworld/metaworld-reach --agent oracle --sandbox docker` | 1/1, reward 1.0, `success_reached` at step 51, 1.9 min including the first simulator image build |
+| Oracle, 3 suites | `robouse run-many --tasks tasks --task-list … --agent oracle --concurrency 3` on metaworld-reach, metaworld-push, arc-gravity, arc-colour-to-pad, gymrobotics-fetch-push-s0, gymrobotics-pointmaze-umaze-s3 | 4/6 reward 1.0; 2 infrastructure errors in the first, cold-cache batch (`main` container removed between create and start, `No such container`), recorded as errors, not zeros. Rerun of those 2 plus arc-swap and arc-mirror: 4/4 reward 1.0. In total, 8 distinct tasks at 1.0 |
+| Exported bundle | `robouse export --tasks tasks/arc-style --filter arc-gravity --out A`, copy `A` elsewhere, then the released `bench` 0.7.4 (no task-format hook): `bench eval run --tasks-dir <copy>/tasks --agent oracle --sandbox docker` | 1/1, reward 1.0, 0.9 min |
+| Noop control | same 6 tasks, `--agent noop` | 0/6, errors 0; every episode closed by the verifier (`closed_by: verifier_shutdown`, outcome `agent_exited`, 0 steps) |
+| Claude Code, claude-opus-5 | `robouse run-many --tasks tasks --task-list … --agent claude-code --model claude-opus-5 --concurrency 3` on metaworld-push, arc-gravity, gymrobotics-fetch-push-s0 (BenchFlow's `claude` agent, OAuth token from the pool) | **3/3 reward 1.0**, errors 0, about 2.3 min per trial including the harness install. metaworld-push `success_reached` at step 94 (7 shell calls: info, observe, 4 move-to, grip, done); arc-gravity `done` at step 769 (25 move-to, 8 grip); gymrobotics-fetch-push-s0 `done` at step 138 (5 move-to, 11 act). Every trace in `verifier/episode/trace.jsonl` has only public `robo` requests. Token counts are not in `result.json` on this native-auth path (usage source `agent_native_acp`) |
+| Codex, gpt-6-astra | `robouse run-many … --agent codex --model gpt-6-astra` on metaworld-push, arc-gravity, gymrobotics-fetch-push-s0 | not a model result: the host Codex login (`~/.codex/auth.json`) had been replaced by a placeholder API key during the session, so every model call returned 401 and the agent made 0 robot requests. BenchFlow scored these as reward 0 with `error: null`; see "Open issues" |
 
-The first adversarial attempt, run from a bundle copied to `/tmp`, failed at startup because the task definition was then a bind mount and Colima only shares the home directory; the task definition has been embedded in the compose file since, and the rerun from `/tmp` passed. Two earlier Claude attempts (BenchFlow 0.7.4 with Claude Code 2.1.160, then 0.7.6.dev0 with 2.1.257) were rejected by the API on the harness version before any robot request and were stopped; they are not counted.
+Against the local runner (`runs/oracle-*`, `runs/final-*-astra`): all 8 oracle episodes match exactly, same outcome and same step count (metaworld-reach `success_reached` 51, metaworld-push `success_reached` 63, gymrobotics-pointmaze-umaze-s3 `success_reached` 189, gymrobotics-fetch-push-s0 `done` 65, arc-colour-to-pad `done` 779, arc-swap 797, arc-mirror 814, arc-gravity 999). On the local runner, codex + gpt-6-astra solved metaworld-push (83 steps), gymrobotics-fetch-push-s0 (46) and arc-gravity (679).
+
+## Open issues
+
+- **Auth failures score as zeros.** A Codex 401 on every call ends the ACP turn normally, so BenchFlow records reward 0 with no error. A robouse trial with 0 episode requests and a provider error in the agent log should be an infrastructure error.
+- **Viewer timeline.** A local trial has `agent/trajectory.json` (ATIF converted from the harness output) and `artifacts/recording_index.json` (video time per step). A BenchFlow trial has `trajectory/acp_trajectory.jsonl` and `trainer/atif.json`, but no `recording_index.json` yet: `robouse.atif` needs a parser for BenchFlow's ACP trajectory.
+- **Cold-cache start race.** Two of the first ten trials failed at container start with `No such container` while several trials built the simulator image concurrently for the first time. Reruns did not reproduce it. BenchFlow did not retry them.
+- **Claude harness version.** BenchFlow pins `claude-agent-acp@0.73.0` (Claude Code 2.1.257); models that need a newer Claude Code are rejected by the API until the pin moves.

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .base import ActionSpec, Backend, StepInfo
+from .base import ActionSpec, Backend, StepInfo, G, arm_layout
 
 WORKER = Path(__file__).with_name("robocasa_worker.py")
 EPISODES = Path(__file__).with_name("robocasa_episodes")
@@ -49,6 +49,12 @@ TASKS: dict[str, dict] = {
 
 class RobocasaBackend(Backend):
     name = "robocasa"
+    robot_name = "panda-omron-2f"
+    probe_success = False  # step() already reports success; each probe would be another worker call
+
+    def action_layout(self) -> list[G]:
+        return arm_layout("2 cm per unit per step", grip_hold="zero", grip_initial=None,
+                          grip_doc="0 keeps the fingers, > 0 closes, -f opens to fraction f")
     image_flipped = False
 
     def __init__(self, spec: dict):

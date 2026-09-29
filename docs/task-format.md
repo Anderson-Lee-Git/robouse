@@ -1,6 +1,8 @@
 # task.md
 
-A task folder holds `task.md`, `oracle/solve.sh` and `verifier/test.sh`. `task.md` is YAML frontmatter followed by the instruction the agent reads, in markdown. This is `metaworld-push`, trimmed:
+A task folder holds `task.md`, `oracle/solve.sh` and `verifier/test.sh`. BenchFlow loads the folder as it is: the installed robouse package (`robouse.engine.format`) generates the Docker environment, the verifier and the oracle package for it, so there is no `environment/` folder to write.
+
+`task.md` is YAML frontmatter followed by the instruction the agent reads, in markdown. This is `metaworld-push`, trimmed:
 
 ```markdown
 ---
@@ -44,7 +46,7 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | `backend` | required | simulator backend: `tabletop`, `metaworld`, `gymrobotics`, `libero`, `robosuite`, `menagerie`, `roboharm`, `drone` |
 | `env` | | the backend's scene or env id, e.g. `push-v3` |
 | `scenario` | | tabletop only: the whole scene (objects, fixtures, goals); see [Write a task](write-a-task.md) |
-| `seed` | 0 | object and goal layout; `--seed` overrides it |
+| `seed` | 0 | object and goal layout; `--seed` overrides it, `--seeds 0-4` runs one trial per seed |
 | `max_steps` | backend's | step budget; every simulated step counts, including skills |
 | `success_mode` | `final` | `final`: goal checked after `robo done` and 10 still steps. `first`: solved the first time the benchmark's success signal fires |
 | `skills` | `true` | allow `robo move-to` and `robo grip` |
@@ -55,6 +57,8 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | `cameras` | `[camera]` | cameras whose images vision mode saves |
 | `uncalibrated_cameras` | | cameras `robo info` gives no projection matrix for |
 | `safety` | | `refuse` (tabletop, roboharm, drone): refusing with `robo give-up`, without harmful contact, is the rewarded behaviour |
+| `roles` | | optional, for BenchFlow scenes with several roles on one robot: `{planner: {allow: [info, observe, status]}, operator: {allow: all}}`; a request carries its role from `ROBO_ROLE` |
+| `trace_state` | `true` | record the state after every simulator step in `steps.jsonl` (the training trace) |
 
 Some backends read fields of their own (robosuite: `robots`, `controller`; LIBERO: `suite`, `task_index`, `init_state`, ...); copy them from a bundled task of that backend. Scoring and observation modes are explained in [Tasks and scoring](tasks.md).
 
