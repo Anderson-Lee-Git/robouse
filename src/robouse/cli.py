@@ -39,6 +39,7 @@ def main(argv=None) -> int:
     s.add_argument("--workspace", help="agent workspace (camera images are saved in its observations/)")
     s.add_argument("--seed", type=int, help="override the task's seed")
     s.add_argument("--max-wall-s", type=float, default=1800, help="wall-clock budget in seconds (default 1800)")
+    s.add_argument("--record-size", metavar="WxH", help="render the episode video at this size, e.g. 1280x720 (agent images unchanged; default: native size; also $ROBOUSE_RECORD_SIZE)")
     s.add_argument("--ready-file", help="file created once the server is listening")
 
     r = sub.add_parser("run", help="run one trial end to end")
@@ -47,6 +48,7 @@ def main(argv=None) -> int:
     r.add_argument("--model", default="", help="model for the harness (default: the harness's default)")
     r.add_argument("--out", required=True, help="job folder; the trial is written to OUT/<task>__<harness>__<id>/")
     r.add_argument("--timeout", type=float, help="agent wall-clock limit in seconds (default: the task's agent.timeout_sec)")
+    r.add_argument("--record-size", metavar="WxH", help="render the episode video at this size, e.g. 1280x720 (agent images unchanged; default: native size; also $ROBOUSE_RECORD_SIZE)")
     r.add_argument("--seed", type=int, help="override the task's seed")
 
     m = sub.add_parser("run-many", help="run a set of trials")
@@ -59,6 +61,7 @@ def main(argv=None) -> int:
     m.add_argument("--concurrency", type=int, default=1, help="trials run in parallel (default 1)")
     m.add_argument("--timeout", type=float, help="agent wall-clock limit per trial in seconds (default: each task's)")
     m.add_argument("--task-list", help="file with one task id per line (subset of --tasks)")
+    m.add_argument("--record-size", metavar="WxH", help="render the episode video at this size, e.g. 1280x720 (agent images unchanged; default: native size; also $ROBOUSE_RECORD_SIZE)")
     m.add_argument("--resume", action="store_true", help="skip tasks that already have a finished, non-infra-failed trial in --out")
 
     t = sub.add_parser("tasks", help="list tasks (default: the bundled tasks)")
@@ -74,6 +77,11 @@ def main(argv=None) -> int:
 
         fetch(Path(a.dest) if a.dest else None)
         return 0
+    if a.cmd in ("serve", "run", "run-many") and getattr(a, "record_size", None):
+        from .session import record_size
+
+        w, h = record_size(a.record_size)  # validated here; episode servers read it from the environment
+        os.environ["ROBOUSE_RECORD_SIZE"] = f"{w}x{h}"
     if a.cmd in ("serve", "run", "run-many"):
         import importlib.util
 

@@ -296,6 +296,13 @@ class RobosuiteBackend(Backend):
         self._renderer.update_scene(self.env.sim.data._data, camera=self.camera, scene_option=self._scene_opt)
         return self._renderer.render().copy()
 
+    def record_scene_option(self):
+        import mujoco
+
+        opt = mujoco.MjvOption()
+        opt.geomgroup[0] = 0  # hide collision geoms, as robosuite's own renderer does
+        return opt
+
     def mj_model_data(self):
         return self.env.sim.model._model, self.env.sim.data._data
 

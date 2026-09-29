@@ -158,6 +158,13 @@ class LiberoBackend(Backend):
             img = self.env.sim.render(camera_name=self.camera, width=self.size, height=self.size)
         return np.ascontiguousarray(np.asarray(img)[::-1])  # robosuite images are upside down
 
+    def record_scene_option(self):
+        import mujoco
+
+        opt = mujoco.MjvOption()
+        opt.geomgroup[0] = 0  # hide collision geoms, as robosuite's own renderer does
+        return opt
+
     def mj_model_data(self):
         return self.env.sim.model._model, self.env.sim.data._data
 

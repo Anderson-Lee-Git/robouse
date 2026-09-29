@@ -191,6 +191,17 @@ class GymRoboticsBackend(Backend):
         self._renderer.update_scene(data, camera=self.camera if self.camera in names else self._cam)
         return self._renderer.render().copy()
 
+    def render_record(self, width: int, height: int) -> np.ndarray:
+        if self._renderer is None:  # sets up the free camera
+            self.render()
+        if self.is_maze:
+            model, data = self.u.point_env.model, self.u.point_env.data
+        else:
+            model, data = self.u.model, self.u.data
+            self.u._render_callback()  # moves the goal marker site to the current goal
+        names = {model.camera(i).name for i in range(model.ncam)}
+        return self._mj_record(model, data, self.camera if self.camera in names else self._cam, width, height)
+
     # ---- skills ---------------------------------------------------------------------------------
     def skills(self) -> list[str]:
         return [] if self.is_maze else ["move_to", "grip"]

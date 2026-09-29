@@ -10,6 +10,10 @@ Episode files written to the run directory:
   trace.jsonl            every request and response (images referenced by path)
   frames.jsonl           wall-clock time and env step for each video frame
   recording.mp4          the episode video
+
+The video is rendered at the backend's native size unless ROBOUSE_RECORD_SIZE=WIDTHxHEIGHT is set (or `--record-size`
+on `serve`, `run` and `run-many`); then each frame comes from a separate renderer at that size, with the same camera.
+Agent observation images are never affected. Frames are written to the video as they are rendered.
 """
 from __future__ import annotations
 
@@ -28,6 +32,20 @@ SETTLE_STEPS = 10  # after `done`, hold still this many steps before judging suc
 MAX_REPEAT = 50
 MAX_SKILL_STEPS = 150
 FPS = 30
+
+
+def record_size(value: str | None = None) -> tuple[int, int] | None:
+    """(width, height) from 'WIDTHxHEIGHT' (default: $ROBOUSE_RECORD_SIZE); None when unset. Even sizes only."""
+    v = (os.environ.get("ROBOUSE_RECORD_SIZE", "") if value is None else value).strip().lower()
+    if not v:
+        return None
+    try:
+        w, h = (int(x) for x in v.split("x"))
+    except ValueError:
+        raise ValueError(f"record size must look like 1280x720, got {v!r}") from None
+    if not (16 <= w <= 3840 and 16 <= h <= 2160):
+        raise ValueError(f"record size out of range (16..3840 x 16..2160): {v!r}")
+    return w - w % 2, h - h % 2
 
 
 class Episode:
@@ -66,7 +84,10 @@ class Episode:
         self.outcome = None
         self.agent_text = ""
         self.t0 = time.time()
-        self._frames: list[np.ndarray] = []
+        self.record_size = record_size()
+        self._writer = None
+        self._video_size: tuple[int, int] | None = None
+        self._n_frames = 0
         self._frame_meta: list[dict] = []
         self._trace = open(self.run_dir / "trace.jsonl", "w")
         self._obs_count = 0
@@ -88,9 +109,37 @@ class Episode:
     # ---- recording -------------------------------------------------------------------------
     def _record_frame(self, force: bool = False) -> None:
         if force or self.steps % self.frame_every == 0:
-            img = self.backend.render()
-            self._frames.append(np.asarray(img, dtype=np.uint8))
-            self._frame_meta.append({"i": len(self._frames) - 1, "t": round(time.time() - self.t0, 3), "step": self.steps})
+            self._add_frame(self._video_image())
+
+    def _video_image(self) -> np.ndarray:
+        if self.record_size:
+            img = None
+            try:
+                img = self.backend.render_record(*self.record_size)
+            except Exception as e:  # a backend that cannot: keep recording at its native size
+                print(f"record size {self.record_size} not available ({e.__class__.__name__}: {e}); native size", flush=True)
+            if img is not None:
+                return img
+            self.record_size = None
+        return self.backend.render()
+
+    def _add_frame(self, img) -> None:
+        """Append one frame to the video (opened on the first frame; later frames of another size are resized)."""
+        img = np.asarray(img, dtype=np.uint8)
+        if self._writer is None:
+            import imageio.v2 as imageio
+
+            self._video_size = (img.shape[1], img.shape[0])
+            hq = {"quality": None, "output_params": ["-crf", "18", "-preset", "medium"]} if self.record_size else {"quality": 7}
+            self._writer = imageio.get_writer(self.run_dir / "recording.mp4", fps=FPS, codec="libx264", macro_block_size=16,
+                                              ffmpeg_log_level="error", **hq)
+        elif (img.shape[1], img.shape[0]) != self._video_size:
+            from PIL import Image
+
+            img = np.asarray(Image.fromarray(img).resize(self._video_size))
+        self._writer.append_data(img)
+        self._frame_meta.append({"i": self._n_frames, "t": round(time.time() - self.t0, 3), "step": self.steps})
+        self._n_frames += 1
 
     def _env_step(self, action) -> Any:
         info = self.backend.step(action)
@@ -292,8 +341,7 @@ class Episode:
         self.steps += 1
         pop = getattr(self.backend, "pop_frames", None)
         for fr in (pop() if callable(pop) else []):
-            self._frames.append(np.asarray(fr, dtype=np.uint8))
-            self._frame_meta.append({"i": len(self._frames) - 1, "t": round(time.time() - self.t0, 3), "step": self.steps})
+            self._add_frame(fr)
         self._record_frame(force=True)
         return {"ok": True, "result": {**out, "steps_used": self.steps, "max_steps": self.max_steps}}
 
@@ -323,6 +371,8 @@ class Episode:
             "outcome": outcome, "steps_used": self.steps, "max_steps": self.max_steps, "requests": self.requests,
             "agent_text": text, "wall_time_s": round(time.time() - self.t0, 2),
         }
+        if self._video_size:
+            self.result["video_size"] = list(self._video_size)
         (self.run_dir / "result.json").write_text(json.dumps(self.result, indent=2))
         self._write_video()
         return {"outcome": outcome, "episode": "finished"}
@@ -331,15 +381,9 @@ class Episode:
         with open(self.run_dir / "frames.jsonl", "w") as f:
             for m in self._frame_meta:
                 f.write(json.dumps(m) + "\n")
-        if not self._frames:
-            return
-        import imageio.v2 as imageio
-
-        with imageio.get_writer(self.run_dir / "recording.mp4", fps=FPS, codec="libx264", quality=7,
-                                macro_block_size=16, ffmpeg_log_level="error") as w:
-            for fr in self._frames:
-                w.append_data(fr)
-        self._frames = []
+        if self._writer is not None:
+            self._writer.close()
+            self._writer = None
 
     def close(self) -> None:
         if not self.finished:
