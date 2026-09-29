@@ -109,7 +109,6 @@ class Worker:
         import torch
 
         torch.set_num_threads(1)
-        from mani_skill.sensors.camera import CameraConfig  # noqa: F401
 
         if self.env is not None:
             self.env.close()

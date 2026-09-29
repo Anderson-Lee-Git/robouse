@@ -40,7 +40,8 @@ CONTROL = (
     "0.35 rad), so pushing against something stalls instead of winding up. Some orientations are out of the arm's reach (the last "
     "wrist joint turns about 166 degrees each way): turning the fingers by 90 or 180 degrees about the vertical gives the same grasp "
     "on a cube, so prefer the smaller turn. `robo move-to X Y Z [--grip G]` and `robo grip G` also work; they move only the position "
-    "and keep the hand's orientation.")
+    "and keep the hand's orientation, and `move-to` stops within 1 cm of the point unless you pass a tighter `--tol` (e.g. "
+    "`--tol 0.002`).")
 
 HAND = (
     "**Observation.** `robo observe` reports `hand_pos` (the point between the fingertips, metres), `hand_quat` (hand orientation "

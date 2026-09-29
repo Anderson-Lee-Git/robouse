@@ -1,0 +1,3 @@
+maniskill-pick-cube
+maniskill-stack-cube
+maniskill-peg-insertion-side
