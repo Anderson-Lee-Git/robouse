@@ -37,6 +37,9 @@ class Episode:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.workspace = Path(workspace) if workspace else None
         self.backend = make_backend(spec)
+        if callable(getattr(self.backend, "attach_run_dir", None)):  # real robots: session log next to the episode record
+            self.backend.attach_run_dir(self.run_dir)
+        self.mode = str(getattr(self.backend, "mode", "sim"))  # sim | real | hil-mock (the sim/real axis)
         self.seed = int(spec.get("seed", 0) if seed is None else seed)
         self.max_steps = int(spec.get("max_steps", getattr(self.backend, "max_steps", 500)))
         self.frame_every = int(spec.get("frame_every", 2))
@@ -156,6 +159,7 @@ class Episode:
         req = {k: v for k, v in req.items() if k != "token"}  # never write the token to the trace
         op = req.get("op")
         t = round(time.time() - self.t0, 3)
+        self._check_halt()
         try:
             if self.finished and op not in ("info", "status"):
                 resp = {"ok": False, "error": f"episode finished ({self.outcome})"}
@@ -179,20 +183,28 @@ class Episode:
                 resp = {"ok": False, "error": f"unknown op {op!r}"}
         except Exception as e:  # bounded error back to the agent
             resp = {"ok": False, "error": f"{type(e).__name__}: {e}"[:500]}
+        self._check_halt()
         if not self.finished and self.steps >= self.max_steps:
             self.finish("budget_exhausted", "")
         if self.finished and op in ("act", "move_to", "grip", "skill") and resp.get("ok") and isinstance(resp.get("result"), dict):
             msg = {"budget_exhausted": "step budget exhausted", "success_reached": "goal reached, episode scored as solved",
-                   "wall_time_exhausted": "wall-clock budget exhausted"}.get(self.outcome, self.outcome)
+                   "wall_time_exhausted": "wall-clock budget exhausted",
+                   "safety_stop": "stopped by the safety layer (the robot holds; a human must check it)"}.get(self.outcome, self.outcome)
             resp["result"]["episode"] = f"finished: {msg}"
         self._trace.write(json.dumps({"t": t, "steps": self.steps, "req": req, "resp": _strip(resp)}) + "\n")
         self._trace.flush()
         return resp
 
+    def _check_halt(self) -> None:
+        """Real robots: an e-stop, over-temperature or hardware fault ends the episode at once (no settle steps)."""
+        halted = getattr(self.backend, "halted", None)
+        if halted and not self.finished:
+            self.finish("safety_stop", str(halted)[:500], settle=False)
+
     def info(self) -> dict:
         s = self.backend.action_spec
         return {
-            "task": self.spec.get("id"), "backend": self.backend.name,
+            "task": self.spec.get("id"), "backend": self.backend.name, "mode": self.mode,
             "action": {"names": s.names, "low": s.low, "high": s.high, "doc": s.doc},
             "skills": self.backend.skills() if self.skills_enabled else [],
             "steps_used": self.steps, "max_steps": self.max_steps,
@@ -335,6 +347,8 @@ class Episode:
     def finish(self, outcome: str, text: str, settle: bool = True) -> dict:
         if self.finished:
             return {"outcome": self.outcome}
+        if getattr(self.backend, "halted", None):
+            settle = False
         g = float(getattr(self.backend, "_grip", 0.0))
         dim = self.backend.action_spec.dim
         hold = [0.0] * (dim - 1) + [g] if dim >= 1 else []
@@ -362,7 +376,9 @@ class Episode:
             "task": self.spec.get("id"), "seed": self.seed, "success": success, "success_ever": self.success_ever,
             "success_mode": self.success_mode,
             "outcome": outcome, "steps_used": self.steps, "max_steps": self.max_steps, "requests": self.requests,
-            "agent_text": text, "wall_time_s": round(time.time() - self.t0, 2),
+            "agent_text": text, "wall_time_s": round(time.time() - self.t0, 2), "embodiment_mode": self.mode,
+            **({"safety_events": list(self.backend.events)} if getattr(self.backend, "events", None) else {}),
+            **({"session": self.backend.session_summary()} if callable(getattr(self.backend, "session_summary", None)) else {}),
             **({"judge_error": judge_error} if judge_error else {}),
             **({"judge_detail": getattr(self.backend, "last_judge")} if getattr(self.backend, "last_judge", None) else {}),
         }

@@ -62,7 +62,8 @@ def make_backend(spec: dict) -> Backend:
 EMBODIED = {"quadruped": ("quadruped", "QuadrupedBackend"), "humanoid": ("humanoid", "HumanoidBackend"),
             "mobile_manip": ("mobile_manip", "MobileManipBackend"), "dexhand": ("dexhand", "DexHandBackend"),
             "crazyflie": ("crazyflie", "CrazyflieBackend"),
-            "driving": ("driving", "DrivingBackend")}  # MetaDrive in its own virtualenv (driving_worker.py)
+            "driving": ("driving", "DrivingBackend"),
+            "real": ("real", "RealArmBackend")}  # real arms (live hardware or the hardware-in-the-loop mock)  # MetaDrive in its own virtualenv (driving_worker.py)
 
 # more upstream benchmarks; each simulator that conflicts with the main environment runs in its own virtualenv as a worker
 UPSTREAM = {"kitchen": ("kitchen", "KitchenBackend"),  # Gymnasium-Robotics Franka Kitchen

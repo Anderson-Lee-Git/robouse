@@ -47,7 +47,8 @@ def sandbox_profile(workspace: str | Path | None = None, local_ports: tuple[int,
       network (model APIs) stay reachable.
     Set ROBOUSE_SANDBOX=0 to disable."""
     home = Path.home()
-    builtin = [str(p) for p in (home / "benchflow", home / ".config" / "bf-agents") if p.exists()]
+    op_dir = Path(os.environ.get("ROBOUSE_OPERATOR_DIR", home / ".config" / "robouse-operator"))  # real-robot e-stop and operator
+    builtin = [str(p) for p in (home / "benchflow", home / ".config" / "bf-agents", op_dir) if p.exists()]
     denied = builtin + [p for p in os.environ.get("ROBOUSE_SANDBOX_DENY", "").split(":") if p]
     denied = [os.path.realpath(os.path.expanduser(d)) for d in denied]  # Seatbelt matches resolved paths (/tmp -> /private/tmp)
     rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in dict.fromkeys(denied))
