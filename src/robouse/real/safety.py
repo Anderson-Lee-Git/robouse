@@ -162,9 +162,9 @@ class Guard:
         speeds = np.full(n, self.e.joint_speed_deg_s / self.hz)
         slow = np.full(n, self.e.slow_joint_speed_deg_s / self.hz)
         wind = np.full(n, self.e.windup_deg)
-        if prof.gripper is not None:
-            speeds[prof.gripper] = slow[prof.gripper] = self.e.gripper_speed / self.hz
-            wind[prof.gripper] = self.e.windup_gripper
+        for g in prof.gidx:
+            speeds[g] = slow[g] = self.e.gripper_speed / self.hz
+            wind[g] = self.e.windup_gripper
         self.max_step, self.max_step_slow, self.windup = speeds, slow, wind
         self.last_cmd: np.ndarray | None = None
         self.last_pos: np.ndarray | None = None

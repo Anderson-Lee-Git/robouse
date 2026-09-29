@@ -78,9 +78,12 @@ def from_recorder_session(sess: Path, out: Path, n_key: int, width: int) -> dict
 def from_snapshots(sess: Path, out: Path, side: str, prof, width: int) -> dict:
     from PIL import Image
 
-    st = json.loads((sess / f"{side}_state.json").read_text())
-    q = [float(st["Present_Position"][j]) for j in prof.joints]
-    temps = [float(st.get("Present_Temperature", {}).get(j, 30)) for j in prof.joints]
+    q, temps = [], []
+    for j in prof.joints:  # single arm: joint names as recorded; bimanual: left_<joint> / right_<joint> from each side's file
+        s, name = (j.split("_", 1) if side == "both" else (side, j))
+        st = json.loads((sess / f"{s}_state.json").read_text())
+        q.append(float(st["Present_Position"][name]))
+        temps.append(float(st.get("Present_Temperature", {}).get(name, 30)))
     import re
 
     stamps = sorted({m.group(1) for p in sess.glob("*.jpg") if (m := re.match(r"(\d{8}-\d{6})_", p.name))})

@@ -93,8 +93,8 @@ class Operator:
         if ans != "yes":
             raise SafetyStop(f"operator did not confirm the {key} gate ({note or ans or 'no answer'})")
 
-    def verdict(self, prompt: str) -> tuple[str, str]:
-        ans, note = self._ask("verdict", prompt, VERDICTS)
+    def verdict(self, prompt: str, choices: tuple[str, ...] = VERDICTS) -> tuple[str, str]:
+        ans, note = self._ask("verdict", prompt, choices)
         ans = ans or "skip"
         self.log("operator_verdict", verdict=ans, note=note, channel=self.channel)
         return ans, note

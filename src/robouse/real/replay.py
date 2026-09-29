@@ -238,13 +238,13 @@ def conformance(fx: Fixture, prof: Profile, overrides: dict | None = None) -> di
     for k in range(1, len(cmd)):
         sim.append(sim[-1] + fx.gain * (cmd[k] - sim[-1]) + fx.bias)
     sim = np.asarray(sim)
-    err = np.abs(sim - pos)[:, :-1] if prof.gripper is not None else np.abs(sim - pos)
+    err = np.abs(sim - pos)[:, prof.arm_idx]
     one_step = np.abs((pos[:-1] + fx.gain * (cmd[1:] - pos[:-1]) + fx.bias) - pos[1:])
     return {"fixture": fx.dir.name, "robot": prof.name, "steps": int(len(cmd)), "vetoed_steps": vetoes,
             "clamp_events": sum(1 for e in events if e["kind"] == "clamp"),
             "guard_changed_steps": int(sum(1 for d in deltas if d > 0.05)),
             "max_guard_change_deg": round(max(deltas) if deltas else 0.0, 3),
             "guard_changed_steps_by_joint": {n: int(c) for n, c in zip(prof.joints, per_joint) if c},
-            "tracking_one_step_rms_deg": round(float(np.sqrt(np.mean(one_step[:, :-1] ** 2))), 3),
+            "tracking_one_step_rms_deg": round(float(np.sqrt(np.mean(one_step[:, prof.arm_idx] ** 2))), 3),
             "tracking_open_loop_rms_deg": round(float(np.sqrt(np.mean(err ** 2))), 3),
             "tracking_open_loop_max_deg": round(float(err.max()), 3)}

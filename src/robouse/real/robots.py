@@ -51,7 +51,7 @@ class Profile:
     low: list[float]
     high: list[float]
     units: list[str]
-    gripper: int | None             # index of the gripper in the joint vector
+    gripper: int | list[int] | None  # index of the gripper in the joint vector (a list for bimanual rigs)
     gripper_open: float = 0.0       # value that opens the gripper fully
     gripper_closed: float = 0.0
     control_hz: float = 10.0
@@ -65,6 +65,24 @@ class Profile:
     envelope: EnvelopeDefaults = field(default_factory=EnvelopeDefaults)
     notes: str = ""
     tested_on_hardware: bool = False
+
+    @property
+    def gidx(self) -> list[int]:
+        """Indices of every gripper joint."""
+        if self.gripper is None:
+            return []
+        return list(self.gripper) if isinstance(self.gripper, (list, tuple)) else [int(self.gripper)]
+
+    @property
+    def arm_idx(self) -> list[int]:
+        """Indices of the non-gripper joints."""
+        return [i for i in range(len(self.joints)) if i not in self.gidx]
+
+    @property
+    def arms(self) -> list[str]:
+        """Arm prefixes for bimanual rigs ("left_", "right_"), or [""] for one arm."""
+        pre = sorted({n.split("_", 1)[0] + "_" for n in self.joints if n.startswith(("left_", "right_"))})
+        return pre or [""]
 
     def chain(self) -> Chain | None:
         if not self.chain_file:
@@ -130,7 +148,21 @@ PIPER = Profile(
     tested_on_hardware=False,
 )
 
-PROFILES = {p.name: p for p in (METAL, SO101, PIPER)}
+def _bimanual(p: Profile, name: str, display: str) -> Profile:
+    """Two copies of a single-arm profile as one rig (LeRobot's bi_* followers): left_* then right_* joints. No
+    kinematic chain across both arms yet, so the workspace check is joint limits + speed only."""
+    n = len(p.joints)
+    return Profile(name=name, display=display, joints=[f"left_{j}" for j in p.joints] + [f"right_{j}" for j in p.joints],
+                   low=p.low * 2, high=p.high * 2, units=p.units * 2, gripper=[p.gripper, p.gripper + n],
+                   gripper_open=p.gripper_open, gripper_closed=p.gripper_closed, control_hz=p.control_hz,
+                   home=p.home * 2, park=p.park * 2, envelope=p.envelope,
+                   notes=(f"Two {p.display}s facing the bench from its far edge, left and right as the operator sees them. "
+                          "Each arm: " + p.notes), tested_on_hardware=False)
+
+
+SO101_BI = _bimanual(SO101, "so101-bimanual", "bimanual SO-101 follower arms")
+
+PROFILES = {p.name: p for p in (METAL, SO101, PIPER, SO101_BI)}
 PROFILES["so100"] = SO101
 
 

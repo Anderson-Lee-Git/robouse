@@ -46,7 +46,20 @@ def _so101_factory(cfg: dict, prof: Profile):  # pragma: no cover - real hardwar
     return SOFollower(rc)
 
 
-FACTORIES: dict[str, Callable[[dict, Profile], Any]] = {"metal": _metal_factory, "so101": _so101_factory, "so100": _so101_factory}
+def _so101_bimanual_factory(cfg: dict, prof: Profile):  # pragma: no cover - real hardware
+    from lerobot.robots.bi_so_follower import BiSOFollower, BiSOFollowerConfig
+    from lerobot.robots.so_follower import SOFollowerConfig
+
+    def arm(side):
+        return SOFollowerConfig(port=cfg[f"{side}_port"], max_relative_target=float(cfg.get("driver_max_step_deg", 12.0)),
+                                disable_torque_on_disconnect=bool(cfg.get("disable_torque_on_close", False)), use_degrees=True)
+    rc = BiSOFollowerConfig(id=cfg.get("robot_id", "so101_bimanual"), left_arm_config=arm("left"), right_arm_config=arm("right"),
+                            calibration_dir=Path(cfg["calibration_dir"]) if cfg.get("calibration_dir") else None)
+    return BiSOFollower(rc)
+
+
+FACTORIES: dict[str, Callable[[dict, Profile], Any]] = {"metal": _metal_factory, "so101": _so101_factory, "so100": _so101_factory,
+                                                        "so101-bimanual": _so101_bimanual_factory}
 
 
 class LeRobotArmDriver(ArmDriver):

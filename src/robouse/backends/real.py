@@ -81,24 +81,30 @@ class RealArmBackend(EmbodiedBackend):
     # ---- declaration ---------------------------------------------------------------------------------------------
     def _declare(self) -> Embodiment:
         p = self.prof
-        arm = [i for i in range(len(p.joints)) if i != p.gripper]
-        groups = [ActionGroup("arm.joint_pos", "joint_pos", [p.joints[i] for i in arm], [p.low[i] for i in arm],
-                              [p.high[i] for i in arm], units=p.units[arm[0]], frame="joint",
-                              doc="absolute joint targets; the safety guard limits speed and vetoes moves that leave the workspace")]
-        if p.gripper is not None:
-            groups.append(ActionGroup("gripper", "gripper", [p.joints[p.gripper]], [p.low[p.gripper]], [p.high[p.gripper]],
-                                      units=p.units[p.gripper], doc=f"absolute; {p.gripper_closed:g} = closed, {p.gripper_open:g} = open"))
+        groups = []
+        for pre in p.arms:
+            arm = [i for i in p.arm_idx if p.joints[i].startswith(pre)]
+            groups.append(ActionGroup(f"{pre}arm.joint_pos", "joint_pos", [p.joints[i] for i in arm], [p.low[i] for i in arm],
+                                      [p.high[i] for i in arm], units=p.units[arm[0]], frame="joint",
+                                      doc="absolute joint targets; the safety guard limits speed and vetoes moves that leave the workspace"))
+            for g in p.gidx:
+                if p.joints[g].startswith(pre):
+                    groups.append(ActionGroup(f"{pre}gripper", "gripper", [p.joints[g]], [p.low[g]], [p.high[g]], units=p.units[g],
+                                              doc=f"absolute; {p.gripper_closed:g} = closed, {p.gripper_open:g} = open"))
         sensors = [Sensor("joint_pos", "proprio", ["joint_pos"], units=p.units[0], doc="measured joint positions by name"),
-                   Sensor("tool", "proprio", ["tool_pos", "tool_axis"], units="m", frame="base",
-                          doc="tool point (between the fingertips) by forward kinematics of the measured joints"),
                    Sensor("telemetry", "proprio", ["telemetry"], doc="max motor temperature and safety counters"),
                    Sensor("operator", "events", ["operator_notes"], doc="remarks typed by the operator during the run")]
+        if self.guard.env.chain is not None:
+            sensors.insert(1, Sensor("tool", "proprio", ["tool_pos", "tool_axis"], units="m", frame="base",
+                                     doc="tool point (between the fingertips) by forward kinematics of the measured joints"))
         sensors += [Sensor(f"camera:{c}", "camera", mount="wrist" if "grip" in c or "wrist" in c else "world") for c in self.cameras_list]
-        skills = [Skill("move_joints", [SkillArg(n, "float", p.units[i]) for i, n in enumerate(p.joints) if i != p.gripper]
+        grip_args = [SkillArg("value", "float", p.units[p.gidx[0]] if p.gidx else "")]
+        if len(p.arms) > 1:
+            grip_args.append(SkillArg("arm", "enum", default="both", choices=[a.rstrip("_") for a in p.arms] + ["both"]))
+        skills = [Skill("move_joints", [SkillArg(p.joints[i], "float", p.units[i]) for i in p.arm_idx]
                         + [SkillArg("speed", "float", "fraction", 1.0, doc="fraction of the speed limit")],
                         "interpolated move of the arm joints to the given pose (the whole path is checked first)", max_steps=400),
-                  Skill("grip", [SkillArg("value", "float", p.units[p.gripper] if p.gripper is not None else "")],
-                        "set the gripper and wait until it stops moving", max_steps=60),
+                  Skill("grip", grip_args, "set the gripper(s) and wait until they stop moving", max_steps=60),
                   Skill("home", [], "move to the reach-ready home pose", max_steps=400),
                   Skill("park", [], "move to the rest pose", max_steps=400)]
         if self.guard.env.chain is not None:
@@ -237,8 +243,10 @@ class RealArmBackend(EmbodiedBackend):
                              "vetoes": sum(1 for e in self.log.events if e["event"] == "veto"),
                              "estop": bool(estop_engaged()), "halted": self.halted},
                "mode": self.mode}
-        if p.gripper is not None:
-            out["gripper"] = round(float(self.q[p.gripper]), 2)
+        if len(p.gidx) == 1:
+            out["gripper"] = round(float(self.q[p.gidx[0]]), 2)
+        elif p.gidx:
+            out["gripper"] = {p.joints[g]: round(float(self.q[g]), 2) for g in p.gidx}
         if self.guard.env.chain is not None:
             out["tool_pos"] = [round(float(v), 4) for v in self._tool()]
             out["tool_axis"] = [round(float(v), 3) for v in self.guard.env.chain.tool_axis(self.q)]
@@ -277,23 +285,22 @@ class RealArmBackend(EmbodiedBackend):
             yield list(start + (q_target - start) * k / n)
         for _ in range(30):  # settle: keep commanding the target until the measured pose arrives
             err = np.abs(self.q - q_target)
-            if self.prof.gripper is not None:
-                err[self.prof.gripper] = 0.0
+            err[self.prof.gidx] = 0.0
             if float(err.max()) < 1.0:
                 break
             yield list(q_target)
         err = (self.q - q_target)
-        return {"arrived": bool(np.max(np.abs(np.delete(err, self.prof.gripper) if self.prof.gripper is not None else err)) < 2.0),
+        return {"arrived": bool(np.max(np.abs(err[self.prof.arm_idx])) < 2.0),
                 "error": [round(float(x), 2) for x in err]}
 
     def _full(self, arm_values) -> np.ndarray:
         q = np.asarray(self.guard.last_cmd if self.guard.last_cmd is not None else self.q, dtype=float).copy()
-        idx = [i for i in range(len(self.prof.joints)) if i != self.prof.gripper]
+        idx = self.prof.arm_idx
         q[idx] = np.asarray(arm_values, dtype=float)[: len(idx)]
         return q
 
     def skill_move_joints(self, speed: float = 1.0, **joints):
-        arm = [joints[n] for i, n in enumerate(self.prof.joints) if i != self.prof.gripper]
+        arm = [joints[self.prof.joints[i]] for i in self.prof.arm_idx]
         res = yield from self._move(self._full(arm), speed)
         return res
 
@@ -319,19 +326,22 @@ class RealArmBackend(EmbodiedBackend):
         return {**res, "reached": bool(np.linalg.norm(tool - goal) < 0.01), "tool_pos": [round(float(v), 4) for v in tool],
                 "distance_m": round(float(np.linalg.norm(tool - goal)), 4)}
 
-    def skill_grip(self, value: float):
+    def skill_grip(self, value: float, arm: str = "both"):
         q = np.asarray(self.guard.last_cmd, dtype=float).copy()
-        q[self.prof.gripper] = float(value)
+        gs = [g for g in self.prof.gidx if arm == "both" or self.prof.joints[g].startswith(arm + "_")]
+        q[gs] = float(value)
         res = yield from self._move(q, 1.0)
-        return {"gripper": round(float(self.q[self.prof.gripper]), 2), **({"note": "stopped short (holding an object?)"}
-                if abs(self.q[self.prof.gripper] - value) > 3 else {}), "arrived": res.get("arrived")}
+        now = {self.prof.joints[g]: round(float(self.q[g]), 2) for g in gs}
+        short = any(abs(self.q[g] - value) > 3 for g in gs)
+        return {"gripper": now if len(now) > 1 else next(iter(now.values())),
+                **({"note": "stopped short (holding an object?)"} if short else {}), "arrived": res.get("arrived")}
 
     def skill_home(self):
-        res = yield from self._move(self._full(self.prof.home), 1.0)
+        res = yield from self._move(self._full([self.prof.home[i] for i in self.prof.arm_idx]), 1.0)
         return res
 
     def skill_park(self):
-        res = yield from self._move(self._full(self.prof.park), 1.0)
+        res = yield from self._move(self._full([self.prof.park[i] for i in self.prof.arm_idx]), 1.0)
         return res
 
     def start_skill(self, name: str, raw_args: list[str]):
@@ -367,10 +377,10 @@ class RealArmBackend(EmbodiedBackend):
         if g.get("tool") is not None:
             ok = bool(np.linalg.norm(self._tool() - np.asarray(g["tool"], dtype=float)) <= float(g.get("tol", 0.02)))
         else:
-            n = [i for i in range(len(self.prof.joints)) if i != self.prof.gripper]
+            n = self.prof.arm_idx
             ok = bool(np.max(np.abs(self.q[n] - np.asarray(g["joints"], dtype=float)[: len(n)])) <= float(g.get("tol", 3.0)))
-        if ok and g.get("gripper") in ("open", "closed") and self.prof.gripper is not None:
-            gv = float(self.q[self.prof.gripper])
+        if ok and g.get("gripper") in ("open", "closed") and self.prof.gidx:
+            gv = float(self.q[self.prof.gidx[0]])
             mid = (self.prof.gripper_open + self.prof.gripper_closed) / 2
             ok = gv >= mid if g["gripper"] == "open" else gv < mid
         return ok
@@ -381,7 +391,9 @@ class RealArmBackend(EmbodiedBackend):
             self.stage_i += 1
 
     def progress(self) -> float | None:
-        """Fraction of the task's stages reached, in order (None when the task defines no stages)."""
+        """Fraction of the task's stages reached, in order, or the operator's rubric stage over the top stage."""
+        if self.cfg.get("rubric") and getattr(self, "rubric_stage", None) is not None:
+            return round(self.rubric_stage / (len(self.cfg["rubric"]) - 1), 3)
         return round(self.stage_i / len(self.stages), 3) if self.stages else None
 
     def success(self) -> bool:
@@ -403,6 +415,19 @@ class RealArmBackend(EmbodiedBackend):
         if outcome != "done":
             self.last_judge = {"verdict": "not_claimed", "outcome": outcome}
             return False
+        rubric = self.cfg.get("rubric") or []
+        if rubric:  # staged rubric (StationeryBench style): the operator reports the highest stage reached
+            top = len(rubric) - 1
+            if self.mock and self.operator.channel == "script" and "verdict" not in self.operator._script:
+                ans, note = "0", "mock operator: the hardware-in-the-loop mock models no object contact, so no stage is credited"
+                self._event("operator_verdict", verdict=ans, note=note, channel="script")
+            else:
+                prompt = "Highest stage reached: " + "; ".join(f"{i} = {d}" for i, d in enumerate(rubric))
+                ans, note = self.operator.verdict(prompt, choices=tuple(str(i) for i in range(top + 1)) + ("skip",))
+            self.rubric_stage = int(ans) if ans.isdigit() else None
+            self.last_judge = {"verdict": "operator_rubric", "stage": self.rubric_stage, "of": top, "note": note,
+                               "channel": self.operator.channel}
+            return self.rubric_stage == top
         if self.mock and self.operator.channel == "script" and "verdict" not in self.operator._script:
             # the scripted stand-in operator of the hardware-in-the-loop mock: yes iff every stage was reached in order
             ans = "yes" if self.stages and self.stage_i == len(self.stages) else "no"
