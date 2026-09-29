@@ -454,6 +454,14 @@ class Episode:
             return
         import imageio.v2 as imageio
 
+        shapes = [f.shape for f in self._frames]
+        if len(set(shapes)) > 1:  # e.g. a placeholder before a real camera's first image: match the most common size
+            from collections import Counter
+
+            from PIL import Image
+
+            h, w = Counter(shapes).most_common(1)[0][0][:2]
+            self._frames = [f if f.shape[:2] == (h, w) else np.asarray(Image.fromarray(f).resize((w, h))) for f in self._frames]
         with imageio.get_writer(self.run_dir / "recording.mp4", fps=FPS, codec="libx264", quality=7,
                                 macro_block_size=16, ffmpeg_log_level="error") as w:
             for fr in self._frames:

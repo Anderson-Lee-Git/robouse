@@ -16,7 +16,19 @@ from pathlib import Path
 
 from robouse.backends.embodied import VERIFY_SH
 from robouse.prompts import EMBODIED_USAGE
+from robouse.real.drivers.rosbridge import ros_profile
 from robouse.real.robots import PROFILES
+
+ROS_ARM = {"display": "6-joint ROS arm (rosbridge)", "joints": ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint",
+                                                                  "wrist_2_joint", "wrist_3_joint"],
+           "low": [-180, -180, -160, -180, -180, -180], "high": [180, 0, 160, 180, 180, 180], "units": "deg",
+           "home": [0, -90, 90, -90, -90, 0], "park": [0, -90, 90, -90, -90, 0], "control_hz": 10,
+           "notes": "Joint names follow the ROS arm's /joint_states; positions in degrees (converted to radians on the wire). "
+                    "No kinematic chain: the safety layer enforces joint limits, speed and wind-up."}
+
+
+def prof_of(t: dict):
+    return ros_profile(ROS_ARM) if t["robot"] == "ros" else PROFILES[t["robot"]]
 from robouse.tasks import write_task
 
 SAFETY = ("**Safety layer.** Every command passes the episode server's safety guard before it reaches the motors: joint "
@@ -74,6 +86,12 @@ TASKS = [
      "oracle": [["grip", 60], ["move_to", 0.22, -0.05, 0.08], ["move_to", 0.22, -0.05, 0.02, 0.4], ["grip", 2],
                 ["move_to", 0.22, -0.05, 0.08, 0.5]],
      "max_steps": 600},
+    {"id": "real-ros-joint-pose", "robot": "ros", "fixture": None, "cameras": ["wrist"],
+     "title": "ROS arm via rosbridge: move to a joint-space pose", "difficulty": "easy", "category": "reach",
+     "goal": {"joints": [30.0, -70.0, 60.0, -80.0, -90.0, 20.0], "tol": 3.0},
+     "task": "Move the six joints to (30, -70, 60, -80, -90, 20) degrees and hold.",
+     "success": "every measured joint is within 3 degrees of its target when judged.",
+     "oracle": [["move_joints", 30, -70, 60, -80, -90, 20]], "max_steps": 300},
     {"id": "real-piper-joint-pose", "robot": "piper", "fixture": "piper-synthetic", "cameras": [],
      "title": "Piper arm: move to a joint-space pose", "difficulty": "easy", "category": "reach",
      "goal": {"joints": [20.0, 40.0, -50.0, 0.0, 20.0, 0.0], "tol": 3.0},
@@ -84,7 +102,7 @@ TASKS = [
 
 
 def instruction(t: dict) -> str:
-    p = PROFILES[t["robot"]]
+    p = prof_of(t)
     joints = ", ".join(f"{n} [{lo:g}, {hi:g}] {u}" for n, lo, hi, u in zip(p.joints, p.low, p.high, p.units))
     cams = (f"Cameras: {', '.join('`' + c + '`' for c in t['cameras'])} (`robo observe --image` shows all of them side by side; "
             "`--camera NAME` shows one)." if t["cameras"] else "This rig has no camera.")
@@ -124,8 +142,9 @@ def main() -> int:
     if out.exists():
         shutil.rmtree(out)
     for t in TASKS:
-        p = PROFILES[t["robot"]]
+        p = prof_of(t)
         real = {"robot": t["robot"], "driver": "mock", "fixture": t["fixture"], "cameras": t["cameras"] or None,
+                **({k: v for k, v in ROS_ARM.items()} if t["robot"] == "ros" else {}),
                 **({"goal": t["goal"]} if "goal" in t else {}), **({"stages": t["stages"]} if "stages" in t else {}),
                 **({"scene_setup": t["scene_setup"]} if "scene_setup" in t else {}), "goal_text": t["task"]}
         meta = {"task": {"name": f"robouse/{t['id']}", "description": t["title"]},

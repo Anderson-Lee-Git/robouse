@@ -12,6 +12,7 @@ Code: `src/robouse/backends/real.py` (the backend), `src/robouse/real/` (robot p
 | `so101` / `so100`: SO-ARM follower | `lerobot` (`so_follower`) | 5 + gripper, LeRobot degrees, gripper 0-100 | TheRobotStudio SO-ARM100 `so101_new_calib.urdf` (Apache-2.0) | untested on hardware |
 | `so101-bimanual`: two SO-101 followers | `lerobot` (`bi_so_follower`) | 2 x (5 + gripper) | joint limits only | untested on hardware |
 | `piper`: AgileX Piper | `piper` (`piper_sdk`) | 6 + gripper (mm) | joint limits only | written from the SDK documentation; untested |
+| `ros`: any ROS 1 / ROS 2 arm | `rosbridge` (rosbridge_suite JSON over a websocket; no ROS install needed): subscribes to `sensor_msgs/JointState` and `sensor_msgs/CompressedImage`, publishes `trajectory_msgs/JointTrajectory` or `std_msgs/Float64MultiArray`; joint names, limits and topics from the rig file | as configured, degrees (radians on the wire) | joint limits only | tested against a mock rosbridge server (`real/rosbridge_mock.py`); untested on a real ROS arm |
 | any | `mock` (default in every task): hardware-in-the-loop replay | as the profile | as the profile | tested (below) |
 
 Third-party drivers register under the `robouse.drivers` entry point. `robouse robots` lists profiles, drivers and fixtures.
@@ -28,6 +29,14 @@ metal:
   cameras: {gripper: "0", overhead: "1"}   # OpenCV index, device path or MJPEG URL (cam_server.py)
   operator: tty                       # or file (headless rigs)
   envelope: {table_z: -0.0088}        # from the touchdown calibration
+ros:
+  driver: rosbridge
+  url: ws://robot:9090
+  joints: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint]
+  low: [-180, -180, -160, -180, -180, -180]
+  high: [180, 0, 160, 180, 180, 180]
+  command_topic: /scaled_joint_trajectory_controller/joint_trajectory
+  cameras: {wrist: /wrist_camera/image_raw/compressed}
 so101-bimanual:
   driver: lerobot
   left_port: /dev/cu.usbmodem5B8E1130651
@@ -69,11 +78,12 @@ Verdicts: tasks with a measurable goal are judged from the measured joints (`ver
 | `metal-bowl-121853` | Metal arm, 2026-09-05 (first successful bead grasp) | 842 control steps, 40 keyframes from the gripper and overhead cameras |
 | `so101-sort-left`, `so101-bimanual-sort` | SO-101 pair, 2026-09-05 | recorded joint states and stills (no control log; default tracking model) |
 | `piper-synthetic` | none | park pose, default tracking |
+| (no fixture) `robot: ros` | none | an in-process mock rosbridge server: a simulated arm that tracks commands in real time and publishes joint states (20 Hz) and a camera (5 Hz); the real rosbridge driver talks to it over a websocket |
 
 `robouse hil-check` replays a recorded session's commands through the safety guard with the recorded measurements and simulates the fitted tracking model. On `metal-bowl-121853`: 0 of 842 steps vetoed, the guard changed 42 gripper steps and 1 shoulder step (the same ramp the original plugin applied), tracking error 0.16 deg RMS open-loop (1.0 deg max).
 
 ## Tests
 
-`tests/test_real.py` (12 tests): kinematics against the recorded poses, strict replay, fingertip goal verdict, workspace veto with no step spent, e-stop, refused arm gate, over-temperature stop, operator feedback and the mock verdict, the scripted operator refused with a live driver, the file channel, the rig switch, the Piper driver on a mock SDK.
+`tests/test_real.py` (14 tests; also the rosbridge driver against the mock server with both command types, radians/degrees, cameras and stale-state detection, and the ROS task end to end): kinematics against the recorded poses, strict replay, fingertip goal verdict, workspace veto with no step spent, e-stop, refused arm gate, over-temperature stop, operator feedback and the mock verdict, the scripted operator refused with a live driver, the file channel, the rig switch, the Piper driver on a mock SDK.
 
-Dogfood on the mock: reference solutions 5/5 (`tasks/real`), no-op 0/5; StationeryBench flows in [suites/stationerybench.md](suites/stationerybench.md). Live hardware steps (the `lerobot` and `piper` factories, cameras, the `tty` gate on a real terminal) are untested because no robot was connected while this was built.
+Dogfood on the mock: reference solutions 6/6 (`tasks/real`, including `real-ros-joint-pose` on the mock rosbridge server), no-op 0/6; StationeryBench flows in [suites/stationerybench.md](suites/stationerybench.md). Live hardware steps (the `lerobot` and `piper` factories, cameras, the `tty` gate on a real terminal) are untested because no robot was connected while this was built.

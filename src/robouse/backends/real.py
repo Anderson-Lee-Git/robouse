@@ -44,10 +44,16 @@ class RealArmBackend(EmbodiedBackend):
             if entry:
                 self.cfg = {**{k: v for k, v in self.cfg.items() if k != "fixture"}, **entry,
                             "envelope": {**(self.cfg.get("envelope") or {}), **(entry.get("envelope") or {})}}
-        self.prof = get_profile(self.cfg.get("robot", "metal"))
+        if self.cfg.get("robot") == "ros":  # any ROS arm: the profile comes from the rig / task configuration
+            from ..real.drivers.rosbridge import ros_profile
+
+            self.prof = ros_profile(self.cfg)
+        else:
+            self.prof = get_profile(self.cfg.get("robot", "metal"))
         self.mock = self.cfg.get("driver", "mock") == "mock"
         self.mode = "hil-mock" if self.mock else "real"
-        self.pace = bool(self.cfg.get("pace", not self.mock))
+        # live robots (and the real-time mock rosbridge server) are paced to the control rate; replay mocks run as fast as possible
+        self.pace = bool(self.cfg.get("pace", not self.mock or self.cfg.get("robot") == "ros"))
         self.hz = float(self.cfg.get("control_hz", self.prof.control_hz))
         self.prof.control_hz = self.hz
         self.run_dir = None  # set by the episode server (session files next to the episode record)

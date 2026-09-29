@@ -77,12 +77,12 @@ Added on the `parity` branch and tested as stated. Compared with inspect-robots 
 
 | Capability | Status |
 |---|---|
-| Real-arm backend behind the same episode server and `robo` interface ([Real robots](real-robots.md)): MakerMods Metal, SO-100/SO-101 and bimanual SO-101 (LeRobot followers), AgileX Piper (`piper_sdk`) | tested on the hardware-in-the-loop mock; live hardware untested (no robot connected) |
+| Real-arm backend behind the same episode server and `robo` interface ([Real robots](real-robots.md)): MakerMods Metal, SO-100/SO-101 and bimanual SO-101 (LeRobot followers), AgileX Piper (`piper_sdk`), any ROS arm through rosbridge | tested on the hardware-in-the-loop mock; live hardware untested (no robot connected) |
 | Safety layer on every command: e-stop latch (`robouse estop`), joint-limit clamp, forward-kinematics workspace veto before motion, per-step speed limit with a slow zone, wind-up guard, thermal stop, loop watchdog, one-controller hardware lock | `tests/test_real.py` (12 tests); `robouse hil-check` replays 842 recorded Metal commands with 0 vetoes |
 | Human-attended mode: arm / reset / release gates, operator verdicts (yes / no / partial / skip or a rubric stage) over the terminal, a file channel or a mock-only script; typed feedback to the policy (`robouse operator say`) | tests (gates, file channel, feedback) and mock runs; the terminal channel on a real rig untested |
 | Hardware-in-the-loop mock: recorded sessions replayed behind the LeRobot / piper_sdk seam (tracking model fitted to the recording: 0.16 deg RMS) | tested |
 | Sim / real / hil-mock recorded in every episode and trial and grouped by `robouse report --by mode` and BenchFlow's seed report | tested |
-| `tasks/real` (5 tasks) | reference 5/5 and no-op 0/5 on the mock; Kimi K3 (`claude-code-glm`) 2/2 on the probe list |
+| `tasks/real` (6 tasks) | reference 6/6 and no-op 0/6 on the mocks (the ROS task on a mock rosbridge server); Kimi K3 (`claude-code-glm`) 2/2 on the probe list |
 | StationeryBench (5 bimanual tasks, operator rubric) on two SO-101 arms | pipeline tested on the mock (stages 0, 2 and 4 via the scripted operator); the tasks themselves need a rig |
 
 ### VLA policies

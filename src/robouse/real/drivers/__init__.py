@@ -1,4 +1,5 @@
-"""Driver registry: `make_driver(profile, cfg)` by `cfg["driver"]` (lerobot | piper | mock) or a `robouse.drivers` entry point."""
+"""Driver registry: `make_driver(profile, cfg)` by `cfg["driver"]` (lerobot | piper | rosbridge | mock) or a `robouse.drivers`
+entry point. `mock` replays a recorded fixture, or for `robot: ros` runs a mock rosbridge server."""
 from __future__ import annotations
 
 from ..robots import Profile
@@ -7,6 +8,23 @@ from .base import ArmDriver, Reading  # noqa: F401
 
 def make_driver(prof: Profile, cfg: dict) -> ArmDriver:
     kind = cfg.get("driver", "mock")
+    if kind == "mock" and prof.name == "ros":  # a mock rosbridge server in this process; the real driver talks to it
+        import math
+
+        from ..rosbridge_mock import MockRosbridge
+        from .rosbridge import RosbridgeDriver
+
+        scale = math.pi / 180 if prof.units[0] == "deg" else 1.0
+        cams = list(cfg.get("cameras") or {})
+        topics = {c: f"/{c}/image_raw/compressed" for c in cams} if not isinstance(cfg.get("cameras"), dict) else cfg["cameras"]
+        srv = MockRosbridge(prof.joints, [v * scale for v in prof.park], cameras=list(topics.values()))
+        drv = RosbridgeDriver(prof, {**cfg, "url": srv.url, "cameras": topics}, mock=True)
+        drv.mock_server = srv
+        return drv
+    if kind == "rosbridge":
+        from .rosbridge import RosbridgeDriver
+
+        return RosbridgeDriver(prof, cfg)
     if kind == "mock":
         from ..replay import Fixture, ReplayPiperSDK, ReplayRobot
 

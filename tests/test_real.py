@@ -162,3 +162,40 @@ def test_piper_driver_on_mock_sdk(tmp_path):
     ep.finish("done", "")
     assert ep.result["success"]
     ep.close()
+
+
+def test_rosbridge_driver_against_mock_server():
+    import math
+    import time
+
+    from robouse.real.drivers.rosbridge import RosbridgeDriver, ros_profile
+    from robouse.real.rosbridge_mock import MockRosbridge
+
+    cfg = {"joints": ["j1", "j2", "j3"], "low": [-90, -90, -90], "high": [90, 90, 90], "units": "deg", "cameras": {"cam": "/cam/compressed"}}
+    prof = ros_profile(cfg)
+    for ctype in ("trajectory_msgs/JointTrajectory", "std_msgs/Float64MultiArray"):
+        srv = MockRosbridge(prof.joints, [0.1, -0.2, 0.3], cameras=["/cam/compressed"])
+        drv = RosbridgeDriver(prof, {**cfg, "url": srv.url, "command_type": ctype, "command_topic": "/cmd"})
+        drv.connect()
+        r = drv.read()
+        assert np.allclose(r.q, np.degrees([0.1, -0.2, 0.3]), atol=0.5)  # radians on the wire, degrees to the agent
+        drv.send([10.0, 20.0, 30.0])
+        time.sleep(1.0)
+        r = drv.read()
+        assert np.allclose(r.q, [10, 20, 30], atol=1.0), r.q
+        assert np.allclose(srv.commands[-1], [math.radians(10), math.radians(20), math.radians(30)])
+        assert "cam" in r.images and r.images["cam"].shape[2] == 3
+        srv._stop.set()  # the robot stops publishing: reads fail once the joint state is stale
+        time.sleep(1.3)
+        with pytest.raises(RuntimeError):
+            drv.read()
+        drv.disconnect(False)
+
+
+def test_ros_task_on_mock_rosbridge(tmp_path):
+    ep = _episode("real-ros-joint-pose", tmp_path)
+    r = ep.handle({"op": "skill", "name": "move_joints", "args": ["30", "-70", "60", "-80", "-90", "20"]})
+    assert r["ok"] and r["result"]["arrived"], r
+    ep.finish("done", "")
+    assert ep.result["success"] and ep.result["embodiment_mode"] == "hil-mock"
+    ep.close()
