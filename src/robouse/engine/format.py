@@ -33,6 +33,55 @@ METAWORLD_VERSION = "3.1.1"  # the version pinned in templates/sim/requirements.
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "bundled_tasks", "robocasa_episodes", "engine")
 
 
+def _module_file(mod: str) -> Path | None:
+    """robouse.backends.remix -> PKG/backends/remix.py (or the package's __init__.py)."""
+    rel = Path(*mod.split(".")[1:])
+    for cand in (PKG / rel.with_suffix(".py"), PKG / rel / "__init__.py"):
+        if cand.is_file():
+            return cand
+    return None
+
+
+def _oracle_closure(backend: str) -> list[Path]:
+    """The robouse modules a backend's reference solution can import (every import in them, including the ones inside
+    functions), plus the package __init__ files on the way; the rest of the package stays out of the task."""
+    import ast
+
+    from ..oracle import ORACLE_MODULES
+
+    roots = ["robouse.oracle", "robouse.agent_cli", ORACLE_MODULES.get(backend, f"robouse.backends.{backend}")]
+    seen: set[Path] = set()
+    todo = [m for m in roots]
+    while todo:
+        mod = todo.pop()
+        f = _module_file(mod)
+        if f is None or f in seen:
+            continue
+        seen.add(f)
+        pkg = mod if f.name == "__init__.py" else mod.rsplit(".", 1)[0]
+        for node in ast.walk(ast.parse(f.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                if node.level:
+                    base = pkg.split(".")
+                    base = base[: len(base) - node.level + 1]
+                    target = ".".join(base + ([node.module] if node.module else []))
+                else:
+                    target = node.module or ""
+                if target.startswith("robouse"):
+                    todo.append(target)
+                    todo += [f"{target}.{a.name}" for a in node.names]
+            elif isinstance(node, ast.Import):
+                todo += [a.name for a in node.names if a.name.startswith("robouse")]
+    parents = set()
+    for f in seen:
+        d = f.parent
+        while d != PKG.parent and d.is_relative_to(PKG):
+            if (d / "__init__.py").is_file():
+                parents.add(d / "__init__.py")
+            d = d.parent
+    return sorted(seen | parents)
+
+
 def _asset_manifests() -> dict[str, Path]:
     """Provenance manifests of the robot meshes (the image downloads the files at build time)."""
     shipped = PKG / "assets_provenance"
@@ -116,7 +165,10 @@ class RobouseTaskFormat(EmbodiedTaskFormat):
         task = load_task(task_dir)
         dst.mkdir(parents=True)
         vendor = dst / "vendor"
-        shutil.copytree(PKG, vendor / "robouse", ignore=_IGNORE)
+        for f in _oracle_closure(str(task.spec.get("backend", ""))):
+            out = vendor / "robouse" / f.relative_to(PKG)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, out)
         vendor_embodied(vendor)  # robouse's oracles import benchflow.embodied (the socket client)
         if task.spec.get("backend") == "metaworld":
             _metaworld_policies(vendor)
