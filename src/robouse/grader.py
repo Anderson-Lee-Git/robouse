@@ -63,7 +63,7 @@ def vlm_verdict(frames: list[np.ndarray], task: str, rubric: list[str] | None = 
     text = PROMPT.format(task=task.strip(), rubric=rub, stage='"stage": integer, ' if rubric else "")
     content = [{"type": "text", "text": text}] + [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + _png_b64(f)}}
                                                   for f in frames]
-    body = {"model": model, "max_tokens": 2000, "messages": [{"role": "user", "content": content}]}
+    body = {"model": model, "max_tokens": 8000, "messages": [{"role": "user", "content": content}]}
     url = os.environ.get("ROBOUSE_GRADER_URL", DEFAULT_URL).rstrip("/") + "/chat/completions"
     last = None
     for attempt in range(3):

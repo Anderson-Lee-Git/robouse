@@ -68,3 +68,46 @@ BenchFlow is the environment framework whose task and trial formats Robo Use use
 | Agent trajectory in ATIF v1.7 (`agent/trajectory.json`) | docs check (oracle); v1 runs (model harnesses) |
 | Episode trace (`episode/trace.jsonl`) and video (`artifacts/recording.mp4`) | docs check |
 | Task folders in BenchFlow's native format (`task.md`, schema 1.3) | docs check |
+
+## Parity update (2026-09-29)
+
+Added on the `parity` branch and tested as stated. Compared with inspect-robots (robocurve's evaluation framework for physical AI) where a comparison is useful.
+
+### Real robots
+
+| Capability | Status |
+|---|---|
+| Real-arm backend behind the same episode server and `robo` interface ([Real robots](real-robots.md)): MakerMods Metal, SO-100/SO-101 and bimanual SO-101 (LeRobot followers), AgileX Piper (`piper_sdk`) | tested on the hardware-in-the-loop mock; live hardware untested (no robot connected) |
+| Safety layer on every command: e-stop latch (`robouse estop`), joint-limit clamp, forward-kinematics workspace veto before motion, per-step speed limit with a slow zone, wind-up guard, thermal stop, loop watchdog, one-controller hardware lock | `tests/test_real.py` (12 tests); `robouse hil-check` replays 842 recorded Metal commands with 0 vetoes |
+| Human-attended mode: arm / reset / release gates, operator verdicts (yes / no / partial / skip or a rubric stage) over the terminal, a file channel or a mock-only script; typed feedback to the policy (`robouse operator say`) | tests (gates, file channel, feedback) and mock runs; the terminal channel on a real rig untested |
+| Hardware-in-the-loop mock: recorded sessions replayed behind the LeRobot / piper_sdk seam (tracking model fitted to the recording: 0.16 deg RMS) | tested |
+| Sim / real / hil-mock recorded in every episode and trial and grouped by `robouse report --by mode` and BenchFlow's seed report | tested |
+| `tasks/real` (5 tasks) | reference 5/5 and no-op 0/5 on the mock; Kimi K3 (`claude-code-glm`) 2/2 on the probe list |
+| StationeryBench (5 bimanual tasks, operator rubric) on two SO-101 arms | pipeline tested on the mock (stages 0, 2 and 4 via the scripted operator); the tasks themselves need a rig |
+
+### VLA policies
+
+| Capability | Status |
+|---|---|
+| `vla` harness with the openpi, XPolicyLab, OpenVLA, GR00T and HTTP-JSON wires; presets for pi0 / pi0.5 (LIBERO), OpenVLA (LIBERO), MolmoAct2, SmolVLA and pi0.5 via LeRobot, GR00T N1.6/N1.7 (SO-101), XPolicyLab joint policies ([VLA policies](vla.md)) | every wire end to end against mock servers built on the upstream libraries: 5/5 tasks solved (`scripts/vla_dogfood.sh`); GPU-served checkpoints untested |
+| Real model on CPU: SmolVLA-LIBERO (HuggingFaceVLA/smolvla_libero, Apache-2.0) behind `src/robouse/vla/lerobot_server.py` | tested end to end on an Apple-silicon CPU through the sandboxed harness: 2 of 5 LIBERO tasks solved (libero-spatial-0 in 89 steps, libero-object-0 in 136; failed libero-spatial-1, libero-goal-0, libero-10-0); about 1 s per 10-action chunk (`runs/smolvla-cpu`) |
+| Chunk controllers (open loop with replanning, ACT temporal ensembling, smoothing) and a compatibility check before the first action | unit tests; the check rejected an incompatible pairing at 0 steps |
+
+### Suites
+
+| Suite | Tasks | Status |
+|---|---|---|
+| `nav`: object-goal navigation in generated homes, in the protocol of Dimensional's Can Jev Nav? ([suite](suites/nav.md)) | 40 | reference 40/40 (SPL 0.99), no-op 0/40; Kimi K3 3/3 (SPL 0.53, about 2.3 M prompt tokens and USD 7.2 per run at list price); hub export on BenchFlow 0.7.4: 40/40 |
+| `cubepick`: inspect-robots' `cubepick-reach` ([suite](suites/cubepick.md)) | 5 | reference 5/5, no-op 0/5; hub export 5/5 |
+| `stationerybench` ([suite](suites/stationerybench.md)) | 5 | see above |
+| `real` ([suite](suites/real.md)) | 5 | see above |
+
+### Evaluation
+
+| Capability | Status |
+|---|---|
+| Episode metrics from the physical trace: success, progress, execution quality, time, speed, SPARC smoothness, jerk, path length, max contact force, safe failure; navigation SPL, SoftSPL, collisions, time to target, path ratio, excess turning ([Metrics](metrics.md)) | tested on tabletop, LIBERO, Meta-World, real-arm mock and nav trials |
+| `robouse report`: any grouping, Wilson and bootstrap 95% intervals, pass@k, cost-vs-success JSON and SVG | tested |
+| Cost per trial (tokens; USD from the harness or published prices) | tested on Kimi K3 probes |
+| `run-many`: `--seeds`, `--epochs`, `--retries`, `--include/--exclude` globs, `--sample`, `--split`, `--mode`, `--extra-instruction`, `--prior-learnings`, `--dry-run`; provenance in `config.json` | tested (`--dry-run`, seeds, splits; placement splits: reference 8/8 on each split) |
+| `robouse summarize`, `robouse grade` (VLM second opinion from video frames; `real.verdict: vlm`), `robouse doctor`, `robouse.backends` / `robouse.harnesses` / `robouse.drivers` entry points | `robouse grade` with Kimi K3 on 16 trials (cubepick and nav, reference and no-op): 16/16 agree with the trusted verdict after raising the answer budget (3 of the first 16 answers were empty at 2000 tokens); `doctor` and the entry points checked by hand; `real.verdict: vlm` untested |

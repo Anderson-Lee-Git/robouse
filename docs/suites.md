@@ -65,6 +65,10 @@ Stills from the recordings of one reference solution per suite; for `vision`, a 
 | `humanoidbench` | HumanoidBench: Unitree H1 with two Shadow hands | 7 | HumanoidBench virtualenv, `docs/suites/humanoidbench.md` | 7/7 | 0/7 |
 | `maniskill` | ManiSkill3 tabletop, Franka Panda (CPU physics) | 12 | ManiSkill virtualenv, `docs/suites/maniskill.md` | 12/12 | 0/12 |
 | `robocasa` | RoboCasa kitchens, Franka Panda on a parked mobile base | 24 | RoboCasa virtualenv, `docs/suites/robocasa.md` | 24/24 | 0/24 |
+| `nav` | Robo Use: object-goal navigation in 10 generated homes, protocol of Dimensional's Can Jev Nav? ([suite](suites/nav.md)) | 40 | `[sim]` (numpy only) | 40/40 | 0/40 |
+| `cubepick` | inspect-robots `cubepick-reach` ([suite](suites/cubepick.md)) | 5 | `[sim]` (numpy only) | 5/5 | 0/5 |
+| `real` | real arms: Metal, SO-101, Piper; hardware-in-the-loop mock by default ([suite](suites/real.md), [Real robots](real-robots.md)) | 5 | `[sim]`; live: LeRobot / piper_sdk + `--rig` | 5/5 (mock) | 0/5 (mock) |
+| `stationerybench` | StationeryBench (robocurve), bimanual SO-101, operator rubric ([suite](suites/stationerybench.md)) | 5 | a rig for scores; the mock checks the pipeline | real-world only | - |
 
 "Assets" means `robouse fetch-assets`, which downloads the MuJoCo Menagerie robot models once (`--robot NAME` for one robot; the embodiment suites need about 350 MB).
 
