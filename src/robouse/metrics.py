@@ -174,7 +174,7 @@ def pass_at_k(n: int, c: int, k: int) -> float:
     return 1.0 - math.comb(n - c, k) / math.comb(n, k)
 
 
-PROPORTIONS = ("success", "safe_failure", "excellent", "arrived")
+PROPORTIONS = ("success", "safe_failure", "excellent", "arrived", "vlm_agree")
 MEANS = ("progress", "execution_time_s", "execution_speed", "smoothness_sparc", "avg_jerk", "max_contact_force_n",
          "path_length_m", "spl", "soft_spl", "collisions", "time_to_target_s", "path_ratio", "excess_turning_rad_per_m",
          "cost_usd", "prompt_tokens", "completion_tokens", "wall_time_s")

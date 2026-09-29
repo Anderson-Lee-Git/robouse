@@ -236,4 +236,9 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
         return Launch([os.environ.get("ROBOUSE_VLA_PYTHON", "python3"), str(client)], env,
                       notes={"model": cfg["preset"], "wire": cfg["wire"], "server": env["ROBOUSE_VLA_URL"], "provider": "vla"})
 
+    from importlib.metadata import entry_points
+
+    for ep in entry_points(group="robouse.harnesses"):  # third-party harnesses: a callable with build()'s signature
+        if ep.name == harness:
+            return ep.load()(harness, model, prompt, workspace, task, env)
     raise KeyError(f"unknown harness {harness!r}")

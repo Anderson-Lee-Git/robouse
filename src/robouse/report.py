@@ -43,6 +43,12 @@ def load_trials(jobs: list[Path]) -> list[dict]:
             if "success" not in m:
                 m["success"] = int(float((r.get("verifier_result") or {}).get("rewards", {}).get("reward", 0)) >= 1)
             cost = r.get("cost") or {}
+            vlm = rj.parent / "grader" / "vlm.json"
+            if vlm.exists():
+                try:
+                    m["vlm_agree"] = int(bool(json.loads(vlm.read_text()).get("agrees")))
+                except ValueError:
+                    pass
             rows.append({**m, "cost_usd": cost.get("cost_usd"), "prompt_tokens": cost.get("prompt_tokens"),
                          "completion_tokens": cost.get("completion_tokens"), "wall_time_s": r.get("wall_time_s"),
                          "harness": c.get("harness"), "model": ((r.get("agent_info") or {}).get("model_info") or {}).get("name") or c.get("model"),

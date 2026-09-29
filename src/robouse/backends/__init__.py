@@ -56,6 +56,11 @@ def make_backend(spec: dict) -> Backend:
 
         mod, cls = EMBODIED.get(kind) or UPSTREAM[kind]
         return getattr(importlib.import_module(f".{mod}", __package__), cls)(spec)
+    from importlib.metadata import entry_points
+
+    for ep in entry_points(group="robouse.backends"):  # third-party simulators: [project.entry-points."robouse.backends"]
+        if ep.name == kind:
+            return ep.load()(spec)
     raise KeyError(f"unknown backend {kind!r}")
 
 

@@ -107,6 +107,13 @@ def main(argv=None) -> int:
     rp.add_argument("--cost-quality", help="write cost-vs-success points (JSON) for groups with a known cost")
     rp.add_argument("--svg", help="write a cost-vs-success scatter (SVG)")
 
+    gr = sub.add_parser("grade", help="VLM second opinion on finished trials from their video frames (writes <trial>/grader/vlm.json)")
+    gr.add_argument("trials", nargs="+", help="trial folders or job folders")
+    gr.add_argument("--model", default="moonshotai/Kimi-K3", help="vision-language model (OpenAI-compatible; default Kimi K3 on Baseten)")
+    gr.add_argument("--rubric", help="extra rubric text appended to the task's success rule")
+
+    sub.add_parser("doctor", help="what this machine can run: backends, harnesses, credentials, VLA, real-robot SDKs, plugins")
+
     su = sub.add_parser("summarize", help="distil a trial into learnings (markdown) for --prior-learnings")
     su.add_argument("trial", help="trial folder (OUT/<task>__<harness>__<id>)")
     su.add_argument("-o", "--out", help="output file (default: <trial>/learnings.md; - for stdout)")
@@ -124,6 +131,14 @@ def main(argv=None) -> int:
         os.environ["ROBOUSE_RIG"] = str(Path(a.rig).resolve())
     if a.cmd in ("estop", "operator", "hil-check", "robots"):
         return _real_cmd(a)
+    if a.cmd == "grade":
+        from .grader import main as grade_main
+
+        return grade_main(a.trials, a.model, a.rubric)
+    if a.cmd == "doctor":
+        from .doctor import run as doctor_run
+
+        return doctor_run()
     if a.cmd == "report":
         from .report import main as report_main
 

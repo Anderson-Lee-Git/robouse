@@ -415,6 +415,19 @@ class RealArmBackend(EmbodiedBackend):
         if outcome != "done":
             self.last_judge = {"verdict": "not_claimed", "outcome": outcome}
             return False
+        if self.verdict_mode == "vlm":  # a vision-language model judges the final camera frames (rigs without an operator)
+            from ..grader import vlm_verdict
+
+            frames = [self.images[c] for c in self.cameras_list if c in self.images]
+            if not frames:
+                self.last_judge = {"verdict": "vlm", "error": "no camera frames"}
+                return False
+            v = vlm_verdict(frames, self.cfg.get("goal_text") or str(self.spec.get("id")), self.cfg.get("rubric"),
+                            self.cfg.get("vlm_model", "moonshotai/Kimi-K3"))
+            self.last_judge = {"verdict": "vlm", **v}
+            if self.cfg.get("rubric") and isinstance(v.get("stage"), int):
+                self.rubric_stage = int(v["stage"])
+            return v["verdict"] == "yes"
         rubric = self.cfg.get("rubric") or []
         if rubric:  # staged rubric (StationeryBench style): the operator reports the highest stage reached
             top = len(rubric) - 1
