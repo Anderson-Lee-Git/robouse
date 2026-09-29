@@ -50,8 +50,8 @@ def task(key, **kw):
 
 task("go1-obstacle-field", robot="go1", layout="field", max_steps=80, goal_tol=0.4)
 task("go1-corridor-push", robot="go1", layout="corridor", max_steps=100, goal_tol=0.4, push=True)
-task("go1-moving-gates", robot="go1", layout="gates", max_steps=100, goal_tol=0.4)
-task("go1-waypoint-tour", robot="go1", layout="tour", max_steps=120, goal_tol=0.35)
+task("go1-moving-gates", robot="go1", layout="gates", max_steps=200, goal_tol=0.4)
+task("go1-waypoint-tour", robot="go1", layout="tour", max_steps=250, goal_tol=0.35)
 task("go1-find-ball", robot="go1", layout="ball", max_steps=100, goal_tol=0.6, vision=True)
 
 
@@ -67,10 +67,12 @@ def _layout(kind: str, rng: np.random.Generator) -> dict:
     if kind == "field":
         goal = (6.0, rng.uniform(-1.0, 1.0))
         obs = []
-        while len(obs) < 10:
+        for _ in range(5000):
+            if len(obs) >= 10:
+                break
             cx, cy = rng.uniform(1.2, 5.0), rng.uniform(-2.0, 2.0)
             hx, hy = rng.uniform(0.2, 0.45), rng.uniform(0.2, 0.6)
-            if any(abs(cx - o[0]) < o[2] + hx + 0.75 and abs(cy - o[1]) < o[3] + hy + 0.75 for o in obs):
+            if any(abs(cx - o[0]) < o[2] + hx + 0.75 and abs(cy - o[1]) < o[3] + hy + 0.75 for o in obs) or abs(cx - 3.0) < hx + 0.9:
                 continue
             if math.hypot(cx - goal[0], cy - goal[1]) < 1.0:
                 continue
@@ -95,20 +97,24 @@ def _layout(kind: str, rng: np.random.Generator) -> dict:
         out.update(goal=pts[3], obstacles=walls, bounds=(-1.0, 7.0, -3.5, 3.5), path=pts)
     elif kind == "gates":
         # three lanes crossing the path; in each, a block slides back and forth across the path
-        goal = (7.0, 0.0)
+        goal = (9.0, 0.0)
         movers = []
-        for i, x in enumerate((2.0, 3.8, 5.6)):
-            movers.append(dict(cx=x, hx=0.35, hy=0.5, amp=1.6, period=rng.uniform(5.0, 8.0), phase=rng.uniform(0, 2 * math.pi)))
-        side = [(4.0, 2.4, 4.0, 0.05, 0.6), (4.0, -2.4, 4.0, 0.05, 0.6)]
-        out.update(goal=goal, obstacles=side, movers=movers, bounds=(-1.0, 8.0, -2.5, 2.5))
+        for i, x in enumerate((2.0, 4.5, 7.0)):
+            movers.append(dict(cx=x, hx=0.35, hy=0.5, amp=1.8, period=rng.uniform(8.0, 12.0), phase=rng.uniform(0, 2 * math.pi)))
+        side = [(5.0, 2.6, 5.0, 0.05, 0.6), (5.0, -2.6, 5.0, 0.05, 0.6)]
+        out.update(goal=goal, obstacles=side, movers=movers, bounds=(-1.0, 10.0, -2.7, 2.7))
     elif kind == "tour":
         wps = []
-        while len(wps) < 6:
+        for _ in range(5000):
+            if len(wps) >= 6:
+                break
             p = (rng.uniform(-2.5, 2.5), rng.uniform(-2.5, 2.5))
             if all(math.hypot(p[0] - q[0], p[1] - q[1]) > 1.5 for q in wps) and math.hypot(*p) > 1.0:
                 wps.append(p)
         obs = []
-        while len(obs) < 5:
+        for _ in range(5000):
+            if len(obs) >= 5:
+                break
             cx, cy = rng.uniform(-2.5, 2.5), rng.uniform(-2.5, 2.5)
             if all(math.hypot(cx - q[0], cy - q[1]) > 1.0 for q in wps) and math.hypot(cx, cy) > 1.0 and \
                     all(math.hypot(cx - o[0], cy - o[1]) > 1.2 for o in obs):
@@ -218,6 +224,8 @@ class PGTask:
         self.mjd = mujoco.MjData(self.env.mj_model)
         self.frames: list[str] = []
         self._recording = False
+        self.cameras = ["chase", "overview", "head"]
+        self.grip = 0.0
         self.reset(seed)
 
     # ---- scene -----------------------------------------------------------------------------------------------------
@@ -553,15 +561,28 @@ class PGTask:
             x, y, *_ = self._base()
             for i, m in enumerate(self.lay["movers"]):
                 # walk up to the lane, wait until the block will stay clear for the crossing time, then cross
-                yield from self._drive((m["cx"] - 1.1, 0.0), 0.15)
-                for _ in range(40):
+                x, *_ = self._base()
+                if x < m["cx"] - 1.3:
+                    yield from self._drive((m["cx"] - 1.2, 0.0), 0.15)
+                for _ in range(10):  # face +x before timing the crossing
+                    yaw = self._base()[3]
+                    if abs(yaw) < 0.08:
+                        break
+                    yield ["act", [0.0, 0.0, round(max(-1.2, min(1.2, -2.0 * yaw)), 3)]]
+                yield ["skill", "stand", [0.5]]
+                for _ in range(60):
                     t0 = self.t
-                    clear = all(abs(self._mover_pos(i, t0 + k * 0.25)[1]) > m["hy"] + self.rb["radius"] + 0.25
-                                for k in range(0, 13))
+                    clear = all(abs(self._mover_pos(i, t0 + k * 0.25)[1]) > m["hy"] + self.rb["radius"] + 0.12
+                                for k in range(1, 12))
                     if clear:
                         break
                     yield ["act", [0.0, 0.0, 0.0]]
-                yield from self._drive((m["cx"] + 1.0, 0.0), 0.2)
+                for _ in range(8):  # cross fast, straight
+                    x, *_ = self._base()
+                    if x > m["cx"] + 0.75:
+                        break
+                    yield ["act", [self.rb["vmax"][0], 0.0, round(-1.5 * self._base()[3], 3)]]
+                yield ["skill", "stand", [0.5]]
             yield from self._drive(self.lay["goal"], 0.15)
         else:
             x, y, *_ = self._base()

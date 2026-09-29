@@ -157,7 +157,10 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
 
         os.environ["ROBOUSE_SOCKET"] = sock
         os.environ.pop("ROBOUSE_ORACLE_TOKEN", None)
-        st = _send({"op": "status"})
+        try:
+            st = _send({"op": "status"})
+        except OSError:  # the server is still busy (e.g. a slow remote simulator step); it ends on its own clock
+            st = {}
         if st.get("ok") and not st["result"]["finished"]:
             _send({"op": "give_up", "text": "[runner] agent timed out" if timed_out else "[runner] agent exited without robo done"})
         try:

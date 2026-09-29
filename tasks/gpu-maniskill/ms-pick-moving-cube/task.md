@@ -9,7 +9,7 @@ metadata:
   suite: gpu-maniskill
   category: dynamic
   difficulty: hard
-  hard_because: 'dynamic object: the cube slides 2.5 mm every control step (5 cm/s) until grasped and leaves the reachable strip after about 8 s of simulated time; every skill and step advances time, so the agent must predict where the cube will be and track it; cube yaw and direction randomized per seed'
+  hard_because: 'dynamic object: the cube slides 2.5 mm every control step (5 cm/s) until grasped and is carried off the belt, out of reach, about 10 s of simulated time after the start; every skill and step advances time, so the agent must predict where the cube will be and track it; cube yaw and direction randomized per seed'
   language_instruction: Grasp the cube while it slides across the table and hold it at the goal point.
   tags:
   - gpu-required
@@ -39,7 +39,7 @@ robouse:
 
 # ManiSkill: pick a cube off a moving belt
 
-A 4 cm red cube slides across the table at a constant 5 cm/s, as if on a conveyor belt: it moves 2.5 mm every control step (0.05 s of simulated time), in a straight line along the y axis, until it is grasped or lifted. Simulated time only passes when the robot acts: each `robo act` step is 0.05 s, and a `robo skill` takes as long as its motion does (a `move` typically 0.5-2 s). Grasp the cube and bring it to the goal point, holding it there with the arm still. The task is solved when the cube's centre is within 2.5 cm of the goal point and the robot is static.
+A 4 cm red cube slides across the table at a constant 5 cm/s, as if on a conveyor belt: it moves 2.5 mm every control step (0.05 s of simulated time), in a straight line along the y axis, until it is grasped or lifted. When it passes y = 0.3 m (or -0.3 m) it is carried off the end of the belt, out of reach, and the task can no longer be solved. Simulated time only passes when the robot acts: each `robo act` step is 0.05 s, and a `robo skill` takes as long as its motion does (a `move` typically 0.5-2 s). Grasp the cube and bring it to the goal point, holding it there with the arm still. The task is solved when the cube's centre is within 2.5 cm of the goal point and the robot is static.
 
 `robo observe` gives `obj_pose` (the cube), `goal_pos` (the goal point, in the air above the table), `is_grasped`, and the TCP pose.
 

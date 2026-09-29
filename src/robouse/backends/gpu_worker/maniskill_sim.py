@@ -51,6 +51,8 @@ task("plug-charger-vision", env="PlugCharger-v1", oracle="plan_charger", max_ste
 task("stack-pyramid", env="StackPyramid-v1", oracle="plan_pyramid", max_steps=40)
 task("pull-cube-tool", env="PullCubeTool-v1", oracle="plan_pull_tool", max_steps=40)
 task("pick-moving-cube", env="PickCube-v1", oracle="plan_moving_cube", max_steps=150, perturb="conveyor")
+task("stack-pyramid-vision", env="StackPyramid-v1", oracle="plan_pyramid", max_steps=60, vision=True)
+task("pick-moving-cube-vision", env="PickCube-v1", oracle="plan_moving_cube", max_steps=150, perturb="conveyor", vision=True)
 task("lift-peg-upright", env="LiftPegUpright-v1", oracle="plan_peg_upright", max_steps=40)
 
 
@@ -427,8 +429,8 @@ class MSTask:
 
     def _conveyor_init(self) -> None:
         """The cube starts near one side of the table and slides across it at a constant 5 cm/s (as if on a
-        conveyor belt: it is displaced by 2.5 mm every control step) until it is grasped or lifted; past y = +-0.3 m
-        it stops."""
+        conveyor belt: it is displaced by 2.5 mm every control step) until it is grasped or lifted more than 5 cm;
+        past y = +-0.3 m the belt carries it off the end, out of reach (moved to y = +-1.5 m)."""
         import torch
         from mani_skill.utils.structs import Pose
 
@@ -438,14 +440,24 @@ class MSTask:
         p2 = np.array([rng.uniform(-0.05, 0.08), -0.2 * self.cdir, p[2]])
         self.u.cube.set_pose(Pose.create_from_pq(torch.tensor(p2[None], dtype=torch.float32), torch.tensor(q[None], dtype=torch.float32)))
         self.cvel = np.array([0.0, 0.05 * self.cdir, 0.0])
+        self._gone = False
 
     def _conveyor(self) -> None:
         import torch
 
-        p, _ = self._pose(self.u.cube)
-        if p[2] > 0.03 or bool(self.u.agent.is_grasping(self.u.cube)[0]) or abs(p[1]) > 0.3:
-            return
         from mani_skill.utils.structs import Pose
+
+        p, _ = self._pose(self.u.cube)
+        if p[2] > 0.05 or bool(self.u.agent.is_grasping(self.u.cube)[0]) or self._gone:
+            return
+        if abs(p[1]) > 0.3:  # the belt carries the cube off the end: it drops out of reach
+            pose = self.u.cube.pose
+            p2 = pose.p.clone()
+            p2[0, 1] = float(np.sign(p[1])) * 1.5
+            p2[0, 2] = 0.02
+            self.u.cube.set_pose(Pose.create_from_pq(p2, pose.q))
+            self._gone = True
+            return
 
         pose = self.u.cube.pose
         p2 = pose.p.clone()

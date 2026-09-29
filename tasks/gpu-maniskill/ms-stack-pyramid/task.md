@@ -2,7 +2,7 @@
 schema_version: '1.3'
 task:
   name: robouse/ms-stack-pyramid
-  description: Place the red cube next to the blue cube, then stack the green cube on top of both.
+  description: Place the red cube next to the green cube, then stack the blue cube on top of both.
 metadata:
   source_benchmark: ManiSkill3 3.0.1 (Hillbot / UC San Diego, haosulab/ManiSkill, Apache-2.0); SAPIEN ray-traced rendering
   source_task: StackPyramid-v1
@@ -10,7 +10,7 @@ metadata:
   category: multi-stage-stacking
   difficulty: hard
   hard_because: multi-stage (two pick-and-place stages, 12+ primitive moves); 4 cm cubes must end touching side by side with the top cube resting on both, the whole pyramid static
-  language_instruction: Place the red cube next to the blue cube, then stack the green cube on top of both.
+  language_instruction: Place the red cube next to the green cube, then stack the blue cube on top of both.
   tags:
   - gpu-required
   - maniskill
@@ -39,7 +39,7 @@ robouse:
 
 # ManiSkill: stack three cubes into a pyramid
 
-Build a pyramid from the three 4 cm cubes: put the red cube (cubeA) directly beside the blue cube (cubeB) so that the two touch, then set the green cube (cubeC) on top of both, resting on the two of them. The task is solved when A and B are side by side on the table, C rests on both, and nothing is moving.
+Build a pyramid from the three 4 cm cubes: put the red cube (cubeA) directly beside the green cube (cubeB) so that the two touch, then set the blue cube (cubeC) on top of both, resting on the two of them. The task is solved when A and B are side by side on the table, C rests on both, and nothing is moving.
 
 `robo observe` gives the pose of each cube.
 

@@ -2,15 +2,15 @@
 schema_version: '1.3'
 task:
   name: robouse/gs-pour-water-narrow
-  description: Pick up the glass of water and pour at least 75 % of it into the narrow, tall vase, spilling at most 10 %.
+  description: Pick up the glass of water and pour at least 70 % of it into the narrow, tall vase, spilling at most 15 %.
 metadata:
   source_benchmark: 'Genesis 1.4.2 (Genesis-Embodied-AI/Genesis, Apache-2.0): SPH liquid coupled to rigid bodies, CUDA backend'
   source_task: ''
   suite: gpu-genesis
   category: fluids
   difficulty: hard
-  hard_because: 'fluid into a 7 cm opening 10 cm up: the stream must hit a target barely wider than the glass mouth; pour point and tilt must be precise; positions randomized per seed'
-  language_instruction: Pick up the glass of water and pour at least 75 % of it into the narrow, tall vase, spilling at most 10 %.
+  hard_because: 'fluid into an 8.5 cm opening 10 cm up: the stream must land in a target less than twice as wide as the glass mouth, from above its rim; pour point and tilt must be precise; positions randomized per seed'
+  language_instruction: Pick up the glass of water and pour at least 70 % of it into the narrow, tall vase, spilling at most 15 %.
   tags:
   - gpu-required
   - genesis
@@ -40,7 +40,7 @@ robouse:
 
 # Genesis: pour water into a narrow vase
 
-A glass (5 cm square inside, 10 cm tall, transparent) full of water stands on the floor, and a narrow orange vase (7 cm square inside, 10 cm tall) stands nearby. Pick up the glass and pour the water into the vase. The task is solved when at least 75 % of the water (by particle count) is inside the vase and at most 10 % has been spilled.
+A glass (5 cm square inside, 10 cm tall, transparent) full of water stands on the floor, and a narrow grey vase (8.5 cm square inside, 10 cm tall) stands nearby. Pick up the glass and pour the water into the vase. The task is solved when at least 70 % of the water (by particle count) is inside the vase and at most 15 % has been spilled.
 
 `robo observe` gives the glass pose (its base centre) and the vase's base centre (as `bowl`), with their inner widths, heights and wall thicknesses. The water itself is not in the observation; look at the camera images.
 

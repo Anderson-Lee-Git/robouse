@@ -24,6 +24,10 @@ from common import jpeg, pose_dict, r3
 
 IMG_W, IMG_H = 640, 480
 FRAME_EVERY = 2
+# Isaac Sim 5.1's RTX renderer crashes at start-up on NVIDIA driver 595 (it runs on 580). Without RTX the physics
+# still runs on the GPU, and images come from a MuJoCo (OpenGL, EGL) scene of the Factory parts' shapes whose poses
+# are copied from Isaac Lab every frame. ROBOUSE_IL_RTX=1 uses Isaac Sim's own RTX viewport instead.
+RTX = os.environ.get("ROBOUSE_IL_RTX", "0") == "1"
 
 TASKS: dict[str, dict] = {}
 
@@ -36,6 +40,7 @@ task("factory-peg-insert", gym_id="Isaac-Factory-PegInsert-Direct-v0", max_steps
 task("factory-gear-mesh", gym_id="Isaac-Factory-GearMesh-Direct-v0", max_steps=400)
 task("factory-nut-thread", gym_id="Isaac-Factory-NutThread-Direct-v0", max_steps=600)
 task("factory-peg-insert-noisy", gym_id="Isaac-Factory-PegInsert-Direct-v0", max_steps=300, obs_noise=0.004)
+task("factory-nut-thread-noisy", gym_id="Isaac-Factory-NutThread-Direct-v0", max_steps=600, obs_noise=0.003)
 
 
 def make(key: str, seed: int, opts: dict):
@@ -52,7 +57,7 @@ def _app():
     if _APP is None:
         from isaaclab.app import AppLauncher
 
-        _APP = AppLauncher(headless=True, enable_cameras=True).app
+        _APP = AppLauncher(headless=True, enable_cameras=RTX).app
     return _APP
 
 
@@ -70,7 +75,7 @@ class ILTask:
         cfg = parse_env_cfg(self.cfg["gym_id"], device="cuda:0", num_envs=1)
         cfg.episode_length_s = 36000.0  # the episode server enforces the budget; never auto-reset
         cfg.viewer.resolution = (IMG_W, IMG_H)
-        self.env = gym.make(self.cfg["gym_id"], cfg=cfg, render_mode="rgb_array")
+        self.env = gym.make(self.cfg["gym_id"], cfg=cfg, render_mode="rgb_array" if RTX else None)
         self.u = self.env.unwrapped
         self.name = self.u.cfg_task.name
         self.frames: list[str] = []
@@ -97,6 +102,8 @@ class ILTask:
         self.u.sim.set_camera_view(eye=list(f + np.array(eye)), target=list(f + np.array(tgt)))
 
     def _render(self, cam: str = "scene") -> np.ndarray:
+        if not RTX:
+            return self._mj_render(cam)
         self._set_cam(cam)
         img = self.env.render()
         if img is None:
@@ -109,6 +116,63 @@ class ILTask:
         self.n += 1
         if self._recording and self.n % FRAME_EVERY == 0 and len(self.frames) < 60:
             self.frames.append(jpeg(self._render("scene")))
+
+    # ---- non-RTX images: a MuJoCo scene of the parts' shapes ---------------------------------------------------
+    def _mj_setup(self) -> None:
+        import mujoco
+
+        fc = self.u.cfg_task.fixed_asset_cfg
+        hc = self.u.cfg_task.held_asset_cfg
+        n = self.name
+        if n == "peg_insert":
+            r_in, R_out = fc.diameter / 2, fc.diameter / 2 + 0.012
+            fixed = "".join(f'<geom type="box" size="{(R_out - r_in) / 2} {R_out} {fc.height / 2}" pos="{x * (r_in + (R_out - r_in) / 2)} 0 {fc.height / 2}" rgba="0.55 0.57 0.6 1"/>' for x in (-1, 1))
+            fixed += "".join(f'<geom type="box" size="{r_in} {(R_out - r_in) / 2} {fc.height / 2}" pos="0 {y * (r_in + (R_out - r_in) / 2)} {fc.height / 2}" rgba="0.55 0.57 0.6 1"/>' for y in (-1, 1))
+            fixed += f'<geom type="box" size="{R_out + 0.01} {R_out + 0.01} 0.002" pos="0 0 0.002" rgba="0.4 0.42 0.45 1"/>'
+            held = f'<geom type="cylinder" size="{hc.diameter / 2} {hc.height / 2}" pos="0 0 {hc.height / 2}" rgba="0.95 0.8 0.1 1"/>'
+        elif n == "gear_mesh":
+            off = fc.medium_gear_base_offset
+            fixed = f'<geom type="box" size="0.08 0.03 {fc.base_height / 2}" pos="0 0 {fc.base_height / 2}" rgba="0.4 0.42 0.45 1"/>'
+            for dx, rad in ((-0.05, 0.012), (0.05, 0.028)):
+                fixed += f'<geom type="cylinder" size="{rad} 0.01" pos="{off[0] + dx} 0 {fc.base_height + 0.01}" rgba="0.7 0.5 0.2 1"/>'
+            fixed += f'<geom type="cylinder" size="0.005 {fc.height / 2}" pos="{off[0]} 0 {fc.height / 2}" rgba="0.6 0.6 0.65 1"/>'
+            held = f'<geom type="cylinder" size="{hc.diameter / 2} {hc.height / 4}" pos="0 0 {hc.height / 4}" rgba="0.2 0.6 0.9 1"/>'
+        else:
+            fixed = f'<geom type="cylinder" size="0.016 {fc.base_height / 2}" pos="0 0 {fc.base_height / 2}" rgba="0.4 0.42 0.45 1"/>'
+            fixed += f'<geom type="cylinder" size="{fc.diameter / 2} {fc.height / 2}" pos="0 0 {fc.base_height + fc.height / 2}" rgba="0.6 0.6 0.65 1"/>'
+            held = f'<geom type="cylinder" size="{hc.diameter / 2 + 0.005} {hc.height / 2}" pos="0 0 {hc.height / 2}" rgba="0.85 0.75 0.3 1"/>'
+        xml = f"""<mujoco><visual><global offwidth="{IMG_W}" offheight="{IMG_H}"/><quality shadowsize="2048"/></visual>
+<asset><texture name="g" type="2d" builtin="checker" rgb1="0.82 0.82 0.8" rgb2="0.75 0.75 0.73" width="256" height="256"/>
+<material name="g" texture="g" texrepeat="20 20"/></asset>
+<worldbody><light pos="0.3 0.3 1.2" dir="-0.3 -0.3 -1" diffuse="0.9 0.9 0.9"/><light pos="-0.5 0.2 1" dir="0.5 -0.2 -1" diffuse="0.4 0.4 0.4"/>
+<geom type="plane" size="1 1 0.1" material="g"/>
+<body name="fixed" mocap="true">{fixed}</body>
+<body name="held" mocap="true">{held}</body>
+<body name="hand" mocap="true"><geom type="box" size="0.03 0.1 0.03" pos="0 0 -0.08" rgba="0.92 0.92 0.92 1"/>
+<geom type="box" size="0.01 0.01 0.025" pos="0 0.02 -0.025" rgba="0.2 0.2 0.2 1"/><geom type="box" size="0.01 0.01 0.025" pos="0 -0.02 -0.025" rgba="0.2 0.2 0.2 1"/>
+<geom type="cylinder" size="0.045 0.15" pos="0 0 -0.26" rgba="0.95 0.95 0.95 1"/></body></worldbody></mujoco>"""
+        self.mjm = mujoco.MjModel.from_xml_string(xml)
+        self.mjd = mujoco.MjData(self.mjm)
+        self.mjr = mujoco.Renderer(self.mjm, IMG_H, IMG_W)
+        self.mujoco = mujoco
+
+    def _mj_render(self, cam: str) -> np.ndarray:
+        if not hasattr(self, "mjm"):
+            self._mj_setup()
+        mj, u = self.mujoco, self.u
+        f = self._np(u.fixed_pos)
+        poses = [(self._np(u.fixed_pos) - f, self._np(u.fixed_quat)), (self._np(u.held_pos) - f, self._np(u.held_quat)),
+                 (self._np(u.fingertip_midpoint_pos) - f, self._np(u.fingertip_midpoint_quat))]
+        for i, (p, q) in enumerate(poses):
+            self.mjd.mocap_pos[i] = p
+            self.mjd.mocap_quat[i] = q
+        mj.mj_forward(self.mjm, self.mjd)
+        c = mj.MjvCamera()
+        c.type = mj.mjtCamera.mjCAMERA_FREE
+        c.lookat[:] = [0, 0, 0.02]
+        c.distance, c.azimuth, c.elevation = {"scene": (0.45, 135, -25), "close": (0.16, 135, -15), "side": (0.2, 90, -3)}[cam]
+        self.mjr.update_scene(self.mjd, camera=c)
+        return self.mjr.render()
 
     # ---- server methods ----------------------------------------------------------------------------------------------
     def info(self) -> dict:
@@ -218,7 +282,7 @@ class ILTask:
     def _oracle(self):
         """Align the held part's base over its target, then descend (nut: descend while turning)."""
         for phase, z_above in (("align", 0.012), ("descend", -0.003)):
-            for _ in range(250):
+            for k in range(250):
                 hb, _, tb, _ = self._poses()
                 e = tb + np.array([0, 0, z_above]) - hb
                 if phase == "align" and np.linalg.norm(e[:2]) < 0.0008 and abs(e[2]) < 0.004:
@@ -231,6 +295,9 @@ class ILTask:
                     a[2] = -0.35 if self.name != "nut_thread" else -0.15
                     if self.name == "nut_thread":
                         a[5] = 1.0  # maps to the full clockwise turn increment
+                    if self.name == "gear_mesh":  # wiggle the yaw so the teeth find the mesh with the other gears
+                        a[5] = 0.5 * math.sin(k * 0.6)
+                        a[2] = -0.25
                 else:
                     a[:3] = np.clip(e / 0.02 * 1.0, -1, 1)
                     if self.name == "nut_thread":

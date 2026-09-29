@@ -39,7 +39,7 @@ robouse:
 
 # Genesis: pour water into a bowl
 
-A glass (5 cm square inside, 10 cm tall, transparent) full of water stands on the floor, and an orange bowl (13 cm square inside, 6 cm deep) stands nearby. Pick up the glass and pour the water into the bowl. The task is solved when at least 80 % of the water (by particle count) is inside the bowl and at most 10 % has been spilled (anywhere that is neither the bowl nor the glass).
+A glass (5 cm square inside, 10 cm tall, transparent) full of water stands on the floor, and a grey bowl (13 cm square inside, 6 cm deep) stands nearby. Pick up the glass and pour the water into the bowl. The task is solved when at least 80 % of the water (by particle count) is inside the bowl and at most 10 % has been spilled (anywhere that is neither the bowl nor the glass).
 
 `robo observe` gives the glass pose (its base centre) and the bowl's base centre, with their inner widths, heights and wall thicknesses. The water itself is not in the observation; look at the camera images.
 

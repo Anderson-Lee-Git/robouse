@@ -35,9 +35,8 @@ def task(key, **kw):
 
 
 task("pour-water", kind="pour", max_steps=60, target_frac=0.8, spill_max=0.1)
-task("pour-water-narrow", kind="pour", max_steps=60, target_frac=0.75, spill_max=0.1, narrow=True)
-task("fold-cloth-half", kind="cloth", max_steps=50, folds=1)
-task("fold-cloth-quarter", kind="cloth", max_steps=80, folds=2)
+task("pour-water-narrow", kind="pour", max_steps=60, target_frac=0.7, spill_max=0.15, narrow=True)
+task("pour-water-vision", kind="pour", max_steps=80, target_frac=0.8, spill_max=0.1, vision=True)
 
 
 def make(key: str, seed: int, opts: dict):
@@ -84,12 +83,11 @@ class GSTask:
         self.scene.add_entity(gs.morphs.Plane(), surface=gs.surfaces.Default(color=(0.82, 0.78, 0.72)))
         self.robot = self.scene.add_entity(gs.morphs.MJCF(file="xml/franka_emika_panda/panda.xml"))
         getattr(self, f"_build_{kind}")()
-        self.cams = {
-            "scene": self.scene.add_camera(res=(IMG_W, IMG_H), pos=(1.35, -0.9, 0.95), lookat=(0.5, 0.0, 0.1), fov=40),
-            "front": self.scene.add_camera(res=(IMG_W, IMG_H), pos=(1.3, 0.0, 0.45), lookat=(0.5, 0.0, 0.1), fov=45),
-            "top": self.scene.add_camera(res=(IMG_W, IMG_H), pos=(0.55, 0.0, 1.3), lookat=(0.55, 0.0, 0.0), fov=50,
-                                          up=(1.0, 0.0, 0.0)),
-        }
+        self.cam_cfg = {"scene": ((1.35, -0.9, 0.95), (0.5, 0.0, 0.1), (0.0, 0.0, 1.0), 40),
+                        "front": ((1.3, 0.0, 0.45), (0.5, 0.0, 0.1), (0.0, 0.0, 1.0), 45),
+                        "top": ((0.55, 0.0, 1.3), (0.55, 0.0, 0.0), (1.0, 0.0, 0.0), 50)}
+        self.cams = {n: self.scene.add_camera(res=(IMG_W, IMG_H), pos=c[0], lookat=c[1], up=c[2], fov=c[3])
+                     for n, c in self.cam_cfg.items()}
         self.scene.build()
         self.hand = self.robot.get_link("hand")
         self.arm = np.arange(7)
@@ -111,7 +109,7 @@ class GSTask:
         self.glass_xy = np.array([0.52 + r.uniform(-0.04, 0.04), -0.18 + r.uniform(-0.04, 0.04)])
         self.bowl_xy = np.array([0.55 + r.uniform(-0.04, 0.04), 0.14 + r.uniform(-0.04, 0.04)])
         self.glass_inner, self.glass_h, self.glass_wall = 0.05, 0.10, 0.006
-        self.bowl_inner = 0.07 if narrow else 0.13
+        self.bowl_inner = 0.085 if narrow else 0.13
         self.bowl_h, self.bowl_wall = (0.10 if narrow else 0.06), 0.01
         g = _container_mjcf("glass", self.glass_inner, self.glass_h, self.glass_wall, 0.12, True, "0.75 0.85 0.95 0.35")
         b = _container_mjcf("bowl", self.bowl_inner, self.bowl_h, self.bowl_wall, 1.0, False, "0.85 0.45 0.25 1")
@@ -173,7 +171,8 @@ class GSTask:
         return {"action": {"names": ["dx", "dy", "dz", "drx", "dry", "drz", "grip"], "low": [-1.0] * 7, "high": [1.0] * 7,
                            "doc": "TCP translation 1 cm and rotation 3 degrees per unit per 0.05 s step (world axes); grip +1 open, -1 closed"},
                 "skills": ["move X Y Z [ROLL PITCH YAW] [speed=S] - straight-line TCP move (degrees; no orientation = keep; S in 0.1-2 scales 0.25 m/s and 45 deg/s)",
-                           "gripper open|close", "wait [N] - hold still N control steps (default 10)"],
+                           "gripper open|close", "wait [N] - hold still N control steps (default 10)"]
+                + (["depth CAMERA U V - 3D world point seen at pixel (U, V) of CAMERA (RGB-D camera)"] if self.cfg.get("vision") else []),
                 "camera": "scene", "cameras": list(self.cams), "hold_last": 1.0, "max_steps": self.cfg["max_steps"],
                 "embodiment": self.embodiment()}
 
@@ -339,7 +338,12 @@ class GSTask:
                 self._set_targets(qa)
                 self._sim(5)
             return f"waited {n} steps"
-        raise ValueError(f"unknown skill {name!r}; skills: move, gripper, wait")
+        if name == "depth":
+            if not self.cfg.get("vision"):
+                raise ValueError("no depth camera in this task")
+            cam, uu, vv = args[0], int(float(args[1])), int(float(args[2]))
+            return f"camera {cam} pixel ({uu}, {vv}) sees world point {self._deproject(cam, uu, vv)}"
+        raise ValueError(f"unknown skill {name!r}; skills: move, gripper, wait" + (", depth" if self.cfg.get("vision") else ""))
 
     # ---- observation and success ---------------------------------------------------------------------------------
     def observe(self, privileged: bool = False) -> dict:
@@ -422,8 +426,42 @@ class GSTask:
             raise ValueError(f"unknown camera {cam!r}; cameras: {list(self.cams)}")
         return {"jpeg": jpeg(self._render(cam))}
 
+    def _intrinsics(self, name):
+        pos, look, up, fov = (np.array(x, float) if i < 3 else x for i, x in enumerate(self.cam_cfg[name]))
+        f = look - pos
+        f /= np.linalg.norm(f)
+        r = np.cross(f, up)
+        r /= np.linalg.norm(r)
+        u = np.cross(r, f)
+        R = np.stack([r, -u, f])  # world -> OpenCV camera (x right, y down, z forward)
+        fy = (IMG_H / 2) / math.tan(math.radians(fov) / 2)
+        K = np.array([[fy, 0, IMG_W / 2], [0, fy, IMG_H / 2], [0, 0, 1.0]])
+        E = np.hstack([R, (-R @ pos)[:, None]])
+        return K, E, pos, R
+
     def camera_info(self, cameras: list[str]) -> list[dict]:
-        return [{"name": c, "width": IMG_W, "height": IMG_H, "projection": None} for c in cameras]
+        from common import projection
+
+        out = []
+        for c in cameras:
+            K, E, pos, _ = self._intrinsics(c)
+            out.append({"name": c, "width": IMG_W, "height": IMG_H, "fovy_deg": float(self.cam_cfg[c][3]),
+                        "position": r3(pos), "projection": projection(K, E)})
+        return out
+
+    def _deproject(self, cam: str, u: int, v: int) -> list[float]:
+        if cam not in self.cams:
+            raise ValueError(f"unknown camera {cam!r}")
+        if not (0 <= u < IMG_W and 0 <= v < IMG_H):
+            raise ValueError(f"pixel out of range ({IMG_W}x{IMG_H})")
+        depth = np.asarray(self.cams[cam].render(rgb=False, depth=True)[1])
+        z = float(depth[v, u])
+        if not np.isfinite(z) or z <= 0 or z > 20:
+            raise ValueError("no depth at that pixel")
+        K, _, pos, R = self._intrinsics(cam)
+        ray = np.array([(u + 0.5 - K[0, 2]) / K[0, 0], (v + 0.5 - K[1, 2]) / K[1, 1], 1.0])
+        w = pos + R.T @ (ray * z)
+        return r3(w + np.random.default_rng().normal(0, 0.002, 3))
 
     def close(self) -> None:
         pass
