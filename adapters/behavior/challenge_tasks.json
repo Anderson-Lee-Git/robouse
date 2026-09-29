@@ -1,0 +1,1172 @@
+{
+"turning_on_radio": {
+"index": 0,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Turn on the radio receiver that's on the table in the living room."
+},
+"picking_up_trash": {
+"index": 1,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Put the three cans of soda from the living room inside the trash can in the kitchen."
+},
+"putting_away_Halloween_decorations": {
+"index": 2,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Place each of the two pumpkins and all three candles from the living room inside a cabinet in the living room (use any cabinet), then make sure every cabinet is closed, and position the cauldron so it is next to a table in the living room."
+},
+"cleaning_up_plates_and_food": {
+"index": 3,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "From the breakfast table in the kitchen, move both pizzas - keeping each on its plate - into the same refrigerator, put both bowls into one sink, and make sure the refrigerator is closed."
+},
+"can_meat": {
+"index": 4,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Open the kitchen cabinet, take out the two hinged jars, open them, place exactly two cooked bratwursts from the chopping board on the countertop into each jar, then close both jars, put them back inside the cabinet, and close the cabinet."
+},
+"setting_mousetraps": {
+"index": 5,
+"scene": "house_double_floor_upper",
+"rooms": [
+"bathroom_0"
+],
+"official": "Take the four mousetraps from the cabinet in the bathroom and place them on the bathroom floor. Make sure all four end up on the same floor surface, and ensure that at least two of them are either under or directly next to the same bathroom sink."
+},
+"hiding_Easter_eggs": {
+"index": 6,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Take the three Easter eggs out of the wicker basket on the lawn in the garden, then place them on the lawn next to a single tree (choose any tree) so that all three eggs are next to the same tree and none are left in the basket."
+},
+"picking_up_toys": {
+"index": 7,
+"scene": "house_single_floor",
+"rooms": [
+"childs_room_0",
+"childs_room_1",
+"childs_room_2",
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0"
+],
+"official": "Put all the toys in the child's room - the three board games (two on the bed and one on the table), the two jigsaw puzzles on the table, and the tennis ball on the table - inside the toy box on the table in the child's room."
+},
+"rearranging_kitchen_furniture": {
+"index": 8,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Move the toaster, food processor, and French press from the kitchen countertop into the same kitchen cabinet, and make sure that cabinet is closed at the end."
+},
+"putting_up_Christmas_decorations_inside": {
+"index": 9,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "In the living room, take the wreath, three candy canes, and two pillar candles out of the wicker basket. Place the wreath and two of the candy canes on the same living-room sofa. Put the remaining candy cane on top of a dining-room table. Put both pillar candles together on top of one dining-room table (they can share the same table). Finally, place all three gift boxes under or right next to the Christmas tree in the living room."
+},
+"set_up_a_coffee_station_in_your_kitchen": {
+"index": 10,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Set up a coffee station on the kitchen countertop: keep the coffee maker on the countertop, move the bottle of coffee from the kitchen shelf to the counter next to the coffee maker, place a paper coffee filter on top of the coffee maker, put the saucer next to the coffee maker with the coffee cup on the saucer, and place the electric kettle next to the coffee maker."
+},
+"putting_dishes_away_after_cleaning": {
+"index": 11,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "In the kitchen, gather all eight plates from the two countertops, place them all inside a single cabinet (either one), and make sure all cabinets are closed when you're done."
+},
+"preparing_lunch_box": {
+"index": 12,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Put both apple halves, the club sandwich, and the chocolate chip cookie from the chopping board on the kitchen countertop into the packing box on the countertop. Then take the bottle of tea out of the refrigerator, put it into the same box, and close the refrigerator when you're done."
+},
+"loading_the_car": {
+"index": 13,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garage_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Put the digital camera from the living room table into the container on the living room floor. Then take the container and the tennis racket to the garage, place both in the car trunk, and close it."
+},
+"carrying_in_groceries": {
+"index": 14,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garage_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Take the sack of groceries out of the car trunk in the garage, bring it to the kitchen, and put both the tomato and the carton of milk into the refrigerator in the kitchen. When you're done, close the car trunk and make sure the refrigerator in the kitchen is closed."
+},
+"bringing_in_wood": {
+"index": 15,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garage_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Bring the three plywood sheets from the garden into the corridor and place them on the floor there."
+},
+"moving_boxes_to_storage": {
+"index": 16,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garage_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Move the two storage containers from the living room to the garage. In the garage, place one container on the floor and stack the other container on top of it (either order is fine)."
+},
+"bringing_water": {
+"index": 17,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Retrieve the two bottles from the refrigerator in the kitchen, bring them to the living room, and place both on the coffee table. Make sure the refrigerator is closed when you finish."
+},
+"tidying_bedroom": {
+"index": 18,
+"scene": "house_single_floor",
+"rooms": [
+"bathroom_1",
+"bedroom_0",
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0"
+],
+"official": "In the bedroom, move the book from the bed onto either nightstand, and place the two sandals side by side next to the bed."
+},
+"outfit_a_basic_toolbox": {
+"index": 19,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"utility_room_0"
+],
+"official": "In the utility room, put the drill, pliers, flashlight, Allen wrench, and screwdriver from the tabletop into the toolbox, keep the toolbox on the tabletop, and close the toolbox."
+},
+"sorting_vegetables": {
+"index": 20,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Sort the vegetables from the two wicker baskets on the kitchen floor into the mixing bowls on the kitchen countertop: put all three bok choy and all three Vidalia onions together into one mixing bowl; put both leeks and both broccoli together into a second mixing bowl; and put all three sweet corn into a third mixing bowl."
+},
+"collecting_childrens_toys": {
+"index": 21,
+"scene": "house_single_floor",
+"rooms": [
+"childs_room_0",
+"childs_room_1",
+"childs_room_2",
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0"
+],
+"official": "Pick up the two dice from the bed, the two teddy bears from the floor, and the two board games (one from the desk and one from the bed), and place them all inside the same bookcase in the child's room."
+},
+"putting_shoes_on_rack": {
+"index": 22,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Pick up the two gym shoes and the two sandals from the corridor floor and place them onto the hallstand (shoe rack) in the corridor, making sure they are on the rack and not on the floor. Arrange them so the two gym shoes are next to each other and the two sandals are next to each other."
+},
+"boxing_books_up_for_storage": {
+"index": 23,
+"scene": "house_double_floor_upper",
+"rooms": [
+"living_room_0"
+],
+"official": "Put all six books from the bookcases in the living room into the box on the living room floor."
+},
+"storing_food": {
+"index": 24,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Put away all the food on the kitchen countertop by storing it inside the kitchen cabinets: move the two boxes of oatmeal, two bags of chips, two bottles of olive oil, and two jars of sugar from the countertop into the kitchen cabinets (each item can go into either cabinet)."
+},
+"clearing_food_from_table_into_fridge": {
+"index": 25,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Pack the half chicken and the half apple pie from the plates on the breakfast table into the two tupperware containers from the countertop, then put both tupperware containers inside the refrigerator in the kitchen and make sure the refrigerator is closed at the end."
+},
+"assembling_gift_baskets": {
+"index": 26,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Place one candle, one butter cookie, one piece of Swiss cheese, and one bow from the table into each of the four wicker baskets on the floor in the living room."
+},
+"sorting_household_items": {
+"index": 27,
+"scene": "house_single_floor",
+"rooms": [
+"bathroom_0",
+"bathroom_1",
+"bedroom_0",
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0"
+],
+"official": "From the two baskets on the bedroom floor, take out the items and organize them in the bathroom: place both detergent bottles under the bathroom sink next to each other; put the box of sanitary napkins on the bathroom shelf; set the soap dispenser on the sink; make sure the cup remains on the sink; put both the toothpaste tube and the toothbrush inside the cup."
+},
+"getting_organized_for_work": {
+"index": 28,
+"scene": "house_double_floor_upper",
+"rooms": [
+"bedroom_0",
+"bedroom_1",
+"bedroom_2"
+],
+"official": "In the bedroom, organize the workspace by keeping the computer under the desk, ensuring the monitor is on the desk, placing the keyboard on the desk next to the monitor, placing the mouse on the desk next to the keyboard, moving the folder from the swivel chair onto the desk next to the mouse, stacking the notebook on top of the folder with the pen on top of the notebook, and positioning the swivel chair next to the desk."
+},
+"clean_up_your_desk": {
+"index": 29,
+"scene": "house_single_floor",
+"rooms": [
+"childs_room_0",
+"childs_room_1",
+"childs_room_2",
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0"
+],
+"official": "In the child's room, clean up the desk: put both folders and both paperback books into the bookcase; put the pencil and both pens into the pencil case and leave the case on the desk; take the stapler out of the bookcase and place it on the desk; move the laptop from the bed onto the desk and close it."
+},
+"setting_the_fire": {
+"index": 30,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "In the living room, place the newspaper from the table into the wood fireplace, then put both pieces of firewood from the floor on top of the newspaper. Use the cigar lighter to ignite any one of the items so that the whole pile catches fire, and then turn the lighter off."
+},
+"clean_boxing_gloves": {
+"index": 31,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"utility_room_0"
+],
+"official": "Wash the two dusty boxing gloves from the countertop in the utility room in the washer until they are no longer covered with dust."
+},
+"wash_a_baseball_cap": {
+"index": 32,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"utility_room_0"
+],
+"official": "Wash the two baseball caps on the countertop in the utility room using the washer until they are no longer dirty."
+},
+"wash_dog_toys": {
+"index": 33,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"utility_room_0"
+],
+"official": "In the utility room, take the two teddy toys, the tennis ball, and the softball out of the cabinet and wash them in the washer so that both teddies are free of dirt and dust, the tennis ball has no debris, and the softball has no dirt."
+},
+"hanging_pictures": {
+"index": 34,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Pick up the poster from the kitchen countertop and hang it on one of the wall nails in the kitchen."
+},
+"attach_a_camera_to_a_tripod": {
+"index": 35,
+"scene": "house_double_floor_upper",
+"rooms": [
+"bedroom_0",
+"bedroom_1",
+"bedroom_2"
+],
+"official": "Attach the digital camera to the camera tripod in the bedroom."
+},
+"clean_a_patio": {
+"index": 36,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Pick up the broom in the garden and sweep the mud off the patio floor until the floor is no longer covered in mud."
+},
+"clean_a_trumpet": {
+"index": 37,
+"scene": "house_double_floor_upper",
+"rooms": [
+"bedroom_0",
+"bedroom_1",
+"bedroom_2"
+],
+"official": "In the bedroom, pick up the scrub brush from the desk and scrub the cornet (trumpet) on the desk until it's no longer covered in dust."
+},
+"spraying_for_bugs": {
+"index": 38,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Pick up the pesticide atomizer in the garden and spray insectifuge to fully cover both potted plants in the garden."
+},
+"spraying_fruit_trees": {
+"index": 39,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "In the garden, pick up the pesticide atomizer on the floor and spray pesticide onto both trees until each tree trunk is fully covered."
+},
+"make_microwave_popcorn": {
+"index": 40,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "In the kitchen, take the popcorn bag from the countertop, put it into the microwave, and heat it until the popcorn is cooked so the cooked popcorn ends up inside the bag."
+},
+"cook_cabbage": {
+"index": 41,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "From the kitchen refrigerator, take the cabbage and the chili, dice them on the chopping board with the knife, cook the diced cabbage and diced chili in the frying pan on the stove, and leave the cooked, diced cabbage and cooked, diced chili in the frying pan."
+},
+"chop_an_onion": {
+"index": 42,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "In the kitchen, take the Vidalia onion out of the sink, dice it on the chopping board with the paring knife, put the diced onion into the bowl on the countertop, then place both the paring knife and the chopping board into the sink."
+},
+"slicing_vegetables": {
+"index": 43,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "From the refrigerator in the kitchen, take out the two bell peppers, the two beets, and the zucchini. Then, on either chopping board on the countertop, use the parer to dice all of them so that only diced bell pepper, diced beet, and diced zucchini remain. Make sure the refrigerator is closed when you finish."
+},
+"chopping_wood": {
+"index": 44,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garage_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Chop the four logs on the driveway in the garden into eight half logs using the axe and the chopping block."
+},
+"cook_hot_dogs": {
+"index": 45,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Take the two hot dogs out of the refrigerator in the kitchen and cook them in the microwave until both are cooked."
+},
+"cook_bacon": {
+"index": 46,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Take the tray with six slices of bacon out of the refrigerator in the kitchen, cook all six slices in the frying pan on the stove until they're cooked, and make sure the refrigerator is closed when you're done."
+},
+"freeze_pies": {
+"index": 47,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "In the kitchen, take the two apple pies from the plates on the countertop, put each pie into a separate tupperware container taken from the cabinet, place both tupperwares inside the refrigerator, close the refrigerator, and leave them until the pies are frozen."
+},
+"canning_food": {
+"index": 48,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "In the kitchen, open the refrigerator and the cabinet. Take the steak and the pineapple out of the refrigerator and take two bowls from the cabinet. On the chopping board on the countertop, use the carving knife to dice the steak and to dice the pineapple. Put only the diced steak into one bowl and only the diced pineapple into the other bowl - do not mix them. Place both bowls back inside the cabinet, then close the refrigerator and close the cabinet."
+},
+"make_pizza": {
+"index": 49,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Make a pizza on the cookie sheet in the kitchen: take the grated cheese, the four pieces of pepperoni, and the two mushrooms from their tupperware containers in the refrigerator; chop the Vidalia onion on the chopping board with the knife, and also chop the two whole mushrooms in half; top the pizza dough that's already on the cookie sheet with the cheese, pepperoni, halved mushrooms, and chopped onion; bake it in the oven until it becomes a pizza, and leave the finished pizza on the cookie sheet."
+},
+"freeze_fruit": {
+"index": 50,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "In the kitchen, take the two tupperware containers from the cabinet, put one apple and one strawberry into each container, place both containers in the refrigerator, and leave the fruit frozen."
+},
+"cook_a_brisket": {
+"index": 51,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Take the brisket from the refrigerator, cook it in a frying pan on the burner, and place the cooked brisket on the chopping board."
+},
+"sorting_bottles_cans_and_paper": {
+"index": 52,
+"scene": "house_double_floor_lower",
+"rooms": [
+"kitchen_0",
+"corridor_0",
+"garden_0",
+"living_room_0"
+],
+"official": "Sort the recyclables into separate containers: put the bottles together in one bucket, the cans together in another bucket, and the newspaper and magazine together in a third bucket."
+},
+"tidying_living_room": {
+"index": 53,
+"scene": "house_double_floor_upper",
+"rooms": [
+"living_room_0"
+],
+"official": "In the living room, place the potted plant on the coffee table and put the books and papers into the bookcase."
+},
+"putting_away_toys": {
+"index": 54,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Pick up all the toy figures from the floor and put them inside the toy boxes."
+},
+"re_shelving_library_books": {
+"index": 55,
+"scene": "house_double_floor_upper",
+"rooms": [
+"living_room_0"
+],
+"official": "Put the library books and notebooks from the desk into the bookcase."
+},
+"make_rose_centerpieces": {
+"index": 56,
+"scene": "house_double_floor_lower",
+"rooms": [
+"bathroom_0",
+"corridor_0",
+"garage_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Place all four roses into the vase and leave the vase on the coffee table."
+},
+"sweeping_garage": {
+"index": 57,
+"scene": "house_double_floor_lower",
+"rooms": [
+"garage_0",
+"corridor_0"
+],
+"official": "Use the broom to sweep the dirt from the garage floor until the floor is clean."
+},
+"stacking_wood": {
+"index": 58,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Stack all of the logs together on the driveway."
+},
+"organizing_art_supplies": {
+"index": 59,
+"scene": "house_double_floor_upper",
+"rooms": [
+"bathroom_0",
+"bedroom_0",
+"bedroom_1",
+"bedroom_2",
+"living_room_0"
+],
+"official": "Put the marker, paintbrush, glue stick, and rubber eraser into the tote, then place the tote on the desk."
+},
+"scrubbing_bathroom_floor": {
+"index": 60,
+"scene": "house_single_floor",
+"rooms": [
+"bathroom_0",
+"bathroom_1",
+"garden_0"
+],
+"official": "Use the scrub brush to scrub the bathroom floor until the floor is clean."
+},
+"bringing_paper_to_recycling": {
+"index": 61,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Put the paper and newspaper into the recycling bin, then close the recycling bin."
+},
+"halve_an_egg": {
+"index": 62,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Take the hard-boiled egg from the refrigerator, cut it in half on the cutting board, and leave the egg halves on the plate."
+},
+"installing_smoke_detectors": {
+"index": 63,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"kitchen_0",
+"living_room_0",
+"garden_0"
+],
+"official": "Attach the two smoke detectors to the wall nails."
+},
+"setting_the_table": {
+"index": 64,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Set the breakfast table with both plates, put one cupcake on each plate, and place a fork and a knife next to each plate."
+},
+"unloading_the_car": {
+"index": 65,
+"scene": "house_double_floor_lower",
+"rooms": [
+"garage_0",
+"corridor_0",
+"living_room_0",
+"kitchen_0",
+"garden_0"
+],
+"official": "Open the car, take out the briefcase and satchel, and place them on the floor outside the car."
+},
+"turning_out_all_lights_before_sleep": {
+"index": 66,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"utility_room_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Turn off all of the lights and light switches before sleep."
+},
+"boxing_food_after_dinner": {
+"index": 67,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Pack the food from the plates into the tupperware container, put the container in the refrigerator, and close the refrigerator."
+},
+"cleaning_up_branches_and_twigs": {
+"index": 68,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"garage_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Collect all of the branches and twigs from the garden and put them into the recycling bin."
+},
+"vacuuming_floors": {
+"index": 69,
+"scene": "house_double_floor_upper",
+"rooms": [
+"bedroom_0",
+"bedroom_1",
+"bedroom_2",
+"living_room_0"
+],
+"official": "Use the vacuum to clean the dirty floor until the floor is no longer covered in dirt."
+},
+"thawing_frozen_food": {
+"index": 70,
+"scene": "house_double_floor_lower",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Take the frozen food from the refrigerator, put it in the microwave, and heat it until it is thawed."
+},
+"clean_your_rusty_garden_tools": {
+"index": 71,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"garage_0"
+],
+"official": "Use the steel wool to clean the rust off the garden tools, then put the tools into the toolbox."
+},
+"cook_a_frozen_pie": {
+"index": 72,
+"scene": "restaurant_diner",
+"rooms": [
+"kitchen_0"
+],
+"official": "Take the frozen apple pie from the refrigerator, put it in the oven, and heat it until it is hot and no longer frozen."
+},
+"organizing_school_stuff": {
+"index": 73,
+"scene": "house_single_floor",
+"rooms": [
+"bedroom_0",
+"closet_0",
+"closet_1",
+"garden_0",
+"corridor_0",
+"bathroom_1"
+],
+"official": "Put the school supplies into the tote, place the tote on the bed, and keep the folder and notebook next to it."
+},
+"carrying_out_garden_furniture": {
+"index": 74,
+"scene": "house_single_floor",
+"rooms": [
+"corridor_0",
+"dining_room_0",
+"entryway_0",
+"garden_0",
+"kitchen_0",
+"living_room_0",
+"living_room_1"
+],
+"official": "Carry the garden chairs and wheelbarrow out to the lawn."
+},
+"put_together_a_basic_pruning_kit": {
+"index": 75,
+"scene": "house_double_floor_lower",
+"rooms": [
+"garage_0",
+"corridor_0",
+"garden_0"
+],
+"official": "Put the pruner and shears into the toolbox, then close the toolbox."
+},
+"dispose_of_glass": {
+"index": 76,
+"scene": "hotel_suite_large",
+"rooms": [
+"bathroom_0",
+"bedroom_0"
+],
+"official": "Pick up the water glasses and put them into the trash can."
+},
+"installing_a_modem": {
+"index": 77,
+"scene": "Rs_int",
+"rooms": [
+"bedroom_0",
+"entryway_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Install the modem by placing it on the cabinet and turning it on."
+},
+"make_cabinet_doors": {
+"index": 78,
+"scene": "Rs_int",
+"rooms": [
+"bedroom_0",
+"entryway_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Attach the cabinet door to the cabinet base."
+},
+"polishing_shoes": {
+"index": 79,
+"scene": "hotel_suite_large",
+"rooms": [
+"bedroom_0",
+"bathroom_0"
+],
+"official": "Use the scrub brush to polish both shoes until the stains are removed."
+},
+"clean_up_broken_glass": {
+"index": 80,
+"scene": "restaurant_diner",
+"rooms": [
+"dining_room_0",
+"corridor_0",
+"bar_0",
+"kitchen_0",
+"bathroom_0"
+],
+"official": "Pick up all of the broken glass pieces and put them into the trash can."
+},
+"packing_meal_for_delivery": {
+"index": 81,
+"scene": "restaurant_diner",
+"rooms": [
+"kitchen_0",
+"bar_0"
+],
+"official": "Pack each wrapped hamburger into a paper bag, then put the paper bags into the storage box."
+},
+"store_batteries": {
+"index": 82,
+"scene": "Rs_int",
+"rooms": [
+"bedroom_0",
+"entryway_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Put all of the batteries into the bottom-cabinet drawer, then close the drawer."
+},
+"store_honey": {
+"index": 83,
+"scene": "Rs_int",
+"rooms": [
+"bedroom_0",
+"entryway_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Put the jar of honey into the cabinet drawer, then close the drawer."
+},
+"tidying_bathroom": {
+"index": 84,
+"scene": "hotel_suite_large",
+"rooms": [
+"bathroom_0",
+"bedroom_0"
+],
+"official": "Tidy the bathroom by putting the toilet tissue on the toilet, placing the tissue dispenser and soap dish on the countertop, putting the soap in the soap dish, and throwing the cork into the trash can."
+},
+"putting_dirty_dishes_in_sink": {
+"index": 85,
+"scene": "restaurant_diner",
+"rooms": [
+"kitchen_0",
+"bar_0",
+"dining_room_0",
+"corridor_0"
+],
+"official": "Put all of the dirty bowls and plates into the kitchen sink."
+},
+"make_gift_bags_for_baby_showers": {
+"index": 86,
+"scene": "Rs_int",
+"rooms": [
+"bedroom_0",
+"entryway_0",
+"kitchen_0",
+"living_room_0"
+],
+"official": "Make baby-shower gift bags by putting a toy die and a wafer into each paper bag."
+},
+"collecting_aluminum_cans": {
+"index": 87,
+"scene": "hotel_suite_large",
+"rooms": [
+"bathroom_0",
+"bedroom_0"
+],
+"official": "Collect all of the soda cans and put them into the ice bucket."
+},
+"rearrange_your_room": {
+"index": 88,
+"scene": "hotel_suite_large",
+"rooms": [
+"bedroom_0",
+"bathroom_0"
+],
+"official": "Rearrange the room by putting the pillows on the bed, moving the chair next to the desk, and placing the tissue dispenser on the nightstand."
+},
+"installing_a_fax_machine": {
+"index": 89,
+"scene": "office_cubicles_right",
+"rooms": [
+"corridor_0",
+"private_office_0",
+"private_office_1",
+"private_office_2",
+"private_office_3",
+"copy_room_0",
+"shared_office_0"
+],
+"official": "Install the fax machine by placing it on the cubicle desk and turning it on."
+},
+"composting_waste": {
+"index": 90,
+"scene": "Rs_int",
+"rooms": [
+"entryway_0",
+"kitchen_0",
+"bedroom_0",
+"living_room_0"
+],
+"official": "Put the food waste into the compost bin."
+},
+"store_produce": {
+"index": 91,
+"scene": "restaurant_diner",
+"rooms": [
+"kitchen_0"
+],
+"official": "Take the mangoes and pomegranates from the basket and put them into the refrigerator."
+},
+"installing_a_scanner": {
+"index": 92,
+"scene": "office_cubicles_right",
+"rooms": [
+"corridor_0",
+"private_office_0",
+"private_office_1",
+"private_office_2",
+"private_office_3",
+"copy_room_0",
+"shared_office_0"
+],
+"official": "Install the scanner by turning it on and leaving it on the desk near the laptop."
+},
+"clean_a_keyboard": {
+"index": 93,
+"scene": "office_cubicles_right",
+"rooms": [
+"private_office_0",
+"private_office_1",
+"private_office_2",
+"private_office_3",
+"shared_office_0",
+"corridor_0"
+],
+"official": "Use the pipe cleaner to clean the keyboard until the stain is removed."
+},
+"dispose_of_batteries": {
+"index": 94,
+"scene": "office_cubicles_right",
+"rooms": [
+"copy_room_0",
+"corridor_0",
+"private_office_0",
+"private_office_1",
+"private_office_2",
+"private_office_3",
+"shared_office_0"
+],
+"official": "Pick up all of the batteries and put them into the trash can."
+},
+"cook_brussels_sprouts": {
+"index": 95,
+"scene": "restaurant_diner",
+"rooms": [
+"bar_0",
+"corridor_0",
+"kitchen_0"
+],
+"official": "Take the brussels sprouts from the refrigerator, cut them on the cutting board, put the pieces onto the baking sheet, and cook them in the oven."
+},
+"cook_broccolini": {
+"index": 96,
+"scene": "restaurant_diner",
+"rooms": [
+"kitchen_0"
+],
+"official": "Cook the broccolini in the frying pan on the stove."
+},
+"setup_a_bar_for_a_cocktail_party": {
+"index": 97,
+"scene": "restaurant_diner",
+"rooms": [
+"bar_0",
+"corridor_0",
+"kitchen_0",
+"dining_room_0"
+],
+"official": "Set up the bar for a cocktail party by placing the wineglasses, wine bottle, corkscrew, soda cans, and ice bucket on the bar."
+},
+"laying_tile_floors": {
+"index": 98,
+"scene": "office_cubicles_right",
+"rooms": [
+"bathroom_0",
+"corridor_0",
+"empty_room_0",
+"private_office_0",
+"private_office_1",
+"private_office_2",
+"private_office_3",
+"copy_room_0",
+"shared_office_0",
+"conference_hall_0",
+"meeting_room_0"
+],
+"official": "Lay the ceramic tiles on the floor next to each other."
+},
+"sorting_books_on_shelf": {
+"index": 99,
+"scene": "house_double_floor_upper",
+"rooms": [
+"living_room_0"
+],
+"official": "Sort the comic books, notebooks, and hardbacks on the bookcase shelves so the books of each type are grouped together."
+}
+}
