@@ -326,7 +326,7 @@ def _compose(a) -> int:
             quiet=True,
         )
         n += ok
-        print(f"{'accepted' if ok else 'rejected':<9} {label(c):<{w}}  {d.name if ok else msg}", flush=True)
+        print(f"{'accepted' if ok else 'rejected':<9} {label(c):<{w}}  {d.name if ok and d else msg}", flush=True)
     print(f"{n} accepted, {len(combos) - n} rejected, of {len(combos)} combinations; task folders in {Path(a.out)}")
     return 0 if n else 1
 
@@ -380,7 +380,7 @@ def _from(a) -> int:
         not a.no_validate,
         a.keep_runs,
     )
-    if not ok:
+    if not ok or d is None:
         return _err(msg)
     new = read_block(load_task(d).spec)
     same = _same(new["instance"], rec["instance"])

@@ -128,10 +128,13 @@ class Backend:
     probe_success: bool = True  # the server may call success() after every step for the dense trace
     arm_prefix: str = "arm"
 
+    def __init__(self, spec: dict) -> None:
+        self.spec = spec
+
     def reset(self, seed: int) -> None:
         raise NotImplementedError
 
-    def step(self, action: np.ndarray) -> StepInfo:
+    def step(self, action: Any) -> StepInfo:
         raise NotImplementedError
 
     def observe(self) -> dict[str, Any]:

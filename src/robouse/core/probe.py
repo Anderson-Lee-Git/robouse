@@ -25,7 +25,8 @@ class PhysicsProbe:
             self._mujoco = False
 
     def sample(self, step: int) -> None:
-        b, rec = self.backend, {"i": step}
+        b = self.backend
+        rec: dict[str, Any] = {"i": step}
         try:
             if callable(getattr(b, "metrics_point", None)):
                 pt = b.metrics_point()

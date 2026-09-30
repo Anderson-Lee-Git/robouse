@@ -28,6 +28,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from .. import harnesses
 from ..tasks import Task
@@ -45,7 +46,7 @@ def provenance() -> dict:
 
     from .. import __version__
 
-    out = {"robouse": __version__, "python": platform.python_version(), "platform": platform.platform()}
+    out: dict[str, Any] = {"robouse": __version__, "python": platform.python_version(), "platform": platform.platform()}
     try:
         root = SRC.parent
         rev = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)

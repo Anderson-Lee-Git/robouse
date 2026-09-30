@@ -174,8 +174,12 @@ def serve_http(
             one.handle_request()
         one.server_close()
         return
-    srv = (ThreadingHTTPServer if threaded else HTTPServer)((host, port), Handler)
-    srv.daemon_threads = True
+    srv: HTTPServer
+    if threaded:
+        srv = ThreadingHTTPServer((host, port), Handler)
+        srv.daemon_threads = True
+    else:
+        srv = HTTPServer((host, port), Handler)
     print(f"{name} on :{port}", flush=True)
     srv.serve_forever()
 

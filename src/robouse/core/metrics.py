@@ -247,12 +247,14 @@ def aggregate(rows: list[dict]) -> dict:
         if vals:
             k, n = int(sum(vals)), len(vals)
             lo_hi = wilson(k, n)
+            assert lo_hi is not None  # n > 0
             out[key] = {"value": round(k / n, 4), "ci95": [round(lo_hi[0], 4), round(lo_hi[1], 4)], "n": n, "k": k}
     for key in MEANS:
         src = [r for r in rows if r.get("success")] if key in SUCCESS_ONLY else rows
         vals = [r[key] for r in src if r.get(key) is not None]
         if vals:
             ci = bootstrap_mean(vals)
+            assert ci is not None  # vals is not empty
             out[key] = {
                 "value": round(float(np.mean(vals)), 4),
                 "ci95": [round(ci[0], 4), round(ci[1], 4)],

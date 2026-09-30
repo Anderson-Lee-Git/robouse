@@ -50,8 +50,8 @@ def run() -> int:
             print(f"  {_ok(ready)}{b}" + ("" if ready else f" (missing package {pkg})"))
         except Exception as e:  # noqa: BLE001
             print(f"  -- {b} ({type(e).__name__}: {str(e)[:80]})")
-    for b, v in WORKER_VENVS.items():
-        py = config.sim_python(v)
+    for b, venv in WORKER_VENVS.items():
+        py = config.sim_python(venv)
         print(f"  {_ok(py.exists())}{b} (worker virtualenv {py})")
     print("Harnesses")
     for h, exe in (

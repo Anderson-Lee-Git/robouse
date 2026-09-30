@@ -70,7 +70,7 @@ def _claude_cmd(prompt: str, model: str) -> list[str]:
     ]
 
 
-def _codex_cmd(prompt: str, model: str, workspace: Path, extra: list[str] = ()) -> list[str]:
+def _codex_cmd(prompt: str, model: str, workspace: Path, extra: tuple[str, ...] | list[str] = ()) -> list[str]:
     return [
         "codex",
         "exec",

@@ -23,7 +23,7 @@ import logging
 import os
 import socket
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
@@ -162,15 +162,12 @@ class Episode:
         m_d = getattr(self.backend, "mj_model_data", lambda: None)()
         if not m_d:
             return []
+        model, data = m_d
         out = []
         for name in self.cameras:
             h, w = self._render(name).shape[:2]
             cam = mujoco_camera(
-                *m_d,
-                name,
-                w,
-                h,
-                image_flipped=bool(getattr(self.backend, "image_flipped", False)),
+                model, data, name, w, h, image_flipped=bool(getattr(self.backend, "image_flipped", False)),
                 calibrated=name not in self.uncalibrated,
             )
             if cam is not None:
@@ -324,7 +321,7 @@ class Episode:
         for _ in range(max(1, min(MAX_SKILL_STEPS, max_steps))):
             if not self._budget_left():
                 break
-            hp = self.backend.hand_pos()
+            hp = self.backend.hand_pos()  # type: ignore[attr-defined]  # move_to is only offered by arms
             d = target - hp
             if float(np.linalg.norm(d)) < tol:
                 break
@@ -334,7 +331,7 @@ class Episode:
                 break
             self._env_step(list(np.clip(d * 10.0, -1, 1)) + [g])
             n += 1
-        dist = float(np.linalg.norm(target - self.backend.hand_pos()))
+        dist = float(np.linalg.norm(target - self.backend.hand_pos()))  # type: ignore[attr-defined]
         res = {
             "reached": dist < tol * 1.5,
             "distance": round(dist, 4),
@@ -380,7 +377,7 @@ class Episode:
         self._record_frame(force=True)
         return {"ok": True, "result": {**out, "steps_used": self.steps, "max_steps": self.max_steps}}
 
-    def _closed_loop_skill(self, start: Callable[[str, list[str]], Iterator], name: str, args: list) -> dict:
+    def _closed_loop_skill(self, start: Callable[[str, list[str]], Generator], name: str, args: list) -> dict:
         """A skill as a generator of one action per control step; each runs as an ordinary step (budget, video, success
         checks) until the skill returns."""
         try:
@@ -464,11 +461,11 @@ class Episode:
             "agent_text": text,
             "wall_time_s": round(time.time() - self.t0, 2),
             "embodiment_mode": self.mode,
-            **({"safety_events": list(b.events)} if getattr(b, "events", None) else {}),
+            **({"safety_events": list(events)} if (events := getattr(b, "events", None)) else {}),
             **({"session": summary()} if summary else {}),
             **({"judge_error": judge_error} if judge_error else {}),
-            **({"placement": b.placement_record} if getattr(b, "placement_record", None) else {}),
-            **({"judge_detail": b.last_judge} if getattr(b, "last_judge", None) else {}),
+            **({"placement": placement} if (placement := getattr(b, "placement_record", None)) else {}),
+            **({"judge_detail": detail} if (detail := getattr(b, "last_judge", None)) else {}),
         }
         self._add_metrics()
         if self.video.size:
@@ -482,9 +479,9 @@ class Episode:
         try:
             from .metrics import episode_metrics
 
-            prog = b.progress() if _hook(b, "progress") else None
+            prog = progress() if (progress := _hook(b, "progress")) else None
             stages = len(getattr(b, "stages", None) or []) or None
-            extra = b.episode_metrics() if _hook(b, "episode_metrics") else None
+            extra = em() if (em := _hook(b, "episode_metrics")) else None
             self.result["metrics"] = episode_metrics(
                 self.result, self.probe.samples, self.probe.control_dt(), prog, stages, extra
             )

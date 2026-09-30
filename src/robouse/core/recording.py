@@ -45,7 +45,7 @@ class VideoRecorder:
             import imageio.v2 as imageio
 
             self.size = (img.shape[1], img.shape[0])
-            enc = (
+            enc: dict[str, Any] = (
                 {"quality": None, "macro_block_size": 2, "output_params": ["-crf", "18", "-preset", "medium"]}
                 if self.exact
                 else {"quality": 7, "macro_block_size": 16}
@@ -56,7 +56,7 @@ class VideoRecorder:
         elif (img.shape[1], img.shape[0]) != self.size:
             from PIL import Image
 
-            img = np.asarray(Image.fromarray(img).resize(self.size))
+            img = np.asarray(Image.fromarray(img).resize(self.size))  # type: ignore[arg-type]  # set with the writer
         self._writer.append_data(img)
         self.frames.append({"i": len(self.frames), "t": round(time.time() - self.t0, 3), "step": step})
 

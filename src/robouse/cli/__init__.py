@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from .. import __version__
@@ -130,4 +131,5 @@ def main(argv: list[str] | None = None) -> int:
             args[1:]
         )
     a = parser().parse_args(args)
-    return int(a.func(a))
+    func: Callable[[argparse.Namespace], int] = a.func
+    return int(func(a))
