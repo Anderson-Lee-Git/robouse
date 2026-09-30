@@ -1,4 +1,4 @@
-"""`robouse tasks` and `robouse components`: list, compose, scaffold and check tasks; list, show and check components.
+"""`robouse tasks` and `robouse components`: list, create and check tasks; list, show and check components.
 
 robouse tasks [list] [ROOT] [--path]                list tasks (default: the bundled tasks)
 robouse tasks init DIR                              scaffold a blank task folder (task.md, oracle/, verifier/)
@@ -53,7 +53,7 @@ def _err(msg: str, code: int = 1) -> int:
 def tasks_main(argv: list[str], prog: str = "robouse tasks") -> int:
     if not argv or argv[0] not in ("list", "init", "check", "-h", "--help"):
         argv = ["list", *argv]  # `robouse tasks [ROOT] [--path]` lists, as before
-    ap = argparse.ArgumentParser(prog=prog, description="list, compose, scaffold and check tasks")
+    ap = argparse.ArgumentParser(prog=prog, description="list, create and check tasks")
     sub = ap.add_subparsers(dest="tcmd", required=True, metavar="{list,init,check}")
 
     ls = sub.add_parser("list", help="list tasks (default: the bundled tasks)")

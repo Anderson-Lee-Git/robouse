@@ -2,13 +2,14 @@
 
   robouse run --task TASK --harness NAME [--model M] --out JOBDIR          run one trial end to end
   robouse run-many [--tasks ROOT] --harness NAME ... --out JOBDIR         run a set of trials
-  robouse serve --task TASK --run-dir DIR --socket PATH                   run one episode server
-  robouse tasks [list|init|check] ...                                     list, compose, scaffold and check tasks
+  robouse tasks [list|init|check] ...                                     list, create and check tasks
   robouse components list|show|check ...                                  the component registry
   robouse fetch-assets [--robot NAME | --all]                             download robot models (MuJoCo Menagerie)
-  robouse report | grade | summarize | doctor                             results, second opinions, learnings, setup
-  robouse estop | operator | hil-check | robots                           the human side of real-robot runs
+  robouse report | summarize | doctor                                     results, learnings, what this machine can run
   robouse export --tasks ROOT... --out DIR                                native BenchFlow task packages
+
+Not listed, but callable: `serve` (the episode server `run` starts), `grade`, and the real-robot commands `estop`,
+`operator`, `hil-check` and `robots` (the live-hardware path has not run through Robo Use yet).
 
 `run` and `run-many` run on this machine by default (`--engine local`: processes under a macOS Seatbelt profile, no
 Docker). `--engine benchflow` runs them as one BenchFlow job in Docker (needs robouse[benchflow]).
@@ -50,11 +51,7 @@ def _analysis(sub: argparse._SubParsersAction) -> None:
         func=lambda a: _call("..analysis.report", "main", a.jobs, a.by, a.metrics, a.json, a.cost_quality, a.svg)
     )
 
-    gr = sub.add_parser(
-        "grade",
-        help="a vision-language model's second opinion on finished trials, from their video "
-        "frames (writes <trial>/grader/vlm.json)",
-    )
+    gr = sub.add_parser("grade")  # listed once it has run on this release (it needs a vision-language model API)
     gr.add_argument("trials", nargs="+", help="trial folders or job folders")
     gr.add_argument(
         "--model",
@@ -104,9 +101,9 @@ def _fetch_assets(a: argparse.Namespace) -> int:
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="robouse", description=DESCRIPTION)
     ap.add_argument("--version", action="version", version=f"robouse {__version__}")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="COMMAND", title="commands")
     run.register(sub)
-    sub.add_parser("tasks", help="list, compose, scaffold and check tasks")
+    sub.add_parser("tasks", help="list, create and check tasks")
     sub.add_parser("components", help="list, show and check components")
     f = sub.add_parser(
         "fetch-assets",

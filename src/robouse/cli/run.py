@@ -13,7 +13,7 @@ from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_tas
 
 HARNESS_HELP = (
     "harness: oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or "
-    "vla (https://robouse.ai/docs/concepts/#harnesses); with --engine benchflow, a BenchFlow agent "
+    "vla (https://robouse.ai/docs/harnesses/); with --engine benchflow, a BenchFlow agent "
     "(`bench agent list`)"
 )
 RECORD_SIZE_HELP = (
@@ -51,11 +51,7 @@ def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
     )
     p.add_argument("--record-size", metavar="WxH", help=RECORD_SIZE_HELP)
     p.add_argument("--seed", type=int, help="override " + ("every task's" if many else "the task's") + " seed")
-    p.add_argument(
-        "--rig",
-        help="real-robot rig file (YAML, keyed by robot): real tasks run on live hardware instead of "
-        "the mock" + (", one at a time" if many else ""),
-    )
+    p.add_argument("--rig", help=argparse.SUPPRESS)  # real-robot rig file; listed once live hardware has run
     p.add_argument(
         "--split", help="placement split: nominal, interpolation or extrapolation (tasks with seeded placements)"
     )
@@ -69,7 +65,7 @@ def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
 
 
 def register(sub: argparse._SubParsersAction) -> None:
-    s = sub.add_parser("serve", help="run one trusted episode server (used by `run`)")
+    s = sub.add_parser("serve")  # the episode server `run` starts; not listed
     s.add_argument("--task", required=True, help="task folder or bundled task id")
     s.add_argument("--run-dir", required=True, help="where the episode record is written")
     s.add_argument("--socket", required=True, help="Unix socket path to listen on")
@@ -100,7 +96,7 @@ def register(sub: argparse._SubParsersAction) -> None:
         "--include", action="append", help="only task ids matching this glob (repeatable), e.g. 'libero-10-*'"
     )
     m.add_argument("--exclude", action="append", help="skip task ids matching this glob (repeatable)")
-    m.add_argument("--mode", choices=["sim", "real"], help="only simulated or only real-robot tasks")
+    m.add_argument("--mode", choices=["sim", "real"], help=argparse.SUPPRESS)
     m.add_argument("--sample", type=int, default=0, help="run a seeded random sample of N tasks")
     m.add_argument("--sample-seed", type=int, default=0, help="seed for --sample (default 0)")
     m.add_argument("--limit", type=int, default=0, help="run at most this many tasks (default 0: all)")
