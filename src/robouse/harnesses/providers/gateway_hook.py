@@ -72,6 +72,25 @@ def apply_cap(body: dict, cap: int) -> tuple[int, int]:
     return len(refs), k
 
 
+def _chat_compatible_tools(tools: list) -> tuple[list, list]:
+    """Tools a chat-completions backend accepts, for a Responses request bridged to chat completions. Chat completions
+    takes only `function` tools; Codex also sends `namespace` groups (function tools nested under a name), which are
+    flattened, and tool kinds with no chat equivalent (e.g. web_search), which are dropped and logged by name."""
+    kept, dropped = [], []
+    for t in tools:
+        if not isinstance(t, dict):
+            continue
+        if t.get("type") == "function":
+            kept.append(t)
+        elif t.get("type") == "namespace" and isinstance(t.get("tools"), list):
+            inner, lost = _chat_compatible_tools(t["tools"])
+            kept += inner
+            dropped += lost
+        else:
+            dropped.append(str(t.get("name") or t.get("type")))
+    return kept, dropped
+
+
 def _log(rec: dict) -> None:
     path = os.environ.get("ROBOUSE_GATEWAY_LOG")
     if path:
@@ -89,7 +108,18 @@ class RobouseGateway(CustomLogger):
         bearer = os.environ.get("ROBOUSE_GATEWAY_BEARER_ENV")
         if bearer and os.environ.get(bearer):  # providers whose Anthropic endpoint wants a Bearer token, not x-api-key
             data["extra_headers"] = {**(data.get("extra_headers") or {}), "Authorization": f"Bearer {os.environ[bearer]}"}
-        _log({"event": "request", "call_type": str(call_type), "images_in": n, "images_removed": k})
+        tools = data.get("tools")
+        dropped = []
+        if isinstance(tools, list) and str(data.get("model", "")).endswith("-responses-bridge"):
+            data["tools"], dropped = _chat_compatible_tools(tools)
+        _log({"event": "request", "call_type": str(call_type), "images_in": n, "images_removed": k,
+              "tool_types": sorted({str(t.get("type")) for t in tools if isinstance(t, dict)}) if isinstance(tools, list) else [],
+              "tools_dropped": dropped,
+              # names and keys only (no descriptions or schemas) of tools that are not plain functions
+              "tool_shapes": [{"type": t.get("type"), "name": t.get("name"), "keys": sorted(t),
+                               "inner": [(i.get("type"), i.get("name")) for i in t.get("tools", []) if isinstance(i, dict)]}
+                              for t in tools if isinstance(t, dict) and t.get("type") != "function"]
+              if isinstance(tools, list) else []})
         return data
 
     def log_pre_api_call(self, model, messages, kwargs):
