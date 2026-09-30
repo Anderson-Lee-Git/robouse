@@ -63,7 +63,8 @@
     var hasPairs = rows.some(function (r) { return r.hasAttribute("data-pair"); });
     var only = hook.noOnly || !hasPairs ? null : P.get("m");
     fsel.forEach(function (s) { var k = s.getAttribute("data-lf"); if (P.get(k)) s.value = P.get(k); s.addEventListener("change", reset); });
-    if (q) { q.value = P.get("q") || ""; q.addEventListener("input", reset); }
+    function qsync() { if (q && window.UI && UI.searchSync) UI.searchSync(q); }
+    if (q) { q.value = P.get("q") || ""; q.addEventListener("input", reset); qsync(); }
     if (scope) { if (P.get("scope") === "all" || only) scope.value = "all"; scope.addEventListener("change", reset); }
     var pill = null;
     if (only) {
@@ -121,7 +122,7 @@
     var clear = $("[data-lclear]", root);
     if (clear) clear.addEventListener("click", function () {
       fsel.forEach(function (s) { s.value = ""; });
-      if (q) q.value = "";
+      if (q) { q.value = ""; qsync(); }
       if (scope) scope.value = "set";
       only = null; if (pill) { pill.remove(); pill = null; }
       if (hook.clear) hook.clear();
@@ -228,7 +229,7 @@
   }
   function exitOf(s) { return (s.c || []).some(function (c) { return c.x != null; }); }
   function sprStyle(sp, i, size) {
-    size = size || sp.tile;
+    size = size || sp.disp || sp.tile;
     var k = size / sp.tile, cols = Math.min(sp.n, sp.cols), rows = Math.ceil(sp.n / sp.cols);
     return "background-image:url(" + sp.src + ");background-size:" + (cols * sp.tile * k) + "px " + (rows * sp.tile * k) + "px;background-position:-" +
       ((i % sp.cols) * sp.tile * k) + "px -" + (Math.floor(i / sp.cols) * sp.tile * k) + "px";
@@ -333,6 +334,7 @@
             speed = +b.getAttribute("data-speed"); v.playbackRate = speed; try { localStorage.setItem("runs-speed", speed); } catch (err) {}
             $$("[data-speed]", pctl).forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
           } else if (b.getAttribute("data-k") === "play") { if (v.paused) v.play(); else v.pause(); }
+          else if (b.getAttribute("data-k") === "full") fullscreen();
           else step(b.getAttribute("data-k") === "next" ? 1 : -1);
         });
         sync = syncVideo(v, d, function (i) {
@@ -350,8 +352,15 @@
           if (e.key === "ArrowRight") { step(1); e.preventDefault(); }
           else if (e.key === "ArrowLeft") { step(-1); e.preventDefault(); }
           else if (e.key === " " && !/^(BUTTON|A|SUMMARY|VIDEO)$/.test(tag)) { if (v.paused) v.play(); else v.pause(); e.preventDefault(); }
+          else if (e.key === "f" || e.key === "F") { fullscreen(); e.preventDefault(); }
         });
       }
+      function fullscreen() {
+        if (!v) return;
+        if (document.fullscreenElement) { document.exitFullscreen(); return; }
+        if (v.requestFullscreen) v.requestFullscreen(); else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+      }
+      if (v) v.addEventListener("click", function () { if (v.paused) v.play(); else v.pause(); });
       function dur0() { return (v && v.duration && isFinite(v.duration)) ? v.duration : (d.duration || 1); }
       function pct(t) { return Math.max(0, Math.min(100, 100 * t / dur0())); }
       function hasImg(s) { return (s.c || []).some(function (c) { return c.img && c.img.length; }); }
@@ -407,18 +416,19 @@
       });
       window.addEventListener("hashchange", function () { show(location.hash.slice(1)); });
 
-      function withheldNote() { return '<p class="withheld">' + h(WITHHELD) + "</p>"; }
+      function withheldNote() { return '<div class="withheld" role="note"><b>Trajectory withheld</b><p>' + h(WITHHELD.replace(/^Trajectory not published: d/, "D")) + "</p></div>"; }
       function recording() {
         if (d.withheld) return withheldNote();
         if (!d.steps.length) return emptyState("No trajectory was recorded for this trial.", "The recording and the Verdict tab still show what happened.");
-        var n = d.steps.filter(function (s) { return s.v; }).length;
-        return '<div class="rechead"><span>Steps · click one to seek</span><span class="num">' + n + ' steps<span class="keys"> · <kbd>←</kbd> <kbd>→</kbd> to step</span></span></div><ol class="slist">' + stepListHTML(d) + "</ol>" +
-          (d.hidden ? '<p class="muted small">' + d.hidden + " one-action steps in the middle are not listed.</p>" : "");
+        var n = d.steps.length;  /* the same count as the Trajectory tab: every step listed */
+        var first = d.steps[0] && d.steps[0].i > 1 && d.prompt ? '<li class="nov"><span class="i">1</span><span class="t"></span><span class="a msg">Task prompt (on the Trajectory tab)</span><span class="x"></span></li>' : "";
+        return '<div class="recbox"><div class="rechead"><span>Steps · click one to seek</span><span class="num">' + n + ' steps<span class="keys"> · <kbd>←</kbd> <kbd>→</kbd> to step</span></span></div><ol class="slist">' + first + stepListHTML(d) + "</ol>" +
+          (d.hidden ? '<p class="muted small slnote">' + d.hidden + " one-action steps in the middle are not listed.</p>" : "") + "</div>";
       }
       function strip() {
         var sp = d.sprite;
         return '<section class="strip" id="filmstrip" aria-label="Camera images"><div class="rechead"><span>Camera images the agent looked at</span><span class="num">' +
-          (sp.total > sp.n ? sp.n + " of " + sp.total + " shown" : sp.total) + '</span></div><div class="tiles">' +
+          (sp.total > sp.n ? sp.n + " of " + sp.total + " shown" : sp.total) + '</span></div><div class="tiles" data-fade>' +
           d.obs.map(function (o) {
             var lab = o[1] != null ? "step " + o[1] : o[0].replace(/\.png$/, "");
             return '<button type="button" class="tile"' + (o[1] != null ? ' data-s="' + o[1] + '"' : "") + (o[3] != null ? ' data-seek="' + o[3] + '"' : "") + ' title="' + h(o[0]) + '" aria-label="Camera image ' + h(lab) + (o[3] != null ? ", seek the recording here" : "") + '"><i style="' + sprStyle(sp, o[2]) + '"></i><span>' + h(lab) + "</span></button>";
@@ -426,7 +436,7 @@
       }
       function trajectory() {
         var out = [];
-        if (d.prompt) out.push('<details class="prompt"><summary>Task prompt</summary><div class="txt">' + h(d.prompt) + "</div></details>");
+        if (d.prompt) out.push('<details class="disc prompt"><summary>Task prompt</summary><div class="txt">' + h(d.prompt) + "</div></details>");
         if (d.withheld) return out.join("") + withheldNote();
         if (!d.steps.length) return out.join("") + emptyState("No trajectory was recorded for this trial.", "The harness wrote no steps; the Verdict tab shows how the episode ended.");
         out.push('<ol class="traj">');
@@ -439,12 +449,12 @@
             (s.v ? '<button type="button" class="seek" data-seek="' + s.v[0] + '" title="Seek the recording here">' + t2(s.v[0]) + "</button>" : "") + "</div>";
           var body = "";
           if (s.m) body += '<div class="txt">' + h(s.m) + "</div>";
-          if (s.r) body += '<details class="rsn"><summary>Reasoning</summary><div class="txt">' + h(s.r) + "</div></details>";
+          if (s.r) body += '<details class="disc rsn"><summary>Reasoning</summary><div class="txt">' + h(s.r) + "</div></details>";
           (s.c || []).forEach(function (c) {
             body += '<pre class="cmd"><code>' + h(c.a) + "</code></pre>";
             if (c.b) body += '<pre class="out"><code>' + h(c.b) + "</code></pre>";
             if (c.img && d.sprite) body += '<div class="imgs">' + c.img.map(function (k) { return '<i style="' + sprStyle(d.sprite, k) + '"></i>'; }).join("") + "</div>";
-            if (c.o != null) body += '<details class="res"' + (c.n <= 8 ? " open" : "") + "><summary>Output · " + c.n + " line" + (c.n === 1 ? "" : "s") + (c.x != null ? ' · <span class="x-err">exit ' + h(c.x) + "</span>" : "") + '</summary><pre class="out"><code>' + h(c.o) + "</code></pre></details>";
+            if (c.o != null) body += '<details class="disc res"' + (c.n <= 8 ? " open" : "") + "><summary>Output · " + c.n + " line" + (c.n === 1 ? "" : "s") + (c.x != null ? ' · <span class="x-err">exit ' + h(c.x) + "</span>" : "") + '</summary><pre class="out"><code>' + h(c.o) + "</code></pre></details>";
           });
           out.push('<li class="st ' + h(s.src) + '" data-i="' + s.i + '" id="s' + s.i + '">' + head + body + "</li>");
         });
@@ -508,14 +518,12 @@
       }
       function run() {
         var tk = d.tokens, stats = [];
-        stats.push(["Wall time", dur(d.wall), "whole run"]);
+        /* wall time, robot requests and env steps are in the facts above the tabs; this tab adds only what is new */
         stats.push(["Episode", dur(d.ep_wall), ""]);
         stats.push(["Video", d.duration != null ? dur(d.duration) : "–", "robot moving"]);
         stats.push(["Agent steps", num(d.steps.filter(function (s) { return s.src === "agent"; }).length || null), ""]);
-        stats.push(["Robo requests", num(d.requests), d.motion != null ? d.motion + " motion" : ""]);
-        var envp = d.max_steps ? Math.min(100, 100 * (d.steps_used || 0) / d.max_steps) : 0;
-        var html = '<dl class="stats">' + stats.map(function (s) { return "<div><dt>" + s[0] + '</dt><dd class="num">' + s[1] + (s[2] ? "<small>" + s[2] + "</small>" : "") + "</dd></div>"; }).join("") +
-          '<div><dt>Env steps</dt><dd class="num">' + num(d.steps_used) + "<small>of " + num(d.max_steps) + '</small></dd><div class="meter" role="img" aria-label="' + Math.round(envp) + '% of the step budget"><i style="width:' + envp + '%"></i></div></div>';
+        if (d.motion != null) stats.push(["Motion requests", num(d.motion), "of " + num(d.requests)]);
+        var html = '<dl class="stats">' + stats.map(function (s) { return "<div><dt>" + s[0] + '</dt><dd class="num">' + s[1] + (s[2] ? "<small>" + s[2] + "</small>" : "") + "</dd></div>"; }).join("");
         if (tk) {
           html += '<div><dt>Input tokens</dt><dd class="num">' + kfmt(tk["in"]) + (tk.cached ? "<small>" + Math.round(100 * tk.cached / Math.max(1, tk["in"])) + "% cached</small>" : "") + "</dd></div>" +
             '<div><dt>Output tokens</dt><dd class="num">' + kfmt(tk.out) + (tk.reasoning ? "<small>" + kfmt(tk.reasoning) + " reasoning</small>" : "") + "</dd></div>" +
@@ -613,8 +621,9 @@
             var o = tiles[p.split("/").pop()];
             if (o && sp) {
               var i = o[2];
-              e.sprite = {src: sp.src, x: (i % sp.cols) * sp.tile, y: Math.floor(i / sp.cols) * sp.tile, w: sp.tile, h: sp.tile,
-                bw: Math.min(sp.n, sp.cols) * sp.tile, bh: Math.ceil(sp.n / sp.cols) * sp.tile,
+              var u = sp.disp || sp.tile;  /* in display units: the file viewer draws the tile at twice this, the sprite's own size */
+              e.sprite = {src: sp.src, x: (i % sp.cols) * u, y: Math.floor(i / sp.cols) * u, w: u, h: u,
+                bw: Math.min(sp.n, sp.cols) * u, bh: Math.ceil(sp.n / sp.cols) * u,
                 caption: (o[1] != null ? "Looked at in step " + o[1] + ". " : "") + "A " + sp.tile + " px thumbnail from the filmstrip; the full-size image is not published."};
             } else e.w = "Not published. Only a sample of " + (sp ? sp.n : 0) + " camera images is published, as the filmstrip on the Recording tab.";
           } else e.w = why(p);
@@ -682,7 +691,7 @@
             '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + h(d.label || mfirst(idx.hm[d.hm][0])) + "</a></p>" +
             '<dl class="facts"><div><dt>Reward</dt><dd>' + rew(d.reward) + '</dd></div><div><dt>Outcome</dt><dd class="mono">' + h(d.outcome || "–") + "</dd></div><div><dt>Env steps</dt><dd>" + num(d.steps_used) + " / " + num(d.max_steps) +
             "</dd></div><div><dt>Requests</dt><dd>" + num(d.requests) + "</dd></div><div><dt>Wall</dt><dd>" + dur(d.wall) + "</dd></div></dl>" +
-            (d.withheld ? '<p class="withheld">Trajectory withheld: the agent looked at files outside its workspace.</p>' : (vd.claim_text ? '<p class="said"><span class="muted">' + ({done: "robo done", give_up: "robo give-up", runner: "closed by the runner"}[vd.claim] || "last message") + ": </span>" + h(vd.claim_text.replace(/^\[runner\]\s*/, "").slice(0, 400)) + "</p>" : "") +
+            (d.withheld ? '<div class="withheld" role="note"><b>Trajectory withheld</b><p>The agent looked at files outside its workspace.</p></div>' : (vd.claim_text ? '<p class="said"><span class="muted">' + ({done: "robo done", give_up: "robo give-up", runner: "closed by the runner"}[vd.claim] || "last message") + ": </span>" + h(vd.claim_text.replace(/^\[runner\]\s*/, "").slice(0, 400)) + "</p>" : "") +
               (d.steps.length ? '<ol class="slist">' + stepListHTML(d) + "</ol>" : '<p class="muted">No trajectory was recorded.</p>'));
           keyActivate(body);
           var v = $("video", body);
