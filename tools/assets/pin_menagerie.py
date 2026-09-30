@@ -7,7 +7,7 @@ These meshes are not stored in git (about 330 MB); `robouse fetch-assets` downlo
 
   git init /tmp/menag && cd /tmp/menag && git remote add origin https://github.com/google-deepmind/mujoco_menagerie.git
   git sparse-checkout set --no-cone <robot dirs> && git fetch --depth 1 origin <COMMIT> && git checkout FETCH_HEAD
-  python scripts/pin_menagerie.py /tmp/menag
+  python tools/assets/pin_menagerie.py /tmp/menag
 
 Per robot: LICENSE, README.md, every MJCF file (*.xml) and everything under assets/ (meshes and textures).
 """
@@ -54,7 +54,7 @@ def main() -> None:
             data = p.read_bytes()
             files.append({"path": rel, "url": f"https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/{COMMIT}/{rel}",
                           "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
-    out = Path(__file__).resolve().parents[1] / "assets" / "menagerie" / "embodiments.json"
+    out = Path(__file__).resolve().parents[2] / "assets" / "menagerie" / "embodiments.json"
     out.write_text(json.dumps({"repository": REPO, "commit": COMMIT,
                                "note": "MuJoCo Menagerie robots for the embodiment suites. Not stored in git; `robouse fetch-assets` "
                                        "downloads them into ~/.cache/robouse/menagerie.",

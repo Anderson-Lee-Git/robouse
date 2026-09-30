@@ -1,5 +1,5 @@
 """Unit tests for the stdlib VLA client: codecs, image helpers, action mapping, chunk controllers, compatibility check.
-Wire interoperability with the upstream libraries is covered end to end by scripts/vla_dogfood.sh."""
+Wire interoperability with the upstream libraries is covered end to end by tools/ops/vla_dogfood.sh."""
 from __future__ import annotations
 
 import importlib.util

@@ -1,11 +1,11 @@
 #!/bin/bash
 # Final v1 evaluation, one stream per model + harness pair, suites run one after another (one trial per task).
-#   scripts/final_run.sh                     all suites below
-#   scripts/final_run.sh metaworld libero    only these
+#   tools/ops/final_run.sh                     all suites below
+#   tools/ops/final_run.sh metaworld libero    only these
 # Jobs: runs/final-<suite>-<pair>/. Uses --resume, so rerunning continues where a stream stopped.
 # Opus 5.5 is paused by the owner (2026-09-27); add "claude-code:claude-opus-5-5:3:opus" back to PAIRS to include it.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 export MUJOCO_GL=cgl
 PAIRS=("codex:gpt-6-astra:4:astra" "claude-code-glm::3:cc-glm" "codex-glm::2:codex-glm" "mini-swe-agent-glm::2:mini-glm")
 if [ -n "${FINAL_PAIRS:-}" ]; then read -r -a PAIRS <<< "$FINAL_PAIRS"; fi

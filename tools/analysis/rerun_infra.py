@@ -3,7 +3,7 @@
 Reads runs/_audit/audit.json, moves each finished trial with an infra failure into <job>/_infra_failed/ (kept as
 evidence), and runs the same task, harness and model again into the same job.
 
-  .venv/bin/python scripts/rerun_infra.py [--jobs mw-codex-astra,...] [--concurrency 3] [--dry-run]
+  .venv/bin/python tools/analysis/rerun_infra.py [--jobs mw-codex-astra,...] [--concurrency 3] [--dry-run]
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pathlib import Path
 from robouse.runner import run_trial
 from robouse.tasks import load_task
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 MOLMO = {"lerobot-eval", "molmoact2-sim-eval"}
 
 

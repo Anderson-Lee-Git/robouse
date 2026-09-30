@@ -1,9 +1,9 @@
 #!/bin/bash
 # Dogfood the `vla` harness on every wire protocol against mock policy servers built on the upstream libraries
 # (tests/vla_mock_servers.py; no GPU). LIBERO tasks replay the task's demonstration through the wire; real-arm tasks
-# (hardware-in-the-loop mock) track the goal pose found by inverse kinematics. Usage: scripts/vla_dogfood.sh [OUT]
+# (hardware-in-the-loop mock) track the goal pose found by inverse kinematics. Usage: tools/ops/vla_dogfood.sh [OUT]
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 OUT=${1:-runs/vla-dogfood}
 V=${VLA_TEST_PYTHON:-$HOME/.cache/robouse/vla-test-venv/bin/python}
 P=${ROBOUSE_PYTHON:-$HOME/benchflow/robouse/.venv/bin/python}

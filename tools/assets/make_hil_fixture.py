@@ -1,12 +1,12 @@
 """Build a hardware-in-the-loop fixture (assets/hil/<name>/) from a session recorded on the real bench.
 
   # Metal arm session (recorder.py layout: log.jsonl, video_index.jsonl, <camera>.mp4)
-  python scripts/make_hil_fixture.py metal ~/benchflow/robot/recordings/2026-09-05-metal-arm-bowl/sessions/20260905-121853-bowl-pick \
+  python tools/assets/make_hil_fixture.py metal ~/benchflow/robot/recordings/2026-09-05-metal-arm-bowl/sessions/20260905-121853-bowl-pick \
       --name metal-bowl-121853
   # SO-101 snapshots (so101_sort_control.py layout: <side>_state.json + <stamp>_<camera>.jpg stills)
-  python scripts/make_hil_fixture.py so101 ~/benchflow/robot/sessions/so101-sort --side left --name so101-sort-left
+  python tools/assets/make_hil_fixture.py so101 ~/benchflow/robot/sessions/so101-sort --side left --name so101-sort-left
   # synthetic fixture (no recording: start pose only, default tracking), e.g. for the Piper driver
-  python scripts/make_hil_fixture.py piper --synthetic --name piper-synthetic
+  python tools/assets/make_hil_fixture.py piper --synthetic --name piper-synthetic
 
 Keyframes are chosen by farthest-point sampling in joint space among the logged steps; each keeps the video frame of
 every camera nearest in time, downscaled to --width and saved as JPEG. See src/robouse/real/replay.py.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from robouse.real.replay import HIL_DIR, fit_tracking  # noqa: E402
 from robouse.real.robots import profile  # noqa: E402
 

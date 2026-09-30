@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Automatic audit of robouse trial directories. See docs/audit.md.
 
-  .venv/bin/python scripts/audit.py                      every trial under runs/
-  .venv/bin/python scripts/audit.py runs/mw-codex-astra  one job (or any trial / job paths)
-  .venv/bin/python scripts/audit.py --out /tmp/audit     somewhere else
+  .venv/bin/python tools/analysis/audit.py                      every trial under runs/
+  .venv/bin/python tools/analysis/audit.py runs/mw-codex-astra  one job (or any trial / job paths)
+  .venv/bin/python tools/analysis/audit.py --out /tmp/audit     somewhere else
 
 Writes <out>/audit.json (one record per trial plus summaries) and <out>/AUDIT.md (default out: runs/_audit).
 Standard library only; ffprobe is used for video durations when it is installed.
@@ -20,7 +20,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 RUNS = REPO / "runs"
 FPS = 30
 LLM_HARNESSES = ("claude-code", "claude-code-glm", "codex", "codex-glm", "mini-swe-agent-glm")
@@ -397,7 +397,7 @@ def _median(xs: list) -> float | None:
 
 
 def write_md(recs: list[dict], summary: list[dict], out: Path) -> None:
-    L = [f"# robouse audit", "", f"Generated {datetime.now(timezone.utc).isoformat(timespec='seconds')} by scripts/audit.py over {len(recs)} trials. "
+    L = [f"# robouse audit", "", f"Generated {datetime.now(timezone.utc).isoformat(timespec='seconds')} by tools/analysis/audit.py over {len(recs)} trials. "
          "Checks and heuristics are described in docs/audit.md. A flag is a lead for review, not a verdict.", ""]
     L += ["## Summary by harness and model", "", "| harness | model | finished trials | running | solved | infra failures | solve rate (excl. infra) | suspicious | needs review | median wall s | median env steps |",
           "|---|---|---|---|---|---|---|---|---|---|---|"]

@@ -6,7 +6,7 @@ step-taking requests (each role's requests carry ROBO_ROLE from its environment)
 every trace line and step. This is a guard rail and an attribution record, not a security boundary: the roles share
 a container, so a role could unset its own ROBO_ROLE.
 
-    python scripts/scene_planner_operator.py --task tasks/arc-style/arc-gravity --agent codex --model gpt-6-astra \
+    python tools/benchflow/scene_planner_operator.py --task tasks/arc-style/arc-gravity --agent codex --model gpt-6-astra \
         --jobs runs/scene
 
 The task is copied with a `roles:` block added (the published task folder is not changed). Codex credentials come

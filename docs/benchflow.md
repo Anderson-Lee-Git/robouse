@@ -92,7 +92,7 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e ".[me
 .venv/bin/robouse export --tasks tasks/metaworld --out dist/robouse-metaworld [--noop]
 
 # two roles on one robot (a BenchFlow scene): a planner that may only look, an operator that acts
-.venv/bin/python scripts/scene_planner_operator.py --task tasks/arc-style/arc-gravity --agent codex --model gpt-6-astra
+.venv/bin/python tools/benchflow/scene_planner_operator.py --task tasks/arc-style/arc-gravity --agent codex --model gpt-6-astra
 ```
 
 Seeds: Meta-World picks one of its 50 goal and object variations per seed; LIBERO, robosuite and Gymnasium-Robotics seed their resets; the tabletop, drone, RoboHarm and menagerie scenes are fixed by the task, so every seed starts from the same state (the report's `distinct_initial_states` and `reset_reproducible` show which).
@@ -131,7 +131,7 @@ Same Mac and Colima setup; BenchFlow branch `robouse` at the `benchflow.embodied
 | DexJoCo (local engine; the DexJoCo virtualenv is not in the simulator image) | water-plant (hand) and microwave-cook (bimanual hands): oracle 1.0 (steps 306 and 693), noop 0.0 |
 | Real model: Claude Code on GLM-5.3 (Baseten, BenchFlow `vllm/` provider), a substitute, see below | metaworld-push `--seeds 0-2`: 3/3 (pass@1 = 1.0); metaworld-reach 1/1; drone-waypoint 1/1; arc-gravity 0/1 (wrong arrangement, `robo done` at step 1192); menagerie-aloha-opening-four 0/1 (agent timeout at step 477 of 2000). Errors 0 |
 | Reset reproducibility | metaworld-push seeds 0, 1, 2 start from identical `initial_state_sha256` in the oracle job and the GLM job |
-| Scene: planner + operator on metaworld-push (`scripts/scene_planner_operator.py`, both roles GLM-5.3) | reward 1.0; the planner made only `info`/`observe` requests, all 65 simulator steps are attributed to the operator in `steps.jsonl` |
+| Scene: planner + operator on metaworld-push (`tools/benchflow/scene_planner_operator.py`, both roles GLM-5.3) | reward 1.0; the planner made only `info`/`observe` requests, all 65 simulator steps are attributed to the operator in `steps.jsonl` |
 
 The prescribed real agents could not run: all three Codex pool accounts (`~/.config/bf-agents/codex-auth`) return "You've hit your usage limit" until Oct 3-4, and both Claude OAuth pool tokens return "weekly limit" until Oct 2 (checked with one-line CLI calls; a Codex job started before the check failed with ACP "Internal error" on the first prompt and was stopped). Rerun `robouse run-many --agent codex --model gpt-6-astra` or `--agent claude-code --model claude-sonnet-5` on the same sample once the quotas reset.
 

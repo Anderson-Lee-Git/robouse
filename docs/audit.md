@@ -1,12 +1,12 @@
 # Automatic audit
 
 ```
-.venv/bin/python scripts/audit.py                       # every trial under runs/
-.venv/bin/python scripts/audit.py runs/mw-codex-astra   # some jobs or trials
-.venv/bin/python scripts/audit.py --out /tmp/audit
+.venv/bin/python tools/analysis/audit.py                       # every trial under runs/
+.venv/bin/python tools/analysis/audit.py runs/mw-codex-astra   # some jobs or trials
+.venv/bin/python tools/analysis/audit.py --out /tmp/audit
 ```
 
-The audit writes `runs/_audit/audit.json` (one record per trial and a summary per harness and model) and `runs/_audit/AUDIT.md` (the summary table, flag counts, the trials flagged for review and low-severity notes). It uses the standard library only, plus `ffprobe` for video durations when it is installed. It reads the trial folders and never changes them. When a trial has no `agent/trajectory.json`, the audit builds one in memory with `robouse.atif`. `scripts/build_gallery.py` shows the audit flags when `audit.json` exists.
+The audit writes `runs/_audit/audit.json` (one record per trial and a summary per harness and model) and `runs/_audit/AUDIT.md` (the summary table, flag counts, the trials flagged for review and low-severity notes). It uses the standard library only, plus `ffprobe` for video durations when it is installed. It reads the trial folders and never changes them. When a trial has no `agent/trajectory.json`, the audit builds one in memory with `robouse.atif`. `tools/site/build_gallery.py` shows the audit flags when `audit.json` exists.
 
 A flag is a lead for a human or AI reviewer, not a verdict. The heuristics are regular expressions and simple consistency checks. They over-report on purpose.
 
@@ -60,7 +60,7 @@ An **infra failure** is a trial that did not measure the agent. That means one o
 
 ## Summary and review list
 
-`AUDIT.md` starts with one row per harness and model: finished trials, running, solved, infra failures, solve rate without infra failures, suspicious, needs review, median wall time and median env steps. Next come the flag counts. Then comes the list of **trials flagged for review**: every suspicious trial, every infra failure and every trial with a high-severity flag, ordered by severity, each with its high and medium flags and their evidence. The review list is the input for a human or AI reviewer, who should open the trial in the viewer (`scripts/view.sh`) and read the trajectory around the flagged commands.
+`AUDIT.md` starts with one row per harness and model: finished trials, running, solved, infra failures, solve rate without infra failures, suspicious, needs review, median wall time and median env steps. Next come the flag counts. Then comes the list of **trials flagged for review**: every suspicious trial, every infra failure and every trial with a high-severity flag, ordered by severity, each with its high and medium flags and their evidence. The review list is the input for a human or AI reviewer, who should open the trial in the viewer (`tools/ops/view.sh`) and read the trajectory around the flagged commands.
 
 ## What the first audits found (2026-09-27, 229 to 288 trials while jobs were running)
 
