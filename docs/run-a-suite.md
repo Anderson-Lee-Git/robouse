@@ -52,3 +52,7 @@ Job complete: 2/2 (100.0%), mean_reward=1.00, errors=0, idle_timeouts=0, time=2.
 - On a Mac with Colima, run `bench` from a folder under your home folder: Docker can only mount paths there.
 - The first run of a dataset builds its simulator image, up to about 4 GB for LIBERO. Scenes render on the CPU inside the container, so some tasks are much slower than locally.
 - `--agent oracle` runs the reference solutions. `benchflow/robouse-noop-control@0.1` is the no-op control for `benchflow/robouse-core@0.1`: with `--agent oracle`, every task must score 0.
+
+## Run under BenchFlow
+
+`robouse run --engine benchflow`, `robouse run-many --engine benchflow` and `robouse export` run tasks through BenchFlow's engine, with the agent and the simulator in separate Docker containers. They need `pip install 'robouse[benchflow]'` on Python 3.12 and a BenchFlow release that is not out yet, so they were not run for these docs. Until then, run published datasets with `bench eval run -d`.

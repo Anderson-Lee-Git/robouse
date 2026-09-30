@@ -491,6 +491,7 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
 
         md = source.read(p.src)
         md = re.sub(r"/Users/(?!<)[^/\s`]+/", "~/", md)  # tidy absolute home paths
+        md = re.sub(r"^<!--.*?-->[ \t]*\n", "", md, flags=re.M)  # whole-line comments (generator markers) are not published
         def svg(href: str, src_dir=src_dir) -> str | None:
             target = posixpath.normpath(posixpath.join(src_dir, href))
             if not (target.startswith("docs/") and source.exists(target)):

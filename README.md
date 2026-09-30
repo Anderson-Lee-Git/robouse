@@ -4,25 +4,20 @@
 
 ```sh
 pip install 'robouse[sim]'
-robouse run --task arc-gravity --harness claude-code --model claude-sonnet-5 --out runs/quickstart
+robouse run --task arc-gravity --harness claude-code-glm --model moonshotai/Kimi-K3 --out runs/quickstart
 ```
 
-Python 3.12 to 3.13. Other extras add more simulators: `metaworld`, `gymrobotics`, `robosuite`, `dexjoco`, `all`.
+Python 3.11 to 3.13. Extras add simulators: `metaworld`, `gymrobotics`, `robosuite`, `dexjoco`, `all`.
 
-`robouse run` runs each trial as a BenchFlow job in Docker, with the simulator in its own container; `--harness` (or `--agent`) takes any BenchFlow agent. Add `--engine local` to run the trial on your machine without Docker.
-
-The embodied layer (the `robo` command and protocol, the episode server, the simulator sidecar, the physical verifier, per-step traces, seeded rollouts) is BenchFlow's `benchflow.embodied`; Robo Use provides the simulator backends, each of which declares its robot as an embodiment (action groups, skills, sensors), plus the tasks and adapters. See [docs/benchflow.md](docs/benchflow.md).
-
-Docs: [robouse.ai/docs](https://robouse.ai/docs/). Results and videos: [robouse.ai/runs](https://robouse.ai/runs/).
+Docs: [robouse.ai/docs](https://robouse.ai/docs/). Results: [robouse.ai/hub/leaderboard](https://robouse.ai/hub/leaderboard/).
 
 ## Working on Robo Use
 
-Install a checkout in editable mode; it then uses the checkout's `tasks/` and `assets/`:
+An editable install uses the checkout's `tasks/` and `assets/`:
 
 ```sh
-git clone https://github.com/benchflow-ai/robouse.git && cd robouse
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -e ".[metaworld,gymrobotics]"
 ```
 
-The public docs are built from `docs/` by `tools/docs/build_docs.py`; the pages it publishes are listed in its `PAGES`. `docs/dogfood.md` records the commands run to check them. The other files in `docs/` are internal notes.
+The public docs are built from `docs/` by `tools/docs/build_docs.py`, which publishes the pages in its `PAGES`; the other files in `docs/` are maintainers' notes. `tools/docs/cli_reference.py` and `tools/docs/suites_reference.py` regenerate the CLI page and the suites table from an installed release.

@@ -20,4 +20,4 @@ Robo Use uses [BenchFlow](https://benchflow.ai)'s formats. BenchFlow runs AI age
 
 - A task is a BenchFlow task folder (`task.md`, schema 1.3) with Robo Use's settings in a `robouse:` block.
 - A trial folder follows BenchFlow's trial layout, with the agent's steps as an ATIF trajectory.
-- `robouse run` runs a trial on your machine. `robouse export` turns tasks into packages for BenchFlow's `bench eval run`, which runs the agent and the simulator in separate Docker containers. Published datasets run with `bench eval run -d` ([Run a suite or dataset](run-a-suite.md)).
+- `robouse run` runs a trial on your machine. Published datasets of Robo Use tasks run with BenchFlow's `bench eval run -d`, which puts the agent and the simulator in separate Docker containers ([Run a suite or dataset](run-a-suite.md)).
