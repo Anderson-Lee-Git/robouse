@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from ..tasks import Task, find_tasks
-from .trial import now, run_trial
+from .trial import interrupt_all, now, run_trial
 
 
 def parse_seeds(spec: str | None) -> list[int | None]:
@@ -18,7 +18,9 @@ def parse_seeds(spec: str | None) -> list[int | None]:
         return [None]
     out: list[int | None] = []
     for part in str(spec).split(","):
-        a, _, b = part.partition("-")
+        a, _, b = part.strip().partition("-")
+        if not a.isdigit() or (b and not b.isdigit()) or (b and int(b) < int(a)):
+            raise ValueError(f"seeds must look like 0-4 or 0,3,7 (non-negative integers), not {spec!r}")
         out += list(range(int(a), int(b) + 1)) if b else [int(a)]
     return out
 
@@ -149,16 +151,21 @@ def run_many(
 
     with open(job_dir / "run_log.jsonl", "a") as log, cf.ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:
         futs = [ex.submit(one, x) for x in runs]
-        for fut in cf.as_completed(futs):
-            r = fut.result()
-            results.append(r)
-            log.write(json.dumps(r) + "\n")
-            log.flush()
-            print(
-                f"{r['task']:<40} reward={r['reward']:.0f} outcome={r['outcome']} steps={r['steps']} {r['wall_s']}s"
-                + (f" EXC {r['exception']}" if r["exception"] else ""),
-                flush=True,
-            )
+        try:
+            for fut in cf.as_completed(futs):
+                r = fut.result()
+                results.append(r)
+                log.write(json.dumps(r) + "\n")
+                log.flush()
+                print(
+                    f"{r['task']:<40} reward={r['reward']:.0f} outcome={r['outcome']} steps={r['steps']} {r['wall_s']}s"
+                    + (f" EXC {r['exception']}" if r["exception"] else ""),
+                    flush=True,
+                )
+        except KeyboardInterrupt:  # stop the running agents; their trials are recorded as interrupted
+            interrupt_all()
+            ex.shutdown(wait=True, cancel_futures=True)
+            raise
     ok = sum(r["reward"] for r in results)
     print(f"{harness}/{model or '-'}: {ok:.0f}/{len(results)} solved")
     return results
