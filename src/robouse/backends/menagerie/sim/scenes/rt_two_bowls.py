@@ -11,7 +11,7 @@ import mujoco
 import numpy as np
 
 from ..layout import BOARD_Y, BOWL_X, BOWL_Y, SQUARE_SIZE, board_xy
-from ..scene_common import Scene, add_desk, geom, jitter_pose, new_root, object_rng
+from ..scene_common import Scene, add_chessboard, add_desk, geom, jitter_pose, mark_square, new_root, object_rng
 
 TASK_ID = "dual-panda-two-bowls-to-board"
 EMBODIMENT = "dual_panda"
@@ -89,49 +89,11 @@ def build(seed, conditions, embodiment=EMBODIMENT, **params):
 
 
 def _add_board(world):
-    half = 4 * SQUARE_SIZE
-    geom(
-        world,
-        name="board",
-        type="box",
-        pos=f"0 {BOARD_Y} .0045",
-        size=f"{half + 0.006} {half + 0.006} .0055",
-        rgba=".22 .12 .06 1",
-    )
-    for rank in range(8):
-        for file in range(8):
-            colour = ".83 .75 .6 1" if (rank + file) % 2 else ".20 .28 .24 1"
-            x, y = board_xy(rank, file)
-            geom(
-                world,
-                name=f"square_{chr(97 + file)}{rank + 1}",
-                type="box",
-                pos=f"{x} {y} .0101",
-                size=f"{SQUARE_SIZE / 2} {SQUARE_SIZE / 2} .0001",
-                contype="0",
-                conaffinity="0",
-                rgba=colour,
-            )
+    add_chessboard(world)
 
 
 def _mark_square(world, name, target):
-    for axis in (0, 1):
-        for sign in (-1, 1):
-            position = list(target)
-            position[axis] += sign * (SQUARE_SIZE / 2 - 0.001)
-            position[2] = 0.0106
-            size = [0.019, 0.019, 0.0002]
-            size[axis] = 0.001
-            geom(
-                world,
-                name=f"assigned_{name}_{axis}_{sign}",
-                type="box",
-                pos=" ".join(map(str, position)),
-                size=" ".join(map(str, size)),
-                contype="0",
-                conaffinity="0",
-                rgba="1 .67 .05 1",
-            )
+    mark_square(world, f"assigned_{name}", target)
 
 
 def _add_piece(world, name, kind, side, source, quaternion, conditions):

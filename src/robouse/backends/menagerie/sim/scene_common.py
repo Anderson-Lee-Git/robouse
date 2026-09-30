@@ -121,3 +121,55 @@ def jitter_pose(rng, position, *, radius, yaw):
     distance = radius * math.sqrt(rng.uniform(0.0, 1.0))
     offset = np.array([distance * math.cos(angle), distance * math.sin(angle), 0.0])
     return tuple(np.asarray(position, dtype=float) + offset), yaw_quat(rng.uniform(-yaw, yaw))
+
+
+def add_chessboard(world):
+    """The 8 x 8 board on the desk, between the two arms (visual squares on one collision slab)."""
+    from .layout import BOARD_Y, SQUARE_SIZE, board_xy
+
+    half = 4 * SQUARE_SIZE
+    geom(
+        world,
+        name="board",
+        type="box",
+        pos=f"0 {BOARD_Y} .0045",
+        size=f"{half + 0.006} {half + 0.006} .0055",
+        rgba=".22 .12 .06 1",
+    )
+    for rank in range(8):
+        for file in range(8):
+            colour = ".83 .75 .6 1" if (rank + file) % 2 else ".20 .28 .24 1"
+            x, y = board_xy(rank, file)
+            geom(
+                world,
+                name=f"square_{chr(97 + file)}{rank + 1}",
+                type="box",
+                pos=f"{x} {y} .0101",
+                size=f"{SQUARE_SIZE / 2} {SQUARE_SIZE / 2} .0001",
+                contype="0",
+                conaffinity="0",
+                rgba=colour,
+            )
+
+
+def mark_square(world, prefix, target):
+    """Four thin amber bars framing the square at `target` (visual only), named <prefix>_<axis>_<sign>."""
+    from .layout import SQUARE_SIZE
+
+    for axis in (0, 1):
+        for sign in (-1, 1):
+            position = list(target)
+            position[axis] += sign * (SQUARE_SIZE / 2 - 0.001)
+            position[2] = 0.0106
+            size = [0.019, 0.019, 0.0002]
+            size[axis] = 0.001
+            geom(
+                world,
+                name=f"{prefix}_{axis}_{sign}",
+                type="box",
+                pos=" ".join(map(str, position)),
+                size=" ".join(map(str, size)),
+                contype="0",
+                conaffinity="0",
+                rgba="1 .67 .05 1",
+            )
