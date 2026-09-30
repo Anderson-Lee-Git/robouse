@@ -20,7 +20,7 @@ robouse run --task real-so101-reach --harness vla --model gr00t/so101 --out runs
 
 ## Presets
 
-`src/robouse/vla/presets.json` fixes, per policy, the wire, the observation template (dotted keys filled from a camera, state fields, the instruction or a constant, with resizing, padding and flips), the action mapping onto the task's action vector (selection, sign, scale, gripper conventions such as OpenVLA's, relative-to-state) and the chunk controller. Shipped: `openpi/pi05_libero`, `openpi/pi0_libero`, `lerobot/groot_n1.7_libero`, `lerobot/evo1_libero`, `lerobot/vla_jepa_libero`, `openvla/openvla-7b-libero`, `molmoact2/libero`, `lerobot/smolvla_libero`, `lerobot/pi05_libero`, `gr00t/so101`, `xpolicylab/metal-joint`, `xpolicylab/so101-joint`, and `*/generic` presets to fill in. Override any field with `ROBOUSE_VLA_POLICY_CONFIG=overrides.json`. State sources are dotted field names, `{"const": [...]}`, or `{"field": name, "scale": s, "fn": "quat_to_axis_angle" | "width_to_fingers"}` for robots that report a quantity in another form. `per_backend: {backend: {...}}` in an override applies top-level keys only on that simulator, so one job can span suites.
+`src/robouse/vla/presets.json` fixes, per policy, the wire, the observation template (dotted keys filled from a camera, state fields, the instruction or a constant, with resizing, padding and flips), the action mapping onto the task's action vector (selection, sign, scale, gripper conventions such as OpenVLA's, relative-to-state) and the chunk controller. Shipped: `openpi/pi05_libero`, `openpi/pi0_libero`, `lerobot/pi0_libero`, `lerobot/pi0fast_libero`, `lerobot/groot_n1.7_libero`, `lerobot/evo1_libero`, `lerobot/vla_jepa_libero`, `openvla/openvla-7b-libero`, `molmoact2/libero`, `lerobot/smolvla_libero`, `lerobot/pi05_libero`, `gr00t/so101`, `xpolicylab/metal-joint`, `xpolicylab/so101-joint`, and `*/generic` presets to fill in. Override any field with `ROBOUSE_VLA_POLICY_CONFIG=overrides.json`. State sources are dotted field names, `{"const": [...]}`, or `{"field": name, "scale": s, "fn": "quat_to_axis_angle" | "width_to_fingers"}` for robots that report a quantity in another form. `per_backend: {backend: {...}}` in an override applies top-level keys only on that simulator, so one job can span suites.
 
 ## Chunk execution and checks
 
@@ -40,13 +40,17 @@ Each policy ran behind its own unmodified server on a Daytona H100 or RTX PRO 60
 | `openpi/pi0_libero` | openpi `pi0_libero` (Gemma terms) | 36/40 | 9 / 9 / 9 / 9 | 94.15% (openpi) |
 | `lerobot/evo1_libero` | `zuoxingdong/evo1_libero` (Qwen licence for the language part) | 40/40 | 10 / 10 / 10 / 10 | 96.65% (LeRobot) |
 | `lerobot/vla_jepa_libero` | `lerobot/VLA-JEPA-LIBERO` (Apache-2.0) | 38/40 | 9 / 10 / 9 / 10 | 96.5% (LeRobot) |
+| `lerobot/pi05_libero` | `lerobot/pi05_libero_finetuned_v044` (Gemma terms; gated PaliGemma tokenizer) | 37/40 | 10 / 10 / 8 / 9 | 97.5% (LeRobot) |
+| `lerobot/pi0fast_libero` | `lerobot/pi0fast-libero` (Gemma terms; gated PaliGemma tokenizer) | 32/39 | 8 / 8 / 10 / 6 | 82.5% (LeRobot) |
+| `lerobot/pi0_libero` | `lerobot/pi0_libero_finetuned_v044` (Gemma terms; gated PaliGemma tokenizer) | 30/40 | 6 / 10 / 7 / 7 | none for this checkpoint |
 | `lerobot/smolvla_libero` | `HuggingFaceVLA/smolvla_libero` (Apache-2.0), `n_action_steps=10` | 26/40 | 5 / 10 / 8 / 3 | none for this checkpoint |
 
-Published figures use LIBERO's held-out initial states and 50 episodes per task; the 95% interval on 38/40 is roughly 83-99%. Jobs: `runs/final-libero-vla-*`.
+LeRobot's pi0-FAST has 39 scored trials: one ended when the Mac running the simulator ran out of disk, and was not rerun. The LeRobot ports ran with `--policy.n_action_steps=10` (pi0-FAST: `--policy.max_action_tokens=256 --policy.gradient_checkpointing=false`), with `HF_TOKEN` set on the server for the tokenizer. Published figures use LIBERO's held-out initial states and 50 episodes per task; the 95% interval on 38/40 is roughly 83-99%. Jobs: `runs/final-libero-vla-*`.
 
 Cross-checks with the upstream evaluators, one episode per task on LIBERO's own initial states:
 - GR00T N1.7, `lerobot-eval` with the same four checkpoints: 37/40 (9 / 10 / 9 / 9). The failed tasks differ from the Robo Use run's.
-- pi0.5, openpi's `examples/libero/main.py` against the same server: libero_spatial 10/10. `lerobot-eval` needs the gated PaliGemma tokenizer (below).
+- pi0.5, openpi's `examples/libero/main.py` against the same server: libero_spatial 10/10.
+- LeRobot's pi0.5 port, `lerobot-eval --policy.n_action_steps=10`: libero_spatial 10/10, libero_10 10/10 (Robo Use: 10/10 and 9/10).
 
 Zero-shot probe (not trained on these tasks): 5 LIBERO-90 tasks, 4 robosuite Panda tasks and 3 Meta-World tasks (`runs/final-zeroshot-vla-*`, mapping in `per_backend` overrides: robosuite shares LIBERO's cameras, state from `hand_quat` and `gripper_open`; Meta-World fills both image slots with its one camera and maps LIBERO's (dx, dy) to (-dy, dx)). pi0.5 solved 1/12 (robosuite Lift, 73 steps); GR00T N1.7 (libero_10 checkpoint) 0/12. Every other trial ran out its step budget.
 
@@ -65,9 +69,9 @@ ROBOUSE_VLA_URL=ws://127.0.0.1:18000 MUJOCO_GL=cgl PYTHONPATH=src .venv/bin/pyth
   --tasks tasks --task-list libero40.txt --harness vla --model openpi/pi05_libero --out runs/final-libero-vla-pi05 --concurrency 4
 ```
 
-GR00T N1.7 loads its backbone weights from the checkpoint, but its processor files come from `nvidia/Cosmos-Reason2-2B`, which is gated. Those files are byte-identical to `Qwen/Qwen3-VL-2B-Instruct` (Apache-2.0), so the run pointed the checkpoint's `groot_n1_7_vlm_encode_v1.model_name` at a local copy of the Qwen files and `base_model_path` at `nvidia/GR00T-N1.7-3B`. Weights unchanged.
+GR00T N1.7 loads its backbone weights from the checkpoint and its processor files from `nvidia/Cosmos-Reason2-2B` (gated; needs `HF_TOKEN`). The checkpoints' `base_model_path` names the trainer's cache, so it is pointed at a local copy of `nvidia/GR00T-N1.7-3B`. The 40-task run above used processor files copied from `Qwen/Qwen3-VL-2B-Instruct`, which are byte-identical to Cosmos-Reason2-2B's; 8 of its tasks (libero-spatial-0/3/6/9, libero-10-0/3/6/9) rerun with NVIDIA's official processor: 8/8, the same as before (`runs/_vla_evidence/groot-cosmos-*`).
 
-Not run: `lerobot/pi05_libero_finetuned_v044`, pi0 and pi0-FAST LeRobot ports (tokenizer from the gated `google/paligemma-3b-pt-224`); openpi `pi0_fast_libero` (failed its first LIBERO task on Robo Use and 0 of 7 in openpi's own evaluator on the same server; the remaining trials hit server timeouts, so no result is published); X-VLA (`lerobot/xvla-libero` needs LIBERO's absolute-pose control mode, Robo Use's tasks use the standard delta controller); LaWAM (`jialei02/lawam-libero-sft-lerobot`: the server hung on `/act` with the GPU idle); ACT and Diffusion (their gym-aloha and PushT tasks are not hosted); WALL-OSS, EO-1, FLUX 3 Action, Multitask DiT (no public checkpoint for a hosted benchmark); LingBot-VA and FastWAM (LIBERO checkpoints, not run within the GPU budget).
+Not run: openpi `pi0_fast_libero` (failed its first LIBERO task on Robo Use and 0 of 7 in openpi's own evaluator on the same server; the remaining trials hit server timeouts, so no result is published); X-VLA (`lerobot/xvla-libero` needs LIBERO's absolute-pose control mode, Robo Use's tasks use the standard delta controller); LaWAM (`jialei02/lawam-libero-sft-lerobot`: the server hung on `/act` with the GPU idle); ACT and Diffusion (their gym-aloha and PushT tasks are not hosted); WALL-OSS, EO-1, FLUX 3 Action, Multitask DiT (no public checkpoint for a hosted benchmark); LingBot-VA and FastWAM (LIBERO checkpoints, not run within the GPU budget).
 
 ## What was tested
 
