@@ -26,6 +26,7 @@ import time
 
 import numpy as np
 
+from ... import config
 from ...workers.client import WorkerUnavailable, decode_png_b64, load_endpoints, remote_worker
 from ..base import StepInfo
 from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Oracle, Sensor, Skill, SkillArg
@@ -36,7 +37,7 @@ ARMS = ("left", "right")
 STEP_S = 0.04  # one RoboDojo action: 10 physics steps of 4 ms
 # A skill call returns after at most this much wall time (the robo client waits 120 s for a reply); the result then
 # says `stopped` and the same call continues from where the arm is.
-SKILL_WALL_S = float(os.environ.get("ROBOUSE_ROBODOJO_SKILL_WALL_S", 90))
+SKILL_WALL_S = float(config.env("ROBOUSE_ROBODOJO_SKILL_WALL_S", "90"))
 
 
 # ---- small rotation helpers (quaternions are w, x, y, z) ------------------------------------------------------------
@@ -479,7 +480,7 @@ def oracle_main(env: str) -> None:
     `robo skill move|grip|home` through the episode socket, like an agent."""
     from .oracles import PLANS
 
-    task = os.environ.get("ROBOUSE_ROBODOJO_TASK") or env
+    task = config.env("ROBOUSE_ROBODOJO_TASK") or env
     o = Oracle()
     plain = o.skill
 

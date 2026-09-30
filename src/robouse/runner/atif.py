@@ -38,6 +38,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..core.protocol import RUNNER_PREFIX
+
 FPS = 30
 OBS_LIMIT = 4000  # characters kept of one tool result (head and tail)
 MSG_LIMIT = 20000
@@ -600,7 +602,7 @@ def _steps_from_trace(entries: list[int], trace: list[dict], harness: str) -> li
 
 def _is_runner_entry(e: dict) -> bool:
     req = e.get("req") or {}
-    return req.get("op") == "status" or (req.get("op") == "give_up" and str(req.get("text", "")).startswith("[runner]"))
+    return req.get("op") == "status" or (req.get("op") == "give_up" and str(req.get("text", "")).startswith(RUNNER_PREFIX))
 
 
 def _entry_sig(e: dict) -> tuple | None:

@@ -21,6 +21,14 @@ FINISH_MESSAGES = {
     "safety_stop": "stopped by the safety layer (the robot holds; a human must check it)",
 }
 
+# the runner's own give-up (the agent timed out or exited without `robo done`) starts with this
+RUNNER_PREFIX = "[runner]"
+
+
+def agent_refused(outcome: str | None, text: str) -> bool:
+    """The agent itself gave up (`robo give-up`), as opposed to the runner closing the episode for it."""
+    return outcome == "gave_up" and not str(text).startswith(RUNNER_PREFIX)
+
 
 def read_request(conn: socket.socket) -> dict:
     """One request line from a connection (at most MAX_REQUEST_BYTES)."""

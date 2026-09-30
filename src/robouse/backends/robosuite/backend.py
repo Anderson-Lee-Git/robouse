@@ -30,13 +30,14 @@ import sys
 
 import numpy as np
 
+from ... import config
 from ..base import ActionSpec, Backend, G, StepInfo
 
 TWO_ARM = {"TwoArmLift", "TwoArmPegInHole", "TwoArmHandover", "TwoArmTransport"}
 
 
 def _import_robosuite():
-    path = os.environ.get("ROBOUSE_ROBOSUITE_PATH") or os.path.join(sys.prefix, "robosuite-1.5")
+    path = config.env("ROBOUSE_ROBOSUITE_PATH") or os.path.join(sys.prefix, "robosuite-1.5")
     if "robosuite" not in sys.modules and os.path.isdir(path) and path not in sys.path:
         sys.path.insert(0, path)
     os.environ.setdefault("MUJOCO_GL", "cgl" if sys.platform == "darwin" else "egl")

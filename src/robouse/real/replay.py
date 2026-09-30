@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import config
 from .robots import Profile
 
 HIL_DIR = Path(__file__).resolve().with_name("fixtures")
@@ -36,7 +37,7 @@ def fixture_dir(name: str) -> Path:
     p = Path(name)
     if p.is_dir():
         return p
-    for root in [os.environ.get("ROBOUSE_HIL_DIR", ""), str(HIL_DIR)]:
+    for root in [config.env("ROBOUSE_HIL_DIR"), str(HIL_DIR)]:
         if root and (Path(root) / name).is_dir():
             return Path(root) / name
     raise FileNotFoundError(

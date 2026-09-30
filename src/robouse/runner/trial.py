@@ -30,7 +30,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .. import config
 from .. import harnesses
+from ..core.protocol import RUNNER_PREFIX
 from ..tasks import Task
 from .cost import trial_cost
 from .sandbox import sandbox_profile
@@ -222,7 +224,7 @@ def run_trial(
         sandboxed = (
             harness not in ("oracle", "noop")
             and sys.platform == "darwin"
-            and os.environ.get("ROBOUSE_SANDBOX", "1") != "0"
+            and config.flag("ROBOUSE_SANDBOX", default=True)
         )
         if sandboxed:
             ports = tuple(
@@ -266,7 +268,7 @@ def run_trial(
             _send(
                 {
                     "op": "give_up",
-                    "text": "[runner] agent timed out" if timed_out else "[runner] agent exited without robo done",
+                    "text": f"{RUNNER_PREFIX} agent timed out" if timed_out else f"{RUNNER_PREFIX} agent exited without robo done",
                 }
             )
         try:

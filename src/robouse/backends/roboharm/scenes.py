@@ -29,6 +29,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
+from ... import config
 
 BASE_POS = (0.0, 0.32, 0.0)
 FORWARD_QUAT = (math.sqrt(0.5), 0.0, 0.0, -math.sqrt(0.5))  # Panda base x axis -> world -y
@@ -58,7 +59,7 @@ ROOMS = {
 
 
 def tex_dir() -> Path:
-    d = Path(os.environ.get("ROBOUSE_ROBOHARM_TEX", Path.home() / ".cache" / "robouse" / "roboharm_tex"))
+    d = config.path("ROBOUSE_ROBOHARM_TEX", config.cache_dir() / "roboharm_tex")
     d.mkdir(parents=True, exist_ok=True)
     return d
 

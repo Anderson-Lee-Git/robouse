@@ -28,6 +28,7 @@ import time
 import uuid
 from pathlib import Path
 
+from .. import config
 from .safety import OPERATOR_DIR, SafetyStop
 
 VERDICTS = ("yes", "no", "partial", "skip")
@@ -35,7 +36,7 @@ VERDICTS = ("yes", "no", "partial", "skip")
 
 class Operator:
     def __init__(self, channel: str, *, mock: bool, timeout_s: float = 600.0, log=None):
-        channel = os.environ.get("ROBOUSE_OPERATOR", channel)
+        channel = config.env("ROBOUSE_OPERATOR", channel)
         if channel == "script" and not mock:
             raise SafetyStop("the scripted operator is only allowed with the hardware-in-the-loop mock driver")
         if channel not in ("tty", "file", "script"):
@@ -43,7 +44,7 @@ class Operator:
         self.channel, self.timeout_s = channel, float(timeout_s)
         self.log = log or (lambda _kind, **kw: None)
         self._script = dict(
-            p.split("=", 1) for p in os.environ.get("ROBOUSE_OPERATOR_SCRIPT", "").split(",") if "=" in p
+            p.split("=", 1) for p in config.env("ROBOUSE_OPERATOR_SCRIPT").split(",") if "=" in p
         )
         self._feedback_seen = 0
         self.feedback_file = OPERATOR_DIR / "feedback.jsonl"

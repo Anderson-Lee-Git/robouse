@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ... import config
 from ...real.drivers import make_driver
 from ...real.operator import Operator
 from ...real.robots import profile as get_profile
@@ -38,7 +39,7 @@ class RealArmBackend(EmbodiedBackend):
     def __init__(self, spec: dict):
         super().__init__(spec)
         self.cfg = dict(spec.get("real") or {})
-        rig = os.environ.get("ROBOUSE_RIG")  # the operator's rig file switches the same task onto live hardware
+        rig = config.env("ROBOUSE_RIG")  # the operator's rig file switches the same task onto live hardware
         if rig:
             import yaml
 
@@ -81,7 +82,7 @@ class RealArmBackend(EmbodiedBackend):
         self.lock = None
         self.attended = bool(self.cfg.get("attended", True))
         if not self.attended and not self.mock:
-            if os.environ.get("ROBOUSE_REAL_UNATTENDED") != "1":
+            if not config.flag("ROBOUSE_REAL_UNATTENDED"):
                 raise SafetyStop("unattended live runs need ROBOUSE_REAL_UNATTENDED=1 in the operator's environment")
         self.goal = self.cfg.get("goal") or {}
         self.verdict_mode = self.cfg.get(

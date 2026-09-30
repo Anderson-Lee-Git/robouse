@@ -28,9 +28,10 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import config
 from .robots import EnvelopeDefaults, Profile
 
-OPERATOR_DIR = Path(os.environ.get("ROBOUSE_OPERATOR_DIR", Path.home() / ".config" / "robouse-operator"))
+OPERATOR_DIR = config.operator_dir()
 
 
 class Veto(RuntimeError):
@@ -42,7 +43,7 @@ class SafetyStop(RuntimeError):
 
 
 def estop_path(robot: str = "") -> Path:
-    return Path(os.environ.get("ROBOUSE_ESTOP_FILE", OPERATOR_DIR / "ESTOP"))
+    return config.path("ROBOUSE_ESTOP_FILE", OPERATOR_DIR / "ESTOP")
 
 
 def estop_engaged(robot: str = "") -> str | None:

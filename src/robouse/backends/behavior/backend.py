@@ -30,6 +30,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ... import config
 from ...workers.client import decode_png_b64, load_endpoints, remote_worker
 from ..base import ActionSpec, Backend, StepInfo
 
@@ -230,7 +231,7 @@ def oracle_main(env: str) -> None:
     sent through the socket like an agent's `robo skill` calls."""
     from ...agent_cli import _send
 
-    plan_path = Path(os.environ["ROBOUSE_BEHAVIOR_PLAN"])  # set by the task's oracle/solve.sh
+    plan_path = Path(config.env("ROBOUSE_BEHAVIOR_PLAN"))  # set by the task's oracle/solve.sh
     plan = json.loads(plan_path.read_text())
     for step in plan:
         r = _send({"op": "skill", "name": step[0], "args": step[1:]})
