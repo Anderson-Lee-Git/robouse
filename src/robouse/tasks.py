@@ -29,11 +29,12 @@ class Task:
 
     @property
     def id(self) -> str:
-        return self.meta.get("robouse", {}).get("id") or self.path.name
+        return self.spec["id"]
 
     @property
     def spec(self) -> dict:
-        s = dict(self.meta.get("robouse", {}))
+        # an exported BenchFlow package (`robouse export`, the hub datasets) keeps the block under metadata
+        s = dict(self.meta.get("robouse") or self.meta.get("metadata", {}).get("robouse", {}))
         s.setdefault("id", self.path.name)
         return s
 

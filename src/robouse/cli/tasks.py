@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import math
 import shutil
 import sys
 from pathlib import Path
@@ -330,11 +331,20 @@ def _compose(a) -> int:
     return 0 if n else 1
 
 
+def _same(x, y) -> bool:
+    """Equal layouts, up to the last bits of a float (x86 and ARM round some trigonometry differently)."""
+    if isinstance(x, dict) and isinstance(y, dict):
+        return x.keys() == y.keys() and all(_same(x[k], y[k]) for k in x)
+    if isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
+        return len(x) == len(y) and all(_same(u, v) for u, v in zip(x, y, strict=True))
+    if isinstance(x, float) or isinstance(y, float):
+        return isinstance(x, (int, float)) and isinstance(y, (int, float)) and math.isclose(x, y, rel_tol=1e-9, abs_tol=1e-12)
+    return x == y
+
+
 def _from(a) -> int:
     """Regenerate a composed task from its recorded instance (ids, versions, modifiers, seed), and prove the layout is
     the recorded one."""
-    import yaml
-
     from ..backends.components.backend import read_block
     from ..components.registry import load
     from ..tasks import load_task
@@ -369,7 +379,7 @@ def _from(a) -> int:
     if not ok:
         return _err(msg)
     new = read_block(load_task(d).spec)
-    same = yaml.safe_dump(new["instance"], sort_keys=True) == yaml.safe_dump(rec["instance"], sort_keys=True)
+    same = _same(new["instance"], rec["instance"])
     if not same and not (changed or a.upgrade):
         print(
             f"robouse: the regenerated layout differs from the recorded one in {a.src} (the component code changed without a "
@@ -423,6 +433,13 @@ def check_task(d: Path, level: str = "structural", run: bool = True, keep_runs: 
         pass
     except Exception as e:  # noqa: BLE001
         problems.append(f"bench tasks check could not run: {type(e).__name__}: {e}")
+    if run and not problems and (d / "environment" / "Dockerfile").is_file():
+        # an exported package (`robouse export`, the hub datasets) runs in its own containers, not in the local engine
+        print(
+            f"trials: run them with `bench eval run --tasks-dir {d.parent} --include {d.name} --agent oracle`, "
+            f"or regenerate the task with `robouse tasks init --from {d} --out DIR` and check that"
+        )
+        run = False
     if run and not problems:
         from ..components.compose import validate
 
