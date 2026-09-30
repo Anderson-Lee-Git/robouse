@@ -1022,8 +1022,15 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
     fm = dict(fm or {})
     fm["total_steps"] = len(atif_steps)
     if harness.startswith("mini-swe-agent"):
+        # mini reports no totals: sum its per-step usage, so runner/cost.py can price the trial. Its own
+        # instance_cost is 0.0 for models litellm has no price for (the Baseten ones), so a zero is not kept.
+        for key in ("prompt_tokens", "completion_tokens", "cached_tokens"):
+            vals = [(st.get("metrics") or {}).get(key) for st in atif_steps]
+            vals = [v for v in vals if isinstance(v, (int, float))]
+            if vals and fm.get(f"total_{key}") is None:
+                fm[f"total_{key}"] = int(sum(vals))
         ms = (meta.get("info") or {}).get("model_stats") or {}
-        if ms.get("instance_cost") is not None:
+        if ms.get("instance_cost"):
             fm["total_cost_usd"] = ms["instance_cost"]
     traj["final_metrics"] = {k: v for k, v in fm.items() if v is not None}
     if meta.get("result", {}).get("result") and not any(
