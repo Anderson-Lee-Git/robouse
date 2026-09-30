@@ -14,7 +14,7 @@ Wire protocols (`wire` in the policy config):
               one action
   gr00t       Isaac GR00T N1.6/N1.7 policy server: ZeroMQ REQ/REP, msgpack + msgpack-numpy,
               {"endpoint": "get_action", "data": {"observation": {...}}} -> [action dict {key: [B, H, D]}, info]
-  http-json   plain HTTP JSON (Robo Use's MolmoAct2 server and `robouse policy-server` for any LeRobot policy:
+  http-json   plain HTTP JSON (Robo Use's MolmoAct2 server and src/robouse/vla/lerobot_server.py for any LeRobot policy:
               SmolVLA, pi0, ACT, diffusion): POST /reset, POST /act {"task", "images": {slot: base64 PNG}, "state"} ->
               {"actions": [[...]]}
 
@@ -541,8 +541,17 @@ def _set(d: dict, dotted: str, value, nested: bool) -> None:
 
 
 def _state_vector(state: dict, fields: list) -> np.ndarray:
+    """Concatenate state fields. A field is a dotted name, or {"const": [...]}, or {"field": name, "scale": s, "fn": f}
+    (scale, then one of STATE_FNS) for embodiments that report the quantity differently."""
     vals = []
     for f in fields:
+        if isinstance(f, dict):
+            if "const" in f:
+                vals.extend(np.asarray(f["const"], dtype=np.float64).ravel().tolist())
+                continue
+            v = _state_vector(state, [f["field"]]) * float(f.get("scale", 1.0))
+            vals.extend((STATE_FNS[f["fn"]](v) if f.get("fn") else v).ravel().tolist())
+            continue
         v = state
         for part in f.split("."):
             v = v[part]
@@ -550,6 +559,22 @@ def _state_vector(state: dict, fields: list) -> np.ndarray:
             v = list(v.values())
         vals.extend(np.asarray(v, dtype=np.float64).ravel().tolist())
     return np.asarray(vals, dtype=np.float64)
+
+
+def quat_to_axis_angle(q) -> np.ndarray:
+    """Quaternion (x, y, z, w) -> axis-angle (3), as robosuite's quat2axisangle (LIBERO's state)."""
+    q = np.asarray(q, dtype=np.float64)[:4]
+    w = float(np.clip(q[3], -1.0, 1.0))
+    den = np.sqrt(1.0 - w * w)
+    return np.zeros(3) if den < 1e-10 else q[:3] * 2.0 * np.arccos(w) / den
+
+
+# state transforms for embodiments that expose the same quantity in another form (zero-shot mappings):
+# a hand quaternion to LIBERO's axis-angle, one gripper width to two finger joints (+w/2, -w/2)
+STATE_FNS = {
+    "quat_to_axis_angle": quat_to_axis_angle,
+    "width_to_fingers": lambda v: np.asarray([v[0] / 2.0, -v[0] / 2.0], dtype=np.float64),
+}
 
 
 class Observer:
@@ -601,6 +626,8 @@ class Observer:
                     val = img.reshape((1,) * int(src.get("batch", 0)) + img.shape)
             elif "state" in src:
                 v = _state_vector(state, src["state"])
+                if src.get("fn"):
+                    v = STATE_FNS[src["fn"]](v)
                 if src.get("slice"):
                     v = v[int(src["slice"][0]):int(src["slice"][1])]
                 if src.get("scale") is not None:
@@ -932,6 +959,8 @@ def main() -> int:
         emit(type="error", error=info.get("error"))
         return 1
     info = info["result"]
+    # per_backend: {backend: {top-level keys}} merged over the preset for that simulator (one job across suites)
+    cfg = {**cfg, **(cfg.get("per_backend") or {}).get(str(info.get("backend")), {})}
     language = os.environ.get("ROBOUSE_TASK_LANGUAGE", "").strip()
     emit(type="start", task=info.get("task"), backend=info.get("backend"), action_dim=len(info["action"]["names"]),
          max_steps=info["max_steps"], language=language, wire=cfg.get("wire"), preset=cfg.get("preset"), server=url)

@@ -65,3 +65,20 @@ def test_presets_resolve():
     for name in vla.presets():
         cfg = vla.resolve(name)
         assert cfg["wire"] in C.WIRES, name
+
+
+def test_state_transforms_for_zero_shot_mappings():
+    # gripper pointing straight down: quaternion (1, 0, 0, 0) -> axis-angle (pi, 0, 0), as robosuite's quat2axisangle
+    assert np.allclose(C.quat_to_axis_angle([1.0, 0.0, 0.0, 0.0]), [np.pi, 0, 0])
+    assert np.allclose(C.quat_to_axis_angle([0.0, 0.0, 0.0, 1.0]), [0, 0, 0])
+    assert np.allclose(C.STATE_FNS["width_to_fingers"](np.array([0.08])), [0.04, -0.04])
+    cfg = {"obs": {"s": {"state": ["hand_quat"], "fn": "quat_to_axis_angle"}, "g": {"state": ["gripper_open"], "fn": "width_to_fingers"}}}
+    out = C.Observer(cfg, {}, "x").build({}, {"hand_quat": [1.0, 0.0, 0.0, 0.0], "gripper_open": 0.06})
+    assert out["s"].shape == (3,) and np.allclose(out["g"], [0.03, -0.03])
+
+
+def test_state_fields_const_scale_and_fn():
+    st = {"hand_pos": [0.1, 0.2, 0.3], "gripper_open": 1.0}
+    v = C._state_vector(st, ["hand_pos", {"const": [np.pi, 0, 0]}, {"field": "gripper_open", "scale": 0.08, "fn": "width_to_fingers"}])
+    assert np.allclose(v, [0.1, 0.2, 0.3, np.pi, 0, 0, 0.04, -0.04])
+

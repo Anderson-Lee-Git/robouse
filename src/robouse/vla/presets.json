@@ -5,7 +5,7 @@
     "backends": [
       "libero"
     ],
-    "licence": "openpi: Apache-2.0; pi05_libero checkpoint: Physical Intelligence terms",
+    "licence": "openpi code Apache-2.0; checkpoint gs://openpi-assets/checkpoints/pi05_libero (PaliGemma-based, Gemma terms)",
     "doc": "pi0.5 fine-tuned on LIBERO, served by openpi `scripts/serve_policy.py --env LIBERO` (GPU). Same observation as openpi's examples/libero/main.py: both cameras rotated 180 degrees from robosuite's raw frames and padded to 224x224, 8-D state (eef pos, axis-angle, gripper qpos), replan every 5 actions.",
     "obs": {
       "observation/image": {
@@ -51,7 +51,7 @@
   },
   "openpi/pi0_libero": {
     "inherit": "openpi/pi05_libero",
-    "doc": "pi0 fine-tuned on LIBERO (openpi `--env LIBERO` with the pi0_libero config)."
+    "doc": "pi0 fine-tuned on LIBERO: openpi `scripts/serve_policy.py policy:checkpoint --policy.config=pi0_libero --policy.dir=gs://openpi-assets/checkpoints/pi0_libero`. Same observation as pi0.5."
   },
   "openvla/openvla-7b-libero": {
     "wire": "openvla",
@@ -97,7 +97,7 @@
       "libero"
     ],
     "licence": "MolmoAct2 weights Apache-2.0 (allenai)",
-    "doc": "MolmoAct2-LIBERO behind Robo Use's LeRobot server (src/robouse/molmoact2/server.py or `robouse policy-server`). Upright images; the server does LeRobot's LIBERO preprocessing.",
+    "doc": "MolmoAct2-LIBERO behind Robo Use's LeRobot server (src/robouse/molmoact2/server.py or `src/robouse/vla/lerobot_server.py`). Upright images; the server does LeRobot's LIBERO preprocessing.",
     "nested_obs": true,
     "obs": {
       "task": {
@@ -144,7 +144,7 @@
   "lerobot/smolvla_libero": {
     "inherit": "molmoact2/libero",
     "licence": "SmolVLA Apache-2.0 (Hugging Face LeRobot)",
-    "doc": "SmolVLA fine-tuned on LIBERO (HuggingFaceVLA/smolvla_libero) behind `robouse policy-server -- --policy.path=HuggingFaceVLA/smolvla_libero --env.type=libero ...` (runs on CPU, slowly, or GPU). SmolVLA-LIBERO names its cameras image and image2.",
+    "doc": "SmolVLA fine-tuned on LIBERO (HuggingFaceVLA/smolvla_libero) behind `lerobot_server.py -- --policy.path=HuggingFaceVLA/smolvla_libero --env.type=libero ...` (runs on CPU, slowly, or GPU). SmolVLA-LIBERO names its cameras image and image2.",
     "obs": {
       "task": {
         "text": true
@@ -179,8 +179,23 @@
   },
   "lerobot/pi05_libero": {
     "inherit": "molmoact2/libero",
-    "licence": "LeRobot port of pi0.5; weights per the model card",
-    "doc": "LeRobot's pi0.5 LIBERO port (lerobot/pi05_libero) behind `robouse policy-server`."
+    "licence": "lerobot/pi05_libero_finetuned_v044: Gemma terms; its tokenizer comes from the gated google/paligemma-3b-pt-224 (accept the licence, then `hf auth login`)",
+    "doc": "LeRobot's pi0.5 LIBERO port (lerobot/pi05_libero_finetuned_v044) behind `src/robouse/vla/lerobot_server.py`. openpi's own pi05_libero checkpoint needs no gated download: preset openpi/pi05_libero."
+  },
+  "lerobot/groot_n1.7_libero": {
+    "inherit": "molmoact2/libero",
+    "licence": "GR00T N1.7 LIBERO checkpoints Apache-2.0 (nvidia/gr00t17-lerobot-libero_*-640); base nvidia/GR00T-N1.7-3B NVIDIA Open Model License",
+    "doc": "GR00T N1.7 fine-tuned per LIBERO suite (nvidia/gr00t17-lerobot-libero_{spatial,object,goal,10}-640) behind `src/robouse/vla/lerobot_server.py` (lerobot_server.py, `--env.type=libero`); one server per suite. Cameras image and wrist_image, 16 actions per request."
+  },
+  "lerobot/vla_jepa_libero": {
+    "inherit": "lerobot/smolvla_libero",
+    "licence": "VLA-JEPA Apache-2.0 (lerobot/VLA-JEPA-LIBERO)",
+    "doc": "VLA-JEPA fine-tuned on LIBERO behind `src/robouse/vla/lerobot_server.py` (`--env.type=libero`, cameras image and image2)."
+  },
+  "lerobot/evo1_libero": {
+    "inherit": "lerobot/smolvla_libero",
+    "licence": "EVO1 code MIT; zuoxingdong/evo1_libero weights 'other' (InternVL3 MIT, Qwen language component under the Qwen licence)",
+    "doc": "EVO1 fine-tuned on LIBERO behind `src/robouse/vla/lerobot_server.py` (`--env.type=libero`, cameras image and image2)."
   },
   "gr00t/so101": {
     "wire": "gr00t",
