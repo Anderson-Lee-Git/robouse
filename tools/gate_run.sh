@@ -25,6 +25,9 @@ declare -A BY
 for s in "${SUITES[@]}"; do BY[${RT[$s]}]+="${BY[${RT[$s]}]:+,}$s"; done
 status=0
 for rt in "${!BY[@]}"; do
+  # the per-backend smoke tests, in the runtime that has the simulator
+  docker run --rm -e HOME=/tmp -v "$REPO":/src:ro "robouse-gate-$rt" python -m pytest -q -p no:cacheprovider \
+    tests/test_backends_smoke.py 2>&1 | tail -1 | sed "s/^/$rt smoke: /" || status=1
   docker run --rm -e HOME=/tmp -v "$REPO":/src:ro -v "$HERE/gate.py":/gate.py:ro -v "$OUT":/out "robouse-gate-$rt" \
     python /gate.py --repo /src --out "/out/$rt" --per-suite "$PER" --concurrency 4 --suites "${BY[$rt]}" || status=1
 done
