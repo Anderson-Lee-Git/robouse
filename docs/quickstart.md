@@ -4,7 +4,7 @@ Install Robo Use and let Claude Code drive a simulated robot through one task.
 
 ## Install
 
-Python 3.11 to 3.13:
+Python 3.12 to 3.13:
 
 ```sh
 python3.12 -m venv .venv && source .venv/bin/activate
@@ -46,6 +46,8 @@ $ robouse run --task arc-gravity --harness claude-code --model claude-sonnet-5 -
 ```
 
 Claude Code worked for about a minute and a half: it read the task, observed the scene, moved the blocks with `robo move-to`, and called `robo done`. The episode server then checked where the blocks ended up and scored the trial 1. The run made 36 `robo` calls and cost about $0.64 in API usage.
+
+This trial was run with the local engine, which runs Claude Code on your machine; add `--engine local` to get the same output. Without it, `robouse run` runs the trial on BenchFlow in Docker, with the simulator in its own container, and writes it to `runs/quickstart/<job>/arc-gravity__<id>/`.
 
 ## Look at the result
 

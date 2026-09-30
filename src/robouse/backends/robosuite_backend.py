@@ -29,7 +29,7 @@ import sys
 
 import numpy as np
 
-from .base import ActionSpec, Backend, StepInfo
+from .base import ActionSpec, Backend, StepInfo, G
 
 TWO_ARM = {"TwoArmLift", "TwoArmPegInHole", "TwoArmHandover", "TwoArmTransport"}
 
@@ -67,6 +67,32 @@ def _r(v, n=4):
 
 class RobosuiteBackend(Backend):
     name = "robosuite"
+    probe_success = False  # built with reward_shaping=False; step() already reports success
+
+    @property
+    def robot_name(self) -> str:
+        return "+".join(type(r.robot_model).__name__.lower() for r in self.env.robots)
+
+    @property
+    def robot_kind(self) -> str:
+        if len(self.env.robots) > 1:
+            return "bimanual"
+        return "mobile_manipulator" if any(k == "base" for (_, k, _, _) in self._layout) else "arm"
+
+    def action_layout(self) -> list[G]:
+        multi = len(self.env.robots) > 1
+        lay: list[G] = []
+        for i, kind, s, e in self._layout:
+            pre = f"r{i}." if multi else ""
+            n = e - s
+            if kind == "arm":
+                lay += [G(f"{pre}arm.ee_delta", 3, "ee_delta_pos", "OSC: 1.0 asks for 5 cm", frame="world"),
+                        G(f"{pre}arm.ee_rot_delta", 3, "ee_delta_rot", "OSC: 1.0 asks for 0.5 rad", frame="world")]
+            elif kind == "grip":
+                lay.append(G(f"{pre}gripper", n, "gripper", "normalized", doc="+1 close, -1 open, 0 keep"))
+            else:
+                lay.append(G(f"{pre}{kind}", n, "other"))
+        return lay
     image_flipped = False  # mujoco.Renderer returns upright images
 
     def __init__(self, spec: dict):

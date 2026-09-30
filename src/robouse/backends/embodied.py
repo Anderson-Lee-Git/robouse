@@ -127,6 +127,10 @@ class Skill:
         return out
 
 
+# the embodiment family -> BenchFlow's embodiment kind
+SPEC_KIND = {"aerial": "drone", "dexterous_hand": "hand", "wheeled": "vehicle"}
+
+
 @dataclass
 class Budget:
     max_steps: int
@@ -199,7 +203,7 @@ class Embodiment:
                              **({"choices": a.choices} if a.choices else {}),
                              **({"optional": True, "default": a.default} if a.default is not None else {}),
                              **({"doc": a.doc} if a.doc else {})} for a in sk.args]} for sk in self.skills]
-        return {"spec_version": "1", "name": self.robot, "kind": self.family, "assets": list(self.assets),
+        return {"spec_version": "1", "name": self.robot, "kind": SPEC_KIND.get(self.family, self.family), "assets": list(self.assets),
                 "step_s": self.budget.control_dt, "action_groups": groups, "sensors": sensors, "skills": skills,
                 "budgets": {"max_steps": self.budget.max_steps, "max_repeat": max_repeat,
                             "max_skill_steps": max((sk.max_steps for sk in self.skills), default=0), "settle_steps": settle_steps},

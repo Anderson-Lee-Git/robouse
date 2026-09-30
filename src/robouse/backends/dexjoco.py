@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .base import ActionSpec, Backend, StepInfo
+from .base import ActionSpec, Backend, StepInfo, G
 
 WORKER = Path(__file__).with_name("dexjoco_worker.py")
 DEFAULT_PY = Path.home() / ".cache" / "robouse" / "dexjoco-venv" / "bin" / "python"
@@ -37,6 +37,31 @@ FINGER_NAMES = [f"{f}{j}" for f in ("index", "middle", "ring", "thumb") for j in
 
 class DexjocoBackend(Backend):
     name = "dexjoco"
+    probe_success = False  # step() already reports DexJoCo's success signal
+
+    @property
+    def robot_name(self) -> str:
+        return "bimanual-panda-allegro" if self.bimanual else "panda-allegro"
+
+    @property
+    def robot_kind(self) -> str:
+        return "bimanual" if self.bimanual else "hand"
+
+    @property
+    def proprioception(self) -> tuple[str, ...]:
+        if self.bimanual:
+            return tuple(f"{a}_{f}" for a in ("right", "left") for f in ("hand_pos", "finger_joints"))
+        return ("hand_pos", "finger_joints")
+
+    def action_layout(self) -> list[G]:
+        lay = []
+        for arm in (["right", "left"] if self.bimanual else ["arm"]):
+            hand = f"{arm}.hand" if self.bimanual else "hand"
+            lay += [G(f"{arm}.ee_delta", 3, "ee_delta_pos", "2 cm per unit (commanded pose)", frame="world"),
+                    G(f"{arm}.ee_rot_delta", 3, "ee_delta_rot", "0.2 rad per unit (commanded pose)", frame="world"),
+                    G(f"{hand}.joints", 16, "joint_delta", "0.3 rad per unit",
+                      doc="Allegro joint targets: index 0-3, middle 4-7, ring 8-11, thumb 12-15")]
+        return lay
     image_flipped = False
 
     def __init__(self, spec: dict):

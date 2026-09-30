@@ -39,6 +39,10 @@ def metaworld_oracle(env_name: str, steps: int) -> None:
     _send({"op": "done", "text": "oracle finished"})
 
 
+# backend -> the module whose oracle_main the reference solution runs (when it is not robouse.backends.<backend>)
+ORACLE_MODULES = {"robosuite": "robouse.backends.robosuite_backend", "metaworld": "robouse.oracle"}
+
+
 def _upstream() -> dict:
     from .backends import UPSTREAM
 

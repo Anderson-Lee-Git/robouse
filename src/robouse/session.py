@@ -18,6 +18,7 @@ Agent observation images are never affected. Frames are written to the video as 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import socket
 import time
@@ -27,6 +28,9 @@ from typing import Any
 import numpy as np
 
 from .backends import make_backend
+from .backends.base import embodiment_dict
+
+log = logging.getLogger(__name__)
 
 SETTLE_STEPS = 10  # after `done`, hold still this many steps before judging success
 MAX_REPEAT = 50
@@ -318,8 +322,15 @@ class Episode:
             **({"max_repeat": self.max_repeat} if "max_repeat" in self.spec else {}),
             **(self.backend.info_extra() if callable(getattr(self.backend, "info_extra", None)) else {}),
             **({"visible_fields": self.visible_fields, "cameras": self.camera_info()} if self.obs_mode == "vision" else {}),
-            **({"embodiment": self.backend.embodiment()} if callable(getattr(self.backend, "embodiment", None)) else {}),
+            **self._embodiment_info(),
         }
+
+    def _embodiment_info(self) -> dict:
+        try:
+            return {"embodiment": embodiment_dict(self.backend)}
+        except Exception as e:  # noqa: BLE001 - a declaration bug must not break `robo info`
+            log.warning("embodiment of %s: %s: %s", self.backend.name, type(e).__name__, e)
+            return {}
 
     def observe(self, image: bool, privileged: bool = False, camera: str | None = None) -> dict:
         out = {"state": self._state(privileged), "steps_used": self.steps, "max_steps": self.max_steps}

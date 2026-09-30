@@ -23,7 +23,7 @@ from typing import Any
 
 import numpy as np
 
-from .base import ActionSpec, Backend, StepInfo
+from .base import ActionSpec, Backend, StepInfo, G, arm_layout
 
 COLORS: dict[str, tuple[float, float, float]] = {
     "red": (0.85, 0.15, 0.15), "blue": (0.15, 0.32, 0.85), "green": (0.15, 0.62, 0.25),
@@ -300,6 +300,12 @@ def _quat_yaw_tilt(xmat: np.ndarray) -> tuple[float, float]:
 
 class TabletopBackend(Backend):
     name = "tabletop"
+    robot_name = "tabletop-arm-2f"
+    probe_success = False  # step() already evaluates success()
+
+    def action_layout(self) -> list[G]:
+        return arm_layout("gripper velocity, about 1 cm per unit per step",
+                          grip_doc="+1 close, -1 open; intermediate values give a partial opening")
 
     def __init__(self, spec: dict):
         import mujoco

@@ -23,7 +23,7 @@ from collections import deque
 
 import numpy as np
 
-from .base import ActionSpec, Backend, StepInfo
+from .base import ActionSpec, Backend, StepInfo, G, arm_layout
 
 # task id -> (env id, seed). Maze seeds were picked for long start->goal paths (BFS cells: UMaze 5/6,
 # Medium 9/9, Large 16/13). FetchSlide is not included: no scripted solution through the public
@@ -57,6 +57,24 @@ def _make(env_id: str, **kw):
 
 class GymRoboticsBackend(Backend):
     name = "gymrobotics"
+    probe_success = False  # step() already reports success (Fetch and PointMaze rewards are sparse)
+
+    @property
+    def robot_name(self) -> str:
+        return "pointmaze-ball" if self.is_maze else "fetch-2f"
+
+    @property
+    def robot_kind(self) -> str:
+        return "other" if self.is_maze else "arm"
+
+    @property
+    def proprioception(self) -> tuple[str, ...]:
+        return ("agent_pos", "agent_vel", "agent_cell") if self.is_maze else ("hand_pos", "gripper_open")
+
+    def action_layout(self) -> list[G]:
+        if self.is_maze:
+            return [G("ball.force", 2, "force", "normalized force along world x/y", frame="world")]
+        return arm_layout("5 cm per unit per step")
 
     def __init__(self, spec: dict, width: int = 320, height: int = 320):
         self.env_id = str(spec["env"])
