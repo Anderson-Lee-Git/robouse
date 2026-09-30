@@ -54,8 +54,8 @@ class Crazyflie(Driver):
     def attach(self, s) -> None:
         import mujoco
 
-        from ....assets import robot_dir
-        from ...crazyflie.backend import M_RP, M_Y
+        from .....assets import robot_dir
+        from ....crazyflie.backend import M_RP, M_Y
 
         cf = mujoco.MjSpec.from_file(str(robot_dir("bitcraze_crazyflie_2") / "cf2.xml"))
         for k in list(cf.keys):
@@ -141,7 +141,7 @@ class Crazyflie(Driver):
             self.landed = False
 
     def substep(self, dt: float) -> None:
-        from ...crazyflie.backend import A_XY, A_Z, GEAR, KP_HOLD, KV, M_RP, M_Y, T_MAX
+        from ....crazyflie.backend import A_XY, A_Z, GEAR, KP_HOLD, KV, M_RP, M_Y, T_MAX
 
         d = self.d
         ids = self.acts
@@ -194,7 +194,7 @@ class Crazyflie(Driver):
 
     # ---- skills ------------------------------------------------------------------------------------------------
     def _goto_cmd(self, target) -> np.ndarray:
-        from ...crazyflie.backend import KP_GOTO, LEAD
+        from ....crazyflie.backend import KP_GOTO, LEAD
 
         p, v = self.pos(), self.vel()
         c = KP_GOTO * (np.asarray(target) - (p + LEAD * v))

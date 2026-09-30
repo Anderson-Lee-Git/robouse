@@ -28,7 +28,7 @@ class Go2(FloorRobot):
         s.option.impratio = 100
 
     def groups(self) -> list[ActionGroup]:
-        from ...quadruped.sim.gait import CFGS
+        from ....quadruped.sim.gait import CFGS
 
         vx, vy, wz = CFGS["go2"].v_max
         wz_deg = round(math.degrees(wz))
@@ -56,8 +56,8 @@ class Go2(FloorRobot):
     def attach(self, s) -> None:
         import mujoco
 
-        from ....assets import robot_dir
-        from ...quadruped.sim.gait import CFGS
+        from .....assets import robot_dir
+        from ....quadruped.sim.gait import CFGS
 
         cfg = CFGS["go2"]
         self.xml = str(robot_dir(cfg.folder) / cfg.xml)
@@ -78,13 +78,13 @@ class Go2(FloorRobot):
 
     def bind(self, m, d) -> None:
         super().bind(m, d)
-        from ...quadruped.sim.gait import CFGS, Gait
+        from ....quadruped.sim.gait import CFGS, Gait
 
         self.gait = Gait(CFGS["go2"], m, d, self.prefix, self.xml)
         self.body_geoms = {g for g in self.robot_geoms if m.geom_bodyid[g] == self.gait.base}
 
     def init_state(self) -> None:
-        from ...quadruped.sim.gait import CFGS
+        from ....quadruped.sim.gait import CFGS
 
         g = self.gait
         x, y, yaw = self.start_pose()

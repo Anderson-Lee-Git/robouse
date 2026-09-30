@@ -90,7 +90,7 @@ class ArmRig(Driver):
     def post_forward(self) -> None:
         import mujoco
 
-        from ...menagerie.sim.ik import ArmIK
+        from ....menagerie.sim.ik import ArmIK
 
         m, d = self.m, self.d
         self.ik, self.q_cmd, self.target, self.open_cmd = {}, {}, {}, {}
@@ -322,7 +322,7 @@ class Panda(ArmRig):
     def attach(self, s) -> None:
         import mujoco
 
-        from ....assets import asset_root
+        from .....assets import asset_root
 
         am, sf = self.mount_info()
         x, y, yaw = am.bases["arm"]
@@ -358,7 +358,7 @@ class Aloha(ArmRig):
     def attach(self, s) -> None:
         import mujoco
 
-        from ....assets import asset_root
+        from .....assets import asset_root
 
         am, sf = self.mount_info()
         r = mujoco.MjSpec.from_file(str(asset_root() / "aloha/aloha.xml"))

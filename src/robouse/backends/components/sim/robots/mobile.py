@@ -22,7 +22,7 @@ class MobileManip(FloorRobot):
 
     def __init__(self, layout, params=None):
         super().__init__(layout, params)
-        from ...mobile_manip.sim.robots import ROBOTS
+        from ....mobile_manip.sim.robots import ROBOTS
 
         self.r = ROBOTS[self.robot_key]()
         self.r.prefix = self.prefix
