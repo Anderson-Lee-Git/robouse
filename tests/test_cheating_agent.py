@@ -9,7 +9,6 @@ same and more (it also looks for the token in the server's environment), and the
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from pathlib import Path
 
@@ -76,7 +75,9 @@ def test_a_forged_verdict_scores_zero(tmp_path, monkeypatch) -> None:
         assert seen["token_seen"] == "0"  # ... but the token reached the server on its stdin, not in its environment
 
 
-@pytest.mark.skipif(not (sys.platform.startswith("linux") and bwrap_works()), reason="needs working bubblewrap on Linux")
+@pytest.mark.skipif(
+    not (sys.platform.startswith("linux") and bwrap_works()), reason="needs working bubblewrap on Linux"
+)
 def test_the_sandbox_hides_the_reference_solution_and_the_job(tmp_path, monkeypatch) -> None:
     task = load_task(ROOT / "tasks" / "arc-style" / "arc-gravity")
     job = tmp_path / "job"
