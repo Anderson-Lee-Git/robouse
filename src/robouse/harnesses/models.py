@@ -27,6 +27,11 @@ LEGACY_DEFAULT_MODEL = "zai-org/GLM-5.3"
 # First-party providers every harness knows natively (their own subscription or API key), and whose models take images.
 NATIVE_VENDORS = {"claude-code": "anthropic", "codex": "openai"}
 FIRST_PARTY_IMAGE_PROVIDERS = {"anthropic", "openai"}
+# the model a harness runs when none is given
+DEFAULT_MODELS = {"claude-code": "claude-sonnet-5", "codex": "gpt-6-astra", "mini-swe-agent": "baseten/zai-org/GLM-5.3"}
+# harnesses that never pass an image to their model (mini-swe-agent sends text only; its agent can still read image
+# files with code)
+NO_IMAGE_HARNESSES = {"mini-swe-agent"}
 
 # Proposed for BenchFlow's registry (src/benchflow/agents/providers.py). Verified on 2026-09-30 against
 # inference.baseten.co: all three protocols answer, and both models below read an image on each of them
@@ -131,3 +136,42 @@ def accepts_images(ref: ModelRef) -> bool | None:
 def max_images(ref: ModelRef) -> int:
     """Images per request the endpoint takes (0: no limit declared)."""
     return int(ref.meta.get("maxImages") or 0)
+
+
+def secret_env_names() -> set[str]:
+    """Every provider key variable the registry names (`auth_env`): the runner keeps them out of agent environments,
+    as BenchFlow's `_provider_secret_env_names` does. Only the provider prefixes when BenchFlow is not installed."""
+    names = {str(p["auth_env"]) for p in PENDING_PROVIDERS.values() if p.get("auth_env")}
+    try:
+        names |= {str(c.auth_env) for c in provider_registry().values() if getattr(c, "auth_env", None)}
+    except RuntimeError:
+        pass
+    return names
+
+
+def canonical(harness: str, model: str) -> tuple[str, str]:
+    """The (harness, model) pair a trial belongs to, for old and new trial folders alike: legacy harness names become
+    the agent program with a `baseten/` model, an empty model becomes the harness's default, and a first-party model
+    keeps its bare id (`codex`, `gpt-6-astra`), as published."""
+    h, m = legacy(harness, model)
+    m = m or DEFAULT_MODELS.get(h, "")
+    provider, bare = split(m)
+    if provider is not None and NATIVE_VENDORS.get(h) == provider:
+        m = bare
+    return h, m
+
+
+# What the model could see in trials recorded before `image_input` existed: Codex on Baseten ran with images turned
+# off (Baseten's Responses endpoint rejected them), and mini-swe-agent never passes images.
+LEGACY_IMAGE_INPUT = {"codex-glm": False, "mini-swe-agent-glm": False, "mini-swe-agent": False}
+
+
+def recorded_image_input(harness: str, result: dict | None, cfg: dict | None = None) -> bool | None:
+    """A trial's `image_input`: as recorded (result.json, then config.json), else inferred from its harness name. None
+    for harnesses without a language model."""
+    for rec in (result or {}, cfg or {}):
+        if "image_input" in rec:
+            return rec["image_input"]
+    if harness in LEGACY_IMAGE_INPUT:
+        return LEGACY_IMAGE_INPUT[harness]
+    return True if legacy(harness, "")[0] in ("claude-code", "codex") else None

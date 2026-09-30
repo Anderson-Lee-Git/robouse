@@ -17,7 +17,7 @@
   function getJSON(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status + " " + u); return r.json(); }); }
   var coll = typeof Intl !== "undefined" ? new Intl.Collator(undefined, {numeric: true, sensitivity: "base"}) : null;
   function cmpText(a, b) { return coll ? coll.compare(a, b) : (a < b ? -1 : a > b ? 1 : 0); }
-  var STATUS = {ok: "Solved", no: "Not solved", infra: "Infra failure", partial: "Partial"};
+  var STATUS = {ok: "Solved", no: "Not solved", infra: "Infra failure", partial: "Partial", budget: "Budget stop"};
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   function setKeys() { return window.ModelSet && ModelSet.keys && ModelSet.pairs && ModelSet.pairs().length ? ModelSet.keys() : null; }
   function emptyState(title, text, extra) { return '<div class="empty-state"><b>' + h(title) + "</b>" + h(text) + (extra || "") + "</div>"; }
@@ -309,7 +309,8 @@
 
   // readable episode outcomes (the runner's codes stay in the raw JSON)
   var OUTCOMES = {success_reached: "Goal reached", done: "Agent said done", gave_up: "Agent gave up", budget_exhausted: "Step budget used up",
-    agent_timeout: "Agent timed out", wall_time_exhausted: "Time limit reached", agent_exited: "Agent exited", "no result": "No result"};
+    agent_timeout: "Agent timed out", wall_time_exhausted: "Time limit reached", agent_exited: "Agent exited", "no result": "No result",
+    budget_stop: "Stopped at the spend cap"};
   function oc(x) { return x ? (OUTCOMES[x] || String(x).replace(/_/g, " ").replace(/^./, function (c) { return c.toUpperCase(); })) : "–"; }
   var WITHHELD = "Trajectory not published: during this trial the agent looked at files outside its workspace (for example listing the home folder or searching the whole disk), so its commands and their outputs may show unrelated local files. The recording, the camera images, the reward and the outcome are shown.";
 
@@ -708,7 +709,8 @@
           var st = d.status, vd = d.verdict;
           body.setAttribute("aria-busy", "false");
           body.innerHTML = '<div class="vbox">' + (d.video ? '<video src="' + h(d.video) + '" poster="' + h(d.video.replace("/runs/v/", "/runs/p/").replace(/\.mp4$/, ".jpg")) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="metadata"></video>' : '<div class="novideo empty-state"><b>No recording.</b>The episode ended before a frame was written.</div>') + "</div>" +
-            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0])) + "</a></p>" +
+            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0])) + "</a>" +
+            (d.image_input === false ? '<span class="tag noimg" title="The model received no image input in this trial: text only">no image input</span>' : "") + "</p>" +
             '<dl class="facts"><div><dt>Reward</dt><dd>' + rew(d.reward) + '</dd></div><div><dt>Outcome</dt><dd>' + h(oc(d.outcome)) + "</dd></div><div><dt>Steps</dt><dd>" + num(d.steps_used) + " / " + num(d.max_steps) +
             "</dd></div><div><dt>Time</dt><dd>" + dur(d.wall) + "</dd></div></dl>" +
             (d.withheld ? '<div class="withheld" role="note"><b>Trajectory withheld</b><p>The agent looked at files outside its workspace.</p></div>' : (vd.claim_text ? '<p class="said"><span class="muted">' + ({done: "robo done", give_up: "robo give-up", runner: "closed by the runner"}[vd.claim] || "last message") + ": </span>" + h(vd.claim_text.replace(/^\[runner\]\s*/, "").slice(0, 400)) + "</p>" : "") +

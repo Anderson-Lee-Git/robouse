@@ -80,9 +80,6 @@ class Episode:
         self.obs_mode = str(spec.get("obs_mode", "state"))
         self.visible_fields = list(spec.get("visible_fields", ["hand_pos", "gripper_open"]))
         self.cameras = list(spec.get("cameras", [getattr(self.backend, "camera", "")]))
-        # False when the trial's model takes no image input (set by the runner from the model registry): no camera image
-        # is rendered for the agent and no image file or path reaches its workspace, whatever the agent asks for
-        self.agent_images = bool(spec.get("agent_images", True))
         # the reference solution's token and the key that signs result.json (from the runner, on the server's stdin);
         # a server started by another tool (a hub runtime) may get the token from its environment instead
         secrets = secrets or {}
@@ -118,7 +115,7 @@ class Episode:
             return
         from PIL import Image
 
-        for d in [self.run_dir] + ([self.workspace] if self.workspace and self.agent_images else []):
+        for d in [self.run_dir] + ([self.workspace] if self.workspace else []):
             (d / "observations").mkdir(parents=True, exist_ok=True)
             for name, img in imgs.items():
                 Image.fromarray(np.asarray(img, dtype=np.uint8)).save(d / "observations" / name)
@@ -268,7 +265,6 @@ class Episode:
             "steps_used": self.steps,
             "max_steps": self.max_steps,
             "observation_mode": self.obs_mode,
-            "images": self.agent_images,
             **({"max_repeat": self.max_repeat} if "max_repeat" in self.spec else {}),
             **(extra() if extra else {}),
             **(
@@ -288,10 +284,6 @@ class Episode:
 
     def observe(self, image: bool, privileged: bool = False, camera: str | None = None) -> dict:
         out: dict[str, Any] = {"state": self._state(privileged), "steps_used": self.steps, "max_steps": self.max_steps}
-        if not self.agent_images:
-            if image or camera or self.obs_mode == "vision":
-                out["images"] = "not available: this run's model takes no image input"
-            return out
         if image or self.obs_mode == "vision":
             from PIL import Image
 

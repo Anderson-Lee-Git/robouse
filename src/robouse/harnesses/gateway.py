@@ -5,7 +5,9 @@ into a LiteLLM route from BenchFlow's provider registry, and `litellm_proxy_conf
 the Responses-to-chat-completions bridge that Codex uses for providers served over chat completions. The gateway
 bridges protocols (Claude Code speaks Anthropic Messages, Codex speaks the Responses API, mini-swe-agent chat
 completions; the provider is reached over chat completions), holds the provider key (the agent gets only a per-trial
-master key), and applies the model's image capability to every request (`providers/gateway_hook.py`).
+master key), applies the trial's image input to every request, and enforces the trial's spend cap
+(`providers/gateway_hook.py`): once the model's cost reaches the cap, every further request is refused and the gateway
+writes gateway/budget_stop.json, which the runner watches to stop the agent.
 
 Files, in the trial folder (outside the agent's sandbox): gateway/config.yaml, gateway/requests.jsonl (image counts
 per request, no content), gateway/proxy.log. The provider key is referenced as os.environ/<VAR> in the config and
@@ -14,6 +16,7 @@ lives only in the proxy's environment.
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import shutil
@@ -28,6 +31,7 @@ from pathlib import Path
 from . import models
 
 HOOK = Path(__file__).parent / "providers" / "gateway_hook.py"
+STOP_FILE = "budget_stop.json"  # the hook's name for it too (gateway_hook.py imports nothing from robouse)
 
 
 @dataclass
@@ -40,6 +44,10 @@ class Gateway:
     dir: Path
     stats: dict = field(default_factory=dict)
 
+    @property
+    def stop_file(self) -> Path:
+        return self.dir / STOP_FILE
+
     def stop(self) -> None:
         if self.proc.poll() is None:
             self.proc.terminate()
@@ -51,10 +59,8 @@ class Gateway:
 
 
 def summarize(log: Path) -> dict:
-    import json
-
     out = {"requests": 0, "images_in": 0, "images_removed": 0, "upstream_calls": 0, "upstream_image_parts": 0,
-           "upstream_data_uris": 0, "failures": 0}
+           "upstream_data_uris": 0, "failures": 0, "refused_over_cap": 0, "spent_usd": 0.0}
     if not log.exists():
         return out
     for line in log.read_text().splitlines():
@@ -69,6 +75,11 @@ def summarize(log: Path) -> dict:
             out["upstream_data_uris"] += r["data_uris"]
         elif r["event"] == "failure":
             out["failures"] += 1
+        elif r["event"] == "success":
+            out["spent_usd"] = r.get("spent_usd", out["spent_usd"])
+        elif r["event"] == "refused":
+            out["refused_over_cap"] += 1
+    out["spent_usd"] = round(out["spent_usd"], 5)
     return out
 
 
@@ -104,7 +115,21 @@ def _same_protocol_route(route, cfg, protocol: str | None, env: dict):
     return dataclasses.replace(route, upstream_model=params["model"], litellm_params=params)
 
 
-def start(ref: models.ModelRef, run_dir: Path, images: bool, protocol: str | None = None, timeout: float = 90) -> Gateway:
+def prices(ref: models.ModelRef) -> dict | None:
+    """USD per 1M tokens for this model from runner/pricing.json ({input, output, cached_input}), or None."""
+    from ..runner.cost import price_of
+
+    return price_of(ref.bare)
+
+
+def start(
+    ref: models.ModelRef,
+    run_dir: Path,
+    images: bool,
+    protocol: str | None = None,
+    spend_cap_usd: float = 0.0,
+    timeout: float = 90,
+) -> Gateway:
     import yaml
     from benchflow.providers.litellm_config import litellm_proxy_config, resolve_litellm_route
 
@@ -115,6 +140,9 @@ def start(ref: models.ModelRef, run_dir: Path, images: bool, protocol: str | Non
     route = _same_protocol_route(resolve_litellm_route(ref.id, env), cfg, protocol, env)
     key = "sk-robouse-" + secrets.token_hex(16)
     conf = litellm_proxy_config(route, master_key=key, callback_module="gateway_hook")
+    # a provider's rate limit (HTTP 429) is shared by everyone on the account: the gateway waits and retries (LiteLLM's
+    # backoff, honouring Retry-After) instead of passing it to the harness, whose own few retries end the trial
+    conf.setdefault("router_settings", {})["retry_policy"] = {"RateLimitErrorRetries": 8, "InternalServerErrorRetries": 2}
     d = Path(run_dir) / "gateway"
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(HOOK, d / "gateway_hook.py")
@@ -123,10 +151,19 @@ def start(ref: models.ModelRef, run_dir: Path, images: bool, protocol: str | Non
     exe = shutil.which("litellm", path=str(Path(sys.executable).parent)) or shutil.which("litellm")
     if not exe:
         raise RuntimeError("the model gateway needs LiteLLM: pip install 'robouse[llm]'")
+    price = prices(ref)
+    if spend_cap_usd > 0 and price is None:
+        raise RuntimeError(
+            f"no price for {ref.bare} in pricing.json, so the ${spend_cap_usd:g} spend cap cannot be enforced; add its "
+            "price (ROBOUSE_PRICING) or set ROBOUSE_SPEND_CAP_USD=0"
+        )
     penv = {
         **env,
         "ROBOUSE_GATEWAY_MAX_IMAGES": str(image_cap(ref, images)),
         "ROBOUSE_GATEWAY_LOG": str(d / "requests.jsonl"),
+        "ROBOUSE_GATEWAY_SPEND_CAP": str(spend_cap_usd),
+        "ROBOUSE_GATEWAY_STOP_FILE": str(d / STOP_FILE),
+        "ROBOUSE_GATEWAY_PRICE": json.dumps(price or {}),
         "PYTHONPATH": str(d),
         **({"ROBOUSE_GATEWAY_BEARER_ENV": cfg.auth_env} if route.upstream_model.startswith("anthropic/") else {}),
         "DOCS_URL": "",
@@ -151,4 +188,5 @@ def start(ref: models.ModelRef, run_dir: Path, images: bool, protocol: str | Non
         proc.kill()
         raise TimeoutError("model gateway did not start")
     return Gateway(url, key, route.model_alias, f"{route.model_alias}-responses-bridge", proc, d,
-                   {"image_cap": image_cap(ref, images), "route": route.upstream_model})
+                   {"image_cap": image_cap(ref, images), "route": route.upstream_model,
+                    "spend_cap_usd": spend_cap_usd or None})

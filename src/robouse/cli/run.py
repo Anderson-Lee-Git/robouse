@@ -73,7 +73,6 @@ def register(sub: argparse._SubParsersAction) -> None:
         "--split", help="placement split: nominal, interpolation or extrapolation (tasks with seeded placements)"
     )
     s.add_argument("--secrets-stdin", action="store_true", help=argparse.SUPPRESS)  # the runner's token and key
-    s.add_argument("--no-agent-images", action="store_true", help=argparse.SUPPRESS)  # the model takes no images
     s.set_defaults(func=serve)
 
     r = sub.add_parser("run", help="run one trial end to end")
@@ -163,8 +162,6 @@ def serve(a: argparse.Namespace) -> int:
         spec["seed"] = a.seed
     if a.split:
         spec["placement"] = {**(spec.get("placement") or {}), "split": a.split}
-    if a.no_agent_images:
-        spec["agent_images"] = False
     secrets = json.loads(sys.stdin.readline() or "{}") if a.secrets_stdin else None
     res = serve_episode(
         spec,
@@ -191,19 +188,8 @@ def run(a: argparse.Namespace) -> int:
     if rc := _prepare_local(a):
         return rc
     from ..runner import run_trial
-    from ..runner.trial import Ineligible
 
-    try:
-        res = _run_one(a, run_trial)
-    except Ineligible as e:
-        print(f"robouse: not run: {e} (ineligible trials are not run and not scored)", file=sys.stderr)
-        return 3
-    print(json.dumps(res, indent=2))
-    return 0
-
-
-def _run_one(a: argparse.Namespace, run_trial) -> dict:
-    return run_trial(
+    res = run_trial(
         load_task(resolve_task_path(a.task)),
         a.harness,
         a.model,
@@ -214,6 +200,8 @@ def _run_one(a: argparse.Namespace, run_trial) -> dict:
         extra_instruction=a.extra_instruction,
         prior_learnings=a.prior_learnings,
     )
+    print(json.dumps(res, indent=2))
+    return 0
 
 
 def run_many(a: argparse.Namespace) -> int:

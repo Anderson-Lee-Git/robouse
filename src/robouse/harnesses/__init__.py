@@ -31,7 +31,6 @@ from typing import Any
 from .. import config
 from . import credentials
 
-GLM_MODEL = "zai-org/GLM-5.3"
 DISALLOWED_CLAUDE_TOOLS = "WebFetch,WebSearch,Task"
 
 PROMPT_PREFIX = (
@@ -47,6 +46,7 @@ class Launch:
     env: dict[str, str]
     helper: object | None = None  # e.g. a proxy's statistics, recorded in result.json
     stop: Callable[[], None] | None = None  # stops a helper process (the model gateway) after the agent exits
+    stop_file: Path | None = None  # written by the model gateway when the trial's spend cap is reached
     notes: dict[str, Any] = field(default_factory=dict)
 
 
@@ -95,16 +95,23 @@ def _noop(model, prompt, workspace, task, env) -> Launch:
     return Launch(["robo", "done", "noop control"], env, notes={"model": "none"})
 
 
+PRIVATE_ENV = ("_ROBOUSE_TRIAL_DIR", "_ROBOUSE_IMAGE_INPUT", "_ROBOUSE_SPEND_CAP_USD")  # runner to builder only
+
+
 def _gateway(ref, env: dict, protocol: str):
-    """Start this trial's model gateway (harnesses/gateway.py). The runner passes the trial folder and the image
-    decision in two private variables, removed here so the agent never sees them."""
+    """Start this trial's model gateway (harnesses/gateway.py). The runner passes the trial folder, the image-input
+    decision and the spend cap in private variables, removed here so the agent never sees them."""
     from . import gateway
 
     run_dir = Path(env.pop("_ROBOUSE_TRIAL_DIR"))
-    images = env.pop("_ROBOUSE_AGENT_IMAGES", "1") == "1"
-    for k in [k for k in env if k.startswith(("ANTHROPIC_", "OPENAI_", "BASETEN", "OPENROUTER", "CLAUDE_CODE_OAUTH"))]:
-        env.pop(k)  # the agent reaches the provider only through the gateway
-    return gateway.start(ref, run_dir, images=images, protocol=protocol)
+    images = env.pop("_ROBOUSE_IMAGE_INPUT", "1") == "1"
+    cap = float(env.pop("_ROBOUSE_SPEND_CAP_USD", "0") or 0)
+    return gateway.start(ref, run_dir, images=images, protocol=protocol, spend_cap_usd=cap)
+
+
+def _gateway_launch(gw, ref, cmd: list[str], env: dict) -> Launch:
+    return Launch(cmd, env, helper=gw.stats, stop=gw.stop, stop_file=gw.stop_file,
+                  notes={"model": ref.bare, "model_id": ref.id, "provider": ref.provider})
 
 
 def _via_gateway(harness: str, model: str) -> object | None:
@@ -117,6 +124,7 @@ def _via_gateway(harness: str, model: str) -> object | None:
 
 def _claude_code(model, prompt, workspace, task, env) -> Launch:
     if model and (ref := _via_gateway("claude-code", model)) is not None:
+        home = credentials.clean_claude_home()
         gw = _gateway(ref, env, "anthropic-messages")
         env.update(
             {
@@ -128,11 +136,10 @@ def _claude_code(model, prompt, workspace, task, env) -> Launch:
                 "ANTHROPIC_DEFAULT_HAIKU_MODEL": gw.model,
                 "ANTHROPIC_SMALL_FAST_MODEL": gw.model,
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-                "CLAUDE_CONFIG_DIR": credentials.clean_claude_home(),
+                "CLAUDE_CONFIG_DIR": home,
             }
         )
-        return Launch(_claude_cmd(prompt, gw.model), env, helper=gw.stats, stop=gw.stop,
-                      notes={"model": ref.bare, "model_id": ref.id, "provider": ref.provider})
+        return _gateway_launch(gw, ref, _claude_cmd(prompt, gw.model), env)
     m = (model or "claude-sonnet-5").removeprefix("anthropic/")
     env.update(credentials.claude_auth())
     env["CLAUDE_CONFIG_DIR"] = credentials.clean_claude_home()
@@ -143,10 +150,11 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
     import os
 
     if model and (ref := _via_gateway("codex", model)) is not None:
+        home = credentials.clean_codex_home("# model provider: the trial's gateway, set on the command line\n")
         gw = _gateway(ref, env, "openai-responses")
         env["ROBOUSE_GATEWAY_KEY"] = gw.key
         env["ROBOUSE_GATEWAY_URL"] = gw.url  # also lets the macOS sandbox allow this local port
-        env["CODEX_HOME"] = credentials.clean_codex_home("# model provider: the trial's gateway, set on the command line\n")
+        env["CODEX_HOME"] = home
         cfg = [
             "-c", 'model_providers.robouse.name="Robo Use gateway"',
             "-c", f'model_providers.robouse.base_url="{gw.url}/v1"',
@@ -155,8 +163,7 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
             "-c", 'model_provider="robouse"',
         ]
         # the Responses-to-chat bridge: Baseten's own Responses endpoint rejects an image inside a tool result
-        return Launch(_codex_cmd(prompt, gw.responses_model, workspace, cfg), env, helper=gw.stats, stop=gw.stop,
-                      notes={"model": ref.bare, "model_id": ref.id, "provider": ref.provider})
+        return _gateway_launch(gw, ref, _codex_cmd(prompt, gw.responses_model, workspace, cfg), env)
     m = (model or "gpt-6-astra").removeprefix("openai/")
     key = os.environ.get("OPENAI_API_KEY", "")
     env["CODEX_HOME"] = credentials.clean_codex_home(api_key=key)
@@ -168,9 +175,10 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
 def _mini_swe_agent(model, prompt, workspace, task, env) -> Launch:
     from . import models
 
-    ref = models.resolve("mini-swe-agent", model or f"baseten/{GLM_MODEL}")
+    ref = models.resolve("mini-swe-agent", model or models.DEFAULT_MODELS["mini-swe-agent"])
+    exe = shutil.which("mini") or str(Path.home() / ".local" / "bin" / "mini")
+    (workspace / ".robouse" / "task.txt").write_text(PROMPT_PREFIX + prompt)
     gw = _gateway(ref, env, "openai-completions")
-    bm = gw.model
     env.update(
         {
             "OPENAI_API_KEY": gw.key,
@@ -179,27 +187,9 @@ def _mini_swe_agent(model, prompt, workspace, task, env) -> Launch:
             "MSWEA_COST_TRACKING": "ignore_errors",
         }
     )
-    exe = shutil.which("mini") or str(Path.home() / ".local" / "bin" / "mini")
-    (workspace / ".robouse" / "task.txt").write_text(PROMPT_PREFIX + prompt)
-    return Launch(
-        [
-            exe,
-            "-y",
-            "--exit-immediately",
-            "-l",
-            "0",
-            "-m",
-            f"openai/{bm}",
-            "-t",
-            PROMPT_PREFIX + prompt,
-            "-o",
-            str(workspace / ".robouse" / "mini_traj.json"),
-        ],
-        env,
-        helper=gw.stats,
-        stop=gw.stop,
-        notes={"model": ref.bare, "model_id": ref.id, "provider": ref.provider},
-    )
+    cmd = [exe, "-y", "--exit-immediately", "-l", "0", "-m", f"openai/{gw.model}", "-t", PROMPT_PREFIX + prompt,
+           "-o", str(workspace / ".robouse" / "mini_traj.json")]
+    return _gateway_launch(gw, ref, cmd, env)
 
 
 def _task_language(task) -> str:
@@ -263,14 +253,16 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
     env = dict(base_env)
     harness, model = models.legacy(harness, model)  # claude-code-glm etc.: hidden aliases
     fn = HARNESSES.get(harness)
-    if fn is not None:
-        launch = fn(model, prompt, workspace, task, env)
-        for k in ("_ROBOUSE_TRIAL_DIR", "_ROBOUSE_AGENT_IMAGES"):  # runner-to-builder only; never in the agent's env
-            launch.env.pop(k, None)
-        return launch
-    from importlib.metadata import entry_points
+    if fn is None:
+        from importlib.metadata import entry_points
 
-    for ep in entry_points(group="robouse.harnesses"):
-        if ep.name == harness:
-            return ep.load()(harness, model, prompt, workspace, task, env)
-    raise KeyError(f"unknown harness {harness!r}; harnesses: {', '.join(HARNESSES)}")
+        fn = next((ep.load() for ep in entry_points(group="robouse.harnesses") if ep.name == harness), None)
+        if fn is None:
+            raise KeyError(f"unknown harness {harness!r}; harnesses: {', '.join(HARNESSES)}")
+        for k in PRIVATE_ENV:
+            env.pop(k, None)
+        return fn(harness, model, prompt, workspace, task, env)
+    launch = fn(model, prompt, workspace, task, env)
+    for k in PRIVATE_ENV:  # never in the agent's environment
+        launch.env.pop(k, None)
+    return launch

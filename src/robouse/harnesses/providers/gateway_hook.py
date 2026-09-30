@@ -9,6 +9,12 @@ capability, read from ROBOUSE_GATEWAY_MAX_IMAGES:
   -1  no limit
 Right before the upstream call it counts the image parts that actually leave the gateway, and appends one line per
 request to $ROBOUSE_GATEWAY_LOG (JSON: call type, images in, removed, sent upstream). No request content is logged.
+
+Spend cap: after each response it adds the response's cost (its token usage at $ROBOUSE_GATEWAY_PRICE, USD per 1M
+tokens; cached input at the input price unless `cached_input` is given) to the trial's total. Once the total reaches
+$ROBOUSE_GATEWAY_SPEND_CAP (USD; 0: no cap) it writes $ROBOUSE_GATEWAY_STOP_FILE (cap and spend, JSON) and refuses
+every further request with HTTP 402. The runner watches that file and stops the agent. The last response before the
+cap can take the total a little past it.
 """
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ import time
 from litellm.integrations.custom_logger import CustomLogger
 
 IMAGE_TYPES = {"image": "text", "image_url": "text", "input_image": "input_text"}
-NOTE_TEXT_ONLY = "[image removed: this model does not take image input]"
+NOTE_TEXT_ONLY = "[image removed: no image input in this run]"
 NOTE_CAPPED = "[older image removed: the model endpoint takes at most {n} images per request]"
 BATCH = 5
 
@@ -98,12 +104,45 @@ def _log(rec: dict) -> None:
             f.write(json.dumps({"t": round(time.time(), 3), **rec}) + "\n")
 
 
+def usage_cost(usage: dict, price: dict) -> float:
+    """USD for one response's token usage (OpenAI-style usage, as LiteLLM reports it for every protocol; prompt_tokens
+    include cached tokens) at `price` (USD per 1M tokens)."""
+    prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    out = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+    details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details") or {}
+    cached = int((details or {}).get("cached_tokens") or usage.get("cache_read_input_tokens") or 0)
+    cached = min(cached, prompt)
+    inp = float(price.get("input", 0))
+    return ((prompt - cached) * inp + cached * float(price.get("cached_input", inp)) + out * float(price.get("output", 0))) / 1e6
+
+
 class RobouseGateway(CustomLogger):
     def __init__(self) -> None:
         super().__init__()
         self.cap = int(os.environ.get("ROBOUSE_GATEWAY_MAX_IMAGES", "-1"))
+        self.spend_cap = float(os.environ.get("ROBOUSE_GATEWAY_SPEND_CAP", "0") or 0)
+        self.price = json.loads(os.environ.get("ROBOUSE_GATEWAY_PRICE") or "{}")
+        self.stop_file = os.environ.get("ROBOUSE_GATEWAY_STOP_FILE", "")
+        self.spent = 0.0
+
+    def over_cap(self) -> bool:
+        return self.spend_cap > 0 and self.spent >= self.spend_cap
+
+    def add_spend(self, usage: dict) -> None:
+        self.spent += usage_cost(usage, self.price) if self.price else 0.0
+        if self.over_cap() and self.stop_file and not os.path.exists(self.stop_file):
+            with open(self.stop_file, "w") as f:
+                json.dump({"cap_usd": self.spend_cap, "spent_usd": round(self.spent, 5), "t": round(time.time(), 3)}, f)
 
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
+        if self.over_cap():
+            from fastapi import HTTPException
+
+            _log({"event": "refused", "call_type": str(call_type), "spent_usd": round(self.spent, 5)})
+            raise HTTPException(
+                status_code=402,
+                detail=f"spend cap reached: this trial's model spend is ${self.spent:.2f} of its ${self.spend_cap:g} cap",
+            )
         n, k = apply_cap(data, self.cap)
         bearer = os.environ.get("ROBOUSE_GATEWAY_BEARER_ENV")
         if bearer and os.environ.get(bearer):  # providers whose Anthropic endpoint wants a Bearer token, not x-api-key
@@ -137,7 +176,11 @@ class RobouseGateway(CustomLogger):
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         usage = getattr(response_obj, "usage", None)
-        _log({"event": "success", "usage": usage.model_dump() if hasattr(usage, "model_dump") else str(usage)})
+        if usage is None and isinstance(response_obj, dict):
+            usage = response_obj.get("usage")
+        u = usage.model_dump() if hasattr(usage, "model_dump") else usage if isinstance(usage, dict) else {}
+        self.add_spend(u)
+        _log({"event": "success", "usage": u or str(usage), "spent_usd": round(self.spent, 5)})
 
     async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
         _log({"event": "failure", "error": str(kwargs.get("exception", ""))[:400]})

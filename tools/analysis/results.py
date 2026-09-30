@@ -29,15 +29,16 @@ SUITES = [
     "hard",
     "robosuite",
 ]
+# keys are the canonical (harness, model) pairs audit.py records (robouse.harnesses.models.canonical)
 LABEL = {
     "claude-code/claude-opus-5-5": "Claude Code + Opus 5.5",
     "codex/gpt-6-astra": "Codex + GPT-6 Astra",
-    "claude-code-glm/zai-org/GLM-5.3": "Claude Code + GLM-5.3",
-    "codex-glm/zai-org/GLM-5.3": "Codex + GLM-5.3",
-    "mini-swe-agent-glm/zai-org/GLM-5.3": "mini-swe-agent + GLM-5.3",
-    "claude-code-glm/moonshotai/Kimi-K3": "Claude Code + Kimi K3",
-    "codex-glm/moonshotai/Kimi-K3": "Codex + Kimi K3",
-    "mini-swe-agent-glm/moonshotai/Kimi-K3": "mini-swe-agent + Kimi K3",
+    "claude-code/baseten/zai-org/GLM-5.3": "Claude Code + GLM-5.3",
+    "codex/baseten/zai-org/GLM-5.3": "Codex + GLM-5.3",
+    "mini-swe-agent/baseten/zai-org/GLM-5.3": "mini-swe-agent + GLM-5.3 (no image input)",
+    "claude-code/baseten/moonshotai/Kimi-K3": "Claude Code + Kimi K3",
+    "codex/baseten/moonshotai/Kimi-K3": "Codex + Kimi K3",
+    "mini-swe-agent/baseten/moonshotai/Kimi-K3": "mini-swe-agent + Kimi K3 (no image input)",
     "oracle/scripted": "Reference solutions",
     "noop/none": "No-op control",
 }
@@ -80,7 +81,8 @@ def main() -> None:
         "# Results",
         "",
         f"Generated {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} by `tools/analysis/results.py` from `runs/_audit/audit.json`. "
-        "Each cell is solved / scored trials (one trial per task; infrastructure failures excluded and counted separately). "
+        "Each cell is solved / scored trials (one trial per task; infrastructure failures excluded and counted separately; "
+        "a trial stopped at the spend cap counts as not solved). "
         "Tasks per suite: see docs/suites/.",
         "",
         "| Harness + model | " + " | ".join(SUITES) + " | All | Infra failures |",

@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from ..tasks import Task, find_tasks
-from .trial import Ineligible, image_plan, now, run_trial
+from .trial import now, run_trial
 
 
 def parse_seeds(spec: str | None) -> list[int | None]:
@@ -81,15 +81,6 @@ def run_many(
     prior_learnings: str | None = None,
 ) -> list[dict]:
     tasks = select_tasks(root, filt, ids, include, exclude, limit, sample, sample_seed, mode)
-    ineligible = {}  # not run and not scored (e.g. vision tasks for a model that gets no images)
-    for t in tasks:
-        try:
-            image_plan(t, harness, model)
-        except Ineligible as e:
-            ineligible[t.id] = str(e)
-    if ineligible:
-        print(f"skipping {len(ineligible)} ineligible task(s): " + ", ".join(sorted(ineligible)), flush=True)
-    tasks = [t for t in tasks if t.id not in ineligible]
     runs = [(t, sd, ep) for t in tasks for sd in parse_seeds(seeds) for ep in range(max(1, epochs))]
     if (
         resume
@@ -119,7 +110,6 @@ def run_many(
                 "sample": sample,
                 "sample_seed": sample_seed,
                 "retries": retries,
-                "ineligible": ineligible,
                 "extra_instruction": extra_instruction,
                 "prior_learnings": prior_learnings,
                 "started_at": now(),
