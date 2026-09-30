@@ -1081,6 +1081,14 @@ def build_compare() -> str:
     return page("Compare · Runs · Robo Use", body, cls="comparepage", canonical="https://robouse.ai/runs/compare/")
 
 
+def ds_cell(ds: str) -> str:
+    """org/name on one line on desktop; on phones the name leads and the org sits under it in small type (runs.css)."""
+    org, _, name = ds.rpartition("/")
+    if not org:
+        return esc(ds)
+    return f'<span class="ds"><span class="dso" title="{esc(org)}">{esc(org)}</span><span class="dss">/</span><wbr><span class="dsn">{esc(name)}</span></span>'
+
+
 def build_runs(runs: dict) -> str:
     """/runs/: every run (one model and harness on one dataset), newest first; sortable and filterable, each row opens
     the run's trials. Two runs of one model on one dataset differ by their label (zero-shot probe) and start time."""
@@ -1095,7 +1103,7 @@ def build_runs(runs: dict) -> str:
         state = ' <span class="state running">running</span>' if r["state"] == "running" else ""
         rows.append(f'<tr {pair_attrs(i)} data-dataset="{esc(r["ds"])}" data-q="{esc((plab(i) + " " + r["ds"] + (" zero-shot probe" if r["probe"] else "")).lower())}">'
                     f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i)}</a></th>'
-                    f'<td class="sus" data-v="{esc(r["ds"])}">{esc(r["ds"]).replace("/", "/<wbr>")}{tag}</td>'
+                    f'<td class="sus" data-v="{esc(r["ds"])}">{ds_cell(r["ds"])}{tag}</td>'
                     f'<td class="muted num" data-v="{esc(r["start"])}">{esc(fmt_date(r["start"]))}{state}</td>'
                     f'<td class="n num" data-v="{len(r["trials"])}">{len(r["trials"])}</td>'
                     f'<td class="n num" data-v="{rate:.4f}">{f"{rate * 100:.0f}%" if rate >= 0 else "·"}</td></tr>')

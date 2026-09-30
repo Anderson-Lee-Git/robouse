@@ -518,3 +518,11 @@ table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-
 .stage[data-novid] .player{display:none}
 /* a trial that never ran: one sentence under the header says why */
 .head.trial .why{margin:var(--sp-12) 0 0;max-width:640px;font-size:var(--fs-body);line-height:1.55;color:var(--ink)}
+/* phones: the dataset's own name leads, its org under it in small type (as on the hub cards); desktop reads org/name */
+@media (max-width:640px){
+  table.list.runs td.sus .ds{display:flex;flex-direction:column}
+  table.list.runs td.sus .dss{display:none}
+  table.list.runs td.sus{max-width:26vw}
+  table.list.runs td.sus .dso{order:1;font-size:var(--fs-caption);line-height:1.4;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  table.list.runs thead th .sl{white-space:normal}  /* "Solve rate" may take two lines rather than push its column off-screen */
+}
