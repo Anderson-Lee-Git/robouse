@@ -50,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
     summary: dict[str, dict] = {}
     bad = []
     for suite in suites:
+        if not (repo / "tasks" / suite).is_dir():
+            continue
         for harness in ("oracle", "noop"):
             job = a.out / suite / harness
             cmd = [a.python, "-m", "robouse.cli", "run-many", "--tasks", str(repo / "tasks" / suite), "--harness", harness,
