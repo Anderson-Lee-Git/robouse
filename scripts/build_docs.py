@@ -69,6 +69,8 @@ class Source:
 
 
 # (group, source path relative to the repo, slug, nav label). Order = sidebar order = prev/next order.
+# old slug -> new slug of pages that moved (a redirect stub is written at the old URL)
+REDIRECTS = {"remix": "components"}
 PAGES: list[tuple[str, str, str, str]] = [
     ("Get started", "docs/index.md", "", "Overview"),
     ("Get started", "docs/quickstart.md", "quickstart", "Quickstart"),
@@ -76,7 +78,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("Concepts", "docs/tasks.md", "tasks", "Tasks and scoring"),
     ("Concepts", "docs/episodes.md", "episodes", "Episodes and robo"),
     ("Concepts", "docs/harnesses.md", "harnesses", "Harnesses"),
-    ("Concepts", "docs/remix.md", "remix", "Components and remix"),
+    ("Concepts", "docs/components.md", "components", "Components"),
     ("Guides", "docs/run-an-agent.md", "run-an-agent", "Run an agent"),
     ("Guides", "docs/write-a-task.md", "write-a-task", "Write a task"),
     ("Guides", "docs/run-a-suite.md", "run-a-suite", "Run a suite"),
@@ -91,7 +93,7 @@ SIDEBAR_LINKS = [("Results", "Runs and videos", "/runs/")]
 # Docs kept in the repository but not published: internal notes, run logs and machine-specific setup.
 EXCLUDED = {
     "docs/review-log.md": "internal log of documentation review passes",
-    "docs/components.md": "design of components and remix; the public part is remix.md",
+    "docs/components-design.md": "design of components and composed tasks; the public part is components.md",
     "docs/research/": "internal literature and dataset surveys",
     "docs/dogfood.md": "log of the commands run to check the public docs",
     "docs/results.md": "generated table for the repository; the public results are robouse.ai/runs/",
@@ -523,6 +525,13 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_text(render(p, pages, base, prev_p, next_p, chrome), encoding="utf-8")
         written.append(dst)
+    for old_slug, new_slug in REDIRECTS.items():  # moved pages: a stub at the old URL that sends readers to the new one
+        url = page_url(base, new_slug)
+        dst = out / old_slug / "index.html"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(f'<!doctype html><meta charset="utf-8"><title>Moved</title><link rel="canonical" href="{url}">'
+                       f'<meta http-equiv="refresh" content="0; url={url}"><meta name="robots" content="noindex">'
+                       f'<p><a href="{url}">This page moved.</a></p>\n', encoding="utf-8")
     return written
 
 

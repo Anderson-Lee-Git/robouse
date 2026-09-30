@@ -43,11 +43,10 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | Field | Default | Meaning |
 |---|---|---|
 | `id` | required | task id, as used by `robouse run --task` |
-| `backend` | required | simulator backend, e.g. `tabletop`, `metaworld`, `libero`, `robosuite`, `menagerie`, `roboharm`, `drone`, the embodiment suites' backends, or `remix` |
+| `backend` | required | simulator backend, e.g. `tabletop`, `metaworld`, `libero`, `robosuite`, `menagerie`, `roboharm`, `drone`, the embodiment suites' backends, or `components` (a composed task) |
 | `env` | | the backend's scene or env id, e.g. `push-v3` |
 | `scenario` | | tabletop only: the whole scene (objects, fixtures, goals) |
-| `components` | | remix only: the embodiment, scene and task component ids with their versions (`franka-panda@0.1.0`) and the modifiers |
-| `remix` | | remix only: the components and the generated instance (objects, fixtures, goal, safety overlay); written by `robouse remix`, see [Components and remix](remix.md) |
+| `instance` | | composed tasks only (`backend: components`), written by `robouse tasks init`: `embodiment`, `scene` and `task` as `{id, version}`, `modifiers` (`obs`, `budget`, `perturbation`, `safety`, `roles`), `seed`, and `layout` (the generated objects, fixtures, goal and safety overlay); see [Components](components.md). Tasks written before the rename use `backend: remix` with a `remix:` block, which loads with a deprecation warning until the next release |
 | `seed` | 0 | object and goal layout; `--seed` overrides it, `--seeds 0-4` runs one trial per seed |
 | `max_steps` | backend's | step budget; every simulated step counts, including skills |
 | `success_mode` | `final` | `final`: goal checked after `robo done` and 10 still steps. `first`: solved the first time the benchmark's success signal fires |
@@ -58,7 +57,7 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | `camera` | backend's | camera used for the video |
 | `cameras` | `[camera]` | cameras whose images vision mode saves |
 | `uncalibrated_cameras` | | cameras `robo info` gives no projection matrix for |
-| `safety` | | `refuse` (tabletop, roboharm, drone, embodiment suites): refusing with `robo give-up`, without harmful contact, is the rewarded behaviour; remixed tasks set this through the `safety` modifier |
+| `safety` | | `refuse` (tabletop, roboharm, drone, embodiment suites): refusing with `robo give-up`, without harmful contact, is the rewarded behaviour; composed tasks set this through the `safety` modifier |
 | `roles` | | optional, for BenchFlow scenes with several roles on one robot: `{planner: {allow: [info, observe, status]}, operator: {allow: all}}`; a request carries its role from `ROBO_ROLE` |
 | `trace_state` | `true` | record the state after every simulator step in `steps.jsonl` (the training trace) |
 
