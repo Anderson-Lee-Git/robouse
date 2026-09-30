@@ -188,7 +188,9 @@ def run_trial(
     oracle_token = uuid.uuid4().hex
     with open(tdir / "episode" / "server.log", "w") as server_log:  # the child keeps its own copy of the handle
         server = subprocess.Popen(
-            server_cmd, env={**os.environ, "ROBOUSE_ORACLE_TOKEN": oracle_token}, stdout=server_log,
+            server_cmd,
+            env={**os.environ, "ROBOUSE_ORACLE_TOKEN": oracle_token},
+            stdout=server_log,
             stderr=subprocess.STDOUT,
         )
     exc = None

@@ -243,7 +243,7 @@ class Gait:
         self.act = np.array([[act_of[j] for j in leg] for leg in jid])
         self.kin = LegKinematics(cfg, kin_xml)
         self.foot_geoms = []
-        for i, leg in enumerate(jid):
+        for leg in jid:
             b = m.jnt_bodyid[leg[2]]
             self.foot_geoms.append(
                 next(

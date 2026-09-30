@@ -146,7 +146,10 @@ ignore = [
 "src/robouse/backends/*/worker.py" = ["E402", "BLE001", "SIM115"]
 "src/robouse/backends/gpu/worker/*.py" = ["E402", "BLE001", "SIM115"]
 "src/robouse/harnesses/*/client.py" = ["E402"]
-"tests/*" = ["B011"]
+# maintainer tools, generators and test servers: best-effort loops over many files are fine
+"tests/*" = ["B011", "BLE001", "SIM115"]
+"tools/**" = ["BLE001", "SIM115", "B023"]
+"adapters/**" = ["BLE001", "SIM115"]
 
 [tool.ruff.format]
 quote-style = "preserve"
