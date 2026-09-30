@@ -749,8 +749,9 @@ document.querySelectorAll(".code").forEach(function (box) {
   if (!links.length) return;
   var heads = links.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); });
   function update() {
-    var cur = 0;
+    var cur = -1;  // above the first section nothing is current; at the very bottom the last section is
     heads.forEach(function (h, i) { if (h && h.getBoundingClientRect().top < 120) cur = i; });
+    if (cur >= 0 && innerHeight + scrollY >= document.documentElement.scrollHeight - 2) cur = heads.length - 1;
     links.forEach(function (a, i) { a.classList.toggle("on", i === cur); });
   }
   document.addEventListener("scroll", update, { passive: true });
