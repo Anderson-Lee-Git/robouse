@@ -206,6 +206,9 @@ class Episode:
         st = self.backend.observe()
         if self.obs_mode == "vision" and not privileged:
             st = {k: v for k, v in st.items() if k in self.visible_fields}
+        ps = getattr(self.backend, "privileged_state", None)
+        if privileged and callable(ps):  # what only the reference solution sees (remix: exact poses, tag readings)
+            st = {**st, **ps()}
         return st
 
     def camera_info(self) -> list[dict]:
