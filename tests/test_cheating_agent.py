@@ -68,12 +68,16 @@ def test_a_forged_verdict_scores_zero(tmp_path, monkeypatch) -> None:
     assert seen["token_seen"] == "0"  # the token reaches the server on its stdin, not in its environment
 
 
-@pytest.mark.skipif(not (sys.platform.startswith("linux") and shutil.which("bwrap")), reason="needs bubblewrap on Linux")
+@pytest.mark.skipif(
+    not (sys.platform.startswith("linux") and shutil.which("bwrap")), reason="needs bubblewrap on Linux"
+)
 def test_the_sandbox_hides_the_reference_solution_and_the_job(tmp_path, monkeypatch) -> None:
     task = load_task(ROOT / "tasks" / "arc-style" / "arc-gravity")
     job = tmp_path / "job"
     script = tmp_path / "peek.sh"
-    script.write_text(f"robo done x; ls {job} | grep -q . && exit 3; cat {task.path}/oracle/solve.sh && exit 4; exit 5\n")
+    script.write_text(
+        f"robo done x; ls {job} | grep -q . && exit 3; cat {task.path}/oracle/solve.sh && exit 4; exit 5\n"
+    )
     _harness(monkeypatch, script)
     res = run_trial(task, "cheat", "", job)
     trial = json.loads((job / res["trial"] / "result.json").read_text())

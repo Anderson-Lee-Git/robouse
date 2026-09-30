@@ -34,8 +34,9 @@ def _denied(extra: list[Path]) -> list[str]:
     return list(dict.fromkeys(os.path.realpath(os.path.expanduser(p)) for p in paths if Path(p).exists()))
 
 
-def sandbox_profile(workspace: str | Path | None = None, local_ports: tuple[int, ...] = (),
-                    deny: list[Path] | None = None) -> str:
+def sandbox_profile(
+    workspace: str | Path | None = None, local_ports: tuple[int, ...] = (), deny: list[Path] | None = None
+) -> str:
     """The macOS Seatbelt profile: everything is allowed except the module docstring's list."""
     rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in _denied(deny or []))
     rules += '(deny file-read* (regex #"/site-packages/robouse(/|$)") (regex #"/src/robouse(/|$)"))'
@@ -50,8 +51,20 @@ def sandbox_profile(workspace: str | Path | None = None, local_ports: tuple[int,
 def bwrap_args(workspace: Path, socket: str, deny: list[Path]) -> list[str]:
     """The bubblewrap command prefix on Linux: the host file system as it is, a fresh /tmp holding only this trial's
     workspace and socket, empty folders over every denied path, and a PID namespace of its own."""
-    args = ["bwrap", "--die-with-parent", "--unshare-pid", "--bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
-            "--tmpfs", "/tmp"]
+    args = [
+        "bwrap",
+        "--die-with-parent",
+        "--unshare-pid",
+        "--bind",
+        "/",
+        "/",
+        "--dev",
+        "/dev",
+        "--proc",
+        "/proc",
+        "--tmpfs",
+        "/tmp",
+    ]
     for d in _denied(deny):
         if Path(d).is_dir() and not str(workspace).startswith(d):
             args += ["--tmpfs", d]
@@ -59,7 +72,9 @@ def bwrap_args(workspace: Path, socket: str, deny: list[Path]) -> list[str]:
     return args
 
 
-def wrap(cmd: list[str], workspace: Path, socket: str, deny: list[Path], local_ports: tuple[int, ...] = ()) -> tuple[list[str], str]:
+def wrap(
+    cmd: list[str], workspace: Path, socket: str, deny: list[Path], local_ports: tuple[int, ...] = ()
+) -> tuple[list[str], str]:
     """The agent command inside this platform's sandbox, and the sandbox's name. Raises SandboxUnavailable when there
     is none (Linux without bubblewrap) unless ROBOUSE_SANDBOX=0."""
     if not config.flag("ROBOUSE_SANDBOX", default=True):
@@ -68,5 +83,7 @@ def wrap(cmd: list[str], workspace: Path, socket: str, deny: list[Path], local_p
         return ["sandbox-exec", "-p", sandbox_profile(workspace, local_ports, deny), *cmd], "macos-seatbelt"
     if sys.platform.startswith("linux") and shutil.which("bwrap"):
         return [*bwrap_args(workspace, socket, deny), *cmd], "linux-bubblewrap"
-    raise SandboxUnavailable("no sandbox for the agent on this machine: install bubblewrap (`bwrap`), or set "
-                             "ROBOUSE_SANDBOX=0 to run without one (the agent can then read the reference solution)")
+    raise SandboxUnavailable(
+        "no sandbox for the agent on this machine: install bubblewrap (`bwrap`), or set "
+        "ROBOUSE_SANDBOX=0 to run without one (the agent can then read the reference solution)"
+    )

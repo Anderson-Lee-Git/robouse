@@ -131,8 +131,14 @@ class Skill:
 
 
 # the embodiment family -> BenchFlow's embodiment kind
-SPEC_KIND = {"aerial": "drone", "dexterous_hand": "hand", "wheeled": "vehicle", "mobile_base": "vehicle",
-             "bimanual_arm": "bimanual", "planar_arm": "arm"}
+SPEC_KIND = {
+    "aerial": "drone",
+    "dexterous_hand": "hand",
+    "wheeled": "vehicle",
+    "mobile_base": "vehicle",
+    "bimanual_arm": "bimanual",
+    "planar_arm": "arm",
+}
 
 
 def spec_kind(family: str) -> str:

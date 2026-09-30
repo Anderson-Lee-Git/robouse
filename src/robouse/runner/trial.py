@@ -31,11 +31,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .. import config, harnesses
+from .. import harnesses
 from ..core.protocol import RUNNER_PREFIX, verify_result
 from ..tasks import Task
-from .cost import trial_cost
 from . import sandbox
+from .cost import trial_cost
 
 AGENT_CLI = Path(__file__).resolve().parents[1] / "agent_cli.py"
 SRC = Path(__file__).resolve().parents[2]  # the folder holding the robouse package
@@ -301,8 +301,9 @@ def run_trial(
                     "text": f"{RUNNER_PREFIX} agent timed out"
                     if timed_out
                     else f"{RUNNER_PREFIX} agent exited without robo done",
-                }
-            , path=sock)
+                },
+                path=sock,
+            )
         try:
             server.wait(timeout=60)
         except subprocess.TimeoutExpired:
