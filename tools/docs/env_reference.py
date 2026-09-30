@@ -1,4 +1,4 @@
-"""Write docs/configuration.md, the environment variables robouse reads, from robouse.config.ENV.
+"""Write docs/configuration.md, the environment variables users set, from robouse.config (ENV, PUBLIC).
 
     python tools/docs/env_reference.py [--check]
 """
@@ -11,11 +11,11 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
-from robouse.config import ENV  # noqa: E402
+from robouse.config import ENV, PUBLIC  # noqa: E402
 
 HEAD = """# Configuration
 
-Robo Use reads its settings from environment variables; every one is listed here, generated from `robouse.config`. Paths default to `~/.cache/robouse` (the cache) and `~/.config/robouse` (private settings such as remote worker endpoints, which the local runner's sandbox keeps from agents).
+Robo Use reads its settings from environment variables; the ones you set are listed here, generated from `robouse.config`. Paths default to `~/.cache/robouse` (the cache) and `~/.config/robouse` (private settings such as remote worker endpoints, which the local runner's sandbox keeps from agents).
 
 | Variable | Meaning |
 |---|---|
@@ -23,7 +23,7 @@ Robo Use reads its settings from environment variables; every one is listed here
 
 
 def render() -> str:
-    return HEAD + "".join(f"| `{k}` | {v} |\n" for k, v in ENV.items())
+    return HEAD + "".join(f"| `{k}` | {v} |\n" for k, v in ENV.items() if k in PUBLIC)
 
 
 def main() -> int:

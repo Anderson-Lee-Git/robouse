@@ -665,8 +665,8 @@
       var tasks = Object.keys(byTask).sort();
       var picker = '<div class="cpick"><select data-task aria-label="Task"><option value="">Choose one of ' + Object.keys(byTask).length.toLocaleString("en-US") + " tasks…</option>" +
         tasks.map(function (k) { return '<option value="' + h(k) + '"' + (k === task ? " selected" : "") + ">" + h(k) + " · " + h(idx.titles[k] || "") + "</option>"; }).join("") + "</select>" +
-        (task ? '<a class="ln" href="/runs/task/' + h(task) + '/">Open task page</a>' : "") + "</div>";
-      if (!task) { root.innerHTML = picker + emptyState("Pick a task to compare two of its trials.", "Or tick two trials on a task page and press “Compare selected”."); bindPick(); return; }
+        (task && idx.urls && idx.urls[task] ? '<a class="ln" href="' + h(idx.urls[task]) + '">Open task page</a>' : "") + "</div>";
+      if (!task) { root.innerHTML = picker + emptyState("Pick a task to compare two of its trials.", "Or press Compare on a trial, or on a task page's results."); bindPick(); return; }
       var ids = sorted(byTask[task]);
       if (!a || !T[a]) a = ids.find(function (x) { return x !== b; });
       if (!b || !T[b] || b === a) b = ids.find(function (x) { return x !== a && T[x][1] !== T[a][1] && T[x][3]; }) || ids.find(function (x) { return x !== a; });
@@ -691,7 +691,7 @@
           var st = d.status, vd = d.verdict;
           body.setAttribute("aria-busy", "false");
           body.innerHTML = '<div class="vbox">' + (d.video ? '<video src="' + h(d.video) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="auto"></video>' : '<div class="novideo empty-state"><b>No recording.</b>The episode ended before a frame was written.</div>') + "</div>" +
-            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + h(d.label || mfirst(idx.hm[d.hm][0])) + "</a></p>" +
+            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0])) + "</a></p>" +
             '<dl class="facts"><div><dt>Reward</dt><dd>' + rew(d.reward) + '</dd></div><div><dt>Outcome</dt><dd class="mono">' + h(d.outcome || "–").replace(/_/g, "_<wbr>") + "</dd></div><div><dt>Env steps</dt><dd>" + num(d.steps_used) + " / " + num(d.max_steps) +
             "</dd></div><div><dt>Requests</dt><dd>" + num(d.requests) + "</dd></div><div><dt>Wall</dt><dd>" + dur(d.wall) + "</dd></div></dl>" +
             (d.withheld ? '<div class="withheld" role="note"><b>Trajectory withheld</b><p>The agent looked at files outside its workspace.</p></div>' : (vd.claim_text ? '<p class="said"><span class="muted">' + ({done: "robo done", give_up: "robo give-up", runner: "closed by the runner"}[vd.claim] || "last message") + ": </span>" + h(vd.claim_text.replace(/^\[runner\]\s*/, "").slice(0, 400)) + "</p>" : "") +

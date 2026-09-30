@@ -104,6 +104,8 @@ PAGES: list[tuple[str, str, str, str, str]] = [
      "The fields of a Robo Use task.md: BenchFlow's task fields and the robouse block, with defaults."),
     ("Reference", "docs/suites.md", "suites", "Suites",
      "Every suite in the robouse package, with its task count, what it needs and its reference-solution and no-op results."),
+    ("Reference", "docs/configuration.md", "configuration", "Configuration",
+     "The ROBOUSE_* environment variables you can set: cache and asset paths, the sandbox, simulator virtualenvs and policy servers."),
     ("Reference", "docs/metrics.md", "metrics", "Metrics",
      "Episode metrics from the physical trace, placement splits, and robouse report with 95% intervals."),
 ]
@@ -122,7 +124,6 @@ EXCLUDED = {
     "docs/viewer.md": "the maintainers' viewer setup and viewer formats",
     "docs/benchflow.md": "maintainers' notes on the BenchFlow engine",
     "docs/molmoact2.md": "GPU server setup notes",
-    "docs/configuration.md": "every ROBOUSE_* variable, including maintainers' and remote-worker ones; the user-facing ones are on the pages that use them",
     "docs/vla.md": "maintainers' VLA notes and GPU results; the public part is in run-agents.md",
     "docs/suites/": "per-suite design notes; the public part is suites.md",
 }

@@ -10,16 +10,17 @@ Reads the trial folders of the final jobs (runs/final-*) and writes plain HTML p
 (tools/site/runs_site/runs.js), one stylesheet (tools/site/runs_site/runs.css, on top of the site's /prose.css type system, /site.css and
 /surface.css) and per-trial data files. No server and no build step:
 
-  <out>/index.html               the results matrix (harness + model x suite) and every task, with filters
-  <out>/<suite>/index.html       the tasks of one suite, one column per harness + model
-  <out>/task/<task>/index.html   one task: the instruction, its robouse: spec and every trial of it
   <out>/t/<trial>/index.html     one trial (the viewer fills the tabs from d/<trial>.json): Recording (video synced
                                  to the steps, filmstrip of the camera images), Trajectory, Verdict, Run (timing and
                                  tokens) and Files
   <out>/compare/index.html       two trials of one task side by side (?a=<trial>&b=<trial>)
   <out>/jobs/index.html          the jobs, and <out>/jobs/<job>/index.html with their trials
   <out>/d/<trial>.json           trial data (trajectory clipped and redacted)
-  <out>/d/trials.json            index of every published trial (for the compare picker)
+  <out>/d/trials.json            index of every published trial (for the compare picker, and the hub's task results)
+
+Solve rates, suites and per-task results live on the hub (robouse.ai/hub/, tools/build_hub.py in the site repo, which
+also writes the 308s from the old /runs/, /runs/<suite>/ and /runs/task/<task>/ pages). Build the hub first: a trial's
+breadcrumb links its hub task page, read from <site>/hub/search.json.
   <out>/v/<trial>.mp4            the recording, re-encoded (H.264 Main, CRF 30, faststart, no audio)
   <out>/f/<trial>.webp           the camera images the agent looked at, as one sprite of 112 px tiles (at most 60)
 
@@ -51,13 +52,15 @@ import argparse
 import html
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -255,81 +258,6 @@ def title_of(body: str, fallback: str) -> str:
     return m.group(1).strip() if m else fallback
 
 
-def md(text: str) -> str:
-    """A small Markdown subset for task.md bodies: headings, paragraphs, lists, fenced code, tables, inline code,
-    bold and italics. Links keep their text only."""
-    def inline(s: str) -> str:
-        s = esc(s)
-        s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
-        s = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", s)
-        s = re.sub(r"(?<![*\w])\*([^*\s][^*]*)\*(?!\*)", r"<i>\1</i>", s)
-        s = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", s)
-        s = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", s)
-        return s
-
-    out, lines, i = [], (text or "").splitlines(), 0
-    para: list[str] = []
-
-    def flush():
-        if para:
-            out.append(f"<p>{inline(' '.join(para))}</p>")
-            para.clear()
-
-    while i < len(lines):
-        ln = lines[i]
-        if ln.startswith("```"):
-            flush()
-            j = i + 1
-            buf = []
-            while j < len(lines) and not lines[j].startswith("```"):
-                buf.append(lines[j])
-                j += 1
-            out.append(f'<pre class="code"><code>{esc(chr(10).join(buf))}</code></pre>')
-            i = j + 1
-            continue
-        m = re.match(r"^(#{1,4})\s+(.*)$", ln)
-        if m:
-            flush()
-            lvl = min(len(m.group(1)) + 1, 5)
-            if len(m.group(1)) > 1:  # the first heading is the page title
-                out.append(f"<h{lvl}>{inline(m.group(2))}</h{lvl}>")
-            i += 1
-            continue
-        if re.match(r"^\s*[-*]\s+", ln) or re.match(r"^\s*\d+\.\s+", ln):
-            flush()
-            ordered = bool(re.match(r"^\s*\d+\.", ln))
-            items = []
-            while i < len(lines) and (re.match(r"^\s*([-*]|\d+\.)\s+", lines[i]) or (lines[i].startswith("  ") and lines[i].strip() and items)):
-                if re.match(r"^\s*([-*]|\d+\.)\s+", lines[i]):
-                    items.append(re.sub(r"^\s*([-*]|\d+\.)\s+", "", lines[i]))
-                else:
-                    items[-1] += " " + lines[i].strip()
-                i += 1
-            tag = "ol" if ordered else "ul"
-            out.append(f"<{tag}>" + "".join(f"<li>{inline(x)}</li>" for x in items) + f"</{tag}>")
-            continue
-        if ln.startswith("|"):
-            flush()
-            rows = []
-            while i < len(lines) and lines[i].startswith("|"):
-                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
-                if not all(re.match(r"^:?-+:?$", c) for c in cells):
-                    rows.append(cells)
-                i += 1
-            if rows:
-                head = "".join(f"<th>{inline(c)}</th>" for c in rows[0])
-                body = "".join("<tr>" + "".join(f"<td>{inline(c)}</td>" for c in r) + "</tr>" for r in rows[1:])
-                out.append(f'<div class="scroll"><table class="mdt"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
-            continue
-        if not ln.strip():
-            flush()
-        else:
-            para.append(ln.strip())
-        i += 1
-    flush()
-    return "\n".join(out)
-
-
 # ---------------------------------------------------------------- collect
 
 _PS: str | None = None
@@ -420,17 +348,6 @@ def pick(trials: list[dict]) -> dict:
     return out
 
 
-def pair_res(ts: list[dict] | None) -> tuple[int, int, str]:
-    """Passes p of n scored counted trials (seeds) and a status: ok (every seed), some, no, infra, partial, none."""
-    if not ts:
-        return 0, 0, "none"
-    scored = [t for t in ts if not t["infra"] and not t["partial"]]
-    p, n = sum(1 for t in scored if t["solved"]), len(scored)
-    if n:
-        return p, n, "ok" if p == n else "some" if p else "no"
-    return 0, 0, "partial" if any(t["partial"] for t in ts) else "infra"
-
-
 def status(t: dict) -> str:
     return "partial" if t["partial"] else ("infra" if t["infra"] else ("ok" if t["solved"] else "no"))
 
@@ -438,7 +355,6 @@ def status(t: dict) -> str:
 STATUS_TEXT = {"partial": "Partial", "infra": "Infra failure", "ok": "Solved", "no": "Not solved"}
 STATUS_LONG = {"partial": "Partial: the run was stopped before this trial finished", "infra": "Infrastructure failure, not scored",
                "ok": "Solved", "no": "Not solved"}
-GLYPH = {"ok": "✓", "no": "✗", "infra": "!", "partial": "…"}
 
 
 # ---------------------------------------------------------------- media
@@ -801,7 +717,7 @@ def load_chrome(site: Path) -> None:
     spec = importlib.util.spec_from_file_location("site_chrome", p)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    CHROME["header"], CHROME["footer"], CHROME["bridge"], CHROME["link"] = mod.header("/runs/"), mod.FOOTER, mod.BRIDGE, mod.LINK
+    CHROME["header"], CHROME["footer"], CHROME["bridge"], CHROME["link"] = mod.header("/hub/"), mod.FOOTER, mod.BRIDGE, mod.LINK
 
 
 def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str = "", data: str = "") -> str:
@@ -842,19 +758,25 @@ def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str
 """
 
 
-HAS_SEEDS = [False]  # set by build_index, which runs first
+HAS_SEEDS = [False]  # set in main
+HUB: dict[str, tuple[str, str]] = {}  # task id -> (its hub task page, its dataset), from <site>/hub/search.json
+
+
+def hub_tasks(site: Path) -> dict[str, tuple[str, str]]:
+    """Every task's page on the hub (the results, task and suite pages of /runs/ moved there). Run tools/build_hub.py first."""
+    j = rj(site / "hub" / "search.json") or {"t": []}
+    return {t[0]: (t[2], t[4]) for t in j["t"]}
 
 
 def runs_head(active: str) -> str:
-    """The title block every tab of /runs shares (Results, Jobs, Compare): one h1, one lede, the tabs, so the tab bar
-    never moves between them."""
-    return (f'<section class="page-head head">\n  <h1>Runs</h1>\n  <p class="lede">Agent harnesses as policies for simulated robots. Each one reads the task, '
-            f'drives the robot through the <code>robo</code> command line and says when it is done; the simulator checks the final state. '
-            f'One trial counts per task, harness + model{" and seed" if HAS_SEEDS[0] else ""}.</p>\n  {subnav(active)}\n</section>')
+    """The title block both tabs of /runs share (All runs, Compare): one h1, one lede, the tabs, so the tab bar never moves
+    between them. Solve rates and per-task results are on the hub."""
+    return (f'<section class="page-head head">\n  <h1>Runs</h1>\n  <p class="lede">Every published trial, with its recording, steps and verdict. '
+            f'Solve rates are on the <a class="ln" href="/hub/leaderboard/">leaderboard</a>; one trial counts per task and model{" and seed" if HAS_SEEDS[0] else ""}.</p>\n  {subnav(active)}\n</section>')
 
 
 def subnav(active: str) -> str:
-    items = [("overview", "/runs/", "Results"), ("tasks", "/runs/#tasks", "Tasks"), ("jobs", "/runs/jobs/", "Jobs"), ("compare", "/runs/compare/", "Compare")]
+    items = [("jobs", "/runs/jobs/", "All runs"), ("compare", "/runs/compare/", "Compare")]
     return '<nav class="sub tabs" aria-label="Runs" data-fade>' + "".join(f'<a href="{h}"{" aria-current=page" if k == active else ""}>{x}</a>' for k, h, x in items) + "</nav>"
 
 
@@ -887,17 +809,18 @@ def plab(i: int) -> str:
     return f'{p.get("model_label") or p["label"]} · {p.get("harness_label") or p["harness"]}'
 
 
+def model_mark(p: dict) -> str:
+    """The model's mark (.model-mark in the site's /ui.css, the same as UI.modelMark in /ui.js and build_hub.model_mark):
+    its provider's icon from tools/models.json `icon`, or a monogram; decorative, the name beside it is the text."""
+    if p.get("icon"):
+        return f'<span class="model-mark" style="--mm:url(/icons/models/{esc(p["icon"])}.svg)" aria-hidden="true"></span>'
+    w = [x for x in re.split(r"[\s-]+", re.sub(r"[^A-Za-z0-9 -]", "", p.get("provider") or p.get("model_label") or p.get("label") or "?")) if x]
+    return f'<span class="model-mark mono" aria-hidden="true">{esc((w[0][0] + w[1][0] if len(w) > 1 else (w or ["?"])[0][0]).upper())}</span>'
+
+
 def phtml(i: int) -> str:
     p = HM[i]
-    return f'<span class="pm">{esc(p.get("model_label") or p["label"])}</span><span class="ph"> · {esc(p.get("harness_label") or p["harness"])}</span>'
-
-
-def phead(i: int, keep: bool = False) -> str:
-    """A column heading: the model over its harness. keep: the model name never breaks inside itself (its hyphens are
-    non-breaking), only at its spaces."""
-    p = HM[i]
-    m = esc(p.get("model_label") or p["label"])
-    return f'<span class="pm">{m.replace("-", "\u2011") if keep else m}</span><span class="ph">{esc(p.get("harness_label") or p["harness"])}</span>'
+    return f'<span class="pm">{model_mark(p)}{esc(p.get("model_label") or p["label"])}</span><span class="ph"> · {esc(p.get("harness_label") or p["harness"])}</span>'
 
 
 def fnum(x) -> str:
@@ -922,49 +845,6 @@ DIFF_RANK = {"easy": 1, "medium": 2, "hard": 3}
 ST_RANK = {"ok": 4, "some": 3, "no": 2, "partial": 1, "infra": 0, "none": -1}
 
 
-def fam_order(idxs) -> list[tuple[str, list[int]]]:
-    fams: dict[str, list[int]] = {}
-    for i in idxs:
-        fams.setdefault(HM[i].get("family") or "Other", []).append(i)
-    return list(fams.items())
-
-
-def model_options(idxs) -> str:
-    """The pairs as <option>s, grouped by model family, in registry order."""
-    return "".join(f'<optgroup label="{esc(f)}">' + "".join(f'<option value="{HM[i]["key"]}">{esc(plab(i))}</option>' for i in ids) + "</optgroup>"
-                   for f, ids in fam_order(idxs))
-
-
-def res_attr(chosen: dict, task: str, idxs) -> str:
-    """data-res for /modelset.js: key:p/n (passes of scored seeds) or key:i (infrastructure only), per pair that ran it."""
-    out = []
-    for i in idxs:
-        ts = chosen.get((HM[i]["harness"], HM[i]["model"], task))
-        if not ts:
-            continue
-        p, n, st = pair_res(ts)
-        out.append(f'{HM[i]["key"]}:{p}/{n}' if n else f'{HM[i]["key"]}:i')
-    return ",".join(out)
-
-
-def cell_link(ts: list[dict] | None, task: str, i: int) -> str:
-    key, label = HM[i]["key"], plab(i)
-    if not ts:
-        return f'<td class="c" data-m="{key}" data-v="-1"><span class="g none" title="{esc(label)}: not run">·</span></td>'
-    p, n, st = pair_res(ts)
-    v = f"{p / n:.3f}" if n else "-0.5"
-    if len(ts) == 1:
-        t = ts[0]
-        s = status(t)
-        tip = f'{label}: {STATUS_LONG[s].lower()}' + (f', reward {freward(t["reward"])}' if t["reward"] is not None else "") + (f', {t["outcome"]}' if t["outcome"] else "")
-        return f'<td class="c" data-m="{key}" data-v="{v}"><a class="g {s}" href="/runs/t/{t["trial"]}/" title="{esc(tip)}">{GLYPH[s]}</a></td>'
-    inf = sum(1 for t in ts if t["infra"])
-    tip = f"{label}: {p} of {n} seeds solved" + (f", {inf} infrastructure failures" if inf else "") if n else f"{label}: {STATUS_LONG[st].lower()}"
-    txt = f"{p}/{n}" if n else GLYPH[st]
-    return (f'<td class="c" data-m="{key}" data-v="{v}"><a class="g s {st}" href="/runs/task/{esc(task)}/?m={key}#trials" title="{esc(tip)}">'
-            f'{txt}</a></td>')
-
-
 def th_sort(label: str, kind: str = "text", cls: str = "", extra: str = "", title: str = "") -> str:
     """A sortable column heading: a button that carries the label and the direction."""
     t = f' title="{esc(title)}"' if title else ""
@@ -978,154 +858,7 @@ def list_foot(noun: str, hint: str) -> str:
             f'<button type="button" class="tbtn" data-lclear>Clear filters</button></div>')
 
 
-def tasks_table(tasks: list[str], tinfo: dict, chosen: dict, cols: list[int], suites_shown: bool, suites: list[str]) -> str:
-    head = "".join(th_sort(phead(i, keep=True), "num", "c", f' data-m="{HM[i]["key"]}" data-col="{HM[i]["key"]}"', plab(i)) for i in cols)
-    rows = []
-    for task in tasks:
-        info = tinfo[task]
-        cells, st_by = [], []
-        for i in cols:
-            ts = chosen.get((HM[i]["harness"], HM[i]["model"], task))
-            cells.append(cell_link(ts, task, i))
-            st_by.append(f'{HM[i]["key"]}:{pair_res(ts)[2]}')
-        su = info["suite"]
-        diff = esc(info["difficulty"] or "–")
-        where = (f'<td class="su" data-v="{suites.index(su) if su in suites else 99}{DIFF_RANK.get(info["difficulty"], 0)}"><a href="/runs/{su}/">{esc(SUITE_TITLE.get(su, su))}</a>'
-                 f'<span class="df">{diff}</span></td>' if suites_shown else f'<td class="df" data-v="{DIFF_RANK.get(info["difficulty"], 0)}">{diff}</td>')
-        rows.append(f'<tr data-suite="{esc(su)}" data-st="{" ".join(st_by)}" data-q="{esc((task + " " + info["title"]).lower())}">'
-                    f'<th scope="row" data-v="{esc(task)}"><a class="tk" href="/runs/task/{esc(task)}/"><span class="tn">{esc(task)}</span>'
-                    f'<span class="tt trunc" title="{esc(info["title"])}">{esc(info["title"])}</span></a></th>'
-                    f'<td class="rs"><span data-res="{res_attr(chosen, task, cols)}"></span></td>{where}{"".join(cells)}</tr>')
-    return (f'<div class="scroll tbl"><table class="tasks" data-tasks>'
-            f'<thead><tr>{th_sort("Task", "text", "tcol")}{th_sort("Results", "num", "rs", "", "How many of the models in the comparison set solved it")}'
-            f'{th_sort("Suite", "num") if suites_shown else th_sort("Difficulty", "num")}{head}</tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody></table></div>')
-
-
 SEED_KEY = '<span><span class="g s some">3/5</span>seeds solved</span>'
-
-
-def filters(cols: list[int], suites: list[str] | None, seeds: bool, modelset: bool = True) -> str:
-    su = ""
-    if suites:
-        su = ('<div class="pills" role="group" aria-label="Suite" data-fade><button type="button" class="pill" data-suite="" aria-pressed="true">All suites</button>'
-              + "".join(f'<button type="button" class="pill" data-suite="{s}" aria-pressed="false">{esc(SUITE_TITLE.get(s, s))}</button>' for s in suites) + "</div>")
-    some = '<option value="some">Solved by some seeds</option>' if seeds else ""
-    return (f'<div class="fbar">{su}<div class="frow ctl-row">'
-            f'<label class="search"><span class="vh">Search tasks</span><input type="search" data-lq placeholder="Search tasks" autocomplete="off" spellcheck="false"></label>'
-            f'<select data-lx="model" aria-label="Model"><option value="">Any model</option>{model_options(cols)}</select>'
-            f'<select data-lx="outcome" aria-label="Outcome"><option value="">Any outcome</option><option value="ok">Solved</option>{some}<option value="no">Not solved</option>'
-            f'<option value="infra">Infra failure</option><option value="partial">Partial</option><option value="none">Not run</option>'
-            f'<option value="split">Split: solved by some models, not all</option></select>'
-            f'<span class="count push" data-lcount aria-live="polite"></span></div></div>'
-            f'<div class="tbar"><p class="legend"><span><span class="g ok">✓</span>solved</span><span><span class="g no">✗</span>not solved</span>'
-            f'{SEED_KEY if seeds else ""}'
-            f'<span><span class="g infra">!</span>infrastructure failure, not scored</span><span><span class="g partial">…</span>partial</span>'
-            f'<span><span class="g none">·</span>not run</span></p>{"<span data-modelset></span>" if modelset else ""}</div>')
-
-
-def tasks_block(tasks, tinfo, chosen, cols, suites_shown: bool, suites: list[str], chip_suites, modelset: bool = True) -> str:
-    seeds = any(len(ts) > 1 for ts in chosen.values())
-    return (f'<div class="lst" data-list="tasks" data-limit="100" data-noun="tasks with runs">{filters(cols, chip_suites, seeds, modelset)}'
-            f'{tasks_table(tasks, tinfo, chosen, cols, suites_shown, suites)}'
-            f'{list_foot("tasks", "Try another suite or outcome, or clear the search.")}</div>')
-
-
-def matrix(chosen: dict, suites: list[str], suite_state: dict) -> str:
-    """Suites down, harness + model across (the comparison set's columns): % solved and solved / scored trials per
-    cell (seeds count as trials), tinted by the solve rate."""
-    table = defaultdict(lambda: defaultdict(lambda: [0, 0, 0, 0]))  # solved, scored, infra, partial
-    ntask = defaultdict(set)
-    for (h, m, task), ts in chosen.items():
-        for t in ts:
-            c = table[HM_KEY[(h, m)]][t["suite"]]
-            c[3 if t["partial"] else 2 if t["infra"] else 1] += 1
-            if not t["partial"] and not t["infra"] and t["solved"]:
-                c[0] += 1
-            ntask[t["suite"]].add(task)
-    cols = [i for i in range(len(HM)) if i in table]
-
-    def tag(i: int) -> str:
-        st = HM[i].get("status") or "active"
-        return "" if st == "active" else f'<span class="tag" title="{esc(HM[i].get("note") or st)}">{esc(st)}</span>'
-
-    tags = any(tag(i) for i in cols)
-    head = "".join(f'<th class="m" scope="col" data-m="{HM[i]["key"]}"><a href="/runs/?m={HM[i]["key"]}#tasks" title="{esc(plab(i))}: its tasks">'
-                   f'{phead(i)}</a>{f"<span class=tgl>{tag(i)}</span>" if tags else ""}</th>' for i in cols)
-
-    def cell(i: int, sv: int, n: int, inf: int, part: int, href: str, where: str) -> str:
-        label, key = plab(i), HM[i]["key"]
-        extra = (f", {inf} infra" if inf else "") + (f", {part} partial" if part else "")
-        if n:
-            r = sv / n
-            return (f'<td class="m" data-m="{key}" style="--r:{r:.2f}"><a href="{href}" title="{esc(label)} on {esc(where)}: {sv} of {n} solved ({100 * r:.0f}%){extra}">'
-                    f'<b>{100 * r:.0f}</b><span>{sv}/{n}</span></a></td>')
-        if part or inf:
-            return f'<td class="m e" data-m="{key}"><a href="{href}" title="{esc(label)} on {esc(where)}: {extra[2:]}">{"partial" if part else "infra"}</a></td>'
-        return f'<td class="m e" data-m="{key}"><span title="{esc(label)}: not run on {esc(where)}">·</span></td>'
-
-    rows = []
-    tot = defaultdict(lambda: [0, 0, 0, 0])
-    for s in suites:
-        cells = []
-        for i in cols:
-            sv, n, inf, part = table[i].get(s, [0, 0, 0, 0])
-            for k, x in enumerate((sv, n, inf, part)):
-                tot[i][k] += x
-            cells.append(cell(i, sv, n, inf, part, f"/runs/{s}/?m={HM[i]['key']}", SUITE_TITLE.get(s, s)))
-        run = '<i class="run" title="still running"></i>' if suite_state.get(s) == "running" else ""
-        rows.append(f'<tr><th scope="row"><a href="/runs/{s}/">{esc(SUITE_TITLE.get(s, s))}</a>{run}<span class="nt num">{len(ntask[s])}</span></th>{"".join(cells)}</tr>')
-    all_cells = "".join(cell(i, tot[i][0], tot[i][1], 0, 0, f"/runs/?m={HM[i]['key']}#tasks", "all suites") for i in cols)
-    inf_cells = "".join(f'<td class="m e inf" data-m="{HM[i]["key"]}">{tot[i][2] or "·"}</td>' for i in cols)
-    return (f'<div class="tbar mbar"><p class="mcap">Each cell: % solved, then solved / scored trials. Scored trials exclude infrastructure failures and partial trials '
-            f'(stopped before they finished). A cell opens that suite filtered to the model.</p><span data-modelset></span></div>'
-            f'<div class="scroll mx"><table class="matrix"><thead><tr><th class="corner" scope="col">Suite <span>tasks</span></th>{head}</tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody><tfoot><tr class="all"><th scope="row">All suites<span class="nt num">{sum(len(v) for v in ntask.values())}</span></th>{all_cells}</tr>'
-            f'<tr class="infra"><th scope="row" title="infrastructure failures: not the agent\'s doing, not scored">Infra failures</th>{inf_cells}</tr></tfoot></table></div>'
-            f'<div class="empty-state mx-empty" hidden><b>No models in the comparison set.</b>Pick some with “Change” above to fill the matrix.</div>')
-
-
-def build_index(chosen, suites, tinfo, cols, suite_state, stats) -> str:
-    running = [s for s in suites if suite_state.get(s) == "running"]
-    run_note = (f'<li><i class="run"></i> Still running: {", ".join(SUITE_TITLE.get(s, s) for s in running)}. Their finished trials are in; the page is rebuilt as more finish.</li>' if running else "")
-    tasks = sorted(tinfo, key=lambda k: (suites.index(tinfo[k]["suite"]) if tinfo[k]["suite"] in suites else 99, k))
-    reg_notes = "".join(f'<li data-m="{HM[i]["key"]}"><b>{esc(plab(i))}</b>: {esc(HM[i]["note"])}</li>' for i in cols if HM[i].get("note"))
-    static = "" if SYNTH else (
-        '<li>Codex + GLM-5.3 has many infrastructure failures: the model endpoint rejected requests (for example the images Codex attaches), so it covers fewer tasks.</li>'
-        '<li>RoboCasa and DexJoCo have few scored trials: many of their final runs failed on infrastructure (API authentication and episode server errors).</li>'
-        '<li>RoboHarm and Safety score safe behaviour: refusing the harmful request, or doing the benign twin without incident.</li>')
-    seeds = sum(1 for ts in chosen.values() if len(ts) > 1)
-    HAS_SEEDS[0] = seeds > 0
-    body = f"""
-{runs_head("overview")}
-<section aria-label="Results by suite">
-  {matrix(chosen, suites, suite_state)}
-  <ul class="notes">
-    {reg_notes}{static}
-    {run_note}
-  </ul>
-</section>
-<section id="tasks">
-  <h2 class="lab">Tasks</h2>
-  {tasks_block(tasks, tinfo, chosen, cols, True, suites, suites, modelset=False)}
-</section>
-<p class="gen">{stats["trials"]:,} trials ({stats["counted"]:,} counted) across {len(tinfo):,} tasks with runs. {stats["withheld"]} trajectories withheld because the agent looked outside its workspace. Built {esc(stats["gen"])}.</p>
-"""
-    return page("Runs · Robo Use", body, desc="Results of Robo Use: Claude Code, Codex and mini-swe-agent as robot policies in simulation, per suite, task and trial.",
-                canonical="https://robouse.ai/runs/", cls="index")
-
-
-def build_suite(suite: str, tasks: list[str], tinfo: dict, chosen: dict, cols: list[int], state: str, sources: set, suites: list[str]) -> str:
-    note = SUITE_NOTE.get(suite, "")
-    body = f"""
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{esc(SUITE_TITLE.get(suite, suite))}</nav>
-<section class="page-head head">
-  <h1>{esc(SUITE_TITLE.get(suite, suite))}{' <span class="tag run">running</span>' if state == "running" else ""}</h1>
-  <p class="meta">{len(tasks)} tasks · {esc(", ".join(sorted(sources)))}{(" · " + esc(note)) if note else ""}</p>
-</section>
-{tasks_block(tasks, tinfo, chosen, cols, False, suites, None)}
-"""
-    return page(f"{SUITE_TITLE.get(suite, suite)} · Runs · Robo Use", body, canonical=f"https://robouse.ai/runs/{suite}/", cls="suite")
 
 
 def pair_attrs(i: int) -> str:
@@ -1143,108 +876,6 @@ def scope_select() -> str:
 
 
 SPEC_SKIP = {"backend", "env", "max_steps", "success_mode", "id"}  # already in the header facts
-
-
-def spec_list(spec: dict) -> str:
-    """The task's robouse: settings that the header does not show, as a quiet definition list (scalars only; the
-    scenario itself is described by the instruction)."""
-    rows = []
-    for k, v in spec.items():
-        if k in SPEC_SKIP or isinstance(v, (dict, list)) or v is None:
-            continue
-        val = "yes" if v is True else "no" if v is False else fnum(v) if isinstance(v, (int, float)) else str(v)
-        rows.append(f'<dt>{esc(k.replace("_", " ").capitalize())}</dt><dd>{esc(val)}</dd>')
-    return f'<h2 class="lab">Settings</h2><dl class="kv spec">{"".join(rows)}</dl>' if rows else ""
-
-
-def build_task(task: str, info: dict, trials: list[dict], tdoc: dict, chosen: dict) -> str:
-    spec = (tdoc["fm"] or {}).get("robouse") or {}
-    meta = (tdoc["fm"] or {}).get("metadata") or {}
-    desc = ((tdoc["fm"] or {}).get("task") or {}).get("description") or ""
-    idxs = sorted({t["hm"] for t in trials})
-    facts = [("Suite", f'<a href="/runs/{info["suite"]}/">{esc(SUITE_TITLE.get(info["suite"], info["suite"]))}</a>'),
-             ("Source", esc(meta.get("source_benchmark") or info["source"] or "–")), ("Item", brk(meta.get("source_task") or "–")),
-             ("Difficulty", esc(info["difficulty"] or "–")), ("Backend · env", brk(f'{spec.get("backend", "–")} · {spec.get("env", "–")}')),
-             ("Step budget", fnum(spec.get("max_steps"))), ("Success", esc(spec.get("success_mode", "–"))),
-             ("Models", f'<span data-res="{res_attr(chosen, task, idxs)}"></span>')]
-    # per pair: its counted seeds, when a pair ran this task with more than one seed
-    seeds = {i: chosen.get((HM[i]["harness"], HM[i]["model"], task)) or [] for i in idxs}
-    by_model = ""
-    if any(len(ts) > 1 for ts in seeds.values()):
-        rows = []
-        for i in idxs:
-            ts = seeds[i]
-            p, n, st = pair_res(ts)
-            k = len(ts)
-            res = (f'<span class="g s {st}">{p}/{n}</span> <span class="muted">seeds</span>' if n else f'<span class="badge {st}">{STATUS_TEXT.get(st, st)}</span>')
-            rows.append(f'<tr data-m="{HM[i]["key"]}"><th scope="row"><a href="?m={HM[i]["key"]}#trials" title="{esc(plab(i))}">{phtml(i)}</a></th>'
-                        f'<td data-v="{p / n if n else -1:.3f}">{res}</td>'
-                        f'<td class="n num" data-v="{p / n if n else -1:.3f}">{f"{100 * p / n:.0f}%" if n else "–"}</td>'
-                        f'<td class="n num" data-v="{1 if p else 0 if n else -1}" title="{"solved by at least one" if p else "not solved by any"} of its {k} seeds">{("✓" if p else "✗") if n else "–"}</td>'
-                        f'<td class="n num" data-v="{k}">{k}</td></tr>')
-        by_model = (f'<h3 class="sublab">By model</h3><div class="lst" data-list="models" data-limit="12" data-noun="models"><div class="tbar"><p class="mcap">Each harness + model ran this task with several seeds. '
-                    f'pass@1 is the share of seeds solved; pass@k is solved by any of its k seeds.</p><span data-modelset></span></div>'
-                    f'<div class="scroll tbl"><table class="list bymodel"><thead><tr>{th_sort("Harness + model", "text", "tcol")}{th_sort("Seeds solved", "num")}'
-                    f'{th_sort("pass@1", "num", "n")}{th_sort("pass@k", "num", "n")}{th_sort("Seeds", "num", "n")}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
-                    f'<div class="lmore" hidden><button type="button" class="btn quiet sm" data-lmore></button></div></div><h3 class="sublab">Every trial</h3>')
-    trs = []
-    for t in sorted(trials, key=lambda t: (t["hm"], not t["counted"], str(t.get("seed")), t["started"])):
-        st = status(t)
-        i = t["hm"]
-        seed = f'<span class="muted"> · seed {esc(t["seed"])}</span>' if t.get("seed") is not None and len(seeds.get(i) or []) > 1 else ""
-        trs.append(f'<tr id="t-{esc(t["trial"])}" class="{"" if t["counted"] else "dim"}" {pair_attrs(i)} data-outcome="{st}" data-counted="{int(t["counted"])}" '
-                   f'data-q="{esc((plab(i) + " " + HM[i]["label"] + " " + (t["outcome"] or "")).lower())}">'
-                   f'<th scope="row" data-v="{i:04d}{0 if t["counted"] else 1}{esc(t["started"])}"><span class="rowh"><input type="checkbox" data-cmp="{esc(t["trial"])}" aria-label="Select {esc(plab(i))} for comparison">'
-                   f'<a class="trunc" href="/runs/t/{esc(t["trial"])}/" title="{esc(plab(i))}">{phtml(i)}</a></span>{seed}{"" if t["counted"] else " <span class=muted>not counted</span>"}</th>'
-                   f'<td data-v="{ST_RANK[st]}"><span class="badge {st}">{STATUS_TEXT[st]}</span></td>'
-                   f'<td class="n num" data-v="{num_attr(t["reward"])}">{freward(t["reward"])}</td>'
-                   f'<td class="mono oc">{esc(t["outcome"] or "–")}</td>'
-                   f'<td class="n num" data-v="{num_attr(t["steps_used"])}">{steps_html(t)}</td>'
-                   f'<td class="n num" data-v="{num_attr(t["checks"].get("robo_requests"))}">{fnum(t["checks"].get("robo_requests"))}</td>'
-                   f'<td class="n num" data-v="{num_attr(t["wall"])}">{esc(fmt_s(t["wall"]))}</td>'
-                   f'<td class="muted num" data-v="{esc(t["started"])}">{esc(fmt_day(t["started"]))}</td>'
-                   f'<td class="act"><a class="tbtn" href="/runs/compare/?a={esc(t["trial"])}">Compare</a></td></tr>')
-    fams = sorted({HM[i].get("family") or "" for i in idxs} - {""})
-    harn = sorted({HM[i].get("harness_label") or HM[i]["harness"] for i in idxs})
-    many = len(idxs) > 1
-    ctrl = ('<div class="fbar"><div class="frow ctl-row">'
-            + (f'<select data-lf="family" aria-label="Model family"><option value="">All families</option>{sel_opts(fams)}</select>' if len(fams) > 1 else "")
-            + (f'<select data-lf="harness" aria-label="Harness"><option value="">All harnesses</option>{sel_opts(harn)}</select>' if len(harn) > 1 else "")
-            + '<select data-lf="outcome" aria-label="Outcome"><option value="">Any result</option><option value="ok">Solved</option><option value="no">Not solved</option>'
-              '<option value="infra">Infra failure</option><option value="partial">Partial</option></select>'
-            + '<select data-lf="counted" aria-label="Counted"><option value="">All trials</option><option value="1">Counted trials only</option></select>'
-            + (scope_select() if many else "")
-            + '<span class="count push" data-lcount aria-live="polite"></span></div></div>')
-    body = f"""
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span><a href="/runs/{info["suite"]}/">{esc(SUITE_TITLE.get(info["suite"], info["suite"]))}</a><span>/</span>{esc(task)}</nav>
-<section class="page-head head">
-  <h1>{esc(info["title"])}</h1>
-  <p class="meta"><code>{esc(task)}</code></p>
-  {f'<p class="lede">{esc(desc)}</p>' if desc and desc.strip() != info["title"].strip() else ''}
-  <dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>
-</section>
-<section id="trials">
-  <h2 class="lab">Trials <span class="nt num">{len(trials)}</span></h2>
-  {by_model}
-  <div class="lst" data-list="trials" data-limit="10" data-noun="trials">
-  {ctrl}
-  <div class="scroll tbl"><table class="list trials">
-    <thead><tr>{th_sort("Harness + model", "text", "tcol")}{th_sort("Result", "num")}{th_sort("Reward", "num", "n")}{th_sort("Outcome")}{th_sort("Env steps", "num", "n")}{th_sort("Requests", "num", "n")}{th_sort("Wall", "num", "n")}{th_sort("Started", "text")}<th scope="col"><span class="vh">Actions</span></th></tr></thead>
-    <tbody>{"".join(trs)}</tbody>
-  </table></div>
-  {list_foot("trials", "Widen the filters, or show all models.")}
-  </div>
-  <p class="cmpbar"><button type="button" class="btn sm" data-cmp-go disabled>Compare selected</button><span class="muted" data-cmp-hint>Tick two trials to compare them side by side.</span></p>
-</section>
-<section class="task-doc">
-  <div class="cols2">
-    <div><h2 class="lab">Instruction</h2><div class="md prose">{md(tdoc["body"]) or '<p class="muted">No instruction was found for this task.</p>'}</div></div>
-    <aside>{spec_list(spec)}
-    {f'<h2 class="lab">Tags</h2><p class="tags">{"".join(f"<span class=chip>{esc(x)}</span>" for x in meta.get("tags") or [])}</p>' if meta.get("tags") else ''}</aside>
-  </div>
-</section>
-"""
-    return page(f"{info['title']} · Runs · Robo Use", body, canonical=f"https://robouse.ai/runs/task/{task}/", cls="task")
 
 
 ICON = {
@@ -1273,6 +904,14 @@ def skeleton() -> str:
             + "".join(f'<span class="skel" style="width:{w}%;height:14px"></span>' for w in (92, 84, 88, 70, 90, 78, 86, 64, 80, 74)) + "</div>")
 
 
+def trial_crumbs(t: dict) -> str:
+    """Hub / dataset / task / pair: a trial sits under its task's hub page (or under All runs for a task the hub lacks)."""
+    url, ds = HUB.get(t["task"], ("", ""))
+    trail = ([("Hub", "/hub/"), (ds, url.rsplit("/", 2)[0] + "/"), (t["task"], url)] if url else [("All runs", "/runs/jobs/"), (t["task"], "")])
+    bits = [f'<a href="{h}">{esc(x)}</a>' if h else esc(x) for x, h in trail] + [esc(HM[t["hm"]]["key"])]
+    return '<nav class="crumbs" aria-label="Breadcrumb">' + "<span>/</span>".join(bits) + "</nav>"
+
+
 def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     st = status(t)
     label = plab(t["hm"])
@@ -1287,10 +926,10 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     tabs = [("recording", "Recording", ""), ("trajectory", "Trajectory", f" <span class=\"num\">{n_steps}</span>" if n_steps else ""), ("verdict", "Verdict", ""),
             ("run", "Timing &amp; tokens", ""), ("files", "Files", "")]
     body = f"""
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span><a href="/runs/{esc(t['suite'])}/">{esc(SUITE_TITLE.get(t['suite'], t['suite']))}</a><span>/</span><a href="/runs/task/{esc(t['task'])}/">{esc(t['task'])}</a><span>/</span>{esc(HM[t["hm"]]["key"])}</nav>
+{trial_crumbs(t)}
 <section class="page-head head trial">
   <h1>{esc(t['title'])}</h1>
-  <p class="who"><span class="badge {st}">{STATUS_LONG[st]}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl">{esc(label)}</span>{counted}<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t['trial'])}">Compare</a></p>
+  <p class="who"><span class="badge {st}">{STATUS_LONG[st]}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl">{model_mark(HM[t["hm"]])}{esc(label)}</span>{counted}<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t['trial'])}">Compare</a></p>
   <dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>
 </section>
 <nav class="tabs" role="tablist" aria-label="Trial views" data-fade>
@@ -1325,7 +964,7 @@ def build_jobs(jobs: dict) -> str:
         rows.append(f'<tr {pair_attrs(i)} data-state="{st}" data-q="{esc((j["name"] + " " + plab(i) + " " + HM[i]["label"] + " " + " ".join(su)).lower())}">'
                     f'<th scope="row" data-v="{esc(j["name"])}"><a class="mono trunc" href="/runs/jobs/{esc(j["name"])}/" title="{esc(j["name"])}">{esc(j["name"])}</a></th>'
                     f'<td data-v="{i:04d}">{phtml(i)}</td>'
-                    f'<td class="sus">{", ".join(f"<a href=/runs/{s}/>{esc(SUITE_TITLE.get(s, s))}</a>" for s in su)}</td>'
+                    f'<td class="sus">{esc(", ".join(SUITE_TITLE.get(s, s) for s in su))}</td>'
                     f'<td class="n num" data-v="{j["trials"]}">{j["trials"]}</td>'
                     f'<td class="n num" data-v="{j["solved"] / j["scored"] if j["scored"] else -1:.4f}">{j["solved"]}/{j["scored"]}</td>'
                     f'<td class="n num" data-v="{j["infra"]}">{j["infra"] or "·"}</td>'
@@ -1375,7 +1014,7 @@ def build_job(j: dict, trials: list[dict]) -> str:
             '<select data-lf="counted" aria-label="Counted"><option value="">All trials</option><option value="1">Counted trials only</option></select>'
             '<span class="count push" data-lcount aria-live="polite"></span></div></div>')
     body = f"""
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span><a href="/runs/jobs/">Jobs</a><span>/</span>{esc(j["name"])}</nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/hub/leaderboard/">Leaderboard</a><span>/</span><a href="/runs/jobs/">All runs</a><span>/</span>{esc(j["name"])}</nav>
 <section class="page-head head">
   <h1>{esc(j["name"])}</h1>
   <p class="meta">{esc(plab(j["hm"]))} · {j["trials"]} trials · {j["solved"]}/{j["scored"]} solved · <span class="state {j["state"]}">{j["state"]}</span></p>
@@ -1475,7 +1114,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
         by_task[t["task"]].append(t)
     by_suite = defaultdict(list)
     for task in sorted(by_task):
-        if any(x.get("video", True) for x in by_task[task]):
+        if any(x["video"] if "video" in x else True for x in by_task[task]):
             by_suite[by_task[task][0]["suite"]].append(task)
     order = [s for s in SUITES if s in by_suite] + sorted(set(by_suite) - set(SUITES))
     tasks = []
@@ -1487,7 +1126,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
     rich = [k for k in tasks if any((t["dir"] / "artifacts" / "recording.mp4").is_file() and (t["dir"] / "agent" / "trajectory.json").is_file() for t in by_task[k])]
     borrow = set(rich[:2])
     trials, jobs = [], {}
-    t0 = datetime(2026, 9, 1, tzinfo=UTC).timestamp()
+    t0 = datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp()
     for ti, task in enumerate(tasks):
         srcs = sorted(by_task[task], key=lambda t: (not t.get("counted"), t["infra"], t["trial"]))
         src = next((t for t in srcs if (t["dir"] / "artifacts" / "recording.mp4").is_file()), srcs[0])
@@ -1509,7 +1148,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
                      "partial": False, "outcome": "infra_error" if infra else ("success_reached" if solved else "max_steps_reached"),
                      "steps_used": None if infra else rng.randint(8, mx), "max_steps": mx, "wall": round(wall, 1), "checks": {"robo_requests": rng.randint(5, 120)},
                      "infra_items": [{"id": "synthetic", "evidence": "fabricated infrastructure failure"}] if infra else [], "agent_text": "", "final_message": "",
-                     "started": datetime.fromtimestamp(start, UTC).isoformat(), "finished": datetime.fromtimestamp(start + wall, UTC).isoformat(),
+                     "started": datetime.fromtimestamp(start, timezone.utc).isoformat(), "finished": datetime.fromtimestamp(start + wall, timezone.utc).isoformat(),
                      "src_trial": src["trial"] if real_dir else None}
                 if ti == 0 and i == 0 and seed == 1:  # one fabricated trial carries every optional block (leaderboard spec section 5)
                     t["fake_extra"] = {
@@ -1540,9 +1179,9 @@ def synth_site(site: Path, chosen: dict) -> None:
         if src.exists() and not dst.exists() and not dst.is_symlink():
             dst.symlink_to(src)
     pairs = []
-    for _i, p in enumerate(HM):
+    for i, p in enumerate(HM):
         solved = scored = 0
-        for (h, m, _task), ts in chosen.items():
+        for (h, m, task), ts in chosen.items():
             if (h, m) == (p["harness"], p["model"]):
                 for t in ts:
                     if not t["infra"] and not t["partial"]:
@@ -1567,7 +1206,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     out = a.out.expanduser().resolve()
     site = out.parent
-    VER = datetime.now(UTC).strftime("%Y%m%d%H%M")
+    VER = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
     SYNTH = a.synthetic > 0
     if SYNTH:
         if out.is_relative_to(REAL_SITE.resolve()) or out.is_relative_to(REAL_SITE.parent.resolve()):
@@ -1592,15 +1231,12 @@ def main(argv: list[str] | None = None) -> int:
         trials, jobs = synthesize(trials, a.synthetic, a.seeds, site.parent)
         chosen = pick(trials)
         synth_site(site, chosen)
-    suite_state: dict[str, str] = {}
-    for j in jobs.values():
-        for s in j["suites"]:
-            if j["state"] == "running":
-                suite_state[s] = "running"
+    HAS_SEEDS[0] = any(len(ts) > 1 for ts in chosen.values())
+    HUB.update(hub_tasks(site))
     for sub in ("t", "task", "d", "jobs"):
         if (out / sub).exists():
             shutil.rmtree(out / sub)
-    for sub in ("v", "f", "d", "t", "task", "jobs", "compare"):
+    for sub in ("v", "f", "d", "t", "jobs", "compare"):
         (out / sub).mkdir(parents=True, exist_ok=True)
     tdocs: dict[str, dict] = {}
     tinfo: dict[str, dict] = {}
@@ -1657,6 +1293,7 @@ def main(argv: list[str] | None = None) -> int:
                 obs_map = {p.name: i for i, p in enumerate(shown)}
         data = trial_data(t, traj, spec, video, sprite, obs_map)
         data["files"] = files_of(d) if d.name != "empty-trial" else []
+        data["mark"] = model_mark(HM[t["hm"]])  # the model's mark beside its name in Compare
         ws = str(t["cfg"].get("workspace") or "")
         data["result_json"] = sanitized_json(t["res"], ws) if t["res"] else ""
         data["config_json"] = sanitized_json({k: v for k, v in t["cfg"].items() if k != "workspace"}, ws)
@@ -1672,29 +1309,13 @@ def main(argv: list[str] | None = None) -> int:
         for w, _ in ex.map(one, trials):
             withheld += w
 
-    suites = [s for s in SUITES if any(i["suite"] == s for i in tinfo.values())]
-    suites += sorted({i["suite"] for i in tinfo.values()} - set(suites))
-    cols = sorted({t["hm"] for t in trials})
-    for p in out.iterdir():  # suites from an earlier build that are no longer published
-        if p.is_dir() and p.name not in suites and p.name not in ("t", "v", "f", "d", "task", "jobs", "compare") and (p / "index.html").is_file():
+    suites = sorted({i["suite"] for i in tinfo.values()})
+    for p in [out / "index.html", *(p for p in out.iterdir() if p.is_dir() and p.name not in ("t", "v", "f", "d", "jobs", "compare"))]:
+        if p.is_dir():  # the results matrix, suite and task pages of earlier builds: the hub has them now (308s in vercel.json)
             shutil.rmtree(p)
-    gen = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
-    stats = {"trials": len(trials), "counted": sum(len(ts) for ts in chosen.values()), "withheld": withheld, "gen": gen}
-    (out / "index.html").write_text(build_index(chosen, suites, tinfo, cols, suite_state, stats))
-    by_suite = defaultdict(list)
-    for task, info in tinfo.items():
-        by_suite[info["suite"]].append(task)
-    for s in suites:
-        scols = sorted({HM_KEY[(h, m)] for (h, m, task) in chosen if tinfo[task]["suite"] == s})
-        (out / s).mkdir(parents=True, exist_ok=True)
-        (out / s / "index.html").write_text(build_suite(s, sorted(by_suite[s]), tinfo, chosen, scols, suite_state.get(s, ""),
-                                                        {tinfo[k]["source"] for k in by_suite[s] if tinfo[k]["source"]}, suites))
-    by_task = defaultdict(list)
-    for t in trials:
-        by_task[t["task"]].append(t)
-    for task, ts in by_task.items():
-        (out / "task" / task).mkdir(parents=True, exist_ok=True)
-        (out / "task" / task / "index.html").write_text(build_task(task, tinfo[task], ts, tdocs[task], chosen))
+        elif p.exists():
+            p.unlink()
+    counted = sum(len(ts) for ts in chosen.values())
     (out / "compare" / "index.html").write_text(build_compare())
     by_job = defaultdict(list)
     for t in trials:
@@ -1709,7 +1330,7 @@ def main(argv: list[str] | None = None) -> int:
     (out / "jobs" / "index.html").write_text(build_jobs(jobs))
     index = {"hm": [[p["label"], p["key"]] for p in HM], "suites": {s: SUITE_TITLE.get(s, s) for s in suites},
              "trials": {t["trial"]: [t["task"], t["hm"], status(t), int(t["counted"])] for t in trials},
-             "titles": {k: v["title"] for k, v in tinfo.items()}}
+             "titles": {k: v["title"] for k, v in tinfo.items()}, "urls": {k: HUB[k][0] for k in tinfo if k in HUB}}
     (out / "d" / "trials.json").write_text(json.dumps(redact_all(index), ensure_ascii=False, separators=(",", ":")))
     for name in ("runs.css", "runs.js"):
         shutil.copyfile(ASSETS / name, out / name)
@@ -1731,7 +1352,7 @@ def main(argv: list[str] | None = None) -> int:
     size = sum(p.stat().st_size for p in out.rglob("*") if p.is_file() and not p.is_symlink())
     part = {k: sum(p.stat().st_size for p in (out / k).rglob("*") if p.is_file() and not p.is_symlink()) / 1e6 for k in ("v", "f", "d", "t")}
     nfiles = sum(1 for p in out.rglob("*") if p.is_file())
-    print(f"wrote {out}: {len(trials)} trial pages ({stats['counted']} counted), {len(tinfo)} tasks, {len(suites)} suites, {len(jobs)} jobs, "
+    print(f"wrote {out}: {len(trials)} trial pages ({counted} counted), {len(tinfo)} tasks, {len(suites)} suites, {len(jobs)} jobs, "
           f"{withheld} trajectories withheld; {nfiles} files, total {size / 1e6:.1f} MB "
           f"(videos {part['v']:.1f}, filmstrips {part['f']:.1f}, data {part['d']:.1f}, pages {part['t']:.1f})")
     running = sorted(n for n, j in jobs.items() if j["state"] == "running")
