@@ -81,6 +81,7 @@ def register(sub: argparse._SubParsersAction) -> None:
     s.add_argument(
         "--split", help="placement split: nominal, interpolation or extrapolation (tasks with seeded placements)"
     )
+    s.add_argument("--secrets-stdin", action="store_true", help=argparse.SUPPRESS)  # the runner's token and key
     s.set_defaults(func=serve)
 
     r = sub.add_parser("run", help="run one trial end to end")
@@ -170,6 +171,7 @@ def serve(a: argparse.Namespace) -> int:
         spec["seed"] = a.seed
     if a.split:
         spec["placement"] = {**(spec.get("placement") or {}), "split": a.split}
+    secrets = json.loads(sys.stdin.readline() or "{}") if a.secrets_stdin else None
     res = serve_episode(
         spec,
         Path(a.run_dir),
@@ -177,8 +179,9 @@ def serve(a: argparse.Namespace) -> int:
         Path(a.workspace) if a.workspace else None,
         max_wall_s=a.max_wall_s,
         ready_file=Path(a.ready_file) if a.ready_file else None,
+        secrets=secrets,
     )
-    print(json.dumps(res))
+    print(json.dumps({k: v for k, v in res.items() if k != "signature"}))
     return 0
 
 
