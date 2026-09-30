@@ -54,6 +54,10 @@ def make_backend(spec: dict) -> Backend:
         from .dexjoco import DexjocoBackend
 
         return DexjocoBackend(spec)
+    if kind == "gpu":  # GPU track (ManiSkill3, Genesis, MuJoCo Playground, Isaac Lab); simulator in a remote GPU worker
+        from .gpu import GpuBackend
+
+        return GpuBackend(spec)
     # embodiment suites (backends/embodied.py): quadrupeds, humanoids, mobile manipulators, dexterous hands, Crazyflie, driving
     if kind in EMBODIED or kind in UPSTREAM:
         import importlib

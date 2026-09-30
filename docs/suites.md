@@ -147,3 +147,7 @@ Set `ROBOUSE_METADRIVE_PYTHON` to use another interpreter.
 ## Not in the package
 
 BEHAVIOR-1K needs an NVIDIA RTX GPU for its simulator worker, so it runs only from a checkout of the Robo Use repository.
+
+## GPU track
+
+25 more tasks whose simulators need an NVIDIA GPU: ManiSkill3 (12), Genesis (3), MuJoCo Playground (5) and Isaac Lab Factory (5). They run from a checkout of the Robo Use repository against remote GPU workers, not from the package; see [the GPU track](suites/gpu-track.md).
