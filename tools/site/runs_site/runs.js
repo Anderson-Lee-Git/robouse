@@ -17,7 +17,7 @@
   function getJSON(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status + " " + u); return r.json(); }); }
   var coll = typeof Intl !== "undefined" ? new Intl.Collator(undefined, {numeric: true, sensitivity: "base"}) : null;
   function cmpText(a, b) { return coll ? coll.compare(a, b) : (a < b ? -1 : a > b ? 1 : 0); }
-  var STATUS = {ok: "Solved", no: "Not solved", infra: "Infra failure", partial: "Partial"};
+  var STATUS = {ok: "Solved", no: "Not solved", infra: "Infra failure", partial: "Stopped"};
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   function setKeys() { return window.ModelSet && ModelSet.keys && ModelSet.pairs && ModelSet.pairs().length ? ModelSet.keys() : null; }
   function emptyState(title, text, extra) { return '<div class="empty-state"><b>' + h(title) + "</b>" + h(text) + (extra || "") + "</div>"; }
@@ -246,12 +246,16 @@
     return "background-image:url(" + sp.src + ");background-size:" + (cols * sp.tile * k) + "px " + (rows * sp.tile * k) + "px;background-position:-" +
       ((i % sp.cols) * sp.tile * k) + "px -" + (Math.floor(i / sp.cols) * sp.tile * k) + "px";
   }
+  /* the number a reader sees for a step: ATIF numbers the task prompt 1, so the steps after it count from 1, and the
+     Trajectory badge, the lists and the Timing tab all agree */
+  function base(d) { return d._base != null ? d._base : (d._base = d.prompt ? 1 : d.steps.length && d.steps[0].i > 1 ? d.steps[0].i - 1 : 0); }
+  function sn(d, i) { return i == null ? i : i - base(d); }
   function stepListHTML(d) {
     return d.steps.map(function (s) {
       var a = actionOf(s), v = s.v;
       var x = s.env && s.env[1] > s.env[0] ? "+" + (s.env[1] - s.env[0]) + " steps" : "";
-      return '<li data-i="' + s.i + '"' + (v ? ' data-t0="' + v[0] + '" tabindex="0" aria-label="Step ' + s.i + ", " + h(a.text.slice(0, 120)) + ", seek to " + t2(v[0]) + '"' : ' class="nov"') +
-        '><span class="i">' + s.i + '</span><span class="t">' + (v && x && v[0] > 0 ? t2(v[0]) : "") +  // the recording time where this step moved the robot; blank for steps that did not move it
+      return '<li data-i="' + s.i + '"' + (v ? ' data-t0="' + v[0] + '" tabindex="0" aria-label="Step ' + sn(d, s.i) + ", " + h(a.text.slice(0, 120)) + ", seek to " + t2(v[0]) + '"' : ' class="nov"') +
+        '><span class="i">' + sn(d, s.i) + '</span><span class="t">' + (v && x && v[0] > 0 ? t2(v[0]) : "") +  // the recording time where this step moved the robot; blank for steps that did not move it
 
         '</span><span class="a ' + a.cls + '" title="' + h(a.text.slice(0, 400)) + '">' + h(a.text.slice(0, 220)) + '</span><span class="x' + (exitOf(s) ? " err" : "") + '">' + (exitOf(s) ? "exit≠0" : x) + "</span></li>";
     }).join("");
@@ -316,6 +320,7 @@
   /* ---------------------------------------------------------------- trial page */
   function initTrial(id) {
     var stage = $("#stage"), panel = $("#panel"), player = $("#player"), v = $("#vid"), pctl = $(".pctl", player);
+    if (v) v.removeAttribute("controls");  /* native controls are the no-script fallback; the page has its own */
     var below = document.createElement("div"); below.id = "below"; stage.parentNode.insertBefore(below, stage.nextSibling);
     var tabs = $$("nav.tabs [role=tab]");
     function tabOf(hash) { var t = (hash || "").replace(/^#/, "").split("/")[0]; return /^(recording|trajectory|verdict|run|files)$/.test(t) ? t : "recording"; }
@@ -359,7 +364,7 @@
           if (i == null) { now.textContent = ""; return; }
           $$('[data-i="' + i + '"]').forEach(function (el) { el.classList.add("cur"); });
           var s = d.steps.find(function (x) { return x.i === i; });
-          now.textContent = "Step " + i + (s ? " · " + actionOf(s).text.slice(0, 80) : "");
+          now.textContent = "Step " + sn(d, i) + (s ? " · " + actionOf(s).text.slice(0, 80) : "");
           scrollInto($('.slist li[data-i="' + i + '"]'));
           markTiles(i);
         });
@@ -440,9 +445,17 @@
         if (d.withheld) return withheldNote();
         if (!d.steps.length) return emptyState("No trajectory was recorded for this trial.", "The recording and the Verdict tab still show what happened.");
         var n = d.steps.length;  /* the same count as the Trajectory tab: every step listed */
-        var first = d.steps[0] && d.steps[0].i > 1 && d.prompt ? '<li class="nov"><span class="i">1</span><span class="t"></span><span class="a msg"><a href="#trajectory">Task prompt</a></span><span class="x"></span></li>' : "";
+        var first = d.steps[0] && d.prompt ? '<li class="nov"><span class="i"></span><span class="t"></span><span class="a msg"><a href="#trajectory">Task prompt</a></span><span class="x"></span></li>' : "";
         return '<div class="recbox"><div class="rechead"><span title="Click a step to seek; ← → to step">Steps</span></div><ol class="slist">' + first + stepListHTML(d) + "</ol>" +
-          (d.hidden ? '<p class="muted small slnote">' + d.hidden + " one-action steps in the middle are not listed.</p>" : "") + "</div>";
+          (d.hidden ? '<p class="muted small slnote">' + d.hidden + " one-action steps in the middle are not listed.</p>" : "") + tailNote() + "</div>";
+      }
+      /* a harness log that stops before the episode did (the agent kept moving until the time limit): say so, so the
+         recording's last part is not read as missing */
+      function tailNote() {
+        var last = null;
+        d.steps.forEach(function (s) { if (s.env && s.env[1] != null) last = Math.max(last || 0, s.env[1]); });
+        if (last == null || d.steps_used == null || d.steps_used - last <= Math.max(50, 0.2 * d.steps_used)) return "";
+        return '<p class="muted small slnote">The harness logged steps up to simulator step ' + num(last) + " of " + num(d.steps_used) + "; the rest of the recording has no step in this list.</p>";
       }
       function strip() {
         var sp = d.sprite;
@@ -450,7 +463,7 @@
           (sp.total > sp.n ? sp.n + " of " + sp.total + " shown" : sp.total) + '</span></div><div class="tiles" data-fade>' +
           d.obs.map(function (o) {
             var cam = o[0].replace(/\.png$/, "").replace(/^obs_\d+_?/, "").replace(/^robot\d_/, "").replace(/_/g, " ");  // the camera, from the file name
-            var lab = o[1] != null ? "step " + o[1] + (cam && !/^\d+$/.test(cam) ? " · " + cam : "") : o[0].replace(/\.png$/, "");
+            var lab = o[1] != null ? "step " + sn(d, o[1]) + (cam && !/^\d+$/.test(cam) ? " · " + cam : "") : o[0].replace(/\.png$/, "");
             return '<button type="button" class="tile"' + (o[1] != null ? ' data-s="' + o[1] + '"' : "") + (o[3] != null ? ' data-seek="' + o[3] + '"' : "") + ' title="' + h(o[0]) + '" aria-label="Camera image ' + h(lab) + (o[3] != null ? ", seek the recording here" : "") + '"><i style="' + sprStyle(sp, o[2]) + '"></i><span>' + h(lab) + "</span></button>";
           }).join("") + "</div></section>";
       }
@@ -464,7 +477,7 @@
         d.steps.forEach(function (s) {
           if (d.hidden && prev != null && s.i - prev > 1) out.push('<li class="gap">… ' + d.hidden + " one-action steps not shown …</li>");
           prev = s.i;
-          var head = '<div class="sh"><span class="num">' + s.i + '</span><span class="src">' + ({agent: "Agent", system: "System", user: "Prompt"}[s.src] || h(s.src)) + "</span>" +
+          var head = '<div class="sh"><span class="num">' + sn(d, s.i) + '</span><span class="src">' + ({agent: "Agent", system: "System", user: "Prompt"}[s.src] || h(s.src)) + "</span>" +
             (s.ts != null ? '<span class="num">+' + dur(s.ts) + "</span>" : "") + (s.tk ? '<span class="num" title="prompt / output tokens">' + kfmt(s.tk[0]) + " / " + kfmt(s.tk[1]) + " tok</span>" : "") +
             (s.v ? '<button type="button" class="seek" data-seek="' + s.v[0] + '" title="Seek the recording here">' + t2(s.v[0]) + "</button>" : "") + "</div>";
           var body = "";
@@ -511,28 +524,48 @@
         if (X.vla) { var v = X.vla; out += grp("Policy inference", [["Inferences", num(v.inferences)], ["Chunk size", v.chunk != null ? String(v.chunk) : null, "actions"], ["Round trip", v.roundtrip ? v.roundtrip[0].toFixed(2) + " · " + v.roundtrip[1].toFixed(2) : null, "s median · p90"], ["Server", v.server ? v.server[0].toFixed(2) + " · " + v.server[1].toFixed(2) : null, "s median · p90"]]); }
         return out ? '<div class="xgs">' + out + "</div>" : "";
       }
+      /* the verifier's one-line output ("success done", "fail gave_up") as words; anything longer stays as written */
+      function verifierText(t) {
+        var m = String(t || "").trim().match(/^(success|fail)\s+(\w+)$/);
+        return m ? (m[1] === "success" ? "Passed" : "Failed") + ": " + oc(m[2]).toLowerCase() + "." : null;
+      }
+      var BACKENDS = {dexjoco: "DexJoCo", libero: "LIBERO", robosuite: "robosuite", metaworld: "Meta-World", mujoco: "MuJoCo", menagerie: "MuJoCo Menagerie",
+        maniskill: "ManiSkill3", tabletop: "Robo Use tabletop (MuJoCo)", robocasa: "RoboCasa", behavior: "BEHAVIOR-1K", gymrobotics: "Gymnasium-Robotics", drone: "Robo Use drone",
+        roboharm: "Robo Use RoboHarm scenes (MuJoCo)", dm_control: "dm_control"};
+      function yn(x) { return x == null ? null : x ? "Yes" : "No"; }
+      /* the runner's own note ("[runner] agent exited without robo done") as a sentence, without the log tag */
+      function unrunner(t) { t = String(t || ""); if (!/^\[runner\]/.test(t)) return t; t = t.replace(/^\[runner\]\s*/, ""); return t.charAt(0).toUpperCase() + t.slice(1) + (/[.!?]$/.test(t) ? "" : "."); }
       function verdict() {
         var vd = d.verdict, r = d.reward, solved = r != null && r > 0;
         var claim = {done: ["Called robo done", ""], give_up: ["Gave up", "warn"], runner: ["Never called robo done", "warn"], none: ["No robo done or give-up", "warn"]}[vd.claim] || ["–", ""];
-        var check = d.status === "partial" ? ["Not scored (partial)", "warn"] : d.status === "infra" ? ["Infrastructure failure", "warn"] : solved ? ["Passed · reward " + rew(r), "ok"] : ["Failed · reward " + rew(r), "no"];
+        var check = d.status === "partial" ? ["Not scored: the run was stopped", "warn"] : d.status === "infra" ? ["Not scored: infrastructure failure", "warn"] : solved ? ["Passed · reward " + rew(r), "ok"] : ["Failed · reward " + rew(r), "no"];
         var rel = "", relc = "";
-        if (d.status === "infra") rel = "The run did not measure the agent (an infrastructure failure), so this trial is not scored.";
-        else if (d.status === "partial") rel = "The run was stopped before this trial finished.";
+        if (d.status === "infra") rel = "The trial did not measure the agent, so it is not scored.";
+        else if (d.status === "partial") rel = "The run was stopped before this trial finished, so it is not scored.";
         else if (vd.claim === "done") { rel = solved ? "The agent claimed success, and the simulator agrees." : "The agent claimed success, but the simulator’s check failed."; relc = solved ? "" : "no"; }
         else if (vd.claim === "give_up") rel = solved ? "The agent gave up, and that scored: refusing was the expected answer here." : "The agent gave up; the goal was not reached.";
         else if (vd.claim === "runner") rel = "The agent stopped without robo done or give-up, so the runner closed the episode" + (solved ? "; the final state still satisfied the goal." : ".");
         else rel = d.outcome === "success_reached" ? "The simulator’s success signal fired during the episode, which ended it." : "The episode ended: " + oc(d.outcome).toLowerCase() + ".";
-        var mode = {first: "first: success counts as soon as the simulator’s success signal fires", final: "final: after robo done the robot holds still for about 10 steps, then the goal must still hold"}[vd.success_mode] || (vd.success_mode || "–");
-        var said = vd.claim_text || vd.last_message;
+        var mode = {first: "As soon as the goal is reached", final: "After robo done, the goal must still hold about 10 steps later"}[vd.success_mode] || null;
+        var said = unrunner(vd.claim_text || vd.last_message);
         var spec = d.spec || {};
-        var kv = [["Outcome", oc(d.outcome)], ["Success", vd.success == null ? "–" : String(vd.success)], ["Success at any time", vd.success_ever == null ? "–" : String(vd.success_ever)],
-          ["Success mode", mode], ["Steps", num(d.steps_used) + " / " + num(d.max_steps)], ["Robo calls", num(d.requests) + (d.motion != null ? " (" + d.motion + " motion" + (d.robo_errors ? ", " + d.robo_errors + " errors" : "") + ")" : "")],
-          ["Backend · env", [spec.backend, spec.env].filter(Boolean).join(" · ")], ["Observation", spec.observation_mode], ["Camera", spec.camera], ["Skills", spec.skills == null ? null : String(spec.skills)], ["Seed", d.seed != null ? d.seed : spec.seed], ["Safety", spec.safety]];
+        var scored = d.status !== "infra" && d.status !== "partial";
+        if (d.status === "infra" && vd.claim !== "done" && vd.claim !== "give_up") { claim = ["No claim", "warn"]; said = ""; }
+        var vtext = verifierText(vd.verifier);
+        /* "goal reached at some point" only where it adds: the goal held during the episode but not at the end */
+        var ever = scored && vd.success === false && vd.success_ever === true ? "Yes, but not at the end" : null;
+        var kv = [["Outcome", scored ? oc(d.outcome) : null], ["Success", scored ? yn(vd.success) : null], ["Goal reached at some point", ever],
+          ["Success is judged", scored && vd.claim !== "give_up" ? mode : null], ["Steps", d.steps_used != null ? num(d.steps_used) + " of " + num(d.max_steps) + " simulator steps" : null],
+          ["Robot requests", d.requests != null ? num(d.requests) + (d.motion != null ? ", " + num(d.motion) + " moved the robot" + (d.robo_errors ? ", " + num(d.robo_errors) + " refused" : "") : "") : null],
+          ["Simulator", spec.backend ? BACKENDS[spec.backend] || spec.backend : null], ["Observation", spec.observation_mode ? ({state: "Full object state, images on request", vision: "Camera images and the robot’s own state"}[spec.observation_mode] || spec.observation_mode) : null],
+          ["Skills", spec.skills == null ? null : spec.skills === true ? "Yes" : spec.skills === false ? "No" : String(spec.skills)], ["Seed", d.seed != null ? d.seed : spec.seed]];
+        var log = vd.infra && vd.infra.length ? '<details class="disc errlog"><summary>Error log</summary><pre class="out wrap"><code>' + h(vd.infra.join("\n\n")) + "</code></pre></details>" : "";
         return '<div class="vd">' +
           '<section class="card"><h3>Agent said</h3><p class="big ' + claim[1] + '">' + claim[0] + "</p>" +
-          (d.withheld ? '<p class="muted small">Withheld with the trajectory.</p>' : said ? '<div class="txt">' + h(said) + "</div>" + (vd.claim_text ? "" : '<p class="muted small">(its last message)</p>') : '<p class="muted small">No message.</p>') + "</section>" +
-          '<section class="card"><h3>Simulator checked</h3><p class="big ' + check[1] + '">' + check[0] + '</p><p class="muted small">The claim never counts: the episode server judges the final physical state.</p>' +
-          (vd.verifier ? '<pre class="out"><code>' + h(vd.verifier) + "</code></pre>" : "") + (vd.infra && vd.infra.length ? '<pre class="out"><code>' + h(vd.infra.join("\n")) + "</code></pre>" : "") + "</section>" +
+          (d.withheld ? '<p class="muted small">Withheld with the trajectory.</p>' : said ? '<div class="txt">' + h(said) + "</div>" + (vd.claim_text ? "" : '<p class="muted small">(its last message)</p>') : '<p class="muted small">' + (d.status === "infra" ? "The session ended before the agent called robo done or give-up." : "No message.") + "</p>") + "</section>" +
+          '<section class="card"><h3>Simulator checked</h3><p class="big ' + check[1] + '">' + check[0] + "</p>" +
+          (scored ? '<p class="muted small">The claim never counts: the episode server judges the final physical state.</p>' : "") +
+          (vtext && scored ? "<p>" + h(vtext) + "</p>" : vd.verifier && scored ? '<pre class="out wrap"><code>' + h(vd.verifier) + "</code></pre>" : "") + log + "</section>" +
           '<p class="rel ' + relc + '">' + h(rel) + "</p>" +
           '<section class="card wide"><h3>Episode</h3><dl class="kv">' + kv.filter(function (x) { return x[1] != null && x[1] !== ""; }).map(function (x) { return "<dt>" + h(x[0]) + "</dt><dd>" + h(x[1]) + "</dd>"; }).join("") + "</dl></section></div>" + verdictExtras();
       }
@@ -541,8 +574,9 @@
         /* wall time, robot requests and env steps are in the facts above the tabs; this tab adds only what is new */
         stats.push(["Episode", dur(d.ep_wall), ""]);
         stats.push(["Video", d.duration != null ? dur(d.duration) : "–", "robot moving"]);
-        stats.push(["Agent steps", num(d.steps.filter(function (s) { return s.src === "agent"; }).length || null), ""]);
-        if (d.motion != null) stats.push(["Motion requests", num(d.motion), "of " + num(d.requests)]);
+        var nAgent = d.steps.filter(function (s) { return s.src === "agent"; }).length, nAll = d.steps.length + (d.hidden || 0);
+        stats.push(["Steps", num(nAll || null), nAll && nAgent !== d.steps.length ? num(nAgent + (d.hidden || 0)) + " by the agent" : ""]);
+        if (d.motion != null) stats.push(["Robot requests", num(d.requests), num(d.motion) + " moved the robot"]);
         var html = '<dl class="stats">' + stats.map(function (s) { return "<div><dt>" + s[0] + '</dt><dd class="num">' + s[1] + (s[2] ? "<small>" + s[2] + "</small>" : "") + "</dd></div>"; }).join("");
         if (tk) {
           html += '<div><dt>Input tokens</dt><dd class="num">' + kfmt(tk["in"]) + (tk.cached ? "<small>" + Math.round(100 * tk.cached / Math.max(1, tk["in"])) + "% cached</small>" : "") + "</dd></div>" +
@@ -556,7 +590,7 @@
           var T = ts[ts.length - 1].ts - ts[0].ts || 1;
           var segs = ts.slice(0, -1).map(function (s, k) {
             var dt = Math.max(0, ts[k + 1].ts - s.ts);
-            return '<i style="flex:' + Math.max(dt, T / 2000).toFixed(3) + ' 0 0" data-go="' + ts[k + 1].i + '" data-tip="' + dur(dt) + " before step " + ts[k + 1].i + "\n" + h(actionOf(ts[k + 1]).text.slice(0, 120)) + '"></i>';
+            return '<i style="flex:' + Math.max(dt, T / 2000).toFixed(3) + ' 0 0" data-go="' + ts[k + 1].i + '" data-tip="' + dur(dt) + " before step " + sn(d, ts[k + 1].i) + "\n" + h(actionOf(ts[k + 1]).text.slice(0, 120)) + '"></i>';
           });
           html += '<section class="chart"><h3>Wall clock between steps<span>' + dur(T) + " from the first step to the last; each segment is the time before a step (the previous command running, then the model thinking). Click one for the step.</span></h3>" +
             '<div class="tl">' + segs.join("") + '</div><div class="axis num"><span>0</span><span>' + dur(T / 2) + "</span><span>" + dur(T) + "</span></div></section>";
@@ -566,9 +600,9 @@
         if (tks.length > 1) {
           var maxIn = Math.max.apply(null, tks.map(function (s) { return s.tk[0]; })) || 1, maxOut = Math.max.apply(null, tks.map(function (s) { return s.tk[1]; })) || 1;
           html += '<section class="chart"><h3>Input tokens per step<span>the context the model read, up to ' + kfmt(maxIn) + '</span></h3><div class="bars">' +
-            tks.map(function (s) { return '<i style="height:' + (100 * s.tk[0] / maxIn).toFixed(1) + '%" data-go="' + s.i + '" data-tip="step ' + s.i + " · " + num(s.tk[0]) + " input (" + num(s.tk[2]) + ' cached)"></i>'; }).join("") + "</div></section>" +
+            tks.map(function (s) { return '<i style="height:' + (100 * s.tk[0] / maxIn).toFixed(1) + '%" data-go="' + s.i + '" data-tip="step ' + sn(d, s.i) + " · " + num(s.tk[0]) + " input (" + num(s.tk[2]) + ' cached)"></i>'; }).join("") + "</div></section>" +
             (outOk ? '<section class="chart"><h3>Output tokens per step<span>up to ' + kfmt(maxOut) + '</span></h3><div class="bars out">' +
-            tks.map(function (s) { return '<i style="height:' + (100 * s.tk[1] / maxOut).toFixed(1) + '%" data-go="' + s.i + '" data-tip="step ' + s.i + " · " + num(s.tk[1]) + ' output"></i>'; }).join("") + "</div></section>"
+            tks.map(function (s) { return '<i style="height:' + (100 * s.tk[1] / maxOut).toFixed(1) + '%" data-go="' + s.i + '" data-tip="step ' + sn(d, s.i) + " · " + num(s.tk[1]) + ' output"></i>'; }).join("") + "</div></section>"
             : '<p class="muted small">Output tokens per step are not shown: this harness’s per-message counts do not add up to its run total.</p>');
         } else if (tk) {
           html += '<p class="muted small">This harness reports tokens for the whole run only, not per step.</p>';
@@ -591,8 +625,10 @@
         var reward = r.verifier_result && r.verifier_result.rewards ? r.verifier_result.rewards.reward : d.reward;
         var who = d.model_label ? d.model_label + " with " + d.harness_label : (c.harness || (r.agent_info || {}).name || "") + (c.model ? " with " + c.model : "");
         var steps = ep.steps_used != null ? num(ep.steps_used) + (ep.max_steps ? " of " + num(ep.max_steps) : "") + " simulator steps" : "";
-        var parts = [];
-        if (reward != null) parts.push("Reward " + rew(reward) + (ep.outcome ? ", " + h(oc(ep.outcome).toLowerCase()) : ""));
+        var parts = [], scored = d.status !== "infra" && d.status !== "partial";
+        if (reward != null && scored) parts.push("Reward " + rew(reward) + (ep.outcome ? ", " + h(oc(ep.outcome).toLowerCase()) : ""));
+        else if (d.status === "infra") parts.push("Not scored: infrastructure failure");
+        else if (d.status === "partial") parts.push("Not scored: the run was stopped");
         if (steps) parts.push(steps + (ep.requests != null ? " in " + num(ep.requests) + " robot requests" : ""));
         var wall = r.wall_time_s != null ? dur(r.wall_time_s) : "";
         var agent = [];
@@ -602,15 +638,14 @@
         var result = '<section class="card sum"><h3>Result</h3><p>' + (parts[0] || "Not scored") + ".</p>" +
           (parts[1] ? "<p>" + parts[1] + (wall ? ", " + wall + " in all" : "") + ".</p>" : "") +
           (agent.length ? '<p class="muted">Agent: ' + agent.join(", ") + ".</p>" : "") +
-          (ep.agent_text ? "<blockquote>" + h(ep.agent_text) + "</blockquote>" : "") + "</section>";
+          (ep.agent_text ? "<blockquote>" + h(unrunner(ep.agent_text)) + "</blockquote>" : "") + "</section>";
         var chips = [meta.source_benchmark, meta.category && meta.category.replace(/-/g, " "), meta.difficulty].filter(Boolean)
           .map(function (x) { return '<span class="chip">' + h(x) + "</span>"; }).join("") +
           (meta.tags || []).map(function (x) { return '<span class="chip tag">' + h(x) + "</span>"; }).join("");
         var setup = '<section class="card sum"><h3>Setup</h3><p>' + h(who || "Agent") +
           (c.agent_timeout_s ? ", " + dur(c.agent_timeout_s) + " agent time limit" : "") + (c.seed != null ? ", seed " + h(c.seed) : "") + ".</p>" +
-          (c.task_path ? '<p class="muted">Task <code>' + h(c.task_path) + "</code></p>" : "") +
-          (chips ? '<p class="chips">' + chips + "</p>" : "") +
-          (c.sandbox ? '<p class="muted">Sandbox <code>' + h(c.sandbox) + "</code></p>" : "") + "</section>";
+          (d.hub ? '<p class="muted">Task <a class="ln" href="' + h(d.hub) + '">' + h(d.title || c.task) + "</a></p>" : "") +
+          (chips ? '<p class="chips">' + chips + "</p>" : "") + "</section>";
         return '<div class="sums">' + result + setup + "</div>";
       }
       /* the trial folder as the shared file tree: what is published opens in place, the rest says why it is not */
@@ -644,7 +679,7 @@
               var u = sp.disp || sp.tile;  /* in display units: the file viewer draws the tile at twice this, the sprite's own size */
               e.sprite = {src: sp.src, x: (i % sp.cols) * u, y: Math.floor(i / sp.cols) * u, w: u, h: u,
                 bw: Math.min(sp.n, sp.cols) * u, bh: Math.ceil(sp.n / sp.cols) * u,
-                caption: (o[1] != null ? "Looked at in step " + o[1] + ". " : "") + "A " + sp.tile + " px thumbnail from the filmstrip; the full-size image is not published."};
+                caption: (o[1] != null ? "Looked at in step " + sn(d, o[1]) + ". " : "") + "A " + sp.tile + " px thumbnail from the filmstrip; the full-size image is not published."};
             } else e.w = "Not published. Only a sample of " + (sp ? sp.n : 0) + " camera images is published, as the filmstrip on the Recording tab.";
           } else e.w = why(p);
           return e;
@@ -678,16 +713,26 @@
       Object.keys(T).forEach(function (id) { (byTask[T[id][0]] = byTask[T[id][0]] || []).push(id); });
       function label(id) { var t = T[id]; return mfirst(idx.hm[t[1]][0]) + " · " + (STATUS[t[2]] || t[2]) + (t[3] ? "" : " (not counted)"); }
       function sorted(ids) { return ids.slice().sort(function (x, y) { return (T[y][3] - T[x][3]) || (T[x][1] - T[y][1]) || (x < y ? -1 : 1); }); }
-      var task = a && T[a] ? T[a][0] : b && T[b] ? T[b][0] : null;
+      var notes = [], a0 = a, b0 = b;
+      if (a && !T[a]) { notes.push("No trial " + a + "."); a = null; }
+      if (b && !T[b]) { notes.push("No trial " + b + "."); b = null; }
+      var task = a ? T[a][0] : b ? T[b][0] : null;
+      if (a && b && T[b][0] !== task) { notes.push("Trial B was a trial of another task (" + (idx.titles[T[b][0]] || T[b][0]) + "); both columns show " + (idx.titles[task] || task) + "."); b = null; }
+      if (a && b === a) { notes.push("Trial A and B were the same trial; B is another trial of this task."); b = null; }
+      var note = notes.length ? '<p class="cnote" role="status">' + h(notes.join(" ")) + "</p>" : "";
       var tasks = Object.keys(byTask).sort();
       var picker = '<div class="cpick"><select data-task aria-label="Task"><option value="">Choose one of ' + Object.keys(byTask).length.toLocaleString("en-US") + " tasks…</option>" +
         tasks.map(function (k) { return '<option value="' + h(k) + '"' + (k === task ? " selected" : "") + ">" + h(k) + " · " + h(idx.titles[k] || "") + "</option>"; }).join("") + "</select>" +
         (task && idx.urls && idx.urls[task] ? '<a class="ln" href="' + h(idx.urls[task]) + '">Open task page</a>' : "") + "</div>";
-      if (!task) { root.innerHTML = picker + emptyState("Pick a task to compare two of its trials.", "Or press Compare on a trial, or on a task page's results."); bindPick(); return; }
+      if (!task) { if (a0 || b0) history.replaceState(null, "", location.pathname + location.hash); root.innerHTML = picker + note + emptyState("Pick a task to compare two of its trials.", "Or press Compare on a trial, or on a task page's results."); bindPick(); return; }
       var ids = sorted(byTask[task]);
       if (!a || !T[a]) a = ids.find(function (x) { return x !== b; });
-      if (!b || !T[b] || b === a) b = ids.find(function (x) { return x !== a && T[x][1] !== T[a][1] && T[x][3]; }) || ids.find(function (x) { return x !== a; });
-      root.innerHTML = picker + (b ? '<div class="cbar"><button type="button" class="btn quiet sm" data-both>Play both from the start</button><span class="muted">Each column follows its own video; click a step to seek.</span></div>'
+      if (!b) b = ids.find(function (x) { return x !== a && T[x][1] !== T[a][1] && T[x][3]; }) || ids.find(function (x) { return x !== a; });
+      if (a !== a0 || b !== b0) {  /* the address names the trials shown */
+        var q = new URLSearchParams(location.search); q.set("a", a); if (b) q.set("b", b); else q.delete("b");
+        history.replaceState(null, "", location.pathname + "?" + q.toString() + location.hash);
+      }
+      root.innerHTML = picker + note + (b ? '<div class="cbar"><button type="button" class="btn quiet sm" data-both>Play both from the start</button><span class="muted">Each column follows its own video; click a step to seek.</span></div>'
         : '<p class="muted">This task has only one trial.</p>') +
         '<div class="cmpgrid"><div class="col" data-side="a"></div><div class="col" data-side="b"></div></div>';
       bindPick();
