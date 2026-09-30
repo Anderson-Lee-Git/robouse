@@ -150,6 +150,42 @@ def _verify(task: Task, episode: dict, tdir: Path) -> float:
     return reward
 
 
+class Ineligible(ValueError):
+    """This (task, harness, model) combination is not run and not scored (e.g. a vision task for a text-only model)."""
+
+
+# harnesses whose model is not a language model reached through a provider: they always get the task's images
+NO_MODEL_HARNESSES = ("oracle", "noop", "molmoact2", "vla")
+
+
+def image_plan(task: Task, harness: str, model: str) -> dict:
+    """Whether this trial's agent gets images, and the reason, from the model registry (harnesses/models.py).
+
+    A model the registry lists as text-only, or does not describe, gets none: the episode server renders no image for
+    it and writes no image file or path into its workspace, and its gateway replaces any image part. A vision task
+    (obs_mode: vision) hides object state and shows it only in images, so it is ineligible for such a model: not run,
+    not scored. ROBOUSE_AGENT_IMAGES=0 turns images off for a whole run (the condition of the published GLM-5.3 · Codex
+    column); ROBOUSE_RUN_INELIGIBLE=1 runs an ineligible trial anyway (audits and regression checks only)."""
+    from .. import config
+    from ..harnesses import models
+
+    canon, mid = models.legacy(harness, model)
+    if canon in NO_MODEL_HARNESSES or canon not in ("claude-code", "codex", "mini-swe-agent"):
+        return {"harness": canon, "model": mid, "images": True, "reason": "not a language-model harness"}
+    ref = models.resolve(canon, mid) if mid else None
+    accepts = models.accepts_images(ref) if ref else True
+    plan = {"harness": canon, "model": ref.id if ref else mid, "accepts_images": accepts}
+    if accepts is not True:
+        plan.update(images=False, reason="text-only model" if accepts is False else "registry does not list image input")
+    elif not config.flag("ROBOUSE_AGENT_IMAGES", default=True):
+        plan.update(images=False, reason="images turned off for this run (ROBOUSE_AGENT_IMAGES=0)")
+    else:
+        plan.update(images=True, reason="model takes images")
+    if task.spec.get("obs_mode") == "vision" and not plan["images"] and not config.flag("ROBOUSE_RUN_INELIGIBLE"):
+        raise Ineligible(f"{task.id} is a vision task and this run sends {plan['model']} no images ({plan['reason']})")
+    return plan
+
+
 def run_trial(
     task: Task,
     harness: str,
@@ -164,6 +200,10 @@ def run_trial(
     prior_learnings: str | None = None,
     attempt: int = 0,
 ) -> dict:
+    plan = image_plan(task, harness, model)  # raises Ineligible before anything is written
+    # recorded and launched under the canonical names: harness = the agent program, model = provider-prefixed id
+    requested = (harness, model)
+    harness, model = plan["harness"], plan["model"] or ""
     job_dir.mkdir(parents=True, exist_ok=True)
     if split or extra_instruction or prior_learnings:
         task = _variant(task, split, extra_instruction, prior_learnings)
@@ -193,6 +233,8 @@ def run_trial(
         "attempt": attempt,
         "extra_instruction": extra_instruction or None,
         "prior_learnings": prior_learnings,
+        "requested": {"harness": requested[0], "model": requested[1]} if requested != (harness, model) else None,
+        "agent_images": {k: v for k, v in plan.items() if k in ("images", "reason", "accepts_images")},
         "provenance": provenance(),
     }
     (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
@@ -220,6 +262,8 @@ def run_trial(
         server_cmd += ["--seed", str(seed)]
     if split:
         server_cmd += ["--split", split]
+    if not plan["images"]:
+        server_cmd.append("--no-agent-images")
     server_cmd.append("--secrets-stdin")
     # the reference solution's token and the key that signs the verdict go to the server on its stdin: never in an
     # environment or a command line, which other processes of this user can read
@@ -252,6 +296,8 @@ def run_trial(
             else f"{ws / '.robouse' / 'bin'}:{base_env.get('PATH', '')}"
         )
         base_env["ROBOUSE_SOCKET"] = sock
+        base_env["_ROBOUSE_TRIAL_DIR"] = str(tdir)  # read and removed by the harness builder (model gateway)
+        base_env["_ROBOUSE_AGENT_IMAGES"] = "1" if plan["images"] else "0"
         base_env["PYTHONPATH"] = str(SRC) if harness == "oracle" else ""
         base_env.pop("ROBOUSE_ORACLE_TOKEN", None)
         if harness == "oracle":  # only the reference solution may see privileged state in vision tasks
@@ -308,6 +354,8 @@ def run_trial(
             server.wait(timeout=60)
         except subprocess.TimeoutExpired:
             server.kill()
+        if launch is not None and launch.stop is not None:
+            launch.stop()  # the model gateway: its request log is summarized into proxy_stats
 
     episode, verified = _verdict(tdir / "episode" / "result.json", result_key)
     if not verified and exc is None:
@@ -322,7 +370,7 @@ def run_trial(
     for f in sorted((ws / "observations").glob("*.png")):
         (tdir / "artifacts" / "observations").mkdir(exist_ok=True)
         shutil.copy(f, tdir / "artifacts" / "observations" / f.name)
-    if harness == "mini-swe-agent-glm" and (ws / ".robouse" / "mini_traj.json").exists():
+    if harness.startswith("mini-swe-agent") and (ws / ".robouse" / "mini_traj.json").exists():
         shutil.copy(ws / ".robouse" / "mini_traj.json", tdir / "agent" / "mini_traj.json")
 
     try:
@@ -339,7 +387,13 @@ def run_trial(
         "task_name": task.id,
         "trial_name": trial_name,
         "source": task.metadata.get("source_benchmark"),
-        "agent_info": {"name": harness, "model_info": {"name": (launch.notes.get("model") if launch else model)}},
+        "agent_info": {
+            "name": harness,
+            "model_info": {
+                "name": (launch.notes.get("model_id") or launch.notes.get("model") if launch else model),
+                "provider": launch.notes.get("provider") if launch else None,
+            },
+        },
         "verifier_result": {"rewards": {"reward": reward}},
         "episode": episode,
         "agent_return_code": agent_rc,

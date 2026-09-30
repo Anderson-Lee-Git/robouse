@@ -26,8 +26,16 @@ ENV: dict[str, str] = {
     "ROBOUSE_RECORD_SIZE": "episode video size WIDTHxHEIGHT (default: the backend's native size)",
     "ROBOUSE_EPISODE_DIR": "episode folder a task verifier reads (set by the runner)",
     "ROBOUSE_VERIFIER_DIR": "folder a task verifier writes reward.txt to (set by the runner)",
-    "ROBOUSE_TEXT_ONLY": "1: `robo observe --image` prints the path without attaching the image (set for harnesses "
-    "whose API rejects images)",
+    "ROBOUSE_AGENT_IMAGES": "0: no camera images for the agent in this run, whatever its model takes (the episode server "
+    "renders none and writes no image file or path; vision tasks become ineligible). Default: from the model registry",
+    "ROBOUSE_RUN_INELIGIBLE": "1: run a trial the model registry makes ineligible (a vision task for a model that gets "
+    "no images); for audits and regression checks, never scored",
+    "ROBOUSE_GATEWAY_KEY": "the per-trial key a harness uses for its model gateway (set by the runner, never a provider "
+    "key)",
+    "ROBOUSE_GATEWAY_URL": "the trial's model gateway, http://127.0.0.1:<port> (set by the runner)",
+    "ROBOUSE_GATEWAY_MAX_IMAGES": "gateway process only: images per request (0 none, -1 no limit), from the registry",
+    "ROBOUSE_GATEWAY_LOG": "gateway process only: the request log (image counts, no content)",
+    "ROBOUSE_GATEWAY_BEARER_ENV": "gateway process only: the provider key variable sent as a Bearer token",
     # local runner sandbox
     "ROBOUSE_SANDBOX": "0 disables the macOS Seatbelt sandbox around agent processes (default 1)",
     "ROBOUSE_SANDBOX_DENY": "extra colon-separated paths agents may neither read nor write",

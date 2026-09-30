@@ -46,6 +46,9 @@ dexjoco = ["robouse[sim]", "scipy>=1.10"]
 # BenchFlow runs trials in Docker and loads robouse task folders as a native task format. Needs Python 3.12 and, until
 # BenchFlow releases the task-format hook, BenchFlow from its `robouse` branch (see [tool.uv.sources]).
 benchflow = ["benchflow>=0.7.9.dev0; python_version >= '3.12'"]
+# Provider-prefixed models (baseten/..., openrouter/..., ...): BenchFlow's provider registry and LiteLLM routing, and
+# the LiteLLM proxy each trial's model gateway runs. LiteLLM pinned to BenchFlow's LITELLM_VERSION_SPEC.
+llm = ["benchflow>=0.7.9.dev0; python_version >= '3.12'", "litellm[proxy]==1.91.0; python_version >= '3.12'"]
 all = ["robouse[sim,metaworld,gymrobotics,robosuite,dexjoco]"]
 
 [project.urls]

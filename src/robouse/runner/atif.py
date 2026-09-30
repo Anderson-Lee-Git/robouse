@@ -51,6 +51,7 @@ DEFAULT_MODELS = {
     "claude-code-glm": "zai-org/GLM-5.3",
     "codex-glm": "zai-org/GLM-5.3",
     "mini-swe-agent-glm": "zai-org/GLM-5.3",
+    "mini-swe-agent": "baseten/zai-org/GLM-5.3",
     "oracle": "scripted",
     "noop": "none",
 }
