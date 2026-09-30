@@ -60,3 +60,7 @@ def test_sandbox_denies_private_folders(tmp_path, monkeypatch) -> None:
     assert str((tmp_path / "cfg").resolve()) in prof
     assert '"/secret/a"' in prof and '"/secret/b"' in prof
     assert "/src/robouse(/|$)" in prof and 'deny network-outbound (remote ip "localhost:*")' in prof
+
+
+def test_public_variables_are_declared() -> None:
+    assert config.PUBLIC <= set(config.ENV)

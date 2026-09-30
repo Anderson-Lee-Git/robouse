@@ -90,6 +90,16 @@ ENV: dict[str, str] = {
     "ROBOUSE_HIL_DIR": "hardware-in-the-loop fixtures (default: the packaged fixtures)",
 }
 
+# the variables users set; the rest are set by robouse itself, belong to remote workers, or are for tests
+PUBLIC = frozenset({
+    "ROBOUSE_CACHE_DIR", "ROBOUSE_CONFIG_DIR", "ROBOUSE_MENAGERIE_ASSETS", "ROBOUSE_PRICING", "ROBOUSE_RECORD_SIZE",
+    "ROBOUSE_SANDBOX", "ROBOUSE_SANDBOX_DENY", "ROBOUSE_DEXJOCO_PYTHON", "ROBOUSE_DMCONTROL_PYTHON",
+    "ROBOUSE_HUMANOIDBENCH_PYTHON", "ROBOUSE_MANISKILL_PYTHON", "ROBOUSE_METADRIVE_PYTHON", "ROBOUSE_MYOSUITE_PYTHON",
+    "ROBOUSE_ROBOCASA_PYTHON", "ROBOUSE_VLA_URL", "ROBOUSE_VLA_TOKEN", "ROBOUSE_VLA_POLICY_CONFIG",
+    "ROBOUSE_MOLMOACT2_URL", "ROBOUSE_MOLMOACT2_TOKEN", "ROBOUSE_GRADER_URL", "ROBOUSE_GRADER_API_KEY",
+    "ROBOUSE_OPERATOR_DIR",
+})
+
 
 def env(name: str, default: str = "") -> str:
     """The value of a declared ROBOUSE_* variable (or another process variable), or `default` when unset or empty."""
