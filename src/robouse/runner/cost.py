@@ -14,7 +14,7 @@ PRICING = Path(__file__).with_name("pricing.json")
 def trial_cost(tdir: Path, model: str, provider: str | None) -> dict:
     """Tokens and USD for one trial, from the ATIF trajectory's final metrics; USD from the harness when it reports one,
     else from pricing.json (per 1M tokens). Scripted harnesses (oracle, noop, VLAs) cost 0 model tokens."""
-    out = {
+    out: dict[str, Any] = {
         "prompt_tokens": None,
         "completion_tokens": None,
         "cached_tokens": None,

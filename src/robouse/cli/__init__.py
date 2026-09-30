@@ -127,9 +127,10 @@ def main(argv: list[str] | None = None) -> int:
     if args and args[0] in ("tasks", "components", "remix"):  # these parse their own arguments (nested subcommands)
         from . import tasks
 
-        return {"tasks": tasks.tasks_main, "components": tasks.components_main, "remix": tasks.remix_alias}[args[0]](
-            args[1:]
-        )
+        commands: dict[str, Callable[[list[str]], int]] = {
+            "tasks": tasks.tasks_main, "components": tasks.components_main, "remix": tasks.remix_alias,
+        }
+        return commands[args[0]](args[1:])
     a = parser().parse_args(args)
     func: Callable[[argparse.Namespace], int] = a.func
     return int(func(a))
