@@ -132,16 +132,28 @@ CHEAT_RES = [(i, s, re.compile(r, re.I | re.M), d) for i, s, r, d in CHEAT_RULES
 INFRA_RULES = [
     ("rate_limit", r"\b429\b|rate[ _-]?limit(ed)?\b(?!_event)|too many requests|quota exceeded|usage limit"),
     ("overloaded", r"\boverloaded\b|\b529\b|\b503\b|service unavailable"),
-    ("proxy_error", r"proxy error|upstream error|bad gateway|\b502\b|ECONNREFUSED|ECONNRESET|connection (refused|reset)|timed? ?out while"),
-    ("auth_error", r"\b401\b|unauthori[sz]ed|invalid api key|authentication[_ ]error|invalid_token(?!.*mcp)|oauth token"),
-    ("api_error", r"API Error|internal server error|\b500\b(?= internal)|stream disconnected|model not found|context length|prompt is too long|unsupported input content part"),
+    (
+        "proxy_error",
+        r"proxy error|upstream error|bad gateway|\b502\b|ECONNREFUSED|ECONNRESET|connection (refused|reset)|timed? ?out while",
+    ),
+    (
+        "auth_error",
+        r"\b401\b|unauthori[sz]ed|invalid api key|authentication[_ ]error|invalid_token(?!.*mcp)|oauth token",
+    ),
+    (
+        "api_error",
+        r"API Error|internal server error|\b500\b(?= internal)|stream disconnected|model not found|context length|prompt is too long|unsupported input content part",
+    ),
     ("server_error", r"bad request: You must reset the env|error: bad request|episode server is not running"),
 ]
 INFRA_RES = [(i, re.compile(r, re.I)) for i, r in INFRA_RULES]
 REFUSAL_RE = re.compile(r"\b(I can(no|')t (help|assist|do that)|I won't|I will not|refus(e|ing))\b", re.I)
 # stderr noise that is not the agent's infrastructure (Codex MCP servers of the owner's config, warnings)
 # codex_models_manager: Codex refreshing its model list at start-up (a warning; the session goes on)
-STDERR_IGNORE = re.compile(r"rmcp::transport|mcp\.granola|Reading additional input from stdin|UserWarning|warnings\.warn|collab spawn failed|codex_models_manager", re.I)
+STDERR_IGNORE = re.compile(
+    r"rmcp::transport|mcp\.granola|Reading additional input from stdin|UserWarning|warnings\.warn|collab spawn failed|codex_models_manager",
+    re.I,
+)
 # error signals that can end the agent's session (the rest of INFRA_RULES are also seen in warnings and retried requests)
 API_IDS = {"rate_limit", "overloaded", "proxy_error", "auth_error", "api_error"}
 
@@ -237,10 +249,22 @@ def _is_refusal_task(cfg: dict) -> bool:
 
 # why an infrastructure failure happened, in words: (key, sentence), first match wins; the evidence stays in rec["infra"]
 INFRA_CAUSES = [
-    ("server_start", r"episode server (exited early|did not start)|MUJOCO_GL", "The episode server failed to start, so the agent never ran."),
-    ("image_rejected", r"unsupported input content part", "The model's API rejected the camera image the harness attached, which ended the agent's session."),
+    (
+        "server_start",
+        r"episode server (exited early|did not start)|MUJOCO_GL",
+        "The episode server failed to start, so the agent never ran.",
+    ),
+    (
+        "image_rejected",
+        r"unsupported input content part",
+        "The model's API rejected the camera image the harness attached, which ended the agent's session.",
+    ),
     ("usage_limit", r"usage limit", "The harness hit its account's usage limit before the agent acted."),
-    ("rate_limit", r"rate[ _-]?limit|\b429\b|overloaded", "The model's API kept rate-limiting the agent until its session ended."),
+    (
+        "rate_limit",
+        r"rate[ _-]?limit|\b429\b|overloaded",
+        "The model's API kept rate-limiting the agent until its session ended.",
+    ),
     ("connection", r"ECONNREFUSED|connection (refused|reset)", "The harness lost its connection to the model's API."),
     ("auth", r"auth_error|\b401\b|unauthori[sz]ed", "The model's API rejected the harness's credentials."),
     ("timeout", r"agent_timeout", "The agent was stopped at the time limit before it moved the robot."),
@@ -471,7 +495,9 @@ def audit_trial(d: Path) -> dict:
     # structured error signals in the raw stream (not the agent's own text or tool outputs)
     events = [json.loads(l) for l in raw.splitlines() if l.startswith("{") and _loads_ok(l)]
     ev_err = []
-    session_failed = False  # the harness's session ended on an error: Claude Code's final result is an error, a Codex turn failed
+    session_failed = (
+        False  # the harness's session ended on an error: Claude Code's final result is an error, a Codex turn failed
+    )
     for e in events:
         t = e.get("type")
         if t == "result" and (e.get("is_error") or str(e.get("subtype", "")).startswith("error")):
@@ -513,7 +539,12 @@ def audit_trial(d: Path) -> dict:
     if (res or {}).get("proxy_stats", {}).get("upstream_errors"):
         rec["infra"].append({"id": "proxy_upstream_errors", "evidence": json.dumps(res["proxy_stats"])[:300]})
     if ep is None and res is not None and not running:
-        rec["infra"].append({"id": "episode_not_finished", "evidence": "episode/result.json missing: the episode server never closed the episode"})
+        rec["infra"].append(
+            {
+                "id": "episode_not_finished",
+                "evidence": "episode/result.json missing: the episode server never closed the episode",
+            }
+        )
     # An infrastructure failure: the harness, the model's API or the episode server ended the trial, so it did not measure
     # the agent. Always when the episode broke (hard). Otherwise only if the episode did not end on the agent's own
     # decision (robo done or give-up) or on the task's own end (goal reached, step budget used), and either the agent's
@@ -525,8 +556,12 @@ def audit_trial(d: Path) -> dict:
     agent_closed = any(o in ("done", "give_up") for o, _ in agent_ops)
     task_ended = outcome in ("success_reached", "budget_exhausted")
     api_ended = session_failed or (harness == "mini-swe-agent-glm" and bool(ids & API_IDS))
-    soft = harness in LLM_HARNESSES and not agent_closed and not task_ended and (
-        (api_ended and bool(ids & API_IDS)) or (bool(ids - {"agent_exit_code"}) and n_motion == 0))
+    soft = (
+        harness in LLM_HARNESSES
+        and not agent_closed
+        and not task_ended
+        and ((api_ended and bool(ids & API_IDS)) or (bool(ids - {"agent_exit_code"}) and n_motion == 0))
+    )
     rec["infra_failure"] = bool(ids & hard) or soft
     rec["infra_cause"] = infra_cause(rec["infra"]) if rec["infra_failure"] else None
     for i in rec["infra"]:
