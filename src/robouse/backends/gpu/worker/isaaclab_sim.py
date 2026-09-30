@@ -13,13 +13,13 @@ exponential moving average and executed by Factory's task-space impedance contro
                                   Nut threading: RZ is mapped to [-1, 0] x 0.097 rad (the nut only turns clockwise).
   robo skill hold [N]             zero command for N control steps (default 15)
 """
+
 from __future__ import annotations
 
 import math
 import os
 
 import numpy as np
-
 from common import jpeg, pose_dict, r3
 
 IMG_W, IMG_H = 640, 480
@@ -66,9 +66,8 @@ class ILTask:
         self.key, self.cfg, self.seed = key, {**TASKS[key], **(opts or {})}, seed
         _app()
         import gymnasium as gym
-        import torch
-
         import isaaclab_tasks  # noqa: F401  (registers the environments)
+        import torch
         from isaaclab_tasks.utils import parse_env_cfg
 
         self.torch = torch
@@ -90,14 +89,21 @@ class ILTask:
         from isaaclab_tasks.direct.factory import factory_utils as fu
 
         u = self.u
-        hb_pos, hb_quat = fu.get_held_base_pose(u.held_pos, u.held_quat, self.name, u.cfg_task.fixed_asset_cfg, 1, u.device)
-        tb_pos, tb_quat = fu.get_target_held_base_pose(u.fixed_pos, u.fixed_quat, self.name, u.cfg_task.fixed_asset_cfg, 1, u.device)
+        hb_pos, hb_quat = fu.get_held_base_pose(
+            u.held_pos, u.held_quat, self.name, u.cfg_task.fixed_asset_cfg, 1, u.device
+        )
+        tb_pos, tb_quat = fu.get_target_held_base_pose(
+            u.fixed_pos, u.fixed_quat, self.name, u.cfg_task.fixed_asset_cfg, 1, u.device
+        )
         return self._np(hb_pos), self._np(hb_quat), self._np(tb_pos), self._np(tb_quat)
 
     def _set_cam(self, cam: str) -> None:
         f = self._np(self.u.fixed_pos) + self._np(self.u.scene.env_origins)
-        views = {"scene": ([0.45, 0.45, 0.3], [0.0, 0.0, 0.02]), "close": ([0.14, 0.14, 0.08], [0.0, 0.0, 0.02]),
-                 "side": ([0.0, 0.25, 0.05], [0.0, 0.0, 0.02])}
+        views = {
+            "scene": ([0.45, 0.45, 0.3], [0.0, 0.0, 0.02]),
+            "close": ([0.14, 0.14, 0.08], [0.0, 0.0, 0.02]),
+            "side": ([0.0, 0.25, 0.05], [0.0, 0.0, 0.02]),
+        }
         eye, tgt = views[cam]
         self.u.sim.set_camera_view(eye=list(f + np.array(eye)), target=list(f + np.array(tgt)))
 
@@ -126,9 +132,17 @@ class ILTask:
         n = self.name
         if n == "peg_insert":
             r_in, R_out = fc.diameter / 2, fc.diameter / 2 + 0.012
-            fixed = "".join(f'<geom type="box" size="{(R_out - r_in) / 2} {R_out} {fc.height / 2}" pos="{x * (r_in + (R_out - r_in) / 2)} 0 {fc.height / 2}" rgba="0.55 0.57 0.6 1"/>' for x in (-1, 1))
-            fixed += "".join(f'<geom type="box" size="{r_in} {(R_out - r_in) / 2} {fc.height / 2}" pos="0 {y * (r_in + (R_out - r_in) / 2)} {fc.height / 2}" rgba="0.55 0.57 0.6 1"/>' for y in (-1, 1))
-            fixed += f'<geom type="box" size="{R_out + 0.01} {R_out + 0.01} 0.002" pos="0 0 0.002" rgba="0.4 0.42 0.45 1"/>'
+            fixed = "".join(
+                f'<geom type="box" size="{(R_out - r_in) / 2} {R_out} {fc.height / 2}" pos="{x * (r_in + (R_out - r_in) / 2)} 0 {fc.height / 2}" rgba="0.55 0.57 0.6 1"/>'
+                for x in (-1, 1)
+            )
+            fixed += "".join(
+                f'<geom type="box" size="{r_in} {(R_out - r_in) / 2} {fc.height / 2}" pos="0 {y * (r_in + (R_out - r_in) / 2)} {fc.height / 2}" rgba="0.55 0.57 0.6 1"/>'
+                for y in (-1, 1)
+            )
+            fixed += (
+                f'<geom type="box" size="{R_out + 0.01} {R_out + 0.01} 0.002" pos="0 0 0.002" rgba="0.4 0.42 0.45 1"/>'
+            )
             held = f'<geom type="cylinder" size="{hc.diameter / 2} {hc.height / 2}" pos="0 0 {hc.height / 2}" rgba="0.95 0.8 0.1 1"/>'
         elif n == "gear_mesh":
             off = fc.medium_gear_base_offset
@@ -161,8 +175,11 @@ class ILTask:
             self._mj_setup()
         mj, u = self.mujoco, self.u
         f = self._np(u.fixed_pos)
-        poses = [(self._np(u.fixed_pos) - f, self._np(u.fixed_quat)), (self._np(u.held_pos) - f, self._np(u.held_quat)),
-                 (self._np(u.fingertip_midpoint_pos) - f, self._np(u.fingertip_midpoint_quat))]
+        poses = [
+            (self._np(u.fixed_pos) - f, self._np(u.fixed_quat)),
+            (self._np(u.held_pos) - f, self._np(u.held_quat)),
+            (self._np(u.fingertip_midpoint_pos) - f, self._np(u.fingertip_midpoint_quat)),
+        ]
         for i, (p, q) in enumerate(poses):
             self.mjd.mocap_pos[i] = p
             self.mjd.mocap_quat[i] = q
@@ -170,32 +187,74 @@ class ILTask:
         c = mj.MjvCamera()
         c.type = mj.mjtCamera.mjCAMERA_FREE
         c.lookat[:] = [0, 0, 0.02]
-        c.distance, c.azimuth, c.elevation = {"scene": (0.45, 135, -25), "close": (0.16, 135, -15), "side": (0.2, 90, -3)}[cam]
+        c.distance, c.azimuth, c.elevation = {
+            "scene": (0.45, 135, -25),
+            "close": (0.16, 135, -15),
+            "side": (0.2, 90, -3),
+        }[cam]
         self.mjr.update_scene(self.mjd, camera=c)
         return self.mjr.render()
 
     # ---- server methods ----------------------------------------------------------------------------------------------
     def info(self) -> dict:
-        rz = "RZ in [-1, 1] maps to 0 ... -0.097 rad (clockwise only)" if self.name == "nut_thread" else "RZ x 0.097 rad"
-        return {"action": {"names": ["dx", "dy", "dz", "rx", "ry", "rz"], "low": [-1.0] * 6, "high": [1.0] * 6,
-                           "doc": f"Factory end-effector command per 1/15 s step: position target offset x 2 cm (clamped to 5 cm around the fixed part), rotation x 0.097 rad, roll and pitch held level; {rz}; smoothed by an exponential moving average"},
-                "skills": ["hold [N] - zero command for N control steps (default 15)"],
-                "camera": "scene", "cameras": ["scene", "close", "side"], "hold_last": 0.0,
-                "max_steps": self.cfg["max_steps"], "embodiment": self.embodiment()}
+        rz = (
+            "RZ in [-1, 1] maps to 0 ... -0.097 rad (clockwise only)" if self.name == "nut_thread" else "RZ x 0.097 rad"
+        )
+        return {
+            "action": {
+                "names": ["dx", "dy", "dz", "rx", "ry", "rz"],
+                "low": [-1.0] * 6,
+                "high": [1.0] * 6,
+                "doc": f"Factory end-effector command per 1/15 s step: position target offset x 2 cm (clamped to 5 cm around the fixed part), rotation x 0.097 rad, roll and pitch held level; {rz}; smoothed by an exponential moving average",
+            },
+            "skills": ["hold [N] - zero command for N control steps (default 15)"],
+            "camera": "scene",
+            "cameras": ["scene", "close", "side"],
+            "hold_last": 0.0,
+            "max_steps": self.cfg["max_steps"],
+            "embodiment": self.embodiment(),
+        }
 
     def embodiment(self) -> dict:
-        return {"spec_version": "1", "name": "franka-panda-factory", "kind": "arm", "step_s": 1 / 15,
-                "action_groups": [
-                    {"name": "arm.ee_delta", "components": ["dx", "dy", "dz"], "low": [-1] * 3, "high": [1] * 3,
-                     "units": "x 2 cm target offset", "mode": "ee_delta_pos", "frame": "world", "hold": "zero"},
-                    {"name": "arm.ee_rot_delta", "components": ["rx", "ry", "rz"], "low": [-1] * 3, "high": [1] * 3,
-                     "units": "x 0.097 rad (roll/pitch held level)", "mode": "ee_delta_rot", "frame": "world", "hold": "zero"}],
-                "sensors": {"cameras": [{"name": c, "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": False}
-                                        for c in ("scene", "close", "side")],
-                            "proprioception": [{"name": "fingertip", "shape": [7]}],
-                            "state": [{"name": "held_part", "shape": [7]}, {"name": "fixed_part_estimate", "shape": [3]}]},
-                "skills": [{"name": "hold", "impl": "backend"}],
-                "budgets": {"max_steps": self.cfg["max_steps"]}, "reward": {"dense": "sparse", "success_mode": "final"}}
+        return {
+            "spec_version": "1",
+            "name": "franka-panda-factory",
+            "kind": "arm",
+            "step_s": 1 / 15,
+            "action_groups": [
+                {
+                    "name": "arm.ee_delta",
+                    "components": ["dx", "dy", "dz"],
+                    "low": [-1] * 3,
+                    "high": [1] * 3,
+                    "units": "x 2 cm target offset",
+                    "mode": "ee_delta_pos",
+                    "frame": "world",
+                    "hold": "zero",
+                },
+                {
+                    "name": "arm.ee_rot_delta",
+                    "components": ["rx", "ry", "rz"],
+                    "low": [-1] * 3,
+                    "high": [1] * 3,
+                    "units": "x 0.097 rad (roll/pitch held level)",
+                    "mode": "ee_delta_rot",
+                    "frame": "world",
+                    "hold": "zero",
+                },
+            ],
+            "sensors": {
+                "cameras": [
+                    {"name": c, "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": False}
+                    for c in ("scene", "close", "side")
+                ],
+                "proprioception": [{"name": "fingertip", "shape": [7]}],
+                "state": [{"name": "held_part", "shape": [7]}, {"name": "fixed_part_estimate", "shape": [3]}],
+            },
+            "skills": [{"name": "hold", "impl": "backend"}],
+            "budgets": {"max_steps": self.cfg["max_steps"]},
+            "reward": {"dense": "sparse", "success_mode": "final"},
+        }
 
     def reset(self, seed: int | None = None) -> dict:
         self.seed = self.seed if seed is None else int(seed)
@@ -237,12 +296,20 @@ class ILTask:
         hb, hq, tb, tq = self._poses()
         f = self._np(u.fixed_pos)
         fc = u.cfg_task.fixed_asset_cfg
-        st = {"fingertip": pose_dict(self._np(u.fingertip_midpoint_pos), self._np(u.fingertip_midpoint_quat)),
-              "held_part_base": pose_dict(hb, hq),
-              "fixed_part_position_estimate": r3(f + self.fixed_noise, 4),
-              "fixed_part_yaw_deg": round(math.degrees(2 * math.atan2(float(u.fixed_quat[0, 3]), float(u.fixed_quat[0, 0]))), 1),
-              "fixed_part": {"height_m": float(fc.height), "diameter_m": float(fc.diameter), "base_height_m": float(fc.base_height)},
-              "steps": self.n}
+        st = {
+            "fingertip": pose_dict(self._np(u.fingertip_midpoint_pos), self._np(u.fingertip_midpoint_quat)),
+            "held_part_base": pose_dict(hb, hq),
+            "fixed_part_position_estimate": r3(f + self.fixed_noise, 4),
+            "fixed_part_yaw_deg": round(
+                math.degrees(2 * math.atan2(float(u.fixed_quat[0, 3]), float(u.fixed_quat[0, 0]))), 1
+            ),
+            "fixed_part": {
+                "height_m": float(fc.height),
+                "diameter_m": float(fc.diameter),
+                "base_height_m": float(fc.base_height),
+            },
+            "steps": self.n,
+        }
         if self.name == "gear_mesh":
             off = u.cfg_task.fixed_asset_cfg.medium_gear_base_offset
             st["gear_peg_offset_in_base_frame_m"] = [float(x) for x in off]

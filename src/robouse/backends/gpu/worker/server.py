@@ -13,11 +13,11 @@ $ROBOUSE_GPU_SECRET in the X-Robouse-Secret header (robouse.workers.wire.serve_h
 
 Usage (on the GPU machine):  ROBOUSE_GPU_SECRET=... python server.py --sim maniskill --port 8800
 """
+
 from __future__ import annotations
 
 import argparse
 import importlib
-import json
 import multiprocessing as mp
 import os
 import secrets
@@ -33,7 +33,12 @@ except ImportError:
 
 IDLE_S = float(os.environ.get("ROBOUSE_GPU_IDLE_S", "2400"))
 MAX_SESSIONS = int(os.environ.get("ROBOUSE_GPU_MAX_SESSIONS", "10"))
-SIMS = {"maniskill": "maniskill_sim", "genesis": "genesis_sim", "playground": "playground_sim", "isaaclab": "isaaclab_sim"}
+SIMS = {
+    "maniskill": "maniskill_sim",
+    "genesis": "genesis_sim",
+    "playground": "playground_sim",
+    "isaaclab": "isaaclab_sim",
+}
 
 
 def _child(sim: str, task: str, seed: int, opts: dict, conn) -> None:
@@ -65,7 +70,9 @@ def _child(sim: str, task: str, seed: int, opts: dict, conn) -> None:
                 raise AttributeError(f"unknown method {m!r}")
             conn.send({"ok": True, "result": fn(**a)})
         except Exception as e:
-            conn.send({"ok": False, "error": f"{type(e).__name__}: {e}"[:2000], "trace": traceback.format_exc()[-3000:]})
+            conn.send(
+                {"ok": False, "error": f"{type(e).__name__}: {e}"[:2000], "trace": traceback.format_exc()[-3000:]}
+            )
 
 
 class Session:
@@ -151,7 +158,6 @@ def handle(req: dict) -> dict:
         print("error in", m, r["trace"], flush=True)
     r.pop("trace", None)
     return r
-
 
 
 def main() -> None:

@@ -19,18 +19,20 @@ forces (MuJoCo's muscle model: force = gain(length, velocity) * activation + bia
 picks the excitations that bring the muscles' activation dynamics to those activations within the step. This is the
 inverse-dynamics approach of MyoSuite's own tutorial (tutorials/6_Inverse_Dynamics.ipynb) run as a feedback loop.
 """
+
 from __future__ import annotations
 
-import json
 import os
 import sys
 
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ.setdefault("GIT_PYTHON_REFRESH", "quiet")  # myosuite imports gitpython; the runtime image has no git executable
+os.environ.setdefault(
+    "GIT_PYTHON_REFRESH", "quiet"
+)  # myosuite imports gitpython; the runtime image has no git executable
 os.environ.setdefault("MUJOCO_GL", "egl" if sys.platform.startswith("linux") else "glfw")
 
-import numpy as np  # noqa: E402
+import numpy as np
 
 KP, KD, REG = 1000.0, 60.0, 1e-5  # PD gains (1/s^2, 1/s) and activation regulariser of the muscle-space controller
 EXC_EPS = 1e-4
@@ -63,8 +65,13 @@ class Worker:
         self.m, self.d = self.u.mj_model, self.u.mj_data
         m = self.m
         cls = type(self.u).__name__
-        self.kind = {"PoseEnvV0": "pose", "ReachEnvV0": "reach", "KeyTurnEnvV0": "keyturn",
-                     "ObjHoldFixedEnvV0": "objhold", "ObjHoldRandomEnvV0": "objhold"}.get(cls, "other")
+        self.kind = {
+            "PoseEnvV0": "pose",
+            "ReachEnvV0": "reach",
+            "KeyTurnEnvV0": "keyturn",
+            "ObjHoldFixedEnvV0": "objhold",
+            "ObjHoldRandomEnvV0": "objhold",
+        }.get(cls, "other")
         self.muscles = [m.actuator(i).name for i in range(m.nu)]
         # joints moved by muscles (the hand / finger / elbow joints; not the key or a free object)
         mujoco.mj_forward(m, self.d)
@@ -87,10 +94,19 @@ class Worker:
         tips = []
         if self.kind == "reach":
             tips = [m.site(int(s)).name for s in self.u.tip_sids]
-        return {"kind": self.kind, "muscles": self.muscles, "joints": self.jnames,
-                "joint_ranges": {n: [round(float(lo), 4), round(float(hi), 4)] for n, lo, hi in zip(self.jnames, self.jlo, self.jhi)},
-                "dt": float(self.u.dt), "tips": tips, "upstream_max_steps": int(self.env.spec.max_episode_steps or 0),
-                "obs_keys": list(self.u.obs_keys), "obs_dim": int(np.size(self.u.get_obs()))}
+        return {
+            "kind": self.kind,
+            "muscles": self.muscles,
+            "joints": self.jnames,
+            "joint_ranges": {
+                n: [round(float(lo), 4), round(float(hi), 4)] for n, lo, hi in zip(self.jnames, self.jlo, self.jhi)
+            },
+            "dt": float(self.u.dt),
+            "tips": tips,
+            "upstream_max_steps": int(self.env.spec.max_episode_steps or 0),
+            "obs_keys": list(self.u.obs_keys),
+            "obs_dim": int(np.size(self.u.get_obs())),
+        }
 
     def _moment(self, d) -> np.ndarray:
         import mujoco
@@ -133,7 +149,10 @@ class Worker:
         self.targets = new
         self.ramp_len = max(1, int(ramp))
         self.ramp_left = self.ramp_len
-        return {"targets": {n: round(float(t), 4) for n, t in zip(self.jnames, self.targets)}, "clipped_to_range": clipped}
+        return {
+            "targets": {n: round(float(t), 4) for n, t in zip(self.jnames, self.targets)},
+            "clipped_to_range": clipped,
+        }
 
     def control(self) -> dict:
         """Excitations for the next step that drive the joints towards the current (ramped) targets."""
@@ -170,7 +189,9 @@ class Worker:
         A = (R.T * g)[self.dadr]
         b = (tau - R.T @ f0)[self.dadr]
         n = m.nu
-        res = lsq_linear(np.vstack([A, np.sqrt(REG) * np.eye(n)]), np.concatenate([b, np.zeros(n)]), bounds=(0.0, 1.0), method="bvls")
+        res = lsq_linear(
+            np.vstack([A, np.sqrt(REG) * np.eye(n)]), np.concatenate([b, np.zeros(n)]), bounds=(0.0, 1.0), method="bvls"
+        )
         a = np.clip(res.x, 0.0, 1.0)
         # excitation that brings MuJoCo's first-order activation dynamics to `a` about half-way through the step
         act = d.act.copy()
@@ -180,8 +201,12 @@ class Worker:
         ee = np.exp(-(0.5 * self.u.dt) / tc)
         exc = np.clip((a - act * ee) / (1 - ee), 0.0, 1.0)
         err = self.targets - d.qpos[self.qadr]
-        return {"excitations": r(exc, 5), "target_error_norm": round(float(np.linalg.norm(err)), 4),
-                "max_speed": round(float(np.abs(d.qvel[self.dadr]).max()), 3), "ramping": self.ramp_left > 0}
+        return {
+            "excitations": r(exc, 5),
+            "target_error_norm": round(float(np.linalg.norm(err)), 4),
+            "max_speed": round(float(np.abs(d.qvel[self.dadr]).max()), 3),
+            "ramping": self.ramp_left > 0,
+        }
 
     def ik(self, tips: dict, iters: int = 300) -> dict:
         """Joint targets that put the named fingertip sites at the given world positions (damped least squares
@@ -214,8 +239,10 @@ class Worker:
             J = np.vstack(Js)
             dq = J.T @ np.linalg.solve(J @ J.T + 1e-4 * np.eye(len(e)), e)
             q[self.qadr] = np.clip(q[self.qadr] + dq, self.jlo, self.jhi)
-        return {"joint_targets": {n: round(float(v), 4) for n, v in zip(self.jnames, q[self.qadr])},
-                "residual_m": {t: round(float(np.linalg.norm(e[3 * i:3 * i + 3])), 4) for i, t in enumerate(names)}}
+        return {
+            "joint_targets": {n: round(float(v), 4) for n, v in zip(self.jnames, q[self.qadr])},
+            "residual_m": {t: round(float(np.linalg.norm(e[3 * i : 3 * i + 3])), 4) for i, t in enumerate(names)},
+        }
 
     # ---- observation ---------------------------------------------------------------------------------------------
     def _metric(self) -> dict:
@@ -224,8 +251,10 @@ class Worker:
         if self.kind == "pose":
             return {"pose_error_norm": round(float(np.linalg.norm(od["pose_err"])), 4), "threshold": float(u.pose_thd)}
         if self.kind == "reach":
-            return {"reach_error_norm": round(float(np.linalg.norm(od["reach_err"])), 4),
-                    "threshold": round(0.0125 * len(u.tip_sids), 4)}
+            return {
+                "reach_error_norm": round(float(np.linalg.norm(od["reach_err"])), 4),
+                "threshold": round(0.0125 * len(u.tip_sids), 4),
+            }
         if self.kind == "keyturn":
             return {"key_angle_rad": round(float(d.qpos[-1]), 4), "goal_angle_rad": round(float(u.goal_th), 4)}
         if self.kind == "objhold":
@@ -236,10 +265,12 @@ class Worker:
         import mujoco
 
         m, d, u = self.m, self.d, self.u
-        out = {"joint_angles_rad": {n: round(float(v), 4) for n, v in zip(self.jnames, d.qpos[self.qadr])},
-               "joint_velocities_rad_s": {n: round(float(v), 3) for n, v in zip(self.jnames, d.qvel[self.dadr])},
-               "muscle_activations": r(d.act, 3),
-               "joint_targets_rad": {n: round(float(v), 4) for n, v in zip(self.jnames, self.targets)}}
+        out = {
+            "joint_angles_rad": {n: round(float(v), 4) for n, v in zip(self.jnames, d.qpos[self.qadr])},
+            "joint_velocities_rad_s": {n: round(float(v), 3) for n, v in zip(self.jnames, d.qvel[self.dadr])},
+            "muscle_activations": r(d.act, 3),
+            "joint_targets_rad": {n: round(float(v), 4) for n, v in zip(self.jnames, self.targets)},
+        }
         od = u.get_obs_dict(m, d)
         if self.kind == "pose":
             tgt = np.asarray(u.target_jnt_value, dtype=np.float64)
@@ -259,10 +290,16 @@ class Worker:
             out["object_pos"] = r(d.site_xpos[u.object_sid])
             out["goal_pos"] = r(d.site_xpos[u.goal_sid])
         out.update(self._metric())
-        out["contacts"] = sorted({"-".join(sorted((m.body(int(m.geom_bodyid[c.geom1])).name, m.body(int(m.geom_bodyid[c.geom2])).name)))
-                                  for c in d.contact[:d.ncon]})
+        out["contacts"] = sorted(
+            {
+                "-".join(sorted((m.body(int(m.geom_bodyid[c.geom1])).name, m.body(int(m.geom_bodyid[c.geom2])).name)))
+                for c in d.contact[: d.ncon]
+            }
+        )
         out["time_s"] = round(float(d.time), 3)
-        out["obs_vector"] = [float(x) for x in np.ravel(u.get_obs())]  # MyoSuite's own observation vector (its obs_keys, in order), full precision
+        out["obs_vector"] = [
+            float(x) for x in np.ravel(u.get_obs())
+        ]  # MyoSuite's own observation vector (its obs_keys, in order), full precision
         _ = mujoco
         return out
 
@@ -290,6 +327,8 @@ class Worker:
         cam.azimuth = float(c.get("azimuth", 90.0))
         cam.elevation = float(c.get("elevation", -20.0))
         opt = mujoco.MjvOption()
-        opt.flags[mujoco.mjtVisFlag.mjVIS_TENDON] = 0  # hide the muscle-tendon paths: the bones and targets stay visible
+        opt.flags[mujoco.mjtVisFlag.mjVIS_TENDON] = (
+            0  # hide the muscle-tendon paths: the bones and targets stay visible
+        )
         rr.update_scene(self.d, camera=cam, scene_option=opt)
         return np.ascontiguousarray(rr.render(), dtype=np.uint8)

@@ -6,6 +6,7 @@ never printed or written to a trial folder.
   *-glm         BASETEN_API_KEY
 Maintainer pools (robouse._maintainer) are used only when none of these is set.
 """
+
 from __future__ import annotations
 
 import itertools
@@ -56,8 +57,14 @@ def clean_codex_home(extra_config: str = "", api_key: str = "") -> str:
         exe = shutil.which("codex")
         if not exe:
             raise RuntimeError("codex is not on PATH; install the Codex CLI")
-        r = subprocess.run([exe, "login", "--with-api-key"], input=api_key, text=True, capture_output=True,
-                           env={**os.environ, "CODEX_HOME": str(d)}, check=False)
+        r = subprocess.run(
+            [exe, "login", "--with-api-key"],
+            input=api_key,
+            text=True,
+            capture_output=True,
+            env={**os.environ, "CODEX_HOME": str(d)},
+            check=False,
+        )
         if r.returncode != 0 or not dst.exists():
             raise RuntimeError("`codex login --with-api-key` failed for OPENAI_API_KEY")
     elif auth.exists():
@@ -76,8 +83,10 @@ def claude_auth() -> dict[str, str]:
         return {"CLAUDE_CODE_OAUTH_TOKEN": os.environ["CLAUDE_CODE_OAUTH_TOKEN"]}
     toks = _maintainer.claude_tokens()
     if not toks:
-        raise RuntimeError("no Claude credentials: set ANTHROPIC_API_KEY, or CLAUDE_CODE_OAUTH_TOKEN "
-                           "(create one with `claude setup-token`)")
+        raise RuntimeError(
+            "no Claude credentials: set ANTHROPIC_API_KEY, or CLAUDE_CODE_OAUTH_TOKEN "
+            "(create one with `claude setup-token`)"
+        )
     return {"CLAUDE_CODE_OAUTH_TOKEN": toks[next(_claude_rr) % len(toks)]}
 
 
@@ -89,13 +98,17 @@ def baseten_key() -> str:
 
 
 def have_claude() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
-                or _maintainer.claude_tokens())
+    return bool(
+        os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or _maintainer.claude_tokens()
+    )
 
 
 def have_codex() -> bool:
-    return bool(os.environ.get("OPENAI_API_KEY") or (Path.home() / ".codex" / "auth.json").exists()
-                or _maintainer.codex_accounts())
+    return bool(
+        os.environ.get("OPENAI_API_KEY")
+        or (Path.home() / ".codex" / "auth.json").exists()
+        or _maintainer.codex_accounts()
+    )
 
 
 def have_baseten() -> bool:

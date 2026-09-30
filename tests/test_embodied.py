@@ -1,5 +1,6 @@
 """robouse backends on BenchFlow's embodied layer: every backend declares a valid embodiment that covers its native
 action vector, and the episode server reproduces robouse's protocol-1 behaviour."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -14,8 +15,18 @@ from robouse.core.embodiment_spec import Embodiment
 from robouse.tasks import find_tasks
 
 ROOT = Path(__file__).resolve().parents[1] / "tasks"
-LOCAL_SUITES = ["arc-style", "hard", "vision", "safety", "robo-use-families", "metaworld", "gymrobotics", "drone",
-                "menagerie", "roboharm"]
+LOCAL_SUITES = [
+    "arc-style",
+    "hard",
+    "vision",
+    "safety",
+    "robo-use-families",
+    "metaworld",
+    "gymrobotics",
+    "drone",
+    "menagerie",
+    "roboharm",
+]
 HAVE_BENCHFLOW = importlib.util.find_spec("benchflow") is not None
 HAVE_SIM = all(importlib.util.find_spec(m) for m in ("mujoco", "metaworld", "gymnasium_robotics"))
 
@@ -67,10 +78,19 @@ def test_dexjoco_hand_embodiment(bimanual: bool) -> None:
     from robouse.backends.dexjoco.backend import HAND_LIM, POS_LIM, ROT_LIM, DexjocoBackend
 
     arms = ["R_", "L_"] if bimanual else [""]
-    names = [n for a in arms for n in [f"{a}DX", f"{a}DY", f"{a}DZ", f"{a}RX", f"{a}RY", f"{a}RZ"] + [f"{a}F{i}" for i in range(16)]]
+    names = [
+        n
+        for a in arms
+        for n in [f"{a}DX", f"{a}DY", f"{a}DZ", f"{a}RX", f"{a}RY", f"{a}RZ"] + [f"{a}F{i}" for i in range(16)]
+    ]
     lim = ([POS_LIM] * 3 + [ROT_LIM] * 3 + [HAND_LIM] * 16) * len(arms)
-    b = _bare(DexjocoBackend, bimanual=bimanual, camera="front", max_steps=1000,
-              action_spec=ActionSpec(names, [-x for x in lim], lim))
+    b = _bare(
+        DexjocoBackend,
+        bimanual=bimanual,
+        camera="front",
+        max_steps=1000,
+        action_spec=ActionSpec(names, [-x for x in lim], lim),
+    )
     e = _check(b)
     assert e.kind == ("bimanual" if bimanual else "hand")
     joints = [g for g in e.action_groups if g.name.endswith("hand.joints")]
@@ -81,8 +101,14 @@ def test_dexjoco_hand_embodiment(bimanual: bool) -> None:
 def test_behavior_is_skill_only() -> None:
     from robouse.backends.behavior.backend import BehaviorBackend
 
-    b = _bare(BehaviorBackend, spec={}, camera="follow", max_steps=60, _skills={},
-              action_spec=ActionSpec(["wait"], [0.0], [1.0]))
+    b = _bare(
+        BehaviorBackend,
+        spec={},
+        camera="follow",
+        max_steps=60,
+        _skills={},
+        action_spec=ActionSpec(["wait"], [0.0], [1.0]),
+    )
     e = _check(b)
     assert e.kind == "skill_only" and e.dim == 1
     assert {"navigate_to", "grasp", "toggle_on", "release"} <= {s.name for s in e.skills}

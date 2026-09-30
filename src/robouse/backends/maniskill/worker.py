@@ -13,22 +13,21 @@ target, 20 Hz). This worker adds a world-frame end-effector interface on top: it
 each action's deltas and solves damped-least-squares inverse kinematics (pytorch_kinematics on the robot's URDF, the
 solver ManiSkill uses on GPU) for the joint targets it passes to the upstream `env.step`.
 """
+
 from __future__ import annotations
 
-import json
 import os
 import sys
 
+import numpy as np
 
-import numpy as np  # noqa: E402
-
-STEP_M = 0.02      # metres per action unit per step (world frame)
-STEP_RAD = 0.1     # radians per action unit per step (about the world axes, centred on the TCP)
-LEAD_M = 0.05      # the commanded position stays within this distance of the measured TCP
-LEAD_RAD = 0.35    # and the commanded orientation within this angle of the measured one
-KI = 0.3           # integral gain of the tracking-error correction (per step)
-I_MAX_M = 0.015    # bound on the position correction
-I_MAX_RAD = 0.06   # bound on the orientation correction
+STEP_M = 0.02  # metres per action unit per step (world frame)
+STEP_RAD = 0.1  # radians per action unit per step (about the world axes, centred on the TCP)
+LEAD_M = 0.05  # the commanded position stays within this distance of the measured TCP
+LEAD_RAD = 0.35  # and the commanded orientation within this angle of the measured one
+KI = 0.3  # integral gain of the tracking-error correction (per step)
+I_MAX_M = 0.015  # bound on the position correction
+I_MAX_RAD = 0.06  # bound on the orientation correction
 
 
 def _clip_norm(v, m):
@@ -62,9 +61,13 @@ def _rotvec(R) -> np.ndarray:
 
 def _quat_to_mat(q_wxyz) -> np.ndarray:
     w, x, y, z = [float(v) for v in q_wxyz]
-    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def _mat_to_quat(R) -> np.ndarray:
@@ -102,7 +105,9 @@ class Worker:
         self.env = None
 
     # ---- setup ---------------------------------------------------------------------------------------------------
-    def make(self, env_id: str, seed: int, sensor_size: int = 256, render_size: int = 384, kwargs: dict | None = None) -> dict:
+    def make(
+        self, env_id: str, seed: int, sensor_size: int = 256, render_size: int = 384, kwargs: dict | None = None
+    ) -> dict:
         import gymnasium as gym
         import mani_skill.envs  # noqa: F401  (registers the environments)
         import torch
@@ -112,12 +117,18 @@ class Worker:
         if self.env is not None:
             self.env.close()
         self.env_id = env_id
-        self.env = gym.make(env_id, obs_mode="state_dict", control_mode="pd_joint_pos", sim_backend="cpu",
-                            render_mode="rgb_array",
-                            reward_mode="none", num_envs=1,
-                            sensor_configs=dict(width=int(sensor_size), height=int(sensor_size)),
-                            human_render_camera_configs=dict(width=int(render_size), height=int(render_size)),
-                            **(kwargs or {}))
+        self.env = gym.make(
+            env_id,
+            obs_mode="state_dict",
+            control_mode="pd_joint_pos",
+            sim_backend="cpu",
+            render_mode="rgb_array",
+            reward_mode="none",
+            num_envs=1,
+            sensor_configs=dict(width=int(sensor_size), height=int(sensor_size)),
+            human_render_camera_configs=dict(width=int(render_size), height=int(render_size)),
+            **(kwargs or {}),
+        )
         self.u = self.env.unwrapped
         self.env.reset(seed=int(seed))
         self._setup_ik()
@@ -125,8 +136,11 @@ class Worker:
         self.p_cmd, self.R_cmd = _pose(self.u.agent.tcp.pose)
         self.grip_target = 1.0  # ManiSkill's normalised gripper target: +1 open ... -1 closed
         self.I_p, self.I_r = np.zeros(3), np.zeros(3)
-        return {"cameras": list(self.u._human_render_cameras.keys()) + list(self.u._sensors.keys()),
-                "robot": self.u.agent.uid, "control_freq": self.u.control_freq}
+        return {
+            "cameras": list(self.u._human_render_cameras.keys()) + list(self.u._sensors.keys()),
+            "robot": self.u.agent.uid,
+            "control_freq": self.u.control_freq,
+        }
 
     def _setup_ik(self) -> None:
         import pytorch_kinematics as pk
@@ -170,7 +184,7 @@ class Worker:
             if np.linalg.norm(e[:3]) < 2e-4 and np.linalg.norm(e[3:]) < 2e-3:
                 break
             J = self.chain.jacobian(qt)[0].numpy()
-            JJt = J @ J.T + lam ** 2 * np.eye(6)
+            JJt = J @ J.T + lam**2 * np.eye(6)
             dq = J.T @ np.linalg.solve(JJt, e)
             N = np.eye(len(q)) - J.T @ np.linalg.solve(JJt, J)
             dq += N @ (0.05 * (self.q_rest - q))
@@ -179,7 +193,14 @@ class Worker:
                 dq *= 0.3 / n
             q = np.clip(q + dq, self.q_lo, self.q_hi)
         if os.environ.get("ROBOUSE_MANISKILL_DEBUG"):
-            print("ik", np.round(e, 4).tolist(), np.round(q, 2).tolist(), np.round(self._arm_q(), 2).tolist(), file=sys.stderr, flush=True)
+            print(
+                "ik",
+                np.round(e, 4).tolist(),
+                np.round(q, 2).tolist(),
+                np.round(self._arm_q(), 2).tolist(),
+                file=sys.stderr,
+                flush=True,
+            )
         return q
 
     # ---- stepping ------------------------------------------------------------------------------------------------
@@ -237,11 +258,16 @@ class Worker:
         agent = u.agent
         p, R = _pose(agent.tcp.pose)
         qf = _np(agent.robot.get_qpos())[0][-2:]
-        st = {"hand_pos": _r(p), "hand_quat": _r(_np(agent.tcp.pose.q)[0]),
-              "hand_down_axis": _r(R[:, 2], 3), "finger_axis": _r(R[:, 1], 3),
-              "hand_target_pos": _r(self.p_cmd), "hand_target_quat": _r(_mat_to_quat(self.R_cmd)),
-              "gripper_open": round(float(np.clip(np.mean(qf) / 0.04, 0, 1)), 3),
-              "gripper_width": round(float(np.sum(qf)), 4)}
+        st = {
+            "hand_pos": _r(p),
+            "hand_quat": _r(_np(agent.tcp.pose.q)[0]),
+            "hand_down_axis": _r(R[:, 2], 3),
+            "finger_axis": _r(R[:, 1], 3),
+            "hand_target_pos": _r(self.p_cmd),
+            "hand_target_quat": _r(_mat_to_quat(self.R_cmd)),
+            "gripper_open": round(float(np.clip(np.mean(qf) / 0.04, 0, 1)), 3),
+            "gripper_width": round(float(np.sum(qf)), 4),
+        }
         e = self.env_id
         grasped = None
         if e in ("PickCube-v1", "PushCube-v1", "PullCube-v1"):
@@ -266,7 +292,9 @@ class Worker:
             st["cube_half_size"] = 0.02
         elif e == "PokeCube-v1":
             self._obj(st, "peg", u.peg)
-            st["peg_head_pos"] = _r(_np(u.peg_head_pose.p)[0])  # the head end (upstream peg_head_pos ignores the rotation)
+            st["peg_head_pos"] = _r(
+                _np(u.peg_head_pose.p)[0]
+            )  # the head end (upstream peg_head_pos ignores the rotation)
             st["peg_half_length"], st["peg_half_width"] = float(u.peg_half_length), float(u.peg_half_width)
             self._obj(st, "cube", u.cube)
             st["cube_half_size"] = float(u.cube_half_size)
@@ -277,7 +305,9 @@ class Worker:
             self._obj(st, "sphere", u.obj, yaw=False)
             st["sphere_radius"] = float(u.radius)
             st["bin_pos"] = _r(_np(u.bin.pose.p)[0])
-            st["bin_inner_half_size"] = _r(np.asarray(u.inner_side_half_len, dtype=float) if hasattr(u, "inner_side_half_len") else [0.0])
+            st["bin_inner_half_size"] = _r(
+                np.asarray(u.inner_side_half_len, dtype=float) if hasattr(u, "inner_side_half_len") else [0.0]
+            )
             st["bin_floor_top_z"] = round(float(_np(u.bin.pose.p)[0][2] + float(u.block_half_size[0])), 4)
             grasped = u.obj
         elif e == "RollBall-v1":
@@ -298,7 +328,9 @@ class Worker:
             st["peg_axis"] = _r(pR[:, 0], 3)
             hs = _np(u.peg_half_sizes)[0]
             st["peg_half_length"], st["peg_radius"] = round(float(hs[0]), 4), round(float(hs[1]), 4)
-            st["peg_head_pos"] = _r(_np(u.peg_head_pose.p)[0])  # the head end (upstream peg_head_pos ignores the rotation)
+            st["peg_head_pos"] = _r(
+                _np(u.peg_head_pose.p)[0]
+            )  # the head end (upstream peg_head_pos ignores the rotation)
             hp, hR = _pose(u.box_hole_pose)
             st["hole_pos"] = _r(hp)
             st["hole_axis"] = _r(hR[:, 0], 3)
@@ -354,5 +386,9 @@ class Worker:
         u = self.u
         cam = u._sensors.get(name) or u._human_render_cameras.get(name)
         prm = cam.get_params()
-        return {"extrinsic_cv": _np(prm["extrinsic_cv"])[0].tolist(), "intrinsic_cv": _np(prm["intrinsic_cv"])[0].tolist(),
-                "width": int(cam.config.width), "height": int(cam.config.height)}
+        return {
+            "extrinsic_cv": _np(prm["extrinsic_cv"])[0].tolist(),
+            "intrinsic_cv": _np(prm["intrinsic_cv"])[0].tolist(),
+            "width": int(cam.config.width),
+            "height": int(cam.config.height),
+        }

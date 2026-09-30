@@ -14,12 +14,11 @@ Success (every task): the task's own "in target" condition (dm_control's sparse 
 fingertip inside the target sphere, the ball inside the cup, the cart-pole upright and centred) holds for `hold`
 consecutive control steps. The episode ends as solved the moment that happens (success_mode: first).
 """
+
 from __future__ import annotations
 
 import json
 import math
-import os
-import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -27,7 +26,7 @@ import numpy as np
 from ... import config
 from ...workers.client import StdioWorker
 from ..base import StepInfo
-from ..embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg
+from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Oracle, Sensor, Skill, SkillArg
 
 WORKER = Path(__file__).with_name("worker.py")
 DM_CONTROL_VERSION = "1.0.47"
@@ -38,29 +37,85 @@ MUJOCO_VERSION = "3.14.0"
 # ---------------------------------------------------------------------------------------------------------------------
 
 DOMAINS: dict[str, dict] = {
-    "cartpole": dict(robot="cart-pole", family="classic_control", dt=0.01,
-                     acts=[("F", "force on the cart along x: 10 N per unit (+ = +x)")], cameras=["fixed", "lookatcart"]),
-    "pendulum": dict(robot="torque-limited pendulum", family="classic_control", dt=0.02,
-                     acts=[("TAU", "torque at the hinge: 1 N m per unit (+ turns the pole from +z towards +x)")], cameras=["fixed", "lookat"]),
-    "acrobot": dict(robot="acrobot (two-link, elbow-actuated)", family="classic_control", dt=0.01,
-                    acts=[("TAU", "torque at the elbow: 2 N m per unit (+ turns the lower arm from +z towards +x relative to the upper arm)")],
-                    cameras=["fixed", "lookat"]),
-    "reacher": dict(robot="planar two-link reacher", family="planar_arm", dt=0.02,
-                    acts=[("SHOULDER", "shoulder torque: 0.05 N m per unit (+ = counter-clockwise seen from above)"),
-                          ("WRIST", "wrist torque: 0.05 N m per unit (+ = counter-clockwise)")], cameras=["fixed"]),
-    "point_mass": dict(robot="point mass", family="point_mass", dt=0.02,
-                       acts=[("FX", "force along x: 0.1 N per unit"), ("FY", "force along y: 0.1 N per unit")], cameras=["fixed", "cam0"]),
-    "finger": dict(robot="planar two-link finger and a free spinner", family="planar_arm", dt=0.02,
-                   acts=[("PROXIMAL", "proximal joint torque: 30 N m per unit"), ("DISTAL", "distal joint torque: 15 N m per unit")],
-                   cameras=["cam0", "cam1"]),
-    "ball_in_cup": dict(robot="planar cup (ball on a string)", family="planar_arm", dt=0.02,
-                        acts=[("FX", "force on the cup along x: 5 N per unit"), ("FZ", "force on the cup along z: 5 N per unit (+ = up)")],
-                        cameras=["cam0", "cam1"]),
-    "manipulator": dict(robot="planar manipulator (4-joint arm, two-finger gripper)", family="planar_arm", dt=0.01,
-                        acts=[("ROOT", "root joint torque: 12 N m per unit"), ("SHOULDER", "shoulder torque: 8 N m per unit"),
-                              ("ELBOW", "elbow torque: 4 N m per unit"), ("WRIST", "wrist torque: 2 N m per unit"),
-                              ("GRASP", "finger tendon force: 2 N per unit (+ closes the fingers)")], cameras=["fixed", "hand"]),
-    "jaco": dict(robot="Kinova Jaco arm with the three-finger Jaco hand", family="arm", dt=0.04, acts=[], cameras=["front_close"]),
+    "cartpole": dict(
+        robot="cart-pole",
+        family="classic_control",
+        dt=0.01,
+        acts=[("F", "force on the cart along x: 10 N per unit (+ = +x)")],
+        cameras=["fixed", "lookatcart"],
+    ),
+    "pendulum": dict(
+        robot="torque-limited pendulum",
+        family="classic_control",
+        dt=0.02,
+        acts=[("TAU", "torque at the hinge: 1 N m per unit (+ turns the pole from +z towards +x)")],
+        cameras=["fixed", "lookat"],
+    ),
+    "acrobot": dict(
+        robot="acrobot (two-link, elbow-actuated)",
+        family="classic_control",
+        dt=0.01,
+        acts=[
+            (
+                "TAU",
+                "torque at the elbow: 2 N m per unit (+ turns the lower arm from +z towards +x relative to the upper arm)",
+            )
+        ],
+        cameras=["fixed", "lookat"],
+    ),
+    "reacher": dict(
+        robot="planar two-link reacher",
+        family="planar_arm",
+        dt=0.02,
+        acts=[
+            ("SHOULDER", "shoulder torque: 0.05 N m per unit (+ = counter-clockwise seen from above)"),
+            ("WRIST", "wrist torque: 0.05 N m per unit (+ = counter-clockwise)"),
+        ],
+        cameras=["fixed"],
+    ),
+    "point_mass": dict(
+        robot="point mass",
+        family="point_mass",
+        dt=0.02,
+        acts=[("FX", "force along x: 0.1 N per unit"), ("FY", "force along y: 0.1 N per unit")],
+        cameras=["fixed", "cam0"],
+    ),
+    "finger": dict(
+        robot="planar two-link finger and a free spinner",
+        family="planar_arm",
+        dt=0.02,
+        acts=[
+            ("PROXIMAL", "proximal joint torque: 30 N m per unit"),
+            ("DISTAL", "distal joint torque: 15 N m per unit"),
+        ],
+        cameras=["cam0", "cam1"],
+    ),
+    "ball_in_cup": dict(
+        robot="planar cup (ball on a string)",
+        family="planar_arm",
+        dt=0.02,
+        acts=[
+            ("FX", "force on the cup along x: 5 N per unit"),
+            ("FZ", "force on the cup along z: 5 N per unit (+ = up)"),
+        ],
+        cameras=["cam0", "cam1"],
+    ),
+    "manipulator": dict(
+        robot="planar manipulator (4-joint arm, two-finger gripper)",
+        family="planar_arm",
+        dt=0.01,
+        acts=[
+            ("ROOT", "root joint torque: 12 N m per unit"),
+            ("SHOULDER", "shoulder torque: 8 N m per unit"),
+            ("ELBOW", "elbow torque: 4 N m per unit"),
+            ("WRIST", "wrist torque: 2 N m per unit"),
+            ("GRASP", "finger tendon force: 2 N per unit (+ closes the fingers)"),
+        ],
+        cameras=["fixed", "hand"],
+    ),
+    "jaco": dict(
+        robot="Kinova Jaco arm with the three-finger Jaco hand", family="arm", dt=0.04, acts=[], cameras=["front_close"]
+    ),
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -69,26 +124,60 @@ DOMAINS: dict[str, dict] = {
 
 TASKS: dict[str, dict] = {
     # classic control: swing up and balance (dm_control's sparse "in target" conditions, held)
-    "dmcontrol-cartpole-swingup": dict(kind="suite", domain="cartpole", task="swingup", seed=1, hold=200, max_steps=1500, camera="fixed"),
-    "dmcontrol-cartpole-balance": dict(kind="suite", domain="cartpole", task="balance", seed=2, hold=800, max_steps=1000, camera="fixed"),
-    "dmcontrol-pendulum-swingup": dict(kind="suite", domain="pendulum", task="swingup", seed=9, hold=100, max_steps=1000, camera="fixed"),
-    "dmcontrol-acrobot-swingup": dict(kind="suite", domain="acrobot", task="swingup", seed=9, hold=20, max_steps=3000, camera="fixed"),
+    "dmcontrol-cartpole-swingup": dict(
+        kind="suite", domain="cartpole", task="swingup", seed=1, hold=200, max_steps=1500, camera="fixed"
+    ),
+    "dmcontrol-cartpole-balance": dict(
+        kind="suite", domain="cartpole", task="balance", seed=2, hold=800, max_steps=1000, camera="fixed"
+    ),
+    "dmcontrol-pendulum-swingup": dict(
+        kind="suite", domain="pendulum", task="swingup", seed=9, hold=100, max_steps=1000, camera="fixed"
+    ),
+    "dmcontrol-acrobot-swingup": dict(
+        kind="suite", domain="acrobot", task="swingup", seed=9, hold=20, max_steps=3000, camera="fixed"
+    ),
     # reaching and point-to-point control
-    "dmcontrol-reacher-easy": dict(kind="suite", domain="reacher", task="easy", seed=9, hold=25, max_steps=500, camera="fixed"),
-    "dmcontrol-reacher-hard": dict(kind="suite", domain="reacher", task="hard", seed=0, hold=25, max_steps=500, camera="fixed"),
-    "dmcontrol-reacher-hard-b": dict(kind="suite", domain="reacher", task="hard", seed=4, hold=25, max_steps=500, camera="fixed"),
-    "dmcontrol-point-mass-easy": dict(kind="suite", domain="point_mass", task="easy", seed=9, hold=25, max_steps=500, camera="fixed"),
+    "dmcontrol-reacher-easy": dict(
+        kind="suite", domain="reacher", task="easy", seed=9, hold=25, max_steps=500, camera="fixed"
+    ),
+    "dmcontrol-reacher-hard": dict(
+        kind="suite", domain="reacher", task="hard", seed=0, hold=25, max_steps=500, camera="fixed"
+    ),
+    "dmcontrol-reacher-hard-b": dict(
+        kind="suite", domain="reacher", task="hard", seed=4, hold=25, max_steps=500, camera="fixed"
+    ),
+    "dmcontrol-point-mass-easy": dict(
+        kind="suite", domain="point_mass", task="easy", seed=9, hold=25, max_steps=500, camera="fixed"
+    ),
     # contact-rich planar manipulation
-    "dmcontrol-finger-turn-easy": dict(kind="suite", domain="finger", task="turn_easy", seed=1, hold=25, max_steps=1000, camera="cam1"),
-    "dmcontrol-finger-turn-hard": dict(kind="suite", domain="finger", task="turn_hard", seed=0, hold=25, max_steps=1000, camera="cam1"),
-    "dmcontrol-ball-in-cup-catch": dict(kind="suite", domain="ball_in_cup", task="catch", seed=3, hold=50, max_steps=1000, camera="cam1"),
-    "dmcontrol-manipulator-bring-ball": dict(kind="suite", domain="manipulator", task="bring_ball", seed=2, hold=25, max_steps=2000, camera="fixed"),
+    "dmcontrol-finger-turn-easy": dict(
+        kind="suite", domain="finger", task="turn_easy", seed=1, hold=25, max_steps=1000, camera="cam1"
+    ),
+    "dmcontrol-finger-turn-hard": dict(
+        kind="suite", domain="finger", task="turn_hard", seed=0, hold=25, max_steps=1000, camera="cam1"
+    ),
+    "dmcontrol-ball-in-cup-catch": dict(
+        kind="suite", domain="ball_in_cup", task="catch", seed=3, hold=50, max_steps=1000, camera="cam1"
+    ),
+    "dmcontrol-manipulator-bring-ball": dict(
+        kind="suite", domain="manipulator", task="bring_ball", seed=2, hold=25, max_steps=2000, camera="fixed"
+    ),
     # dm_control.manipulation: Kinova Jaco arm with the three-finger Jaco hand
-    "dmcontrol-jaco-reach-site": dict(kind="manipulation", task="reach_site_features", seed=4, hold=10, max_steps=300, camera="front_close"),
-    "dmcontrol-jaco-lift-brick": dict(kind="manipulation", task="lift_brick_features", seed=4, hold=25, max_steps=600, camera="front_close"),
-    "dmcontrol-jaco-place-brick": dict(kind="manipulation", task="place_brick_features", seed=5, hold=25, max_steps=800, camera="front_close"),
-    "dmcontrol-jaco-place-cradle": dict(kind="manipulation", task="place_cradle_features", seed=2, hold=25, max_steps=800, camera="front_close"),
-    "dmcontrol-jaco-stack-2-bricks": dict(kind="manipulation", task="stack_2_bricks_features", seed=5, hold=25, max_steps=1000, camera="front_close"),
+    "dmcontrol-jaco-reach-site": dict(
+        kind="manipulation", task="reach_site_features", seed=4, hold=10, max_steps=300, camera="front_close"
+    ),
+    "dmcontrol-jaco-lift-brick": dict(
+        kind="manipulation", task="lift_brick_features", seed=4, hold=25, max_steps=600, camera="front_close"
+    ),
+    "dmcontrol-jaco-place-brick": dict(
+        kind="manipulation", task="place_brick_features", seed=5, hold=25, max_steps=800, camera="front_close"
+    ),
+    "dmcontrol-jaco-place-cradle": dict(
+        kind="manipulation", task="place_cradle_features", seed=2, hold=25, max_steps=800, camera="front_close"
+    ),
+    "dmcontrol-jaco-stack-2-bricks": dict(
+        kind="manipulation", task="stack_2_bricks_features", seed=5, hold=25, max_steps=1000, camera="front_close"
+    ),
 }
 
 
@@ -106,40 +195,100 @@ class DMControlBackend(EmbodiedBackend):
         self.camera = spec.get("camera", self.task["camera"])
         self.render_size = tuple(spec.get("render_size", (480, 480)))
         self.decl = self._declare()
-        self.worker = StdioWorker("dmcontrol", config.sim_python("dmcontrol", "dmcontrol"), WORKER, setup="docs/suites/dmcontrol.md")
+        self.worker = StdioWorker(
+            "dmcontrol", config.sim_python("dmcontrol", "dmcontrol"), WORKER, setup="docs/suites/dmcontrol.md"
+        )
         self._state = None
         self._success = False
         self.last_judge: dict = {}
 
     def _declare(self, fields: list[str] | None = None) -> Embodiment:
         dom = DOMAINS[self.domain]
-        state_doc = ("the task's own observation (dm_control's observation dict, same key names) plus the positions named in the instruction"
-                     if self.domain != "jaco" else "the hand, the fingers and the objects (positions in metres, world frame)")
+        state_doc = (
+            "the task's own observation (dm_control's observation dict, same key names) plus the positions named in the instruction"
+            if self.domain != "jaco"
+            else "the hand, the fingers and the objects (positions in metres, world frame)"
+        )
         skip = {"reward", "in_target", "hold_steps", "hold_required"}
-        sensors = [Sensor("task_state", "world", [f for f in (fields or []) if f not in skip], state_doc, frame="world"),
-                   Sensor("success", "events", ["reward", "in_target", "hold_steps", "hold_required"],
-                          "the task's reward, whether the success condition holds now, and for how many consecutive steps")]
+        sensors = [
+            Sensor("task_state", "world", [f for f in (fields or []) if f not in skip], state_doc, frame="world"),
+            Sensor(
+                "success",
+                "events",
+                ["reward", "in_target", "hold_steps", "hold_required"],
+                "the task's reward, whether the success condition holds now, and for how many consecutive steps",
+            ),
+        ]
         sensors += [Sensor(f"camera:{c}", "camera", mount="world") for c in dom["cameras"]]
         if self.domain == "jaco":
-            groups = [ActionGroup("arm.ee_delta", "ee_delta_pos", ["DX", "DY", "DZ"], [-2.0] * 3, [2.0] * 3, "cm per unit",
-                                  "move the commanded pinch point 1 cm per unit along world x, y, z", frame="world"),
-                      ActionGroup("arm.yaw_delta", "ee_delta_yaw", ["DYAW"], [-2.0], [2.0], "0.1 rad per unit",
-                                  "turn the commanded hand yaw about the vertical (+ = counter-clockwise seen from above); the hand always points down"),
-                      ActionGroup("gripper", "gripper", ["GRIP"], [-1.0], [1.0], "", "finger velocity: +1 closes, -1 opens, 0 holds")]
-            skills = [Skill("move_to", [SkillArg("x", "float", "m"), SkillArg("y", "float", "m"), SkillArg("z", "float", "m"),
-                                        SkillArg("yaw", "float", "deg", 999.0, doc="hand yaw to turn to while moving (999 = keep)"),
-                                        SkillArg("grip", "float", "", 0.0, doc="GRIP held while moving")],
-                            "move the pinch point in a straight line to (X, Y, Z) in the world frame, optionally turning the hand to YAW", 150),
-                      Skill("grip", [SkillArg("value", "float", "", 1.0, doc="+1 close, -1 open"), SkillArg("steps", "int", "", 15)],
-                            "close or open the fingers for STEPS steps without moving the arm", 50)]
+            groups = [
+                ActionGroup(
+                    "arm.ee_delta",
+                    "ee_delta_pos",
+                    ["DX", "DY", "DZ"],
+                    [-2.0] * 3,
+                    [2.0] * 3,
+                    "cm per unit",
+                    "move the commanded pinch point 1 cm per unit along world x, y, z",
+                    frame="world",
+                ),
+                ActionGroup(
+                    "arm.yaw_delta",
+                    "ee_delta_yaw",
+                    ["DYAW"],
+                    [-2.0],
+                    [2.0],
+                    "0.1 rad per unit",
+                    "turn the commanded hand yaw about the vertical (+ = counter-clockwise seen from above); the hand always points down",
+                ),
+                ActionGroup(
+                    "gripper", "gripper", ["GRIP"], [-1.0], [1.0], "", "finger velocity: +1 closes, -1 opens, 0 holds"
+                ),
+            ]
+            skills = [
+                Skill(
+                    "move_to",
+                    [
+                        SkillArg("x", "float", "m"),
+                        SkillArg("y", "float", "m"),
+                        SkillArg("z", "float", "m"),
+                        SkillArg("yaw", "float", "deg", 999.0, doc="hand yaw to turn to while moving (999 = keep)"),
+                        SkillArg("grip", "float", "", 0.0, doc="GRIP held while moving"),
+                    ],
+                    "move the pinch point in a straight line to (X, Y, Z) in the world frame, optionally turning the hand to YAW",
+                    150,
+                ),
+                Skill(
+                    "grip",
+                    [SkillArg("value", "float", "", 1.0, doc="+1 close, -1 open"), SkillArg("steps", "int", "", 15)],
+                    "close or open the fingers for STEPS steps without moving the arm",
+                    50,
+                ),
+            ]
         else:
             n = len(dom["acts"])
-            groups = [ActionGroup("actuators", "motor", [a for a, _ in dom["acts"]], [-1.0] * n, [1.0] * n, "normalised",
-                                  "; ".join(f"{a}: {d}" for a, d in dom["acts"]))]
+            groups = [
+                ActionGroup(
+                    "actuators",
+                    "motor",
+                    [a for a, _ in dom["acts"]],
+                    [-1.0] * n,
+                    [1.0] * n,
+                    "normalised",
+                    "; ".join(f"{a}: {d}" for a, d in dom["acts"]),
+                )
+            ]
             skills = []
-        return Embodiment(robot=dom["robot"], family=dom["family"], assets=[f"dm_control {DM_CONTROL_VERSION} ({self.domain})"],
-                          sensors=sensors, action_groups=groups, skills=skills,
-                          budget=Budget(int(self.task["max_steps"]), float(dom["dt"])), cameras=list(dom["cameras"]))
+        return Embodiment(
+            robot=dom["robot"],
+            family=dom["family"],
+            assets=[f"dm_control {DM_CONTROL_VERSION} ({self.domain})"],
+            sensors=sensors,
+            action_groups=groups,
+            skills=skills,
+            budget=Budget(int(self.task["max_steps"]), float(dom["dt"])),
+            cameras=list(dom["cameras"]),
+        )
 
     # ---- worker ------------------------------------------------------------------------------------------------
     def _call(self, cmd: str, **kw):
@@ -149,8 +298,15 @@ class DMControlBackend(EmbodiedBackend):
     def reset(self, seed: int) -> None:
         t = self.task
         kw = {k: v for k, v in t.items() if k not in ("kind", "domain", "task", "seed", "hold", "max_steps", "camera")}
-        self.meta = self._call("make", kind=t["kind"], domain=t.get("domain", "jaco"), task=t["task"], seed=int(t["seed"]),
-                               hold=int(t["hold"]), **kw)
+        self.meta = self._call(
+            "make",
+            kind=t["kind"],
+            domain=t.get("domain", "jaco"),
+            task=t["task"],
+            seed=int(t["seed"]),
+            hold=int(t["hold"]),
+            **kw,
+        )
         self._state = None
         self._success = False
         self.decl = self._declare(list(self.observe()))  # `robo info` lists the observation's field names
@@ -188,7 +344,9 @@ class DMControlBackend(EmbodiedBackend):
 
     def render(self, width: int | None = None, height: int | None = None) -> np.ndarray:
         w, h = (width, height) if width and height else self.render_size
-        return self._call("render", width=int(w), height=int(h), camera=self.camera or DOMAINS[self.domain]["cameras"][0])
+        return self._call(
+            "render", width=int(w), height=int(h), camera=self.camera or DOMAINS[self.domain]["cameras"][0]
+        )
 
     def close(self) -> None:
         self.worker.close()
@@ -227,6 +385,7 @@ class DMControlBackend(EmbodiedBackend):
 # reference solutions: scripted controllers that read `robo observe` and send `robo act`, through the socket only
 # =====================================================================================================================
 
+
 def _wrap(a: float) -> float:
     return (a + math.pi) % (2 * math.pi) - math.pi
 
@@ -256,7 +415,7 @@ def cartpole_policy(st: dict, mem: dict) -> list[float]:
     if math.cos(th) > 0.85:  # near upright: LQR
         u = -float(K_CARTPOLE @ np.array([x, th, xd, thd]))
     else:  # energy pumping (pole: m = 0.1 kg, l = 1 m, com at 0.5 m) with a weak pull to the centre
-        E = 0.5 * (1 / 3) * thd ** 2 + 9.81 * 0.5 * (math.cos(th) - 1)  # per unit mass-ish; 0 at the top, at rest
+        E = 0.5 * (1 / 3) * thd**2 + 9.81 * 0.5 * (math.cos(th) - 1)  # per unit mass-ish; 0 at the top, at rest
         u = 3.0 * E * (1 if thd * math.cos(th) < 0 else -1) - 0.3 * x - 0.3 * xd
         u = -u
     return [float(np.clip(u, -1, 1))]
@@ -267,7 +426,7 @@ def pendulum_policy(st: dict, mem: dict) -> list[float]:
     if math.cos(th) > math.cos(math.radians(25)):
         u = -float(K_PENDULUM @ np.array([th, thd]))
     else:
-        E = 0.5 * 0.25 * thd ** 2 + 9.81 * 0.5 * (math.cos(th) - 1)  # 0 at the top, at rest (m = 1 kg at 0.5 m)
+        E = 0.5 * 0.25 * thd**2 + 9.81 * 0.5 * (math.cos(th) - 1)  # 0 at the top, at rest (m = 1 kg at 0.5 m)
         u = np.sign(thd if abs(thd) > 1e-3 else 1.0) * (1.0 if E < 0 else -1.0)
     return [float(np.clip(u, -1, 1))]
 
@@ -291,7 +450,10 @@ def reacher_policy(st: dict, mem: dict) -> list[float]:
         mem["q_des"] = (a1, a2)
     a1, a2 = mem["q_des"]
     e1, e2 = _wrap(a1 - q1), a2 - q2
-    return [float(np.clip(8.0 * e1 - 0.6 * st["shoulder_vel"], -1, 1)), float(np.clip(8.0 * e2 - 0.4 * st["wrist_vel"], -1, 1))]
+    return [
+        float(np.clip(8.0 * e1 - 0.6 * st["shoulder_vel"], -1, 1)),
+        float(np.clip(8.0 * e2 - 0.4 * st["wrist_vel"], -1, 1)),
+    ]
 
 
 def point_mass_policy(st: dict, mem: dict) -> list[float]:
@@ -300,7 +462,10 @@ def point_mass_policy(st: dict, mem: dict) -> list[float]:
     return [float(x) for x in np.clip(u, -1, 1)]
 
 
-FINGER_BASE, FINGER_L = np.array([-0.2, 0.4]), (0.18, 0.161)  # proximal pivot (x, z); link to distal pivot, to the fingertip end
+FINGER_BASE, FINGER_L = (
+    np.array([-0.2, 0.4]),
+    (0.18, 0.161),
+)  # proximal pivot (x, z); link to distal pivot, to the fingertip end
 
 
 def _ik2(target, base, l1, l2, q_now, lim=1.9):
@@ -331,19 +496,19 @@ def finger_policy(st: dict, mem: dict) -> list[float]:
     qd = np.array([st["proximal_vel"], st["distal_vel"]])
     c = _v(st, "spinner_center")
     tip = _v(st, "spinner_tip_pos") - c
-    beta = math.atan2(tip[0], tip[1])                       # spinner angle (0 = tip end up, + towards +x)
+    beta = math.atan2(tip[0], tip[1])  # spinner angle (0 = tip end up, + towards +x)
     tgt = _v(st, "target_pos") - c
-    delta = _wrap(math.atan2(tgt[0], tgt[1]) - beta)         # rotation still needed
+    delta = _wrap(math.atan2(tgt[0], tgt[1]) - beta)  # rotation still needed
     ft = _v(st, "fingertip_end_pos")
     tol = 0.5 * st["target_radius"] / 0.13
     u = np.array([math.sin(beta), math.cos(beta)])
-    t = np.array([math.cos(beta), -math.sin(beta)])          # motion of the point at +u when beta increases
+    t = np.array([math.cos(beta), -math.sin(beta)])  # motion of the point at +u when beta increases
     sgn = 1.0 if delta > 0 else -1.0
     reach = FINGER_L[0] + FINGER_L[1] - 0.008
 
     def plan(rho):
-        pdir = sgn * (1.0 if rho > 0 else -1.0) * t          # push direction at that point
-        surf = c + rho * u - 0.06 * pdir                     # arm surface facing the finger's push
+        pdir = sgn * (1.0 if rho > 0 else -1.0) * t  # push direction at that point
+        surf = c + rho * u - 0.06 * pdir  # arm surface facing the finger's push
         return pdir, surf
 
     def ok(pt):
@@ -391,10 +556,16 @@ def finger_policy(st: dict, mem: dict) -> list[float]:
         d = want - FINGER_BASE
         l1, l2 = FINGER_L
         rmin = math.sqrt(l1 * l1 + l2 * l2 + 2 * l1 * l2 * math.cos(1.85))
-        sol = _ik2(FINGER_BASE + d / np.linalg.norm(d) * float(np.clip(np.linalg.norm(d), rmin + 0.005, reach - 0.005)),
-                   FINGER_BASE, *FINGER_L, q_now=q)
+        sol = _ik2(
+            FINGER_BASE + d / np.linalg.norm(d) * float(np.clip(np.linalg.norm(d), rmin + 0.005, reach - 0.005)),
+            FINGER_BASE,
+            *FINGER_L,
+            q_now=q,
+        )
     q_des = np.array(sol) if sol is not None else q
-    tau = np.array([40.0, 12.0]) * (q_des - q) - np.array([0.5, 0.1]) * qd  # the finger has no gravity; its joints are damped
+    tau = (
+        np.array([40.0, 12.0]) * (q_des - q) - np.array([0.5, 0.1]) * qd
+    )  # the finger has no gravity; its joints are damped
     return [float(np.clip(tau[0] / 30.0, -1, 1)), float(np.clip(tau[1] / 15.0, -1, 1))]
 
 
@@ -492,7 +663,11 @@ class ManipulatorOracle:
         q_des = _manip_ik(self.cmd, math.pi, q)
         e = np.array([_wrap(q_des[0] - q[0]), *(q_des[1:] - q[1:])])
         self.integ = np.clip(self.integ + e * 0.04, -0.3, 0.3)
-        tau = np.array([30.0, 25.0, 12.0, 5.0]) * e + np.array([20.0, 15.0, 6.0, 2.0]) * self.integ - np.array([1.0, 0.8, 0.4, 0.1]) * qd
+        tau = (
+            np.array([30.0, 25.0, 12.0, 5.0]) * e
+            + np.array([20.0, 15.0, 6.0, 2.0]) * self.integ
+            - np.array([1.0, 0.8, 0.4, 0.1]) * qd
+        )
         return [float(x) for x in np.clip(tau / MANIP_GEAR, -1, 1)] + [g]
 
 
@@ -501,8 +676,14 @@ class ManipulatorOracle:
 
 ACRO_I, ACRO_LC, ACRO_G, ACRO_DAMP = (0.09557, 0.09530), 0.5, 9.81, 0.05
 K_ACROBOT_R10 = np.array([-123.388, -30.905, -45.3, -13.436])
-P_ACROBOT = np.array([[3360682.88, 945632.27, 1242455.47, 384897.34], [945632.27, 267527.57, 349734.46, 108502.62],
-                      [1242455.47, 349734.46, 459393.9, 142327.7], [384897.34, 108502.62, 142327.7, 44121.1]])
+P_ACROBOT = np.array(
+    [
+        [3360682.88, 945632.27, 1242455.47, 384897.34],
+        [945632.27, 267527.57, 349734.46, 108502.62],
+        [1242455.47, 349734.46, 459393.9, 142327.7],
+        [384897.34, 108502.62, 142327.7, 44121.1],
+    ]
+)
 
 
 def _acro_f(x, u):
@@ -510,9 +691,9 @@ def _acro_f(x, u):
     I1, I2 = ACRO_I
     lc, l1 = ACRO_LC, 1.0
     c2, s2 = np.cos(q2), np.sin(q2)
-    M11 = I1 + I2 + lc ** 2 + l1 ** 2 + lc ** 2 + 2 * l1 * lc * c2
-    M12 = I2 + lc ** 2 + l1 * lc * c2
-    M22 = I2 + lc ** 2
+    M11 = I1 + I2 + lc**2 + l1**2 + lc**2 + 2 * l1 * lc * c2
+    M12 = I2 + lc**2 + l1 * lc * c2
+    M22 = I2 + lc**2
     h = l1 * lc * s2
     C1, C2 = -h * (2 * d1 * d2 + d2 * d2), h * d1 * d1
     G1 = -ACRO_G * ((lc + l1) * np.sin(q1) + lc * np.sin(q1 + q2))
@@ -552,7 +733,7 @@ class AcrobotOracle:
             x = _acro_rk4(x, U[:, i], self.DT)
             q1, q2 = x[:, 0], x[:, 1]
             d = np.hypot(np.sin(q1) + np.sin(q1 + q2), np.cos(q1) + np.cos(q1 + q2) - 2.0)  # tip to the top
-            c += d ** 2 + 0.01 * (x[:, 2] ** 2 + x[:, 3] ** 2) * (d < 0.5)
+            c += d**2 + 0.01 * (x[:, 2] ** 2 + x[:, 3] ** 2) * (d < 0.5)
         z = np.stack([_wrapv(x[:, 0]), _wrapv(x[:, 1]), x[:, 2], x[:, 3]], -1)
         return c + np.minimum(np.einsum("ni,ij,nj->n", z, P_ACROBOT, z) / 2e5, 50)
 
@@ -630,13 +811,14 @@ class BallInCupOracle:
         cand[0], cand[1] = self.nom, 0.0
         cand = np.clip(cand, -1, 1)
         U = np.einsum("hk,nkj->nhj", self.W, cand)
-        rep = lambda v: np.repeat(v[None], self.N, 0).astype(float)  # noqa: E731
+        rep = lambda v: np.repeat(v[None], self.N, 0).astype(float)
         cost = _cup_rollout(rep(c), rep(cv), rep(b), rep(bv), U)
         self.nom = cand[int(np.argmin(cost))]
         return [float(x) for x in self.nom[0]]
 
 
 # ---- Jaco tasks: scripted pick and place with the move_to and grip skills
+
 
 def _yaw_near(target_deg: float, ref_deg: float, period: float = 180.0) -> float:
     """The angle equal to target_deg modulo `period` that is closest to ref_deg."""
@@ -649,7 +831,9 @@ def _jaco_pick(o, name: str, tries: int = 4) -> dict:
     for _ in range(tries):
         st = o.state()
         b, yaw = _v(st, f"{name}_pos"), float(st[f"{name}_yaw_deg"])
-        grasp_yaw = _wrap(math.radians(_yaw_near(yaw + 90.0, st["hand_yaw_deg"]))) * 180 / math.pi  # fingers across the width
+        grasp_yaw = (
+            _wrap(math.radians(_yaw_near(yaw + 90.0, st["hand_yaw_deg"]))) * 180 / math.pi
+        )  # fingers across the width
         o.skill("move_to", b[0], b[1], b[2] + 0.12, grasp_yaw, -1)
         o.skill("move_to", b[0], b[1], b[2] + 0.12, grasp_yaw, -1)  # settle the turn before going down
         st = o.state()
@@ -753,11 +937,13 @@ def solution(env: str):
     if dom == "ball_in_cup":
         return lambda o: _run_policy(o, BallInCupOracle(), t["max_steps"])
     if dom == "manipulator":
+
         def solve(o):
             ctl = ManipulatorOracle()
             st = o.state()
             for _ in range(t["max_steps"]):
                 st = o.act(ctl.act(st))["state"]
+
         return solve
     if dom == "finger":
         return lambda o: _loop(o, finger_policy, t["max_steps"])

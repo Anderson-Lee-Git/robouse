@@ -2,6 +2,7 @@
 (`run --prior-learnings FILE`): the verdict and how the episode ended, the judge's detail, safety events and vetoes,
 errors the robot returned, and the last requests before the end. No model is called; the text is meant to be read by
 the next agent and by people."""
+
 from __future__ import annotations
 
 import json
@@ -11,9 +12,12 @@ from pathlib import Path
 def summarize(trial: Path) -> str:
     r = json.loads((trial / "result.json").read_text())
     ep = r.get("episode") or {}
-    lines = [f"# Learnings from {trial.name}", "",
-             f"- Outcome: {ep.get('outcome')} after {ep.get('steps_used')} of {ep.get('max_steps')} steps; "
-             f"success: {bool(ep.get('success'))}; progress: {(ep.get('metrics') or {}).get('progress')}"]
+    lines = [
+        f"# Learnings from {trial.name}",
+        "",
+        f"- Outcome: {ep.get('outcome')} after {ep.get('steps_used')} of {ep.get('max_steps')} steps; "
+        f"success: {bool(ep.get('success'))}; progress: {(ep.get('metrics') or {}).get('progress')}",
+    ]
     if ep.get("judge_detail"):
         lines.append(f"- Judge: {json.dumps(ep['judge_detail'])[:400]}")
     if ep.get("agent_text"):
@@ -36,7 +40,11 @@ def summarize(trial: Path) -> str:
     lines += ["", "## For the next attempt", ""]
     if errors:
         lines.append("- Do not repeat requests that returned the errors above; read `robo info` for the limits.")
-    lines += ["- Success is judged only after `robo done` with the robot holding still: check the goal holds before calling it."]
+    lines += [
+        "- Success is judged only after `robo done` with the robot holding still: check the goal holds before calling it."
+    ]
     if not ep.get("success") and ep.get("outcome") in ("budget_exhausted", "agent_timeout"):
-        lines.append("- The budget ran out: use skills or `--repeat` for long motions and plan fewer observation round trips.")
+        lines.append(
+            "- The budget ran out: use skills or `--repeat` for long motions and plan fewer observation round trips."
+        )
     return "\n".join(lines) + "\n"

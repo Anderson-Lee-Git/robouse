@@ -17,6 +17,7 @@ end-effector pose targets for both arms plus both gripper openings, solved by Ro
 Success is RoboDojo's `run_reward()` reaching 1 (every stage passed, in order, with no forbidden event), checked by the
 worker after every action; the episode ends as solved the first time it does (`success_mode: first`), as in RoboDojo.
 """
+
 from __future__ import annotations
 
 import math
@@ -38,14 +39,20 @@ STEP_S = 0.04  # one RoboDojo action: 10 physics steps of 4 ms
 SKILL_WALL_S = float(os.environ.get("ROBOUSE_ROBODOJO_SKILL_WALL_S", 90))
 
 
-
 # ---- small rotation helpers (quaternions are w, x, y, z) ------------------------------------------------------------
+
 
 def quat_mul(a, b):
     w1, x1, y1, z1 = a
     w2, x2, y2, z2 = b
-    return np.array([w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2, w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-                     w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2, w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2])
+    return np.array(
+        [
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+        ]
+    )
 
 
 def quat_axis_angle(axis, deg):
@@ -97,9 +104,13 @@ def mat_quat(R) -> np.ndarray:
 
 def quat_mat(q) -> np.ndarray:
     w, x, y, z = quat_norm(q)
-    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 # The ARX X5 gripper: RoboDojo's end-effector link is `link6`; the fingers point along its +x axis and close along its
@@ -132,44 +143,110 @@ def ee_for_tcp(tcp, quat) -> np.ndarray:
 
 # ---- the declaration ------------------------------------------------------------------------------------------------
 
+
 def _decl(max_steps: int) -> Embodiment:
     groups = []
     for arm in ARMS:
-        groups.append(ActionGroup(f"{arm}.ee_pose", "ee_pose", [f"{arm}_{c}" for c in ("x", "y", "z", "qw", "qx", "qy", "qz")],
-                                  [-1.5, -1.5, 0.0, -1, -1, -1, -1], [1.5, 1.5, 2.0, 1, 1, 1, 1], units="m, quaternion (w, x, y, z)",
-                                  frame="world", doc=f"absolute target pose of the {arm} gripper (RoboDojo's `{arm}_ee_pose`), "
-                                  "reached through RoboDojo's cuRobo IK; an unreachable pose leaves the arm where it is"))
-        groups.append(ActionGroup(f"{arm}.gripper", "gripper", [f"{arm}_grip"], [0.0], [1.0], units="fraction open",
-                                  doc="0 closed, 1 fully open"))
+        groups.append(
+            ActionGroup(
+                f"{arm}.ee_pose",
+                "ee_pose",
+                [f"{arm}_{c}" for c in ("x", "y", "z", "qw", "qx", "qy", "qz")],
+                [-1.5, -1.5, 0.0, -1, -1, -1, -1],
+                [1.5, 1.5, 2.0, 1, 1, 1, 1],
+                units="m, quaternion (w, x, y, z)",
+                frame="world",
+                doc=f"absolute target pose of the {arm} gripper (RoboDojo's `{arm}_ee_pose`), "
+                "reached through RoboDojo's cuRobo IK; an unreachable pose leaves the arm where it is",
+            )
+        )
+        groups.append(
+            ActionGroup(
+                f"{arm}.gripper",
+                "gripper",
+                [f"{arm}_grip"],
+                [0.0],
+                [1.0],
+                units="fraction open",
+                doc="0 closed, 1 fully open",
+            )
+        )
     sensors = [
-        Sensor("arms", "proprio", ["robot"], doc="per arm: gripper pose (ee_pos, ee_quat, ee_axes), gripper_open, joints, "
-               "home pose"),
-        Sensor("objects", "world", ["objects"], doc="every task object: label, type, category, model_id, description, pos, "
-               "quat, up_axis, yaw_deg, bbox_min/bbox_max, size; articulated objects add their joints"),
-        Sensor("progress", "world", ["instruction", "steps", "step_lim", "stages_left", "score", "ended", "failed"],
-               doc="RoboDojo's instruction and progress counters"),
+        Sensor(
+            "arms",
+            "proprio",
+            ["robot"],
+            doc="per arm: gripper pose (ee_pos, ee_quat, ee_axes), gripper_open, joints, home pose",
+        ),
+        Sensor(
+            "objects",
+            "world",
+            ["objects"],
+            doc="every task object: label, type, category, model_id, description, pos, "
+            "quat, up_axis, yaw_deg, bbox_min/bbox_max, size; articulated objects add their joints",
+        ),
+        Sensor(
+            "progress",
+            "world",
+            ["instruction", "steps", "step_lim", "stages_left", "score", "ended", "failed"],
+            doc="RoboDojo's instruction and progress counters",
+        ),
         Sensor("camera:cam_head", "camera", mount="head", doc="RoboDojo's head camera"),
         Sensor("camera:cam_left_wrist", "camera", mount="wrist"),
         Sensor("camera:cam_right_wrist", "camera", mount="wrist"),
     ]
     arm = SkillArg("arm", "enum", choices=list(ARMS), doc="which arm")
     skills = [
-        Skill("move", [arm, SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("z", unit="m"),
-                       SkillArg("pitch", unit="deg", default=90.0, doc="how far below horizontal the fingers point (90 = straight down)"),
-                       SkillArg("yaw", unit="deg", default=90.0, doc="compass heading of the finger direction; with the hand pointing "
-                                "down the fingers close along (-sin YAW, cos YAW, 0)"),
-                       SkillArg("speed", unit="m/step", default=0.012, doc="at most this far per 40 ms step (0.002-0.03)")],
-              "move one gripper's grasp point (between the fingertips) in a straight line to (X, Y, Z) with the given "
-              "orientation; the other arm holds still", max_steps=250),
-        Skill("grip", [arm, SkillArg("open", doc="0 closed .. 1 fully open"), SkillArg("steps", "int", default=12)],
-              "set one gripper's opening and hold still for STEPS steps", max_steps=50),
-        Skill("home", [SkillArg("arm", "enum", default="both", choices=["left", "right", "both"])],
-              "move the arm(s) back to the starting pose (many tasks require this at the end)", max_steps=250),
+        Skill(
+            "move",
+            [
+                arm,
+                SkillArg("x", unit="m"),
+                SkillArg("y", unit="m"),
+                SkillArg("z", unit="m"),
+                SkillArg(
+                    "pitch",
+                    unit="deg",
+                    default=90.0,
+                    doc="how far below horizontal the fingers point (90 = straight down)",
+                ),
+                SkillArg(
+                    "yaw",
+                    unit="deg",
+                    default=90.0,
+                    doc="compass heading of the finger direction; with the hand pointing "
+                    "down the fingers close along (-sin YAW, cos YAW, 0)",
+                ),
+                SkillArg("speed", unit="m/step", default=0.012, doc="at most this far per 40 ms step (0.002-0.03)"),
+            ],
+            "move one gripper's grasp point (between the fingertips) in a straight line to (X, Y, Z) with the given "
+            "orientation; the other arm holds still",
+            max_steps=250,
+        ),
+        Skill(
+            "grip",
+            [arm, SkillArg("open", doc="0 closed .. 1 fully open"), SkillArg("steps", "int", default=12)],
+            "set one gripper's opening and hold still for STEPS steps",
+            max_steps=50,
+        ),
+        Skill(
+            "home",
+            [SkillArg("arm", "enum", default="both", choices=["left", "right", "both"])],
+            "move the arm(s) back to the starting pose (many tasks require this at the end)",
+            max_steps=250,
+        ),
         Skill("wait", [SkillArg("steps", "int", default=10)], "hold both arms still", max_steps=50),
     ]
-    return Embodiment(robot="ARX X5 bimanual (RoboDojo)", family="bimanual_arm", assets=["RoboDojo Assets/Robots/x5"],
-                      sensors=sensors, action_groups=groups, skills=skills, budget=Budget(max_steps, STEP_S),
-                      cameras=["cam_head", "cam_left_wrist", "cam_right_wrist"])
+    return Embodiment(
+        robot="ARX X5 bimanual (RoboDojo)",
+        family="bimanual_arm",
+        assets=["RoboDojo Assets/Robots/x5"],
+        sensors=sensors,
+        action_groups=groups,
+        skills=skills,
+        budget=Budget(max_steps, STEP_S),
+        cameras=["cam_head", "cam_left_wrist", "cam_right_wrist"],
+    )
 
 
 class RoboDojoBackend(EmbodiedBackend):
@@ -178,12 +255,17 @@ class RoboDojoBackend(EmbodiedBackend):
     def __init__(self, spec: dict):
         super().__init__(spec)
         self.task = spec["env"]  # RoboDojo task name, e.g. stack_bowls
-        self.worker = remote_worker(load_endpoints("robodojo", SETUP), self.task, "RoboDojo",
-                                    float(spec.get("rpc_timeout_s", 300)), RETRY_METHODS)
+        self.worker = remote_worker(
+            load_endpoints("robodojo", SETUP),
+            self.task,
+            "RoboDojo",
+            float(spec.get("rpc_timeout_s", 300)),
+            RETRY_METHODS,
+        )
         self.decl = _decl(int(spec.get("max_steps", 600)))
         self.camera = str(spec.get("camera", "cam_head"))
         self.frame_every = int(spec.get("frame_every", 2))
-        self._cmd: dict[str, list[float]] = {}   # last commanded pose + grip per arm (what "hold still" repeats)
+        self._cmd: dict[str, list[float]] = {}  # last commanded pose + grip per arm (what "hold still" repeats)
         self._home: dict[str, list[float]] = {}
         self._ee: dict[str, list[float]] = {}
         self._last_frame: np.ndarray | None = None
@@ -238,7 +320,7 @@ class RoboDojoBackend(EmbodiedBackend):
     def control_step(self, a: np.ndarray) -> None:
         a = [float(x) for x in a]
         for i, arm in enumerate(ARMS):
-            seg = a[i * 8:(i + 1) * 8]
+            seg = a[i * 8 : (i + 1) * 8]
             q = np.asarray(seg[3:7])
             if np.linalg.norm(q) < 1e-6:
                 raise ValueError(f"{arm} quaternion must be non-zero")
@@ -262,8 +344,14 @@ class RoboDojoBackend(EmbodiedBackend):
 
     def observe(self) -> dict:
         o = self._call("observe")
-        o["commanded"] = {arm: {"pos": [round(x, 4) for x in self._cmd[arm][:3]], "quat": [round(x, 4) for x in self._cmd[arm][3:7]],
-                                "grip": round(self._cmd[arm][7], 3)} for arm in ARMS}
+        o["commanded"] = {
+            arm: {
+                "pos": [round(x, 4) for x in self._cmd[arm][:3]],
+                "quat": [round(x, 4) for x in self._cmd[arm][3:7]],
+                "grip": round(self._cmd[arm][7], 3),
+            }
+            for arm in ARMS
+        }
         return o
 
     def render(self, width: int = 640, height: int = 480) -> np.ndarray:
@@ -298,9 +386,13 @@ class RoboDojoBackend(EmbodiedBackend):
         if not cur:
             return {}
         err = float(np.linalg.norm(np.asarray(cur[:3]) - np.asarray(pos)))
-        return {"reached": err < 0.01 and quat_angle_deg(cur[3:7], quat) < 8, "pos_error_m": round(err, 4),
-                "angle_error_deg": round(quat_angle_deg(cur[3:7], quat), 1), "ee_pos": [round(x, 4) for x in cur[:3]],
-                "ik": self.last.get("ik", {}).get(arm, "")}
+        return {
+            "reached": err < 0.01 and quat_angle_deg(cur[3:7], quat) < 8,
+            "pos_error_m": round(err, 4),
+            "angle_error_deg": round(quat_angle_deg(cur[3:7], quat), 1),
+            "ee_pos": [round(x, 4) for x in cur[:3]],
+            "ik": self.last.get("ik", {}).get(arm, ""),
+        }
 
     def _line(self, arm, pos, quat, speed: float):
         start_p = np.asarray(self._cmd[arm][:3], float)
@@ -325,7 +417,9 @@ class RoboDojoBackend(EmbodiedBackend):
             yield self._vec()
         return True
 
-    def skill_move(self, arm: str, x: float, y: float, z: float, pitch: float = 90.0, yaw: float = 90.0, speed: float = 0.012):
+    def skill_move(
+        self, arm: str, x: float, y: float, z: float, pitch: float = 90.0, yaw: float = 90.0, speed: float = 0.012
+    ):
         speed = min(0.03, max(0.002, speed))
         quat = hand_quat(pitch, yaw)
         ee = ee_for_tcp([x, y, z], quat)
@@ -350,11 +444,15 @@ class RoboDojoBackend(EmbodiedBackend):
         for a in arms:
             p0, q0 = starts[a]
             h = self._home[a]
-            n = max(n, int(math.ceil(max(np.linalg.norm(np.asarray(h[:3]) - p0) / 0.012, quat_angle_deg(q0, h[3:7]) / 4.0))))
+            n = max(
+                n, int(math.ceil(max(np.linalg.norm(np.asarray(h[:3]) - p0) / 0.012, quat_angle_deg(q0, h[3:7]) / 4.0)))
+            )
         t0 = time.time()
         for i in range(1, n + 1):
             if time.time() - t0 > SKILL_WALL_S:
-                return {"stopped": f"wall-time limit of one call ({SKILL_WALL_S:.0f} s) reached; call home again to continue"}
+                return {
+                    "stopped": f"wall-time limit of one call ({SKILL_WALL_S:.0f} s) reached; call home again to continue"
+                }
             t = i / n
             for a in arms:
                 p0, q0 = starts[a]

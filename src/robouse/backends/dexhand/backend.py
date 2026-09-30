@@ -20,30 +20,67 @@ Action (one 40 ms step):
 Zero means hold (targets unchanged). Skills: move_to, move_by, rotate, turn_about, grasp, open, pose, set_joint,
 wait.
 """
+
 from __future__ import annotations
 
 import math
 
 import numpy as np
 
+from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Oracle, Sensor, Skill, SkillArg, r3, wrap
 from .sim.scene import CONTAINER_BOTTOM, CUBE_FACES, HANDS, POSITIONER, TABLE_C, TABLE_HALF, TABLE_Z, build
-from ..embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg, r3, wrap
 
-PHYS_DT, CONTROL_DT = .002, .04
+PHYS_DT, CONTROL_DT = 0.002, 0.04
 N_SUB = round(CONTROL_DT / PHYS_DT)
-STEP_XYZ, STEP_ROT = .01, math.radians(4)
-HAND_STEP = .10                        # fraction of an actuator's ctrlrange per step at |a| = 1
-LEASH_XYZ, LEASH_ROT = .03, math.radians(15)
-WN, ZETA = 40.0, .9                    # positioner PD bandwidth (rad/s) and damping ratio
+STEP_XYZ, STEP_ROT = 0.01, math.radians(4)
+HAND_STEP = 0.10  # fraction of an actuator's ctrlrange per step at |a| = 1
+LEASH_XYZ, LEASH_ROT = 0.03, math.radians(15)
+WN, ZETA = 40.0, 0.9  # positioner PD bandwidth (rad/s) and damping ratio
 
 # ------------------------------------------------------------------------------------------------------------------
 # hand postures (actuator targets in rad; Shadow's FFJ0/MFJ0/RFJ0/LFJ0 drive the coupled distal pair, J1 + J2)
 # ------------------------------------------------------------------------------------------------------------------
 
-SHADOW_ACTS = ["WRJ2", "WRJ1", "THJ5", "THJ4", "THJ3", "THJ2", "THJ1", "FFJ4", "FFJ3", "FFJ0", "MFJ4", "MFJ3", "MFJ0",
-               "RFJ4", "RFJ3", "RFJ0", "LFJ5", "LFJ4", "LFJ3", "LFJ0"]
-LEAP_ACTS = ["if_mcp", "if_rot", "if_pip", "if_dip", "mf_mcp", "mf_rot", "mf_pip", "mf_dip", "rf_mcp", "rf_rot", "rf_pip", "rf_dip",
-             "th_cmc", "th_axl", "th_mcp", "th_ipl"]
+SHADOW_ACTS = [
+    "WRJ2",
+    "WRJ1",
+    "THJ5",
+    "THJ4",
+    "THJ3",
+    "THJ2",
+    "THJ1",
+    "FFJ4",
+    "FFJ3",
+    "FFJ0",
+    "MFJ4",
+    "MFJ3",
+    "MFJ0",
+    "RFJ4",
+    "RFJ3",
+    "RFJ0",
+    "LFJ5",
+    "LFJ4",
+    "LFJ3",
+    "LFJ0",
+]
+LEAP_ACTS = [
+    "if_mcp",
+    "if_rot",
+    "if_pip",
+    "if_dip",
+    "mf_mcp",
+    "mf_rot",
+    "mf_pip",
+    "mf_dip",
+    "rf_mcp",
+    "rf_rot",
+    "rf_pip",
+    "rf_dip",
+    "th_cmc",
+    "th_axl",
+    "th_mcp",
+    "th_ipl",
+]
 
 
 def _shadow(**kw) -> dict:
@@ -60,26 +97,112 @@ def _leap(**kw) -> dict:
 
 POSTURES = {
     "shadow": {
-        "open": _shadow(THJ5=.3, THJ4=.9, THJ2=-.3),
+        "open": _shadow(THJ5=0.3, THJ4=0.9, THJ2=-0.3),
         "flat": _shadow(),
-        "relaxed": _shadow(THJ5=.3, THJ4=.8, FFJ3=.3, FFJ0=.4, MFJ3=.3, MFJ0=.4, RFJ3=.3, RFJ0=.4, LFJ3=.3, LFJ0=.4),
-        "point": _shadow(THJ5=.2, THJ4=1.1, THJ2=.4, THJ1=.8, MFJ3=1.5, MFJ0=2.6, RFJ3=1.5, RFJ0=2.6, LFJ3=1.5, LFJ0=2.6),
-        "fist": _shadow(THJ5=.3, THJ4=1.2, THJ2=.3, THJ1=.9, FFJ3=1.5, FFJ0=2.8, MFJ3=1.5, MFJ0=2.8, RFJ3=1.5, RFJ0=2.8, LFJ3=1.5, LFJ0=2.8),
-        "power_ready": _shadow(THJ5=.5, THJ4=1.2, THJ3=.1, THJ2=-.3, FFJ3=.35, FFJ0=.3, MFJ3=.35, MFJ0=.3, RFJ3=.35, RFJ0=.3, LFJ3=.35, LFJ0=.3),
-        "pinch_ready": _shadow(THJ5=.6, THJ4=.95, THJ3=.16, THJ2=.2, FFJ4=-.3, FFJ3=.6, FFJ0=.5, MFJ3=1.3, MFJ0=2.0, RFJ3=1.3, RFJ0=2.0, LFJ3=1.3,
-                               LFJ0=2.0),
-        "tripod_ready": _shadow(THJ5=.6, THJ4=1.2, THJ3=.2, THJ2=.1, FFJ3=.3, FFJ0=.4, MFJ3=.3, MFJ0=.4, RFJ3=1.2, RFJ0=2.0, LFJ3=1.2, LFJ0=2.0),
+        "relaxed": _shadow(
+            THJ5=0.3, THJ4=0.8, FFJ3=0.3, FFJ0=0.4, MFJ3=0.3, MFJ0=0.4, RFJ3=0.3, RFJ0=0.4, LFJ3=0.3, LFJ0=0.4
+        ),
+        "point": _shadow(
+            THJ5=0.2, THJ4=1.1, THJ2=0.4, THJ1=0.8, MFJ3=1.5, MFJ0=2.6, RFJ3=1.5, RFJ0=2.6, LFJ3=1.5, LFJ0=2.6
+        ),
+        "fist": _shadow(
+            THJ5=0.3,
+            THJ4=1.2,
+            THJ2=0.3,
+            THJ1=0.9,
+            FFJ3=1.5,
+            FFJ0=2.8,
+            MFJ3=1.5,
+            MFJ0=2.8,
+            RFJ3=1.5,
+            RFJ0=2.8,
+            LFJ3=1.5,
+            LFJ0=2.8,
+        ),
+        "power_ready": _shadow(
+            THJ5=0.5,
+            THJ4=1.2,
+            THJ3=0.1,
+            THJ2=-0.3,
+            FFJ3=0.35,
+            FFJ0=0.3,
+            MFJ3=0.35,
+            MFJ0=0.3,
+            RFJ3=0.35,
+            RFJ0=0.3,
+            LFJ3=0.35,
+            LFJ0=0.3,
+        ),
+        "pinch_ready": _shadow(
+            THJ5=0.6,
+            THJ4=0.95,
+            THJ3=0.16,
+            THJ2=0.2,
+            FFJ4=-0.3,
+            FFJ3=0.6,
+            FFJ0=0.5,
+            MFJ3=1.3,
+            MFJ0=2.0,
+            RFJ3=1.3,
+            RFJ0=2.0,
+            LFJ3=1.3,
+            LFJ0=2.0,
+        ),
+        "tripod_ready": _shadow(
+            THJ5=0.6,
+            THJ4=1.2,
+            THJ3=0.2,
+            THJ2=0.1,
+            FFJ3=0.3,
+            FFJ0=0.4,
+            MFJ3=0.3,
+            MFJ0=0.4,
+            RFJ3=1.2,
+            RFJ0=2.0,
+            LFJ3=1.2,
+            LFJ0=2.0,
+        ),
     },
     "leap": {
-        "open": _leap(th_cmc=.9, th_axl=.4),
+        "open": _leap(th_cmc=0.9, th_axl=0.4),
         "flat": _leap(),
-        "relaxed": _leap(if_mcp=.3, if_pip=.3, mf_mcp=.3, mf_pip=.3, rf_mcp=.3, rf_pip=.3, th_cmc=.9, th_axl=.4, th_mcp=.2),
-        "point": _leap(mf_mcp=1.6, mf_pip=1.6, mf_dip=1.2, rf_mcp=1.6, rf_pip=1.6, rf_dip=1.2, th_cmc=.3, th_mcp=.6, th_ipl=.6),
-        "fist": _leap(if_mcp=1.6, if_pip=1.6, if_dip=1.2, mf_mcp=1.6, mf_pip=1.6, mf_dip=1.2, rf_mcp=1.6, rf_pip=1.6, rf_dip=1.2,
-                      th_cmc=1.4, th_axl=.6, th_mcp=.8, th_ipl=.6),
-        "power_ready": _leap(if_mcp=.3, mf_mcp=.3, rf_mcp=.3, th_cmc=1.5, th_axl=.3),
-        "pinch_ready": _leap(if_mcp=.3, if_pip=.3, mf_mcp=1.6, mf_pip=1.6, mf_dip=1.2, rf_mcp=1.6, rf_pip=1.6, rf_dip=1.2, th_cmc=1.5, th_axl=.3),
-        "tripod_ready": _leap(if_mcp=.3, if_pip=.3, mf_mcp=.3, mf_pip=.3, rf_mcp=1.6, rf_pip=1.6, rf_dip=1.2, th_cmc=1.5, th_axl=.3),
+        "relaxed": _leap(
+            if_mcp=0.3, if_pip=0.3, mf_mcp=0.3, mf_pip=0.3, rf_mcp=0.3, rf_pip=0.3, th_cmc=0.9, th_axl=0.4, th_mcp=0.2
+        ),
+        "point": _leap(
+            mf_mcp=1.6, mf_pip=1.6, mf_dip=1.2, rf_mcp=1.6, rf_pip=1.6, rf_dip=1.2, th_cmc=0.3, th_mcp=0.6, th_ipl=0.6
+        ),
+        "fist": _leap(
+            if_mcp=1.6,
+            if_pip=1.6,
+            if_dip=1.2,
+            mf_mcp=1.6,
+            mf_pip=1.6,
+            mf_dip=1.2,
+            rf_mcp=1.6,
+            rf_pip=1.6,
+            rf_dip=1.2,
+            th_cmc=1.4,
+            th_axl=0.6,
+            th_mcp=0.8,
+            th_ipl=0.6,
+        ),
+        "power_ready": _leap(if_mcp=0.3, mf_mcp=0.3, rf_mcp=0.3, th_cmc=1.5, th_axl=0.3),
+        "pinch_ready": _leap(
+            if_mcp=0.3,
+            if_pip=0.3,
+            mf_mcp=1.6,
+            mf_pip=1.6,
+            mf_dip=1.2,
+            rf_mcp=1.6,
+            rf_pip=1.6,
+            rf_dip=1.2,
+            th_cmc=1.5,
+            th_axl=0.3,
+        ),
+        "tripod_ready": _leap(
+            if_mcp=0.3, if_pip=0.3, mf_mcp=0.3, mf_pip=0.3, rf_mcp=1.6, rf_pip=1.6, rf_dip=1.2, th_cmc=1.5, th_axl=0.3
+        ),
     },
 }
 
@@ -87,23 +210,107 @@ POSTURES = {
 # remaining position error is the squeeze, limited by each actuator's force range)
 GRASPS = {
     "shadow": {
-        "power": _shadow(THJ5=.6, THJ4=1.22, THJ3=.2, THJ2=.5, THJ1=1.2, FFJ3=1.5, FFJ0=2.4, MFJ3=1.5, MFJ0=2.4, RFJ3=1.5, RFJ0=2.4,
-                         LFJ3=1.5, LFJ0=2.4, LFJ5=.4),
-        "pinch": _shadow(THJ5=.6, THJ4=1.05, THJ3=.16, THJ2=.6, THJ1=.2, FFJ4=-.3, FFJ3=1.35, FFJ0=1.6, MFJ3=1.3, MFJ0=2.0, RFJ3=1.3,
-                         RFJ0=2.0, LFJ3=1.3, LFJ0=2.0),
-        "tripod": _shadow(THJ5=.8, THJ4=1.22, THJ3=.2, THJ2=.6, THJ1=.9, FFJ3=1.1, FFJ0=1.4, MFJ3=1.1, MFJ0=1.4, RFJ3=1.2, RFJ0=2.0,
-                          LFJ3=1.2, LFJ0=2.0),
+        "power": _shadow(
+            THJ5=0.6,
+            THJ4=1.22,
+            THJ3=0.2,
+            THJ2=0.5,
+            THJ1=1.2,
+            FFJ3=1.5,
+            FFJ0=2.4,
+            MFJ3=1.5,
+            MFJ0=2.4,
+            RFJ3=1.5,
+            RFJ0=2.4,
+            LFJ3=1.5,
+            LFJ0=2.4,
+            LFJ5=0.4,
+        ),
+        "pinch": _shadow(
+            THJ5=0.6,
+            THJ4=1.05,
+            THJ3=0.16,
+            THJ2=0.6,
+            THJ1=0.2,
+            FFJ4=-0.3,
+            FFJ3=1.35,
+            FFJ0=1.6,
+            MFJ3=1.3,
+            MFJ0=2.0,
+            RFJ3=1.3,
+            RFJ0=2.0,
+            LFJ3=1.3,
+            LFJ0=2.0,
+        ),
+        "tripod": _shadow(
+            THJ5=0.8,
+            THJ4=1.22,
+            THJ3=0.2,
+            THJ2=0.6,
+            THJ1=0.9,
+            FFJ3=1.1,
+            FFJ0=1.4,
+            MFJ3=1.1,
+            MFJ0=1.4,
+            RFJ3=1.2,
+            RFJ0=2.0,
+            LFJ3=1.2,
+            LFJ0=2.0,
+        ),
     },
     "leap": {
-        "power": _leap(if_mcp=1.6, if_pip=1.2, if_dip=1.0, mf_mcp=1.6, mf_pip=1.2, mf_dip=1.0, rf_mcp=1.6, rf_pip=1.2, rf_dip=1.0,
-                       th_cmc=1.6, th_axl=.6, th_mcp=1.0, th_ipl=.8),
-        "pinch": _leap(if_mcp=1.2, if_pip=.8, if_dip=.6, mf_mcp=1.6, mf_pip=1.6, mf_dip=1.2, rf_mcp=1.6, rf_pip=1.6, rf_dip=1.2,
-                       th_cmc=1.6, th_axl=.8, th_mcp=1.0, th_ipl=.8),
-        "tripod": _leap(if_mcp=1.2, if_pip=.8, if_dip=.6, mf_mcp=1.2, mf_pip=.8, mf_dip=.6, rf_mcp=1.6, rf_pip=1.6, rf_dip=1.2,
-                        th_cmc=1.6, th_axl=.8, th_mcp=1.0, th_ipl=.8),
+        "power": _leap(
+            if_mcp=1.6,
+            if_pip=1.2,
+            if_dip=1.0,
+            mf_mcp=1.6,
+            mf_pip=1.2,
+            mf_dip=1.0,
+            rf_mcp=1.6,
+            rf_pip=1.2,
+            rf_dip=1.0,
+            th_cmc=1.6,
+            th_axl=0.6,
+            th_mcp=1.0,
+            th_ipl=0.8,
+        ),
+        "pinch": _leap(
+            if_mcp=1.2,
+            if_pip=0.8,
+            if_dip=0.6,
+            mf_mcp=1.6,
+            mf_pip=1.6,
+            mf_dip=1.2,
+            rf_mcp=1.6,
+            rf_pip=1.6,
+            rf_dip=1.2,
+            th_cmc=1.6,
+            th_axl=0.8,
+            th_mcp=1.0,
+            th_ipl=0.8,
+        ),
+        "tripod": _leap(
+            if_mcp=1.2,
+            if_pip=0.8,
+            if_dip=0.6,
+            mf_mcp=1.2,
+            mf_pip=0.8,
+            mf_dip=0.6,
+            rf_mcp=1.6,
+            rf_pip=1.6,
+            rf_dip=1.2,
+            th_cmc=1.6,
+            th_axl=0.8,
+            th_mcp=1.0,
+            th_ipl=0.8,
+        ),
     },
 }
-GRASP_FINGERS = {"power": ["thumb", "index", "middle", "ring", "little"], "pinch": ["thumb", "index"], "tripod": ["thumb", "index", "middle"]}
+GRASP_FINGERS = {
+    "power": ["thumb", "index", "middle", "ring", "little"],
+    "pinch": ["thumb", "index"],
+    "tripod": ["thumb", "index", "middle"],
+}
 
 # ------------------------------------------------------------------------------------------------------------------
 # tasks
@@ -117,36 +324,124 @@ def _task(tid: str, **kw) -> None:
     TASKS[tid] = kw
 
 
-_task("shadow-cube-face-up", hand="shadow", kind="face_up", max_steps=1200, face="red", tol_deg=20,
-      objects=[dict(kind="cube", name="cube", pos=(0.14, 0.0), half=.028, mass=.09)],
-      start=dict(flange=(-0.14, 0.0, 0.72), rpy=(0, 0, 0), posture="open"))
-_task("shadow-pour-balls", hand="shadow", kind="pour", max_steps=1200, need=4,
-      objects=[dict(kind="cup", name="cup", pos=(0.14, -0.10), r_in=.028, height=.11, wall=.004, mass=.08),
-               dict(kind="balls", pos=(0.14, -0.10), n=6, r=.009, ring=.016, z0=Z + .016, mass=.006),
-               dict(kind="container", name="bowl", pos=(0.14, 0.14), r_in=.095, height=.045, wall=.006, n=24, rgba=[.9, .9, .85, 1])],
-      start=dict(flange=(-0.14, 0.0, 0.72), rpy=(0, 0, 0), posture="open"))
-_task("leap-pen-to-holder", hand="leap", kind="pen", max_steps=1000,
-      objects=[dict(kind="container", name="stand", pos=(0.14, -0.12), r_in=.012, height=.06, wall=.012, n=12, rgba=[.3, .5, .75, 1]),
-               dict(kind="container", name="holder", pos=(0.14, 0.14), r_in=.03, height=.08, wall=.012, n=16, rgba=[.35, .65, .35, 1]),
-               dict(kind="pen", name="marker", pos=(0.14, -0.12, Z + .015 + .075 + .008), r=.008, half_len=.075, mass=.02)],
-      start=dict(flange=(-0.05, 0.0, 0.72), rpy=(0, 0, 0), posture="open"))
-_task("leap-lift-ball", hand="leap", kind="lift", max_steps=700, lift=.15,
-      objects=[dict(kind="stand", name="stand", pos=(0.12, 0.04), r=.022),
-               dict(kind="ball", name="ball", pos=(0.12, 0.04), r=.033, mass=.06, rgba=[.8, .9, .2, 1])],
-      start=dict(flange=(-0.05, 0.0, 0.70), rpy=(0, 0, 0), posture="open"))
-_task("shadow-turn-valve", hand="shadow", kind="valve", max_steps=1000, turn_deg=180,
-      objects=[dict(kind="valve", name="valve", pos=(0.16, 0.0), height=.12, r=.075, damping=.05, frictionloss=.15)],
-      start=dict(flange=(-0.14, 0.0, 0.72), rpy=(0, 0, 0), posture="open"))
-_task("leap-press-buttons", hand="leap", kind="buttons", max_steps=800, sequence=["green", "blue", "green"],
-      objects=[dict(kind="buttons", pos=(0.16, 0.0), panel_h=.06, colors=[("red", [.85, .12, .12, 1]), ("green", [.15, .7, .2, 1]),
-                                                                         ("blue", [.15, .3, .9, 1])],
-                    spacing=.07, r=.016, travel=.012, stiffness=150.0)],
-      start=dict(flange=(-0.05, 0.0, 0.72), rpy=(0, 0, 0), posture="open"))
-_task("leap-cube-in-hand", hand="leap", kind="inhand", max_steps=600, face="red", tol_deg=25, wrist_tol_deg=15,
-      objects=[dict(kind="cube", name="cube", pos=(0.0, 0.0, 1.5), half=.03, mass=.07)],
-      start=dict(flange=(0.05, 0.0, 0.60), rpy=(180, 0, 0), posture="flat", cube_on_palm=(0.12, 0.0)))
+_task(
+    "shadow-cube-face-up",
+    hand="shadow",
+    kind="face_up",
+    max_steps=1200,
+    face="red",
+    tol_deg=20,
+    objects=[dict(kind="cube", name="cube", pos=(0.14, 0.0), half=0.028, mass=0.09)],
+    start=dict(flange=(-0.14, 0.0, 0.72), rpy=(0, 0, 0), posture="open"),
+)
+_task(
+    "shadow-pour-balls",
+    hand="shadow",
+    kind="pour",
+    max_steps=1200,
+    need=4,
+    objects=[
+        dict(kind="cup", name="cup", pos=(0.14, -0.10), r_in=0.028, height=0.11, wall=0.004, mass=0.08),
+        dict(kind="balls", pos=(0.14, -0.10), n=6, r=0.009, ring=0.016, z0=Z + 0.016, mass=0.006),
+        dict(
+            kind="container",
+            name="bowl",
+            pos=(0.14, 0.14),
+            r_in=0.095,
+            height=0.045,
+            wall=0.006,
+            n=24,
+            rgba=[0.9, 0.9, 0.85, 1],
+        ),
+    ],
+    start=dict(flange=(-0.14, 0.0, 0.72), rpy=(0, 0, 0), posture="open"),
+)
+_task(
+    "leap-pen-to-holder",
+    hand="leap",
+    kind="pen",
+    max_steps=1000,
+    objects=[
+        dict(
+            kind="container",
+            name="stand",
+            pos=(0.14, -0.12),
+            r_in=0.012,
+            height=0.06,
+            wall=0.012,
+            n=12,
+            rgba=[0.3, 0.5, 0.75, 1],
+        ),
+        dict(
+            kind="container",
+            name="holder",
+            pos=(0.14, 0.14),
+            r_in=0.03,
+            height=0.08,
+            wall=0.012,
+            n=16,
+            rgba=[0.35, 0.65, 0.35, 1],
+        ),
+        dict(
+            kind="pen", name="marker", pos=(0.14, -0.12, Z + 0.015 + 0.075 + 0.008), r=0.008, half_len=0.075, mass=0.02
+        ),
+    ],
+    start=dict(flange=(-0.05, 0.0, 0.72), rpy=(0, 0, 0), posture="open"),
+)
+_task(
+    "leap-lift-ball",
+    hand="leap",
+    kind="lift",
+    max_steps=700,
+    lift=0.15,
+    objects=[
+        dict(kind="stand", name="stand", pos=(0.12, 0.04), r=0.022),
+        dict(kind="ball", name="ball", pos=(0.12, 0.04), r=0.033, mass=0.06, rgba=[0.8, 0.9, 0.2, 1]),
+    ],
+    start=dict(flange=(-0.05, 0.0, 0.70), rpy=(0, 0, 0), posture="open"),
+)
+_task(
+    "shadow-turn-valve",
+    hand="shadow",
+    kind="valve",
+    max_steps=1000,
+    turn_deg=180,
+    objects=[dict(kind="valve", name="valve", pos=(0.16, 0.0), height=0.12, r=0.075, damping=0.05, frictionloss=0.15)],
+    start=dict(flange=(-0.14, 0.0, 0.72), rpy=(0, 0, 0), posture="open"),
+)
+_task(
+    "leap-press-buttons",
+    hand="leap",
+    kind="buttons",
+    max_steps=800,
+    sequence=["green", "blue", "green"],
+    objects=[
+        dict(
+            kind="buttons",
+            pos=(0.16, 0.0),
+            panel_h=0.06,
+            colors=[("red", [0.85, 0.12, 0.12, 1]), ("green", [0.15, 0.7, 0.2, 1]), ("blue", [0.15, 0.3, 0.9, 1])],
+            spacing=0.07,
+            r=0.016,
+            travel=0.012,
+            stiffness=150.0,
+        )
+    ],
+    start=dict(flange=(-0.05, 0.0, 0.72), rpy=(0, 0, 0), posture="open"),
+)
+_task(
+    "leap-cube-in-hand",
+    hand="leap",
+    kind="inhand",
+    max_steps=600,
+    face="red",
+    tol_deg=25,
+    wrist_tol_deg=15,
+    objects=[dict(kind="cube", name="cube", pos=(0.0, 0.0, 1.5), half=0.03, mass=0.07)],
+    start=dict(flange=(0.05, 0.0, 0.60), rpy=(180, 0, 0), posture="flat", cube_on_palm=(0.12, 0.0)),
+)
 
-BUTTON_CLICK = .008   # m of travel that counts as a click; released below half of it
+BUTTON_CLICK = 0.008  # m of travel that counts as a click; released below half of it
 
 
 def _R(rpy) -> np.ndarray:
@@ -176,42 +471,125 @@ class DexHandBackend(EmbodiedBackend):
     # ---- declaration -------------------------------------------------------------------------------------------
     def _declare(self) -> Embodiment:
         n = len(self.act_names)
-        sensors = [Sensor("hand_state", "proprio", ["hand"], "wrist pose and target, palm point, fingertips, joint positions and "
-                          "targets (normalised), per-finger contacts", units="m, deg, normalised [-1, 1]", frame="world"),
-                   Sensor("scene", "world", ["objects", "table", "landmarks"], "object poses and public fixture positions", units="m", frame="world"),
-                   Sensor("progress", "events", ["progress", "safety_events"], "task counters and drop/knock-off events"),
-                   *[Sensor(f"camera:{c}", "camera", [], "", mount="world") for c in self._cameras()]]
-        groups = [ActionGroup("wrist.pose_delta", "ee_delta_pose", ["DX", "DY", "DZ", "DROLL", "DPITCH", "DYAW"], [-1] * 6, [1] * 6,
-                              "x 1 cm (world x, y, z), x 4 deg (positioner roll, pitch, yaw)",
-                              "added to the positioner target; zero = hold", frame="xyz world; rpy positioner joints"),
-                  ActionGroup("hand.joints", "joint_delta", list(self.act_names), [-1] * n, [1] * n,
-                              "x 10 % of each actuator's range", "added to the hand's position targets; zero = hold")]
+        sensors = [
+            Sensor(
+                "hand_state",
+                "proprio",
+                ["hand"],
+                "wrist pose and target, palm point, fingertips, joint positions and "
+                "targets (normalised), per-finger contacts",
+                units="m, deg, normalised [-1, 1]",
+                frame="world",
+            ),
+            Sensor(
+                "scene",
+                "world",
+                ["objects", "table", "landmarks"],
+                "object poses and public fixture positions",
+                units="m",
+                frame="world",
+            ),
+            Sensor("progress", "events", ["progress", "safety_events"], "task counters and drop/knock-off events"),
+            *[Sensor(f"camera:{c}", "camera", [], "", mount="world") for c in self._cameras()],
+        ]
+        groups = [
+            ActionGroup(
+                "wrist.pose_delta",
+                "ee_delta_pose",
+                ["DX", "DY", "DZ", "DROLL", "DPITCH", "DYAW"],
+                [-1] * 6,
+                [1] * 6,
+                "x 1 cm (world x, y, z), x 4 deg (positioner roll, pitch, yaw)",
+                "added to the positioner target; zero = hold",
+                frame="xyz world; rpy positioner joints",
+            ),
+            ActionGroup(
+                "hand.joints",
+                "joint_delta",
+                list(self.act_names),
+                [-1] * n,
+                [1] * n,
+                "x 10 % of each actuator's range",
+                "added to the hand's position targets; zero = hold",
+            ),
+        ]
         xyz = [SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("z", unit="m")]
         skills = [
-            Skill("move_to", xyz + [SkillArg("speed", unit="m/s", default=.15)],
-                  "move the palm point (hand.palm_pos) in a straight line to (X, Y, Z) keeping the orientation (SPEED clamped to 0.01-0.25 m/s); "
-                  "stops when there or blocked, or after 400 steps (then it reports `remaining_m`)", 420),
-            Skill("move_by", [SkillArg("dx", unit="m"), SkillArg("dy", unit="m"), SkillArg("dz", unit="m"), SkillArg("speed", unit="m/s", default=.15)],
-                  "move the palm point by (DX, DY, DZ) (SPEED clamped to 0.01-0.25 m/s); stops when there or blocked, or after 400 "
-                  "steps (then it reports `remaining_m`)", 420),
-            Skill("rotate", [SkillArg("roll", unit="deg"), SkillArg("pitch", unit="deg"), SkillArg("yaw", unit="deg"),
-                             SkillArg("speed", unit="deg/s", default=60.0)],
-                  "turn the hand to absolute positioner angles ROLL PITCH YAW about the palm point (the palm point stays put; SPEED "
-                  "clamped to 5-100 deg/s)", 620),
-            Skill("turn_about", [SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("deg", unit="deg"), SkillArg("speed", unit="deg/s", default=45.0)],
-                  "swing the hand DEG degrees (counter-clockwise seen from above, + ) about the vertical line through (X, Y), yawing with it, "
-                  "like turning a wheel (SPEED clamped to 5-90 deg/s); whatever the fingers hold or push is carried only by contact; stops "
-                  "after 580 steps and then reports `remaining_deg`", 600),
-            Skill("grasp", [SkillArg("type", "enum", choices=["power", "pinch", "tripod"])],
-                  "close the fingers of that grasp until they stall on something or are fully closed; reports which fingers touch what", 40),
+            Skill(
+                "move_to",
+                xyz + [SkillArg("speed", unit="m/s", default=0.15)],
+                "move the palm point (hand.palm_pos) in a straight line to (X, Y, Z) keeping the orientation (SPEED clamped to 0.01-0.25 m/s); "
+                "stops when there or blocked, or after 400 steps (then it reports `remaining_m`)",
+                420,
+            ),
+            Skill(
+                "move_by",
+                [
+                    SkillArg("dx", unit="m"),
+                    SkillArg("dy", unit="m"),
+                    SkillArg("dz", unit="m"),
+                    SkillArg("speed", unit="m/s", default=0.15),
+                ],
+                "move the palm point by (DX, DY, DZ) (SPEED clamped to 0.01-0.25 m/s); stops when there or blocked, or after 400 "
+                "steps (then it reports `remaining_m`)",
+                420,
+            ),
+            Skill(
+                "rotate",
+                [
+                    SkillArg("roll", unit="deg"),
+                    SkillArg("pitch", unit="deg"),
+                    SkillArg("yaw", unit="deg"),
+                    SkillArg("speed", unit="deg/s", default=60.0),
+                ],
+                "turn the hand to absolute positioner angles ROLL PITCH YAW about the palm point (the palm point stays put; SPEED "
+                "clamped to 5-100 deg/s)",
+                620,
+            ),
+            Skill(
+                "turn_about",
+                [
+                    SkillArg("x", unit="m"),
+                    SkillArg("y", unit="m"),
+                    SkillArg("deg", unit="deg"),
+                    SkillArg("speed", unit="deg/s", default=45.0),
+                ],
+                "swing the hand DEG degrees (counter-clockwise seen from above, + ) about the vertical line through (X, Y), yawing with it, "
+                "like turning a wheel (SPEED clamped to 5-90 deg/s); whatever the fingers hold or push is carried only by contact; stops "
+                "after 580 steps and then reports `remaining_deg`",
+                600,
+            ),
+            Skill(
+                "grasp",
+                [SkillArg("type", "enum", choices=["power", "pinch", "tripod"])],
+                "close the fingers of that grasp until they stall on something or are fully closed; reports which fingers touch what",
+                40,
+            ),
             Skill("open", [], "open the hand gently (posture `open`)", 40),
-            Skill("pose", [SkillArg("name", "enum", choices=list(POSTURES[self.hand]))], "move all hand joints to a named posture", 40),
-            Skill("set_joint", [SkillArg("name", "enum", choices=list(self.act_names)), SkillArg("value", unit="deg")],
-                  "set one hand actuator's target (degrees; for Shadow J0 actuators the sum of the two distal joints)", 30),
-            Skill("wait", [SkillArg("seconds", unit="s", default=.5)], "hold everything still", 100),
+            Skill(
+                "pose",
+                [SkillArg("name", "enum", choices=list(POSTURES[self.hand]))],
+                "move all hand joints to a named posture",
+                40,
+            ),
+            Skill(
+                "set_joint",
+                [SkillArg("name", "enum", choices=list(self.act_names)), SkillArg("value", unit="deg")],
+                "set one hand actuator's target (degrees; for Shadow J0 actuators the sum of the two distal joints)",
+                30,
+            ),
+            Skill("wait", [SkillArg("seconds", unit="s", default=0.5)], "hold everything still", 100),
         ]
-        return Embodiment(robot=self.H["robot"], family="dexterous_hand", assets=[self.H["folder"]], sensors=sensors, action_groups=groups,
-                          skills=skills, budget=Budget(self.task["max_steps"], CONTROL_DT), cameras=self._cameras())
+        return Embodiment(
+            robot=self.H["robot"],
+            family="dexterous_hand",
+            assets=[self.H["folder"]],
+            sensors=sensors,
+            action_groups=groups,
+            skills=skills,
+            budget=Budget(self.task["max_steps"], CONTROL_DT),
+            cameras=self._cameras(),
+        )
 
     def _cameras(self) -> list[str]:
         return ["front", "side", "top", "back"]
@@ -261,7 +639,7 @@ class DexHandBackend(EmbodiedBackend):
             gs = [g for g in range(m.ngeom) if m.geom_bodyid[g] == bid and m.geom_contype[g]]
             self.tip_geom[finger] = gs[-1]
         self.fingers = list(self.H["tips"])
-        self.free = {}   # name -> (body id, qpos adr, dof adr)
+        self.free = {}  # name -> (body id, qpos adr, dof adr)
         for b in range(m.nbody):
             j = m.body_jntadr[b]
             if j >= 0 and m.jnt_type[j] == mujoco.mjtJoint.mjJNT_FREE:
@@ -287,7 +665,7 @@ class DexHandBackend(EmbodiedBackend):
         M = np.zeros((m.nv, m.nv))
         mujoco.mj_fullM(m, M, d.qM)
         self.inertia = np.array([M[v, v] for v in self.pv])
-        self.kp = self.inertia * WN ** 2
+        self.kp = self.inertia * WN**2
         self.kd = 2 * ZETA * WN * self.inertia
         self.events, self._event_keys = [], set()
         self.lifted: set = set()
@@ -316,9 +694,9 @@ class DexHandBackend(EmbodiedBackend):
 
         b, qa, _ = self.free[name]
         h = float(self.model.geom_size[self.model.body_geomadr[b]][0])
-        pos = np.array([xy[0], xy[1], self.data.site_xpos[self.site][2] + h - .01])
-        self.data.qpos[qa:qa + 3] = pos
-        self.data.qpos[qa + 3:qa + 7] = [1, 0, 0, 0]
+        pos = np.array([xy[0], xy[1], self.data.site_xpos[self.site][2] + h - 0.01])
+        self.data.qpos[qa : qa + 3] = pos
+        self.data.qpos[qa + 3 : qa + 7] = [1, 0, 0, 0]
         mujoco.mj_forward(self.model, self.data)
 
     def _posture_vec(self, post: dict) -> np.ndarray:
@@ -355,7 +733,7 @@ class DexHandBackend(EmbodiedBackend):
 
     def _obj_vel(self, name) -> np.ndarray:
         v = self.free[name][2]
-        return self.data.qvel[v:v + 3].copy()
+        return self.data.qvel[v : v + 3].copy()
 
     def _wrist_dev(self) -> float:
         """Largest change of the positioner's yaw, pitch or roll since the start (in-hand task)."""
@@ -370,7 +748,7 @@ class DexHandBackend(EmbodiedBackend):
         d = self.data
         per: dict[str, set] = {}
         pairs: set = set()
-        for c in d.contact[:d.ncon]:
+        for c in d.contact[: d.ncon]:
             a, b = self.gowner[c.geom1], self.gowner[c.geom2]
             if a == "hand" and b != "hand":
                 per.setdefault(self.hand_geoms[c.geom1], set()).add(b)
@@ -400,7 +778,7 @@ class DexHandBackend(EmbodiedBackend):
         a = np.asarray(a, float)
         q = self._pq()
         dp = a[:3] * STEP_XYZ
-        drot = np.array([a[5], a[4], a[3]]) * STEP_ROT   # joint order yaw, pitch, roll
+        drot = np.array([a[5], a[4], a[3]]) * STEP_ROT  # joint order yaw, pitch, roll
         t = self.pt + np.concatenate([dp, drot])
         t = np.clip(t, self.plo, self.phi)
         t[:3] = np.clip(t[:3], q[:3] - LEASH_XYZ, q[:3] + LEASH_XYZ)
@@ -424,12 +802,14 @@ class DexHandBackend(EmbodiedBackend):
         """In-hand task, every physics step: the cube must never touch the table and the wrist must never rotate more
         than the tolerance away from its start."""
         d = self.data
-        for c in d.contact[:d.ncon]:
+        for c in d.contact[: d.ncon]:
             if {self.gowner[c.geom1], self.gowner[c.geom2]} == {"cube", "table"}:
                 self.event("table:cube", "dropped", "the cube touched the table")
                 break
         if self._wrist_dev() > math.radians(self.task["wrist_tol_deg"]):
-            self.event("wrist:tilt", "rule", f"the wrist rotated more than {self.task['wrist_tol_deg']} degrees from its start")
+            self.event(
+                "wrist:tilt", "rule", f"the wrist rotated more than {self.task['wrist_tol_deg']} degrees from its start"
+            )
 
     # ---- monitor -----------------------------------------------------------------------------------------------
     def _monitor(self) -> None:
@@ -439,9 +819,9 @@ class DexHandBackend(EmbodiedBackend):
             if name.startswith("ball") and name != "ball":
                 continue  # the small balls in the pouring task may spill; they are not tracked
             p = self.data.xpos[b]
-            if name in held and not (name, "table") in pairs and p[2] > Z + .04:
+            if name in held and (name, "table") not in pairs and p[2] > Z + 0.04:
                 self.lifted.add(name)
-            if p[2] < Z - .06 or (name, "floor") in pairs:
+            if p[2] < Z - 0.06 or (name, "floor") in pairs:
                 verb = "was dropped and fell to the floor" if name in self.lifted else "was knocked off the table"
                 self.event(f"floor:{name}", "dropped", f"the {name} {verb}")
         k = self.task["kind"]
@@ -464,9 +844,13 @@ class DexHandBackend(EmbodiedBackend):
         R = self._flange_R()
         hand = {
             "model": self.H["robot"],
-            "wrist_pos": r3(d.xpos[self.flange]), "wrist_rpy_deg": [round(math.degrees(v), 1) for v in self._rpy_of(q)],
-            "wrist_target_pos": r3(self.pt[:3]), "wrist_target_rpy_deg": [round(math.degrees(v), 1) for v in self._rpy_of(self.pt)],
-            "palm_pos": r3(self.palm_pos()), "palm_normal": r3(R @ np.array([0, 0, -1.0]), 2), "finger_dir": r3(R @ np.array([1.0, 0, 0]), 2),
+            "wrist_pos": r3(d.xpos[self.flange]),
+            "wrist_rpy_deg": [round(math.degrees(v), 1) for v in self._rpy_of(q)],
+            "wrist_target_pos": r3(self.pt[:3]),
+            "wrist_target_rpy_deg": [round(math.degrees(v), 1) for v in self._rpy_of(self.pt)],
+            "palm_pos": r3(self.palm_pos()),
+            "palm_normal": r3(R @ np.array([0, 0, -1.0]), 2),
+            "finger_dir": r3(R @ np.array([1.0, 0, 0]), 2),
             "fingertips": {f: r3(d.geom_xpos[g]) for f, g in self.tip_geom.items()},
             "joints": list(self.act_names),
             "joint_pos_norm": [round(float(v), 2) for v in self._joint_norm()],
@@ -476,7 +860,12 @@ class DexHandBackend(EmbodiedBackend):
         objs = {}
         for name, (b, _qa, _v) in self.free.items():
             p = d.xpos[b]
-            o = {"pos": r3(p), "touching": sorted({y for (x, y) in pairs if x == name} | ({"hand"} if any(name in s for s in per.values()) else set()))}
+            o = {
+                "pos": r3(p),
+                "touching": sorted(
+                    {y for (x, y) in pairs if x == name} | ({"hand"} if any(name in s for s in per.values()) else set())
+                ),
+            }
             if name == "cube":
                 Rc = self._obj_R(name)
                 o["face_up"] = self._face_up(name)
@@ -490,9 +879,16 @@ class DexHandBackend(EmbodiedBackend):
                 o["cap_end"] = r3(p + ax * hl)
                 o["tip_end"] = r3(p - ax * hl)
             objs[name] = o
-        st: dict = {"hand": hand, "objects": objs, "time_s": round(float(d.time), 2),
-                    "table": {"top_z": Z, "x": [TABLE_C[0] - TABLE_HALF[0], TABLE_C[0] + TABLE_HALF[0]],
-                              "y": [TABLE_C[1] - TABLE_HALF[1], TABLE_C[1] + TABLE_HALF[1]]}}
+        st: dict = {
+            "hand": hand,
+            "objects": objs,
+            "time_s": round(float(d.time), 2),
+            "table": {
+                "top_z": Z,
+                "x": [TABLE_C[0] - TABLE_HALF[0], TABLE_C[0] + TABLE_HALF[0]],
+                "y": [TABLE_C[1] - TABLE_HALF[1], TABLE_C[1] + TABLE_HALF[1]],
+            },
+        }
         st["landmarks"] = self._landmarks()
         st["progress"] = self._progress()
         st["safety_events"] = [e["detail"] for e in self.events]
@@ -507,18 +903,30 @@ class DexHandBackend(EmbodiedBackend):
         for ob in self.task["objects"]:
             k = ob["kind"]
             if k == "container":
-                out[ob["name"]] = {"center": [*ob["pos"][:2], Z], "inner_radius": ob["r_in"], "rim_z": round(Z + ob["height"], 3),
-                                   "inside_bottom_z": round(Z + CONTAINER_BOTTOM, 3), "inside_depth": round(ob["height"] - CONTAINER_BOTTOM, 3)}
+                out[ob["name"]] = {
+                    "center": [*ob["pos"][:2], Z],
+                    "inner_radius": ob["r_in"],
+                    "rim_z": round(Z + ob["height"], 3),
+                    "inside_bottom_z": round(Z + CONTAINER_BOTTOM, 3),
+                    "inside_depth": round(ob["height"] - CONTAINER_BOTTOM, 3),
+                }
             elif k == "valve":
-                out["valve"] = {"axis": [*ob["pos"][:2]], "wheel_z": round(Z + ob["height"], 3), "wheel_radius": ob["r"], "spokes": 3,
-                                "angle_deg": round(math.degrees(self._valve_angle()), 1)}
+                out["valve"] = {
+                    "axis": [*ob["pos"][:2]],
+                    "wheel_z": round(Z + ob["height"], 3),
+                    "wheel_radius": ob["r"],
+                    "spokes": 3,
+                    "angle_deg": round(math.degrees(self._valve_angle()), 1),
+                }
             elif k == "buttons":
                 bs = {}
                 for cname, _ in ob["colors"]:
                     b = self.model.body(f"button_{cname}").id
                     j = self.model.joint(f"button_{cname}").id
-                    bs[cname] = {"top_center": r3(self.data.xpos[b] + np.array([0, 0, .006])),
-                                 "pressed_mm": round(-1000 * float(self.data.qpos[self.model.jnt_qposadr[j]]), 1)}
+                    bs[cname] = {
+                        "top_center": r3(self.data.xpos[b] + np.array([0, 0, 0.006])),
+                        "pressed_mm": round(-1000 * float(self.data.qpos[self.model.jnt_qposadr[j]]), 1),
+                    }
                 out["buttons"] = bs
                 out["button_radius"] = ob["r"]
             elif k == "stand":
@@ -556,16 +964,27 @@ class DexHandBackend(EmbodiedBackend):
         per, pairs = self._contacts()
         if k == "lift":
             p = self._obj_pos("ball")
-            return (p[2] >= Z + t["lift"] and "ball" in {o for s in per.values() for o in s} and not ("ball", "table") in pairs
-                    and float(np.linalg.norm(self._obj_vel("ball"))) < .05)
+            return (
+                p[2] >= Z + t["lift"]
+                and "ball" in {o for s in per.values() for o in s}
+                and ("ball", "table") not in pairs
+                and float(np.linalg.norm(self._obj_vel("ball"))) < 0.05
+            )
         if k == "face_up":
             Rc = self._obj_R("cube")
             n = Rc @ np.array(CUBE_FACES[t["face"]], float)
-            return (n[2] >= math.cos(math.radians(t["tol_deg"])) and ("cube", "table") in pairs
-                    and not any("cube" in s for s in per.values()))
+            return (
+                n[2] >= math.cos(math.radians(t["tol_deg"]))
+                and ("cube", "table") in pairs
+                and not any("cube" in s for s in per.values())
+            )
         if k == "pour":
             cupR = self._obj_R("cup")
-            return self._balls_in_bowl() >= t["need"] and cupR[2, 2] >= math.cos(math.radians(20)) and ("cup", "table") in pairs
+            return (
+                self._balls_in_bowl() >= t["need"]
+                and cupR[2, 2] >= math.cos(math.radians(20))
+                and ("cup", "table") in pairs
+            )
         if k == "pen":
             hb = next(o for o in t["objects"] if o.get("name") == "holder")
             b = self.free["marker"][0]
@@ -581,8 +1000,12 @@ class DexHandBackend(EmbodiedBackend):
             return self.clicks == t["sequence"]
         if k == "inhand":
             n = self._obj_R("cube") @ np.array(CUBE_FACES[t["face"]], float)
-            return (n[2] >= math.cos(math.radians(t["tol_deg"])) and "cube" in {o for s_ in per.values() for o in s_}
-                    and not ("cube", "table") in pairs and self._wrist_dev() <= math.radians(t["wrist_tol_deg"]))
+            return (
+                n[2] >= math.cos(math.radians(t["tol_deg"]))
+                and "cube" in {o for s_ in per.values() for o in s_}
+                and ("cube", "table") not in pairs
+                and self._wrist_dev() <= math.radians(t["wrist_tol_deg"])
+            )
         return False
 
     # ---- skills ------------------------------------------------------------------------------------------------
@@ -599,10 +1022,14 @@ class DexHandBackend(EmbodiedBackend):
     def _report(self, **kw) -> dict:
         per, _ = self._contacts()
         q = self._pq()
-        return {**kw, "palm_pos": r3(self.palm_pos()), "wrist_rpy_deg": [round(math.degrees(v), 1) for v in self._rpy_of(q)],
-                "contacts": {f: sorted(s) for f, s in sorted(per.items())}}
+        return {
+            **kw,
+            "palm_pos": r3(self.palm_pos()),
+            "wrist_rpy_deg": [round(math.degrees(v), 1) for v in self._rpy_of(q)],
+            "contacts": {f: sorted(s) for f, s in sorted(per.items())},
+        }
 
-    def _servo(self, goal_fn, n_max: int, speed: float, rot_speed: float, tol: float = .004):
+    def _servo(self, goal_fn, n_max: int, speed: float, rot_speed: float, tol: float = 0.004):
         """Drive the positioner target toward goal_fn(k) -> (flange_xyz, rpy) each step; stop when the measured pose is
         there, or when the target is there but the hand has stopped short (blocked)."""
         hist = []
@@ -616,19 +1043,28 @@ class DexHandBackend(EmbodiedBackend):
             err = float(np.linalg.norm(np.asarray(fxyz) - q[:3]))
             rerr = max(abs(wrap(g - c)) for g, c in zip(rpy, self._rpy_of(q)))
             tgt_there = np.linalg.norm(np.asarray(fxyz) - self.pt[:3]) < 1e-4 and np.max(np.abs(drot)) < 1e-4
-            if tgt_there and err < tol and rerr < math.radians(1.5) and np.linalg.norm(self.data.qvel[self.pv[:3]]) < .02:
+            if (
+                tgt_there
+                and err < tol
+                and rerr < math.radians(1.5)
+                and np.linalg.norm(self.data.qvel[self.pv[:3]]) < 0.02
+            ):
                 return "reached"
             hist.append(q.copy())
             if len(hist) > 15:
                 old = hist[-16]
-                if np.linalg.norm(q[:3] - old[:3]) < .002 and np.max(np.abs(q[3:] - old[3:])) < math.radians(.5) and (err > tol or rerr > math.radians(1.5)):
+                if (
+                    np.linalg.norm(q[:3] - old[:3]) < 0.002
+                    and np.max(np.abs(q[3:] - old[3:])) < math.radians(0.5)
+                    and (err > tol or rerr > math.radians(1.5))
+                ):
                     return "blocked"
             yield self._act(dpos, drot)
         return "stopped"
 
     def skill_move_to(self, x: float, y: float, z: float, speed: float):
         goal = np.array([x, y, z])
-        v = float(np.clip(speed, .01, .25)) * CONTROL_DT
+        v = float(np.clip(speed, 0.01, 0.25)) * CONTROL_DT
         off = self._flange_R() @ self._palm_offset()
         rpy = self._rpy_of(self.pt)
         status = yield from self._servo(lambda k: (goal - off, rpy), 400, v, STEP_ROT)
@@ -710,11 +1146,14 @@ class DexHandBackend(EmbodiedBackend):
         fingers = [f for f in GRASP_FINGERS[type] if f in self.fingers]
         touching = {f: sorted(per.get(f, set())) for f in fingers}
         objs = {o for f in fingers for o in per.get(f, set())} & set(self.free)
-        return self._report(type=type, fingers_touching=touching,
-                            holding=sorted(o for o in objs if sum(o in per.get(f, set()) for f in per) >= 2))
+        return self._report(
+            type=type,
+            fingers_touching=touching,
+            holding=sorted(o for o in objs if sum(o in per.get(f, set()) for f in per) >= 2),
+        )
 
     def skill_open(self):
-        yield from self._hand_to(self._posture_vec(POSTURES[self.hand]["open"]), 40, rate=.4)
+        yield from self._hand_to(self._posture_vec(POSTURES[self.hand]["open"]), 40, rate=0.4)
         return self._report(posture="open")
 
     def skill_pose(self, name: str):
@@ -727,17 +1166,22 @@ class DexHandBackend(EmbodiedBackend):
         t[i] = math.radians(value)
         t = np.clip(t, self.hlo, self.hhi)
         yield from self._hand_to(t, 30)
-        return self._report(joint=name, target_deg=round(math.degrees(t[i]), 1),
-                            actual_deg=round(math.degrees(float(self.data.actuator_length[self.ha[i]])), 1))
+        return self._report(
+            joint=name,
+            target_deg=round(math.degrees(t[i]), 1),
+            actual_deg=round(math.degrees(float(self.data.actuator_length[self.ha[i]])), 1),
+        )
 
     def skill_wait(self, seconds: float):
         for _ in range(max(1, round(seconds / CONTROL_DT))):
             yield self._act()
         return self._report()
 
+
 # ------------------------------------------------------------------------------------------------------------------
 # reference solutions (socket only)
 # ------------------------------------------------------------------------------------------------------------------
+
 
 def _solve_cube_face_up(o: Oracle, t: dict) -> None:
     # Reorient by regrasp: tripod-grasp the cube from behind (the hand yawed so the target face points to the hand's
@@ -746,23 +1190,23 @@ def _solve_cube_face_up(o: Oracle, t: dict) -> None:
         st = o.state()
         cube = st["objects"]["cube"]
         n = np.array(cube["face_normals"][t["face"]])
-        if n[2] > .9:
+        if n[2] > 0.9:
             return
-        yaw = 0.0 if n[2] < -.7 else math.degrees(wrap(math.atan2(n[1], n[0]) - math.pi / 2))
+        yaw = 0.0 if n[2] < -0.7 else math.degrees(wrap(math.atan2(n[1], n[0]) - math.pi / 2))
         d = np.array([math.cos(math.radians(yaw)), math.sin(math.radians(yaw)), 0])
-        g = np.array(cube["pos"]) - .02 * d
+        g = np.array(cube["pos"]) - 0.02 * d
         o.skill("rotate", 0, 30, yaw)
         o.skill("pose", "tripod_ready")
-        o.skill("move_to", g[0], g[1], g[2] + .12)
-        o.skill("move_to", g[0], g[1], g[2] + .025)
+        o.skill("move_to", g[0], g[1], g[2] + 0.12)
+        o.skill("move_to", g[0], g[1], g[2] + 0.025)
         o.skill("grasp", "tripod")
-        o.skill("move_by", 0, 0, .12)
+        o.skill("move_by", 0, 0, 0.12)
         o.skill("rotate", 90, 30, yaw)
         cz = o.state()["objects"]["cube"]["pos"][2]
-        o.skill("move_by", 0, 0, -(cz - (Z + .028)) - .01, .05)
+        o.skill("move_by", 0, 0, -(cz - (Z + 0.028)) - 0.01, 0.05)
         o.skill("open")
-        o.skill("move_by", .06 * math.sin(math.radians(yaw)), -.06 * math.cos(math.radians(yaw)), 0)
-        o.skill("move_by", 0, 0, .10)
+        o.skill("move_by", 0.06 * math.sin(math.radians(yaw)), -0.06 * math.cos(math.radians(yaw)), 0)
+        o.skill("move_by", 0, 0, 0.10)
         o.skill("rotate", 0, 30, yaw)
 
 
@@ -770,18 +1214,18 @@ def _solve_pour(o: Oracle, t: dict) -> None:
     st = o.state()
     c = st["objects"]["cup"]["pos"]
     bowl = st["landmarks"]["bowl"]["center"]
-    o.skill("rotate", 90, 15, 0)            # palm facing +y, thumb up, fingers slightly down
+    o.skill("rotate", 90, 15, 0)  # palm facing +y, thumb up, fingers slightly down
     o.skill("pose", "open")
-    o.skill("move_to", c[0], c[1] - .12, Z + .22)
-    o.skill("move_to", c[0], c[1] - .12, Z + .07)
-    o.skill("move_to", c[0], c[1] - .01, Z + .07)
+    o.skill("move_to", c[0], c[1] - 0.12, Z + 0.22)
+    o.skill("move_to", c[0], c[1] - 0.12, Z + 0.07)
+    o.skill("move_to", c[0], c[1] - 0.01, Z + 0.07)
     o.skill("grasp", "power")
-    o.skill("move_by", 0, 0, .15)
+    o.skill("move_by", 0, 0, 0.15)
     st = o.state()
     cup, palm = np.array(st["objects"]["cup"]["pos"]), np.array(st["hand"]["palm_pos"])
-    goal = palm + (np.array([bowl[0], bowl[1] - .03, Z + .15]) - cup)   # cup 3 cm short of the bowl centre, 15 cm up
+    goal = palm + (np.array([bowl[0], bowl[1] - 0.03, Z + 0.15]) - cup)  # cup 3 cm short of the bowl centre, 15 cm up
     o.skill("move_to", *goal)
-    o.skill("rotate", -45, 15, 0, 30)       # roll the forearm: the cup mouth turns toward +y, over the bowl
+    o.skill("rotate", -45, 15, 0, 30)  # roll the forearm: the cup mouth turns toward +y, over the bowl
     o.skill("wait", 1.5)
     # balls can stay caught behind the thumb (the outcome differs between platforms' MuJoCo builds): roll further and
     # shake until nearly all are in the bowl
@@ -789,13 +1233,13 @@ def _solve_pour(o: Oracle, t: dict) -> None:
         if o.state()["progress"]["balls_in_bowl"] >= t["need"] + 1:
             break
         o.skill("rotate", roll, 15, 0, 60)
-        o.skill("wait", .5)
+        o.skill("wait", 0.5)
     o.skill("rotate", 90, 15, 0, 40)
-    o.skill("move_to", c[0], c[1] - .01, Z + .22)
-    o.skill("move_to", c[0], c[1] - .01, Z + .075)
+    o.skill("move_to", c[0], c[1] - 0.01, Z + 0.22)
+    o.skill("move_to", c[0], c[1] - 0.01, Z + 0.075)
     o.skill("open")
-    o.skill("move_by", 0, -.10, 0)
-    o.skill("move_by", 0, 0, .10)
+    o.skill("move_by", 0, -0.10, 0)
+    o.skill("move_by", 0, 0, 0.10)
 
 
 def _solve_valve(o: Oracle, t: dict) -> None:
@@ -815,21 +1259,23 @@ def _solve_valve(o: Oracle, t: dict) -> None:
         h = o.state()["hand"]
         tips = np.mean([h["fingertips"][f] for f in h["fingertips"] if f != "thumb"], 0)
         off = tips - np.array(h["palm_pos"])
-        tgt = np.array([ax[0] + .6 * R * math.cos(math.radians(ang)), ax[1] + .6 * R * math.sin(math.radians(ang)), wz - .015])
+        tgt = np.array(
+            [ax[0] + 0.6 * R * math.cos(math.radians(ang)), ax[1] + 0.6 * R * math.sin(math.radians(ang)), wz - 0.015]
+        )
         goal = tgt - off
-        o.skill("move_to", goal[0], goal[1], goal[2] + .08)
+        o.skill("move_to", goal[0], goal[1], goal[2] + 0.08)
         o.skill("move_to", *goal)
         o.skill("turn_about", ax[0], ax[1], 110)
-        o.skill("move_by", 0, 0, .08)
+        o.skill("move_by", 0, 0, 0.08)
 
 
 def _solve_lift(o: Oracle, t: dict) -> None:
     b = o.state()["objects"]["ball"]["pos"]
     o.skill("pose", "power_ready")
-    o.skill("move_to", b[0], b[1], b[2] + .1)
-    o.skill("move_to", b[0], b[1], b[2] + .011)
+    o.skill("move_to", b[0], b[1], b[2] + 0.1)
+    o.skill("move_to", b[0], b[1], b[2] + 0.011)
     o.skill("grasp", "power")
-    o.skill("move_by", 0, 0, .20)
+    o.skill("move_by", 0, 0, 0.20)
     o.skill("wait", 1.0)
 
 
@@ -837,31 +1283,31 @@ def _solve_pen(o: Oracle, t: dict) -> None:
     st = o.state()
     cap = st["objects"]["marker"]["cap_end"]
     hc = st["landmarks"]["holder"]["center"]
-    o.skill("rotate", 90, 0, 0)             # palm facing +y, fingers forward
+    o.skill("rotate", 90, 0, 0)  # palm facing +y, fingers forward
     o.skill("pose", "open")
-    o.skill("move_to", cap[0] - .02, cap[1], Z + .30)
-    o.skill("move_to", cap[0] - .02, cap[1], Z + .12)
+    o.skill("move_to", cap[0] - 0.02, cap[1], Z + 0.30)
+    o.skill("move_to", cap[0] - 0.02, cap[1], Z + 0.12)
     o.skill("grasp", "power")
-    o.skill("move_by", 0, 0, .14, .10)
+    o.skill("move_by", 0, 0, 0.14, 0.10)
     st = o.state()
     tip, palm = np.array(st["objects"]["marker"]["tip_end"]), np.array(st["hand"]["palm_pos"])
-    o.skill("move_to", *(palm + np.array([hc[0] - tip[0], hc[1] - tip[1], 0])), .10)
+    o.skill("move_to", *(palm + np.array([hc[0] - tip[0], hc[1] - tip[1], 0])), 0.10)
     tip = o.state()["objects"]["marker"]["tip_end"]
-    o.skill("move_by", 0, 0, -(tip[2] - (Z + .03)), .05)
+    o.skill("move_by", 0, 0, -(tip[2] - (Z + 0.03)), 0.05)
     o.skill("open")
-    o.skill("move_by", 0, 0, .14)
+    o.skill("move_by", 0, 0, 0.14)
 
 
 def _solve_buttons(o: Oracle, t: dict) -> None:
     o.skill("pose", "point")
-    o.skill("rotate", 0, 90, 0)             # fingers down: the index finger points at the panel
+    o.skill("rotate", 0, 90, 0)  # fingers down: the index finger points at the panel
     for name in t["sequence"]:
         st = o.state()
         off = np.array(st["hand"]["fingertips"]["index"]) - np.array(st["hand"]["palm_pos"])
         top = np.array(st["landmarks"]["buttons"][name]["top_center"])
-        o.skill("move_to", *(top - off + np.array([0, 0, .03])))
-        o.skill("move_by", 0, 0, -.045, .05)
-        o.skill("move_by", 0, 0, .04)
+        o.skill("move_to", *(top - off + np.array([0, 0, 0.03])))
+        o.skill("move_by", 0, 0, -0.045, 0.05)
+        o.skill("move_by", 0, 0, 0.04)
 
 
 def _solve_inhand(o: Oracle, t: dict) -> None:
@@ -870,18 +1316,25 @@ def _solve_inhand(o: Oracle, t: dict) -> None:
     names = LEAP_ACTS
     a = np.zeros(6 + len(names))
     for f in ("if", "mf", "rf"):
-        a[6 + names.index(f"{f}_mcp")] = .47
-        a[6 + names.index(f"{f}_pip")] = .125
+        a[6 + names.index(f"{f}_mcp")] = 0.47
+        a[6 + names.index(f"{f}_pip")] = 0.125
     for _ in range(3):
         o.act(a, 10)
         o.act(-a, 10)
         o.skill("wait", 1.0)
-        if o.state()["objects"]["cube"]["face_normals"][t["face"]][2] > .95:
+        if o.state()["objects"]["cube"]["face_normals"][t["face"]][2] > 0.95:
             break
 
 
-SOLVERS = {"face_up": _solve_cube_face_up, "pour": _solve_pour, "valve": _solve_valve, "lift": _solve_lift, "pen": _solve_pen,
-           "buttons": _solve_buttons, "inhand": _solve_inhand}
+SOLVERS = {
+    "face_up": _solve_cube_face_up,
+    "pour": _solve_pour,
+    "valve": _solve_valve,
+    "lift": _solve_lift,
+    "pen": _solve_pen,
+    "buttons": _solve_buttons,
+    "inhand": _solve_inhand,
+}
 
 
 def oracle_main(env: str) -> None:

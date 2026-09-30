@@ -1,4 +1,5 @@
 """`robouse estop`, `operator`, `hil-check` and `robots`: the human side of real-robot runs."""
+
 from __future__ import annotations
 
 import argparse
@@ -6,8 +7,9 @@ import json
 
 
 def register(sub: argparse._SubParsersAction) -> None:
-    e = sub.add_parser("estop", help="latch the real-robot e-stop (every real episode stops at its next command); "
-                       "--clear releases it")
+    e = sub.add_parser(
+        "estop", help="latch the real-robot e-stop (every real episode stops at its next command); --clear releases it"
+    )
     e.add_argument("reason", nargs="?", default="operator e-stop", help="why (default: operator e-stop)")
     e.add_argument("--clear", action="store_true", help="release the e-stop")
     e.set_defaults(func=estop)
@@ -18,8 +20,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     o.add_argument("--note", default="", help="a note recorded with the answer")
     o.set_defaults(func=operator)
 
-    hc = sub.add_parser("hil-check", help="replay recorded real sessions strictly through the safety guard and fit the "
-                        "tracking model")
+    hc = sub.add_parser(
+        "hil-check", help="replay recorded real sessions strictly through the safety guard and fit the tracking model"
+    )
     hc.add_argument("fixtures", nargs="*", help="hardware-in-the-loop fixture names (default: all)")
     hc.set_defaults(func=hil_check)
 
@@ -60,7 +63,9 @@ def hil_check(a: argparse.Namespace) -> int:
     for n in names:
         fx = Fixture(n)
         if len(fx.steps) < 2:
-            print(json.dumps({"fixture": n, "robot": fx.robot, "steps": len(fx.steps), "note": fx.meta.get("note", "")}))
+            print(
+                json.dumps({"fixture": n, "robot": fx.robot, "steps": len(fx.steps), "note": fx.meta.get("note", "")})
+            )
             continue
         print(json.dumps(conformance(fx, profile(fx.robot), fx.meta.get("session_envelope"))))
     return 0
@@ -77,13 +82,21 @@ def robots(a: argparse.Namespace) -> int:
             continue
         seen[id(p)] = name
         kin = "kinematics" if p.chain_file else "joint limits only"
-        checked = "profile checked against hardware sessions" if p.tested_on_hardware else "profile not checked on hardware"
+        checked = (
+            "profile checked against hardware sessions" if p.tested_on_hardware else "profile not checked on hardware"
+        )
         print(f"{name:14} {p.display}: {len(p.joints)} joints, {p.control_hz:g} Hz, {kin}; {checked}")
-    print("live hardware through Robo Use: not run yet; real tasks run on the hardware-in-the-loop mock unless --rig is given")
-    print("drivers: mock (hardware-in-the-loop replay), lerobot (Metal, SO-100/SO-101), piper (piper_sdk), "
-          "rosbridge (ROS arms), plus robouse.drivers entry points")
+    print(
+        "live hardware through Robo Use: not run yet; real tasks run on the hardware-in-the-loop mock unless --rig is given"
+    )
+    print(
+        "drivers: mock (hardware-in-the-loop replay), lerobot (Metal, SO-100/SO-101), piper (piper_sdk), "
+        "rosbridge (ROS arms), plus robouse.drivers entry points"
+    )
     for f in sorted(HIL_DIR.glob("*/fixture.json")):
         d = json.loads(f.read_text())
-        print(f"fixture {f.parent.name}: {d['robot']}, {len(d.get('steps', []))} recorded steps, "
-              f"{len(d.get('keyframes', []))} keyframes, cameras {d.get('cameras')}, source {d.get('source')}")
+        print(
+            f"fixture {f.parent.name}: {d['robot']}, {len(d.get('steps', []))} recorded steps, "
+            f"{len(d.get('keyframes', []))} keyframes, cameras {d.get('cameras')}, source {d.get('source')}"
+        )
     return 0

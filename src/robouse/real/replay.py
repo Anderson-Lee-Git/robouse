@@ -17,6 +17,7 @@ mock are decided by the (scripted) operator, never inferred.
 Robo Use safety guard, with the measured joints taken from the recording, and reports vetoes, clamps and how well the
 fitted tracking model reproduces the recorded motion.
 """
+
 from __future__ import annotations
 
 import json
@@ -38,7 +39,9 @@ def fixture_dir(name: str) -> Path:
     for root in [os.environ.get("ROBOUSE_HIL_DIR", ""), str(HIL_DIR)]:
         if root and (Path(root) / name).is_dir():
             return Path(root) / name
-    raise FileNotFoundError(f"hardware-in-the-loop fixture {name!r} not found (looked in ROBOUSE_HIL_DIR and {HIL_DIR})")
+    raise FileNotFoundError(
+        f"hardware-in-the-loop fixture {name!r} not found (looked in ROBOUSE_HIL_DIR and {HIL_DIR})"
+    )
 
 
 class Fixture:
@@ -53,7 +56,11 @@ class Fixture:
         self.start = np.asarray(d["start"], dtype=float)
         self.keyframes = d.get("keyframes", [])
         self.cameras = list(d.get("cameras", []))
-        self._kq = np.asarray([k["q"] for k in self.keyframes], dtype=float) if self.keyframes else np.zeros((0, len(self.start)))
+        self._kq = (
+            np.asarray([k["q"] for k in self.keyframes], dtype=float)
+            if self.keyframes
+            else np.zeros((0, len(self.start)))
+        )
         self._img_cache: dict[str, np.ndarray] = {}
 
     def image(self, cam: str, q) -> np.ndarray | None:
@@ -93,7 +100,9 @@ class ReplayRobot:
     is_calibrated = True
     calibration_fpath = "(hardware-in-the-loop mock)"
 
-    def __init__(self, fx: Fixture, prof: Profile, cameras: list[str] | None = None, noise_deg: float = 0.0, seed: int = 0):
+    def __init__(
+        self, fx: Fixture, prof: Profile, cameras: list[str] | None = None, noise_deg: float = 0.0, seed: int = 0
+    ):
         self.fx, self.prof = fx, prof
         self.q = fx.start.copy()
         self.cmd = self.q.copy()
@@ -115,8 +124,12 @@ class ReplayRobot:
         tel = self.fx.telemetry(self.k)
         st = {}
         for i, n in enumerate(self.prof.joints):
-            st[n] = {"torque": (tel.get("joint_torque_nm") or [0.0] * 7)[i], "temp_mos": (tel.get("temp_mos_c") or [30.0] * 7)[i],
-                     "temp_rotor": (tel.get("temp_rotor_c") or [30.0] * 7)[i], "velocity": 0.0}
+            st[n] = {
+                "torque": (tel.get("joint_torque_nm") or [0.0] * 7)[i],
+                "temp_mos": (tel.get("temp_mos_c") or [30.0] * 7)[i],
+                "temp_rotor": (tel.get("temp_rotor_c") or [30.0] * 7)[i],
+                "velocity": 0.0,
+            }
         self.bus._last_known_states = st
 
     def get_observation(self) -> dict:
@@ -156,20 +169,21 @@ class ReplayPiperSDK:
         self.robot = ReplayRobot(fx, prof, cameras=[])
         self.robot.connect()
 
-    def ConnectPort(self):  # noqa: N802 - SDK naming
+    def ConnectPort(self):
         return True
 
-    def EnablePiper(self):  # noqa: N802
+    def EnablePiper(self):
         return True
 
-    def DisablePiper(self):  # noqa: N802
+    def DisablePiper(self):
         return True
 
-    def GetArmJointMsgs(self):  # noqa: N802
+    def GetArmJointMsgs(self):
         q = self.robot.q
 
-        class JS:  # noqa: D106
+        class JS:
             pass
+
         js = JS()
         for i in range(6):
             setattr(js, f"joint_{i + 1}", int(round(q[i] * 1000)))
@@ -177,21 +191,22 @@ class ReplayPiperSDK:
         m.joint_state = js
         return m
 
-    def GetArmGripperMsgs(self):  # noqa: N802
-        class G:  # noqa: D106
+    def GetArmGripperMsgs(self):
+        class G:
             pass
+
         g, m = G(), G()
         g.grippers_angle = int(round(self.robot.q[6] * 1000))
         m.gripper_state = g
         return m
 
-    def MotionCtrl_2(self, *a):  # noqa: N802
+    def MotionCtrl_2(self, *a):
         return True
 
-    def JointCtrl(self, *j):  # noqa: N802
+    def JointCtrl(self, *j):
         self._pending = [v / 1000.0 for v in j]
 
-    def GripperCtrl(self, pos, effort, code, zero):  # noqa: N802
+    def GripperCtrl(self, pos, effort, code, zero):
         q = list(getattr(self, "_pending", self.robot.q[:6])) + [pos / 1000.0]
         self.robot.send_action({f"{n}.pos": v for n, v in zip(self.robot.prof.joints, q)})
 
@@ -199,6 +214,7 @@ class ReplayPiperSDK:
 # ------------------------------------------------------------------------------------------------------------------
 # fitting and conformance
 # ------------------------------------------------------------------------------------------------------------------
+
 
 def fit_tracking(cmd: np.ndarray, pos: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Per joint least squares: pos[k] - pos[k-1] = gain * (cmd[k] - pos[k-1]) + bias; gain clipped to (0.05, 1]."""
@@ -240,11 +256,16 @@ def conformance(fx: Fixture, prof: Profile, overrides: dict | None = None) -> di
     sim = np.asarray(sim)
     err = np.abs(sim - pos)[:, prof.arm_idx]
     one_step = np.abs((pos[:-1] + fx.gain * (cmd[1:] - pos[:-1]) + fx.bias) - pos[1:])
-    return {"fixture": fx.dir.name, "robot": prof.name, "steps": int(len(cmd)), "vetoed_steps": vetoes,
-            "clamp_events": sum(1 for e in events if e["kind"] == "clamp"),
-            "guard_changed_steps": int(sum(1 for d in deltas if d > 0.05)),
-            "max_guard_change_deg": round(max(deltas) if deltas else 0.0, 3),
-            "guard_changed_steps_by_joint": {n: int(c) for n, c in zip(prof.joints, per_joint) if c},
-            "tracking_one_step_rms_deg": round(float(np.sqrt(np.mean(one_step[:, prof.arm_idx] ** 2))), 3),
-            "tracking_open_loop_rms_deg": round(float(np.sqrt(np.mean(err ** 2))), 3),
-            "tracking_open_loop_max_deg": round(float(err.max()), 3)}
+    return {
+        "fixture": fx.dir.name,
+        "robot": prof.name,
+        "steps": int(len(cmd)),
+        "vetoed_steps": vetoes,
+        "clamp_events": sum(1 for e in events if e["kind"] == "clamp"),
+        "guard_changed_steps": int(sum(1 for d in deltas if d > 0.05)),
+        "max_guard_change_deg": round(max(deltas) if deltas else 0.0, 3),
+        "guard_changed_steps_by_joint": {n: int(c) for n, c in zip(prof.joints, per_joint) if c},
+        "tracking_one_step_rms_deg": round(float(np.sqrt(np.mean(one_step[:, prof.arm_idx] ** 2))), 3),
+        "tracking_open_loop_rms_deg": round(float(np.sqrt(np.mean(err**2))), 3),
+        "tracking_open_loop_max_deg": round(float(err.max()), 3),
+    }

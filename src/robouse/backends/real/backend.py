@@ -16,6 +16,7 @@ Success (`real.verdict`): `pose` (the measured tool point within `goal.tol` of `
 closed if `goal.gripper` says so; judged from the measured joints, which exist on real hardware) or `operator` (the
 operator's yes/no after `robo done`). Safety stops score 0.
 """
+
 from __future__ import annotations
 
 import os
@@ -27,7 +28,7 @@ from ...real.drivers import make_driver
 from ...real.operator import Operator
 from ...real.robots import profile as get_profile
 from ...real.safety import EventLog, Guard, HardwareLock, SafetyStop, Veto, estop_engaged
-from ..embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Sensor, Skill, SkillArg
+from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Sensor, Skill, SkillArg
 
 
 class RealArmBackend(EmbodiedBackend):
@@ -42,8 +43,11 @@ class RealArmBackend(EmbodiedBackend):
 
             entry = (yaml.safe_load(open(rig)) or {}).get(self.cfg.get("robot", "metal"))
             if entry:
-                self.cfg = {**{k: v for k, v in self.cfg.items() if k != "fixture"}, **entry,
-                            "envelope": {**(self.cfg.get("envelope") or {}), **(entry.get("envelope") or {})}}
+                self.cfg = {
+                    **{k: v for k, v in self.cfg.items() if k != "fixture"},
+                    **entry,
+                    "envelope": {**(self.cfg.get("envelope") or {}), **(entry.get("envelope") or {})},
+                }
         if self.cfg.get("robot") == "ros":  # any ROS arm: the profile comes from the rig / task configuration
             from ...real.drivers.rosbridge import ros_profile
 
@@ -59,8 +63,12 @@ class RealArmBackend(EmbodiedBackend):
         self.run_dir = None  # set by the episode server (session files next to the episode record)
         self.log = EventLog(None)
         self.guard = Guard(self.prof, self.cfg.get("envelope"), log=self._event, estop_check=estop_engaged)
-        self.operator = Operator(self.cfg.get("operator", "script" if self.mock else "tty"), mock=self.mock,
-                                 timeout_s=float(self.cfg.get("operator_timeout_s", 600)), log=self._event)
+        self.operator = Operator(
+            self.cfg.get("operator", "script" if self.mock else "tty"),
+            mock=self.mock,
+            timeout_s=float(self.cfg.get("operator_timeout_s", 600)),
+            log=self._event,
+        )
         self.driver = make_driver(self.prof, self.cfg)
         self.cameras_list = list(self.driver.cameras)
         self.camera = "all" if self.cameras_list else ""
@@ -75,7 +83,9 @@ class RealArmBackend(EmbodiedBackend):
             if os.environ.get("ROBOUSE_REAL_UNATTENDED") != "1":
                 raise SafetyStop("unattended live runs need ROBOUSE_REAL_UNATTENDED=1 in the operator's environment")
         self.goal = self.cfg.get("goal") or {}
-        self.verdict_mode = self.cfg.get("verdict", "pose" if (self.goal.get("tool") or self.goal.get("joints")) else "operator")
+        self.verdict_mode = self.cfg.get(
+            "verdict", "pose" if (self.goal.get("tool") or self.goal.get("joints")) else "operator"
+        )
         # stages: ordered checkpoints on the measured state ({"tool": [x,y,z], "tol": m, "gripper": open|closed} or
         # {"joints": [...], "tol": deg}); they give the task-progress metric and the mock operator's verdict proxy
         self.stages = list(self.cfg.get("stages") or [])
@@ -90,54 +100,124 @@ class RealArmBackend(EmbodiedBackend):
         groups = []
         for pre in p.arms:
             arm = [i for i in p.arm_idx if p.joints[i].startswith(pre)]
-            groups.append(ActionGroup(f"{pre}arm.joint_pos", "joint_pos", [p.joints[i] for i in arm], [p.low[i] for i in arm],
-                                      [p.high[i] for i in arm], units=p.units[arm[0]], frame="joint",
-                                      doc="absolute joint targets; the safety guard limits speed and vetoes moves that leave the workspace"))
+            groups.append(
+                ActionGroup(
+                    f"{pre}arm.joint_pos",
+                    "joint_pos",
+                    [p.joints[i] for i in arm],
+                    [p.low[i] for i in arm],
+                    [p.high[i] for i in arm],
+                    units=p.units[arm[0]],
+                    frame="joint",
+                    doc="absolute joint targets; the safety guard limits speed and vetoes moves that leave the workspace",
+                )
+            )
             for g in p.gidx:
                 if p.joints[g].startswith(pre):
-                    groups.append(ActionGroup(f"{pre}gripper", "gripper", [p.joints[g]], [p.low[g]], [p.high[g]], units=p.units[g],
-                                              doc=f"absolute; {p.gripper_closed:g} = closed, {p.gripper_open:g} = open"))
-        sensors = [Sensor("joint_pos", "proprio", ["joint_pos"], units=p.units[0], doc="measured joint positions by name"),
-                   Sensor("telemetry", "proprio", ["telemetry"], doc="max motor temperature and safety counters"),
-                   Sensor("operator", "events", ["operator_notes"], doc="remarks typed by the operator during the run")]
+                    groups.append(
+                        ActionGroup(
+                            f"{pre}gripper",
+                            "gripper",
+                            [p.joints[g]],
+                            [p.low[g]],
+                            [p.high[g]],
+                            units=p.units[g],
+                            doc=f"absolute; {p.gripper_closed:g} = closed, {p.gripper_open:g} = open",
+                        )
+                    )
+        sensors = [
+            Sensor("joint_pos", "proprio", ["joint_pos"], units=p.units[0], doc="measured joint positions by name"),
+            Sensor("telemetry", "proprio", ["telemetry"], doc="max motor temperature and safety counters"),
+            Sensor("operator", "events", ["operator_notes"], doc="remarks typed by the operator during the run"),
+        ]
         if self.guard.env.chain is not None:
-            sensors.insert(1, Sensor("tool", "proprio", ["tool_pos", "tool_axis"], units="m", frame="base",
-                                     doc="tool point (between the fingertips) by forward kinematics of the measured joints"))
-        sensors += [Sensor(f"camera:{c}", "camera", mount="wrist" if "grip" in c or "wrist" in c else "world") for c in self.cameras_list]
+            sensors.insert(
+                1,
+                Sensor(
+                    "tool",
+                    "proprio",
+                    ["tool_pos", "tool_axis"],
+                    units="m",
+                    frame="base",
+                    doc="tool point (between the fingertips) by forward kinematics of the measured joints",
+                ),
+            )
+        sensors += [
+            Sensor(f"camera:{c}", "camera", mount="wrist" if "grip" in c or "wrist" in c else "world")
+            for c in self.cameras_list
+        ]
         grip_args = [SkillArg("value", "float", p.units[p.gidx[0]] if p.gidx else "")]
         if len(p.arms) > 1:
-            grip_args.append(SkillArg("arm", "enum", default="both", choices=[a.rstrip("_") for a in p.arms] + ["both"]))
-        skills = [Skill("move_joints", [SkillArg(p.joints[i], "float", p.units[i]) for i in p.arm_idx]
-                        + [SkillArg("speed", "float", "fraction", 1.0, doc="fraction of the speed limit")],
-                        "interpolated move of the arm joints to the given pose (the whole path is checked first)", max_steps=400),
-                  Skill("grip", grip_args, "set the gripper(s) and wait until they stop moving", max_steps=60),
-                  Skill("home", [], "move to the reach-ready home pose", max_steps=400),
-                  Skill("park", [], "move to the rest pose", max_steps=400)]
+            grip_args.append(
+                SkillArg("arm", "enum", default="both", choices=[a.rstrip("_") for a in p.arms] + ["both"])
+            )
+        skills = [
+            Skill(
+                "move_joints",
+                [SkillArg(p.joints[i], "float", p.units[i]) for i in p.arm_idx]
+                + [SkillArg("speed", "float", "fraction", 1.0, doc="fraction of the speed limit")],
+                "interpolated move of the arm joints to the given pose (the whole path is checked first)",
+                max_steps=400,
+            ),
+            Skill("grip", grip_args, "set the gripper(s) and wait until they stop moving", max_steps=60),
+            Skill("home", [], "move to the reach-ready home pose", max_steps=400),
+            Skill("park", [], "move to the rest pose", max_steps=400),
+        ]
         if self.guard.env.chain is not None:
-            skills.insert(1, Skill("move_to", [SkillArg("x", "float", "m"), SkillArg("y", "float", "m"), SkillArg("z", "float", "m"),
-                                              SkillArg("speed", "float", "fraction", 1.0)],
-                                   "move the tool point to (x, y, z) in the base frame (inverse kinematics; the path is checked first)",
-                                   max_steps=400))
-        return Embodiment(robot=p.display, family="arm", assets=[], sensors=sensors, action_groups=groups, skills=skills,
-                          budget=Budget(max_steps=int(self.spec.get("max_steps", 600)), control_dt=1.0 / self.hz),
-                          cameras=self.cameras_list)
+            skills.insert(
+                1,
+                Skill(
+                    "move_to",
+                    [
+                        SkillArg("x", "float", "m"),
+                        SkillArg("y", "float", "m"),
+                        SkillArg("z", "float", "m"),
+                        SkillArg("speed", "float", "fraction", 1.0),
+                    ],
+                    "move the tool point to (x, y, z) in the base frame (inverse kinematics; the path is checked first)",
+                    max_steps=400,
+                ),
+            )
+        return Embodiment(
+            robot=p.display,
+            family="arm",
+            assets=[],
+            sensors=sensors,
+            action_groups=groups,
+            skills=skills,
+            budget=Budget(max_steps=int(self.spec.get("max_steps", 600)), control_dt=1.0 / self.hz),
+            cameras=self.cameras_list,
+        )
 
     def embodiment(self) -> dict:
         spec = super().embodiment()
         e = self.guard.e
         spec["kind"] = "arm"
         spec["mode"] = self.mode
-        spec["safety"] = {"joint_limits": {"low": self.prof.low, "high": self.prof.high}, "max_joint_speed": e.joint_speed_deg_s,
-                          "slow_joint_speed_deg_s": e.slow_joint_speed_deg_s, "slow_zone_m": e.slow_zone,
-                          "workspace": {"table_z": e.table_z, "x": [e.x_min, e.x_max], "y_abs_max": e.y_abs_max, "z_max": e.z_max}
-                          if self.guard.env.chain is not None else None,
-                          "windup_deg": e.windup_deg, "temp_stop_c": e.temp_stop_c, "estop": "latched file (robouse estop)",
-                          "attended": self.attended, "operator_channel": self.operator.channel}
+        spec["safety"] = {
+            "joint_limits": {"low": self.prof.low, "high": self.prof.high},
+            "max_joint_speed": e.joint_speed_deg_s,
+            "slow_joint_speed_deg_s": e.slow_joint_speed_deg_s,
+            "slow_zone_m": e.slow_zone,
+            "workspace": {"table_z": e.table_z, "x": [e.x_min, e.x_max], "y_abs_max": e.y_abs_max, "z_max": e.z_max}
+            if self.guard.env.chain is not None
+            else None,
+            "windup_deg": e.windup_deg,
+            "temp_stop_c": e.temp_stop_c,
+            "estop": "latched file (robouse estop)",
+            "attended": self.attended,
+            "operator_channel": self.operator.channel,
+        }
         return spec
 
     def info_extra(self) -> dict:
-        return {**super().info_extra(), "mode": self.mode, "robot_notes": self.prof.notes,
-                "hardware": self.driver.description + ("" if self.prof.tested_on_hardware or self.mock else " (UNTESTED on hardware)")}
+        return {
+            **super().info_extra(),
+            "mode": self.mode,
+            "robot_notes": self.prof.notes,
+            "hardware": self.driver.description
+            + ("" if self.prof.tested_on_hardware or self.mock else " (UNTESTED on hardware)"),
+        }
 
     # ---- lifecycle -----------------------------------------------------------------------------------------------
     def _event(self, _kind: str, **kw) -> None:
@@ -160,8 +240,11 @@ class RealArmBackend(EmbodiedBackend):
             if why:
                 raise SafetyStop(f"e-stop is engaged ({why}); clear it with `robouse estop --clear` when safe")
             if self.attended:
-                self.operator.gate("arm", f"{self.prof.display} ({self.mode}): clear the workspace and keep a hand near the power "
-                                          "switch. Enable torque? The arm will hold its current pose.")
+                self.operator.gate(
+                    "arm",
+                    f"{self.prof.display} ({self.mode}): clear the workspace and keep a hand near the power "
+                    "switch. Enable torque? The arm will hold its current pose.",
+                )
             self.driver.connect()
             self._read()
             self.guard.last_cmd = self.q.copy()
@@ -179,7 +262,11 @@ class RealArmBackend(EmbodiedBackend):
         self.halted = reason
         self._event("stop", kind="safety_stop", reason=reason)
         try:  # hold where it is
-            if self.driver and getattr(self.driver, "robot", None) is not None or getattr(self.driver, "sdk", None) is not None:
+            if (
+                self.driver
+                and getattr(self.driver, "robot", None) is not None
+                or getattr(self.driver, "sdk", None) is not None
+            ):
                 self.driver.send(self.q)
         except Exception:  # noqa: BLE001
             pass
@@ -217,9 +304,15 @@ class RealArmBackend(EmbodiedBackend):
             self._read()
             dt = time.perf_counter() - t0
             self.n_steps += 1
-            self.log.step(i=self.n_steps, target=self.target.round(3).tolist(), cmd=cmd.round(3).tolist(), pos=self.q.round(3).tolist(),
-                          tool=self._tool().round(4).tolist() if self.guard.env.chain is not None else None, dt=round(dt, 4),
-                          **{k: v for k, v in self.extra.items() if isinstance(v, list)})
+            self.log.step(
+                i=self.n_steps,
+                target=self.target.round(3).tolist(),
+                cmd=cmd.round(3).tolist(),
+                pos=self.q.round(3).tolist(),
+                tool=self._tool().round(4).tolist() if self.guard.env.chain is not None else None,
+                dt=round(dt, 4),
+                **{k: v for k, v in self.extra.items() if isinstance(v, list)},
+            )
             self._advance_stages()
             self.guard.after_step(self.q, self.extra, dt if self.pace else 0.0)
         except SafetyStop as e:
@@ -243,12 +336,23 @@ class RealArmBackend(EmbodiedBackend):
 
     def observe(self) -> dict:
         p = self.prof
-        out = {"joint_pos": {n: round(float(v), 2) for n, v in zip(p.joints, self.q)},
-               "target": [round(float(v), 2) for v in (self.target if self.target is not None else self.q)],
-               "telemetry": {"max_temp_c": round(max([float(x) for k in ("temp_mos_c", "temp_rotor_c", "temp_c") for x in (self.extra.get(k) or [])] or [0.0]), 1),
-                             "vetoes": sum(1 for e in self.log.events if e["event"] == "veto"),
-                             "estop": bool(estop_engaged()), "halted": self.halted},
-               "mode": self.mode}
+        out = {
+            "joint_pos": {n: round(float(v), 2) for n, v in zip(p.joints, self.q)},
+            "target": [round(float(v), 2) for v in (self.target if self.target is not None else self.q)],
+            "telemetry": {
+                "max_temp_c": round(
+                    max(
+                        [float(x) for k in ("temp_mos_c", "temp_rotor_c", "temp_c") for x in (self.extra.get(k) or [])]
+                        or [0.0]
+                    ),
+                    1,
+                ),
+                "vetoes": sum(1 for e in self.log.events if e["event"] == "veto"),
+                "estop": bool(estop_engaged()),
+                "halted": self.halted,
+            },
+            "mode": self.mode,
+        }
         if len(p.gidx) == 1:
             out["gripper"] = round(float(self.q[p.gidx[0]]), 2)
         elif p.gidx:
@@ -295,9 +399,11 @@ class RealArmBackend(EmbodiedBackend):
             if float(err.max()) < 1.0:
                 break
             yield list(q_target)
-        err = (self.q - q_target)
-        return {"arrived": bool(np.max(np.abs(err[self.prof.arm_idx])) < 2.0),
-                "error": [round(float(x), 2) for x in err]}
+        err = self.q - q_target
+        return {
+            "arrived": bool(np.max(np.abs(err[self.prof.arm_idx])) < 2.0),
+            "error": [round(float(x), 2) for x in err],
+        }
 
     def _full(self, arm_values) -> np.ndarray:
         q = np.asarray(self.guard.last_cmd if self.guard.last_cmd is not None else self.q, dtype=float).copy()
@@ -322,15 +428,22 @@ class RealArmBackend(EmbodiedBackend):
             q0 = np.asarray(self.guard.last_cmd, dtype=float)
             q, err = ch.solve(aim, q0, self.prof.low, self.prof.high, seeds=self.prof.ik_seeds)
             if err > 0.005:
-                return {"reached": False, "error": f"no joint solution reaches ({x}, {y}, {z}) (closest {err * 1000:.0f} mm)"}
+                return {
+                    "reached": False,
+                    "error": f"no joint solution reaches ({x}, {y}, {z}) (closest {err * 1000:.0f} mm)",
+                }
             res = yield from self._move(np.concatenate([q[:n], q0[n:]]), speed if attempt == 0 else min(speed, 0.5))
             miss = goal - self._tool()
             if np.linalg.norm(miss) < 0.004 or np.linalg.norm(miss) > 0.05:
                 break
             aim = aim + miss
         tool = self._tool()
-        return {**res, "reached": bool(np.linalg.norm(tool - goal) < 0.01), "tool_pos": [round(float(v), 4) for v in tool],
-                "distance_m": round(float(np.linalg.norm(tool - goal)), 4)}
+        return {
+            **res,
+            "reached": bool(np.linalg.norm(tool - goal) < 0.01),
+            "tool_pos": [round(float(v), 4) for v in tool],
+            "distance_m": round(float(np.linalg.norm(tool - goal)), 4),
+        }
 
     def skill_grip(self, value: float, arm: str = "both"):
         q = np.asarray(self.guard.last_cmd, dtype=float).copy()
@@ -339,8 +452,11 @@ class RealArmBackend(EmbodiedBackend):
         res = yield from self._move(q, 1.0)
         now = {self.prof.joints[g]: round(float(self.q[g]), 2) for g in gs}
         short = any(abs(self.q[g] - value) > 3 for g in gs)
-        return {"gripper": now if len(now) > 1 else next(iter(now.values())),
-                **({"note": "stopped short (holding an object?)"} if short else {}), "arrived": res.get("arrived")}
+        return {
+            "gripper": now if len(now) > 1 else next(iter(now.values())),
+            **({"note": "stopped short (holding an object?)"} if short else {}),
+            "arrived": res.get("arrived"),
+        }
 
     def skill_home(self):
         res = yield from self._move(self._full([self.prof.home[i] for i in self.prof.arm_idx]), 1.0)
@@ -364,9 +480,11 @@ class RealArmBackend(EmbodiedBackend):
                 gen = getattr(self, f"skill_{name}")(**kwargs)
             first = next(gen)
         except StopIteration as e:  # finished without moving (e.g. no IK solution)
+
             def done(v=e.value):
                 return v
                 yield  # noqa: unreachable - makes this a generator
+
             return done()
         except Veto as v:
             raise ValueError(f"vetoed by the safety envelope: {v}") from None
@@ -374,6 +492,7 @@ class RealArmBackend(EmbodiedBackend):
         def chain():
             yield first
             return (yield from gen)
+
         from ..embodied import _capped
 
         return _capped(chain(), sk.max_steps)
@@ -384,7 +503,9 @@ class RealArmBackend(EmbodiedBackend):
             ok = bool(np.linalg.norm(self._tool() - np.asarray(g["tool"], dtype=float)) <= float(g.get("tol", 0.02)))
         else:
             n = self.prof.arm_idx
-            ok = bool(np.max(np.abs(self.q[n] - np.asarray(g["joints"], dtype=float)[: len(n)])) <= float(g.get("tol", 3.0)))
+            ok = bool(
+                np.max(np.abs(self.q[n] - np.asarray(g["joints"], dtype=float)[: len(n)])) <= float(g.get("tol", 3.0))
+            )
         if ok and g.get("gripper") in ("open", "closed") and self.prof.gidx:
             gv = float(self.q[self.prof.gidx[0]])
             mid = (self.prof.gripper_open + self.prof.gripper_closed) / 2
@@ -393,7 +514,9 @@ class RealArmBackend(EmbodiedBackend):
 
     def _advance_stages(self) -> None:
         while self.stage_i < len(self.stages) and self._meets(self.stages[self.stage_i]):
-            self._event("stage", index=self.stage_i, name=self.stages[self.stage_i].get("name", f"stage {self.stage_i + 1}"))
+            self._event(
+                "stage", index=self.stage_i, name=self.stages[self.stage_i].get("name", f"stage {self.stage_i + 1}")
+            )
             self.stage_i += 1
 
     def progress(self) -> float | None:
@@ -415,21 +538,29 @@ class RealArmBackend(EmbodiedBackend):
             ok = outcome == "done" and self.success()
             self.last_judge = {"verdict": "pose", "goal": self.goal, "joint_pos": [round(float(v), 2) for v in self.q]}
             if self.goal.get("tool") is not None:
-                self.last_judge.update(tool_pos=[round(float(v), 4) for v in self._tool()],
-                                       distance_m=round(float(np.linalg.norm(self._tool() - np.asarray(self.goal["tool"]))), 4))
+                self.last_judge.update(
+                    tool_pos=[round(float(v), 4) for v in self._tool()],
+                    distance_m=round(float(np.linalg.norm(self._tool() - np.asarray(self.goal["tool"]))), 4),
+                )
             return ok
         if outcome != "done":
             self.last_judge = {"verdict": "not_claimed", "outcome": outcome}
             return False
-        if self.verdict_mode == "vlm":  # a vision-language model judges the final camera frames (rigs without an operator)
+        if (
+            self.verdict_mode == "vlm"
+        ):  # a vision-language model judges the final camera frames (rigs without an operator)
             from ...analysis.grader import vlm_verdict
 
             frames = [self.images[c] for c in self.cameras_list if c in self.images]
             if not frames:
                 self.last_judge = {"verdict": "vlm", "error": "no camera frames"}
                 return False
-            v = vlm_verdict(frames, self.cfg.get("goal_text") or str(self.spec.get("id")), self.cfg.get("rubric"),
-                            self.cfg.get("vlm_model", "moonshotai/Kimi-K3"))
+            v = vlm_verdict(
+                frames,
+                self.cfg.get("goal_text") or str(self.spec.get("id")),
+                self.cfg.get("rubric"),
+                self.cfg.get("vlm_model", "moonshotai/Kimi-K3"),
+            )
             self.last_judge = {"verdict": "vlm", **v}
             if self.cfg.get("rubric") and isinstance(v.get("stage"), int):
                 self.rubric_stage = int(v["stage"])
@@ -438,14 +569,22 @@ class RealArmBackend(EmbodiedBackend):
         if rubric:  # staged rubric (StationeryBench style): the operator reports the highest stage reached
             top = len(rubric) - 1
             if self.mock and self.operator.channel == "script" and "verdict" not in self.operator._script:
-                ans, note = "0", "mock operator: the hardware-in-the-loop mock models no object contact, so no stage is credited"
+                ans, note = (
+                    "0",
+                    "mock operator: the hardware-in-the-loop mock models no object contact, so no stage is credited",
+                )
                 self._event("operator_verdict", verdict=ans, note=note, channel="script")
             else:
                 prompt = "Highest stage reached: " + "; ".join(f"{i} = {d}" for i, d in enumerate(rubric))
                 ans, note = self.operator.verdict(prompt, choices=tuple(str(i) for i in range(top + 1)) + ("skip",))
             self.rubric_stage = int(ans) if ans.isdigit() else None
-            self.last_judge = {"verdict": "operator_rubric", "stage": self.rubric_stage, "of": top, "note": note,
-                               "channel": self.operator.channel}
+            self.last_judge = {
+                "verdict": "operator_rubric",
+                "stage": self.rubric_stage,
+                "of": top,
+                "note": note,
+                "channel": self.operator.channel,
+            }
             return self.rubric_stage == top
         if self.mock and self.operator.channel == "script" and "verdict" not in self.operator._script:
             # the scripted stand-in operator of the hardware-in-the-loop mock: yes iff every stage was reached in order
@@ -453,7 +592,9 @@ class RealArmBackend(EmbodiedBackend):
             note = f"mock operator: {self.stage_i}/{len(self.stages)} stages reached"
             self._event("operator_verdict", verdict=ans, note=note, channel="script")
         else:
-            ans, note = self.operator.verdict(f"Task: {self.cfg.get('goal_text') or self.spec.get('id')}. Did the robot succeed?")
+            ans, note = self.operator.verdict(
+                f"Task: {self.cfg.get('goal_text') or self.spec.get('id')}. Did the robot succeed?"
+            )
         self.last_judge = {"verdict": "operator", "answer": ans, "note": note, "channel": self.operator.channel}
         return ans == "yes"
 
@@ -475,11 +616,18 @@ class RealArmBackend(EmbodiedBackend):
 
     def session_summary(self) -> dict:
         ev = self.log.events
-        return {"mode": self.mode, "robot": self.prof.name, "driver": self.driver.description, "control_steps": self.n_steps,
-                "progress": self.progress(),
-                "vetoes": sum(1 for e in ev if e["event"] == "veto"), "clamps": sum(1 for e in ev if e["event"] == "clamp"),
-                "warnings": sum(1 for e in ev if e["event"] == "warn"), "safety_stop": self.halted,
-                "operator": [e for e in ev if e["event"].startswith("operator_")]}
+        return {
+            "mode": self.mode,
+            "robot": self.prof.name,
+            "driver": self.driver.description,
+            "control_steps": self.n_steps,
+            "progress": self.progress(),
+            "vetoes": sum(1 for e in ev if e["event"] == "veto"),
+            "clamps": sum(1 for e in ev if e["event"] == "clamp"),
+            "warnings": sum(1 for e in ev if e["event"] == "warn"),
+            "safety_stop": self.halted,
+            "operator": [e for e in ev if e["event"].startswith("operator_")],
+        }
 
 
 def oracle_main(env: str) -> None:
@@ -495,4 +643,5 @@ def oracle_main(env: str) -> None:
     def solve(o: Oracle) -> None:
         for s in spec_oracle or []:
             o.skill(s[0], *s[1:])
+
     o.run(solve)

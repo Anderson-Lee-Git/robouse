@@ -4,6 +4,7 @@ A copy of BenchFlow's `benchflow.embodied.spec` (branch `robouse`, commit 0a8489
 BenchFlow installed. Keep the two in sync; tests/test_embodiment_spec.py checks them against each other when BenchFlow
 is importable.
 """
+
 from __future__ import annotations
 
 import math
@@ -176,9 +177,7 @@ class Embodiment:
         for g in self.action_groups:
             if g.name == name:
                 return g
-        raise SpecError(
-            f"unknown action group {name!r}; groups: {', '.join(g.name for g in self.action_groups)}"
-        )
+        raise SpecError(f"unknown action group {name!r}; groups: {', '.join(g.name for g in self.action_groups)}")
 
     def slices(self) -> dict[str, slice]:
         out, i = {}, 0
@@ -206,9 +205,7 @@ class Embodiment:
     def check_group_values(self, name: str, values: Any) -> list[float]:
         g = self.group(name)
         if not isinstance(values, (list, tuple)) or len(values) != g.dim:
-            raise SpecError(
-                f"{name} takes {g.dim} number(s) {g.components}, got {values!r}"
-            )
+            raise SpecError(f"{name} takes {g.dim} number(s) {g.components}, got {values!r}")
         out = []
         for v in values:
             if isinstance(v, bool) or not isinstance(v, (int, float)):
@@ -235,17 +232,12 @@ class Embodiment:
                 vals = self.check_group_values(g.name, groups[g.name])
             else:
                 vals = g.hold_command((last or {}).get(g.name))
-            flat += [
-                min(max(v, lo), hi)
-                for v, lo, hi in zip(vals, g.low, g.high, strict=True)
-            ]
+            flat += [min(max(v, lo), hi) for v, lo, hi in zip(vals, g.low, g.high, strict=True)]
         return flat
 
     def unpack(self, flat: list[float]) -> dict[str, list[float]]:
         if len(flat) != self.dim:
-            raise SpecError(
-                f"action must be a list of {self.dim} numbers {self.flat_names()}"
-            )
+            raise SpecError(f"action must be a list of {self.dim} numbers {self.flat_names()}")
         return {n: [float(x) for x in flat[s]] for n, s in self.slices().items()}
 
     def hold_action(self, last: dict[str, list[float]] | None = None) -> list[float]:
@@ -260,10 +252,7 @@ class Embodiment:
 
     @classmethod
     def from_dict(cls, d: dict) -> Embodiment:
-        groups = [
-            ActionGroup(**{k: v for k, v in g.items() if k != "dim"})
-            for g in d.get("action_groups", [])
-        ]
+        groups = [ActionGroup(**{k: v for k, v in g.items() if k != "dim"}) for g in d.get("action_groups", [])]
         sensors_d = d.get("sensors") or {}
         sensors = Sensors(
             cameras=[Camera(**c) for c in sensors_d.get("cameras", [])],
@@ -287,7 +276,9 @@ class Embodiment:
             doc=d.get("doc", ""),
             spec_version=str(d.get("spec_version", SPEC_VERSION)),
             mode=str(d.get("mode", "sim")),
-            safety=SafetySpec(**{k: v for k, v in (d.get("safety") or {}).items() if k in SafetySpec.__dataclass_fields__})
+            safety=SafetySpec(
+                **{k: v for k, v in (d.get("safety") or {}).items() if k in SafetySpec.__dataclass_fields__}
+            )
             if d.get("safety")
             else None,
         )
@@ -306,32 +297,20 @@ class Embodiment:
         names: set[str] = set()
         for g in self.action_groups:
             if not g.name or g.name in names:
-                raise SpecError(
-                    f"action group names must be unique and non-empty: {g.name!r}"
-                )
+                raise SpecError(f"action group names must be unique and non-empty: {g.name!r}")
             names.add(g.name)
             if g.dim == 0:
                 raise SpecError(f"action group {g.name!r} has no components")
             if len(g.low) != g.dim or len(g.high) != g.dim:
-                raise SpecError(
-                    f"action group {g.name!r}: low/high must have {g.dim} entries"
-                )
+                raise SpecError(f"action group {g.name!r}: low/high must have {g.dim} entries")
             if any(lo > hi for lo, hi in zip(g.low, g.high, strict=True)):
                 raise SpecError(f"action group {g.name!r}: low > high")
             if g.hold not in HOLD_POLICIES:
-                raise SpecError(
-                    f"action group {g.name!r}: hold must be one of {HOLD_POLICIES}"
-                )
-            if g.hold == "value" and (
-                g.hold_value is None or len(g.hold_value) != g.dim
-            ):
-                raise SpecError(
-                    f"action group {g.name!r}: hold 'value' needs a hold_value with {g.dim} entries"
-                )
+                raise SpecError(f"action group {g.name!r}: hold must be one of {HOLD_POLICIES}")
+            if g.hold == "value" and (g.hold_value is None or len(g.hold_value) != g.dim):
+                raise SpecError(f"action group {g.name!r}: hold 'value' needs a hold_value with {g.dim} entries")
             if g.initial is not None and len(g.initial) != g.dim:
-                raise SpecError(
-                    f"action group {g.name!r}: initial must have {g.dim} entries"
-                )
+                raise SpecError(f"action group {g.name!r}: initial must have {g.dim} entries")
             if not g.mode:
                 raise SpecError(f"action group {g.name!r} needs a control mode")
         if not self.action_groups and not self.skills:
@@ -346,18 +325,12 @@ class Embodiment:
                 raise SpecError(f"skill {s.name!r}: impl must be one of {SKILL_IMPLS}")
             for a in s.args:
                 if a.type not in ARG_TYPES:
-                    raise SpecError(
-                        f"skill {s.name!r} arg {a.name!r}: type must be one of {ARG_TYPES}"
-                    )
+                    raise SpecError(f"skill {s.name!r} arg {a.name!r}: type must be one of {ARG_TYPES}")
                 if a.type == "enum" and not a.choices:
-                    raise SpecError(
-                        f"skill {s.name!r} arg {a.name!r}: enum needs choices"
-                    )
+                    raise SpecError(f"skill {s.name!r} arg {a.name!r}: enum needs choices")
             for role, group in s.binds.items():
                 if group not in names:
-                    raise SpecError(
-                        f"skill {s.name!r} binds {role} to unknown group {group!r}"
-                    )
+                    raise SpecError(f"skill {s.name!r} binds {role} to unknown group {group!r}")
         cams = [c.name for c in self.sensors.cameras]
         if len(cams) != len(set(cams)):
             raise SpecError("camera names must be unique")
@@ -373,11 +346,7 @@ class Embodiment:
 def _drop_empty(x: Any) -> Any:
     """Drop None values and empty containers/strings from nested dicts (keeps lists' shape)."""
     if isinstance(x, dict):
-        return {
-            k: _drop_empty(v)
-            for k, v in x.items()
-            if v is not None and v != "" and v != [] and v != {}
-        }
+        return {k: _drop_empty(v) for k, v in x.items() if v is not None and v != "" and v != [] and v != {}}
     if isinstance(x, list):
         return [_drop_empty(v) for v in x]
     return x
@@ -398,11 +367,7 @@ def bind_skill_args(skill: Skill, args: Any) -> dict[str, Any]:
         kw = dict(args)
     elif isinstance(args, (list, tuple)):
         for a in args:
-            if (
-                isinstance(a, str)
-                and "=" in a
-                and a.split("=", 1)[0] in {x.name for x in skill.args}
-            ):
+            if isinstance(a, str) and "=" in a and a.split("=", 1)[0] in {x.name for x in skill.args}:
                 k, v = a.split("=", 1)
                 kw[k] = v
             else:
@@ -415,9 +380,7 @@ def bind_skill_args(skill: Skill, args: Any) -> dict[str, Any]:
             f"({', '.join(a.name for a in skill.args)}), got {len(pos)}"
         )
     out: dict[str, Any] = {}
-    for a, v in zip(
-        skill.args, pos, strict=False
-    ):  # fewer positionals than args is fine
+    for a, v in zip(skill.args, pos, strict=False):  # fewer positionals than args is fine
         out[a.name] = v
     for k, v in kw.items():
         if k not in {a.name for a in skill.args}:
@@ -460,9 +423,7 @@ def _coerce(skill: str, a: SkillArg, v: Any) -> Any:
         return str(v)
     except (TypeError, ValueError):
         extra = f" (one of {a.choices})" if a.choices else ""
-        raise SpecError(
-            f"{skill}: argument {a.name!r} must be {a.type}{extra}, got {v!r}"
-        ) from None
+        raise SpecError(f"{skill}: argument {a.name!r} must be {a.type}{extra}, got {v!r}") from None
 
 
 # ---- builders for common embodiments ----------------------------------------------------------------------
@@ -522,9 +483,7 @@ def gripper_group(
     )
 
 
-def move_to_skill(
-    arm: str = "arm", gripper: str | None = "gripper", aliases: list[str] | None = None
-) -> Skill:
+def move_to_skill(arm: str = "arm", gripper: str | None = "gripper", aliases: list[str] | None = None) -> Skill:
     binds = {"arm": f"{arm}.ee_delta"}
     if gripper:
         binds["gripper"] = gripper
@@ -534,11 +493,7 @@ def move_to_skill(
         SkillArg("z", "float", "m"),
     ]
     if gripper:
-        args.append(
-            SkillArg(
-                "grip", "float", optional=True, doc="gripper command held while moving"
-            )
-        )
+        args.append(SkillArg("grip", "float", optional=True, doc="gripper command held while moving"))
     args += [
         SkillArg("max_steps", "int", optional=True, default=100),
         SkillArg("tol", "float", "m", optional=True, default=0.01),

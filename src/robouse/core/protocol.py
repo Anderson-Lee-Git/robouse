@@ -5,6 +5,7 @@ grip (value, steps), skill (name, args), done (text), give_up (text), and the ru
 {"ok": true, "result": ...} or {"ok": false, "error": "..."}. The `robo` client (agent_cli.py) is the other end; it is a
 standalone script, so it keeps its own copy of the client side.
 """
+
 from __future__ import annotations
 
 import json

@@ -19,6 +19,7 @@ Controller (sim/control.py) under `robo act`, one control step = 40 ms = 20 phys
 Skills: reach, reach_both, home, wait; grasp / release (G1); look_at (Apollo, T1).
 Tasks, scenes and success rules: sim/tasks.py; reference solutions: sim/oracles.py.
 """
+
 from __future__ import annotations
 
 import math
@@ -26,19 +27,20 @@ import math
 import mujoco
 import numpy as np
 
-from ..embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg, r3
+from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Oracle, Sensor, Skill, SkillArg, r3
 from .sim import scene as S
 from .sim.control import GOAL_LEAD, MAX_DQ, REACH_SLACK, ArmIK, Servo
 from .sim.robots import ROBOTS, SIDE_KEY
 from .sim.tasks import TASKS, tilt_deg
 
-CONTROL_DT = .04
+CONTROL_DT = 0.04
 N_SUB = round(CONTROL_DT / S.PHYS_DT)
-EE_STEP = .02            # m per control step at |action| = 1
-GRIP_RATE = .2           # finger synergy change per step at |grip| = 1
+EE_STEP = 0.02  # m per control step at |action| = 1
+GRIP_RATE = 0.2  # finger synergy change per step at |grip| = 1
 HEAD_RATE = math.radians(3)
-I_GAIN, I_MAX = .25, .03  # integral action on the hand position error (per step, m)
+I_GAIN, I_MAX = 0.25, 0.03  # integral action on the hand position error (per step, m)
 SIDES = ("left", "right")
+
 
 # fixed hand orientations held by the 7-DoF arms: rotation of the end-effector body in the world frame, given by where
 # the body's y and z axes point (x = y cross z)
@@ -81,43 +83,143 @@ class HumanoidBackend(EmbodiedBackend):
     # ---- declaration -------------------------------------------------------------------------------------------
     def _declare(self) -> Embodiment:
         c = self.cfg
-        groups = [ActionGroup("left.ee_delta", "ee_delta_pos", ["LDX", "LDY", "LDZ"], [-1] * 3, [1] * 3, "x 2 cm per step (world x, y, z)",
-                              "moves the left hand's goal point; zero holds it", frame="world"),
-                  ActionGroup("right.ee_delta", "ee_delta_pos", ["RDX", "RDY", "RDZ"], [-1] * 3, [1] * 3, "x 2 cm per step (world x, y, z)",
-                              "moves the right hand's goal point; zero holds it", frame="world")]
+        groups = [
+            ActionGroup(
+                "left.ee_delta",
+                "ee_delta_pos",
+                ["LDX", "LDY", "LDZ"],
+                [-1] * 3,
+                [1] * 3,
+                "x 2 cm per step (world x, y, z)",
+                "moves the left hand's goal point; zero holds it",
+                frame="world",
+            ),
+            ActionGroup(
+                "right.ee_delta",
+                "ee_delta_pos",
+                ["RDX", "RDY", "RDZ"],
+                [-1] * 3,
+                [1] * 3,
+                "x 2 cm per step (world x, y, z)",
+                "moves the right hand's goal point; zero holds it",
+                frame="world",
+            ),
+        ]
         if self.has_hands:
-            groups += [ActionGroup("left.gripper", "gripper", ["LGRIP"], [-1], [1], "synergy rate, x 0.2 per step",
-                                   "+1 closes the Dex3 fingers, -1 opens them, 0 keeps the current finger command"),
-                       ActionGroup("right.gripper", "gripper", ["RGRIP"], [-1], [1], "synergy rate, x 0.2 per step",
-                                   "+1 closes the Dex3 fingers, -1 opens them, 0 keeps the current finger command")]
+            groups += [
+                ActionGroup(
+                    "left.gripper",
+                    "gripper",
+                    ["LGRIP"],
+                    [-1],
+                    [1],
+                    "synergy rate, x 0.2 per step",
+                    "+1 closes the Dex3 fingers, -1 opens them, 0 keeps the current finger command",
+                ),
+                ActionGroup(
+                    "right.gripper",
+                    "gripper",
+                    ["RGRIP"],
+                    [-1],
+                    [1],
+                    "synergy rate, x 0.2 per step",
+                    "+1 closes the Dex3 fingers, -1 opens them, 0 keeps the current finger command",
+                ),
+            ]
         if self.has_head:
-            groups.append(ActionGroup("head.delta", "joint_delta", ["HYAW", "HPITCH"], [-1] * 2, [1] * 2, "x 3 deg per step",
-                                      "neck yaw (+ = left) and pitch (+ = down) rate; zero holds the head"))
-        sensors = [Sensor("robot", "proprio", ["robot"], "hand positions and goals, what each hand touches, grip (G1), head angles", units="m, deg",
-                          frame="world"),
-                   Sensor("objects", "world", ["objects"], "free objects: position, tilt, whether the robot touches them", units="m, deg",
-                          frame="world"),
-                   Sensor("scene", "world", ["scene"], "table, fixtures and target zones (public positions)", units="m", frame="world"),
-                   Sensor("events", "events", ["progress", "safety_events"], "task progress and safety events"),
-                   *[Sensor(f"camera:{cam}", "camera", [], "", mount=("head" if self.has_head else "body") if cam == "head" else "world")
-                     for cam in self._cameras()]]
+            groups.append(
+                ActionGroup(
+                    "head.delta",
+                    "joint_delta",
+                    ["HYAW", "HPITCH"],
+                    [-1] * 2,
+                    [1] * 2,
+                    "x 3 deg per step",
+                    "neck yaw (+ = left) and pitch (+ = down) rate; zero holds the head",
+                )
+            )
+        sensors = [
+            Sensor(
+                "robot",
+                "proprio",
+                ["robot"],
+                "hand positions and goals, what each hand touches, grip (G1), head angles",
+                units="m, deg",
+                frame="world",
+            ),
+            Sensor(
+                "objects",
+                "world",
+                ["objects"],
+                "free objects: position, tilt, whether the robot touches them",
+                units="m, deg",
+                frame="world",
+            ),
+            Sensor(
+                "scene",
+                "world",
+                ["scene"],
+                "table, fixtures and target zones (public positions)",
+                units="m",
+                frame="world",
+            ),
+            Sensor("events", "events", ["progress", "safety_events"], "task progress and safety events"),
+            *[
+                Sensor(
+                    f"camera:{cam}",
+                    "camera",
+                    [],
+                    "",
+                    mount=("head" if self.has_head else "body") if cam == "head" else "world",
+                )
+                for cam in self._cameras()
+            ],
+        ]
         side = SkillArg("side", "enum", choices=["left", "right"], doc="which arm")
         xyz = [SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("z", unit="m")]
-        tol = SkillArg("tol", "float", "m", .015, doc="arrival tolerance")
-        skills = [Skill("reach", [side] + xyz + [tol], "move one hand's control point in a straight line to (X, Y, Z) (world frame); "
-                        "stops when there, when blocked or at the edge of its reach, and reports which", 150),
-                  Skill("reach_both", [SkillArg(f"{c_}{s}", unit="m") for s in ("l", "r") for c_ in "xyz"] + [tol],
-                        "move both hands at once, in straight lines, to (XL, YL, ZL) and (XR, YR, ZR); for bimanual holds", 150),
-                  Skill("home", [], "both hands back to their start points", 150),
-                  Skill("wait", [SkillArg("steps", "int", default=10)], "hold everything still for STEPS control steps", 100)]
+        tol = SkillArg("tol", "float", "m", 0.015, doc="arrival tolerance")
+        skills = [
+            Skill(
+                "reach",
+                [side] + xyz + [tol],
+                "move one hand's control point in a straight line to (X, Y, Z) (world frame); "
+                "stops when there, when blocked or at the edge of its reach, and reports which",
+                150,
+            ),
+            Skill(
+                "reach_both",
+                [SkillArg(f"{c_}{s}", unit="m") for s in ("l", "r") for c_ in "xyz"] + [tol],
+                "move both hands at once, in straight lines, to (XL, YL, ZL) and (XR, YR, ZR); for bimanual holds",
+                150,
+            ),
+            Skill("home", [], "both hands back to their start points", 150),
+            Skill("wait", [SkillArg("steps", "int", default=10)], "hold everything still for STEPS control steps", 100),
+        ]
         if self.has_hands:
-            skills += [Skill("grasp", [side], "close that hand's fingers until they stop; reports what the hand touches", 30),
-                       Skill("release", [side], "open that hand's fingers", 12)]
+            skills += [
+                Skill("grasp", [side], "close that hand's fingers until they stop; reports what the hand touches", 30),
+                Skill("release", [side], "open that hand's fingers", 12),
+            ]
         if self.has_head:
-            skills.append(Skill("look_at", xyz, "turn the neck so the head camera points at (X, Y, Z); reports how far off it ended "
-                                "(the neck has joint limits)", 60))
-        return Embodiment(robot=f"{c['name']} (fixed to a support stand; no balance, no walking)", family="humanoid", assets=[c["folder"]], sensors=sensors,
-                          action_groups=groups, skills=skills, budget=Budget(self.task.max_steps, CONTROL_DT), cameras=self._cameras())
+            skills.append(
+                Skill(
+                    "look_at",
+                    xyz,
+                    "turn the neck so the head camera points at (X, Y, Z); reports how far off it ended "
+                    "(the neck has joint limits)",
+                    60,
+                )
+            )
+        return Embodiment(
+            robot=f"{c['name']} (fixed to a support stand; no balance, no walking)",
+            family="humanoid",
+            assets=[c["folder"]],
+            sensors=sensors,
+            action_groups=groups,
+            skills=skills,
+            budget=Budget(self.task.max_steps, CONTROL_DT),
+            cameras=self._cameras(),
+        )
 
     def _cameras(self) -> list[str]:
         return ["front", "top", "side", "head"]
@@ -129,7 +231,7 @@ class HumanoidBackend(EmbodiedBackend):
         s = S.new_scene(self.rk)
         t.build(s)
         head_body = {"g1": "torso_link", "h1": "torso_link", "apollo": "neck_pitch_link", "t1": "H2"}[self.rk]
-        head_off = {"g1": (.1, 0, .45), "h1": (.13, 0, .62), "apollo": (.26, 0, .1), "t1": (.1, 0, .1)}[self.rk]
+        head_off = {"g1": (0.1, 0, 0.45), "h1": (0.13, 0, 0.62), "apollo": (0.26, 0, 0.1), "t1": (0.1, 0, 0.1)}[self.rk]
         S.add_cameras(s, self.rk, t.look, t.front_cam, head_body, head_off)
         self.model = m = s.compile()
         self.data = d = mujoco.MjData(m)
@@ -177,12 +279,14 @@ class HumanoidBackend(EmbodiedBackend):
     def _home_config(self, ik: ArmIK, goal: np.ndarray) -> np.ndarray:
         rng = np.random.default_rng(0)
         mid, span = (ik.lo + ik.hi) / 2, ik.hi - ik.lo
-        seeds = [ik.q_nom.copy(), np.clip(np.zeros_like(mid), ik.lo, ik.hi)] + [mid + (rng.random(len(mid)) - .5) * .7 * span for _ in range(24)]
+        seeds = [ik.q_nom.copy(), np.clip(np.zeros_like(mid), ik.lo, ik.hi)] + [
+            mid + (rng.random(len(mid)) - 0.5) * 0.7 * span for _ in range(24)
+        ]
         best, best_cost = seeds[0], 1e9
         for q in seeds:
             for _ in range(15):
-                q, res = ik.solve(q, goal, self.data.qpos, iters=4, max_dq=.5)
-            cost = res + .01 * float(np.sum(((q - mid) / span) ** 2))
+                q, res = ik.solve(q, goal, self.data.qpos, iters=4, max_dq=0.5)
+            cost = res + 0.01 * float(np.sum(((q - mid) / span) ** 2))
             if cost < best_cost:
                 best, best_cost = q, cost
         return best
@@ -225,7 +329,7 @@ class HumanoidBackend(EmbodiedBackend):
 
     def contacts(self):
         d = self.data
-        for c in d.contact[:d.ncon]:
+        for c in d.contact[: d.ncon]:
             yield int(c.geom1), int(c.geom2)
 
     def touching(self, geoms: set[int]) -> set[str]:
@@ -270,7 +374,7 @@ class HumanoidBackend(EmbodiedBackend):
         a = np.asarray(a, float)
         sv = self.servo
         for i, sd in enumerate(SIDES):
-            delta = a[3 * i:3 * i + 3] * EE_STEP
+            delta = a[3 * i : 3 * i + 3] * EE_STEP
             x = self.ee(sd)
             g = self.goal[sd] + delta
             off = g - x
@@ -282,8 +386,10 @@ class HumanoidBackend(EmbodiedBackend):
             # slow integral term: removes the steady sag of a loaded arm (bounded, so a blocked hand does not wind up)
             # (only while the goal is still: during a motion the hand lags its goal by design)
             err = self.goal[sd] - x
-            if float(np.linalg.norm(err)) < .03:
-                self.ibias[sd] = np.clip(self.ibias[sd] + (I_GAIN if not np.any(delta) else .3 * I_GAIN) * err, -I_MAX, I_MAX)
+            if float(np.linalg.norm(err)) < 0.03:
+                self.ibias[sd] = np.clip(
+                    self.ibias[sd] + (I_GAIN if not np.any(delta) else 0.3 * I_GAIN) * err, -I_MAX, I_MAX
+                )
             g = g + self.ibias[sd]
             q, res = ik.solve(q0, g, self.data.qpos)
             if res > REACH_SLACK:
@@ -307,7 +413,7 @@ class HumanoidBackend(EmbodiedBackend):
         if self.has_head:
             lo = self.model.jnt_range[[self.model.joint(j).id for j in self.cfg["head"]], 0]
             hi = self.model.jnt_range[[self.model.joint(j).id for j in self.cfg["head"]], 1]
-            self.head_q = np.clip(self.head_q + HEAD_RATE * a[k:k + 2] * np.array([1, self._pitch_sign()]), lo, hi)
+            self.head_q = np.clip(self.head_q + HEAD_RATE * a[k : k + 2] * np.array([1, self._pitch_sign()]), lo, hi)
             sv.q_des[self.head_idx] = self.head_q
         m, d = self.model, self.data
         for i in range(N_SUB):
@@ -322,7 +428,7 @@ class HumanoidBackend(EmbodiedBackend):
         if not hasattr(self, "_psign"):
             q = self.head_q.copy()
             f0 = self._head_view(q)[1]
-            q[1] += .05
+            q[1] += 0.05
             self._psign = 1.0 if self._head_view(q)[1][2] < f0[2] else -1.0
         return self._psign
 
@@ -344,19 +450,35 @@ class HumanoidBackend(EmbodiedBackend):
     def observe(self) -> dict:
         hands = {}
         for sd in SIDES:
-            h = {"pos": r3(self.ee(sd)), "goal": r3(self.goal[sd]), "touching": sorted(self.touching(self.hand_geoms[sd]))}
+            h = {
+                "pos": r3(self.ee(sd)),
+                "goal": r3(self.goal[sd]),
+                "touching": sorted(self.touching(self.hand_geoms[sd])),
+            }
             if self.has_hands:
                 h["grip"] = round(self.grip[sd], 2)
                 h["holding"] = self.hand_holding(sd)
             hands[sd] = h
         robot = {"model": self.cfg["name"], "mount": self.cfg["mount"], "hands": hands}
         if self.has_head:
-            robot["head"] = {"yaw_deg": round(math.degrees(self.head_q[0]), 1), "pitch_deg": round(math.degrees(self.head_q[1]), 1)}
+            robot["head"] = {
+                "yaw_deg": round(math.degrees(self.head_q[0]), 1),
+                "pitch_deg": round(math.degrees(self.head_q[1]), 1),
+            }
         objs = {}
         for n in self.task.objects:
-            objs[n] = {"pos": r3(self.obj_pos(n)), "tilt_deg": round(self.obj_tilt(n), 1), "touched_by_robot": self.robot_touching(n)}
+            objs[n] = {
+                "pos": r3(self.obj_pos(n)),
+                "tilt_deg": round(self.obj_tilt(n), 1),
+                "touched_by_robot": self.robot_touching(n),
+            }
             objs[n].update(self.task.object_info(n) if hasattr(self.task, "object_info") else {})
-        st = {"robot": robot, "objects": objs, "scene": self.task.landmarks(self), "time_s": round(float(self.data.time), 2)}
+        st = {
+            "robot": robot,
+            "objects": objs,
+            "scene": self.task.landmarks(self),
+            "time_s": round(float(self.data.time), 2),
+        }
         pr = self.task.progress(self)
         if pr is not None:
             st["progress"] = pr
@@ -375,7 +497,7 @@ class HumanoidBackend(EmbodiedBackend):
         v = list(self.hold_action())
         for i, sd in enumerate(SIDES):
             if deltas and sd in deltas:
-                v[3 * i:3 * i + 3] = [float(x) for x in np.clip(deltas[sd] / EE_STEP, -1, 1)]
+                v[3 * i : 3 * i + 3] = [float(x) for x in np.clip(deltas[sd] / EE_STEP, -1, 1)]
         k = 6
         if self.has_hands:
             for i, sd in enumerate(SIDES):
@@ -383,12 +505,12 @@ class HumanoidBackend(EmbodiedBackend):
                     v[k + i] = float(grip[sd])
             k += 2
         if self.has_head and head is not None:
-            v[k:k + 2] = [float(x) for x in np.clip(head, -1, 1)]
+            v[k : k + 2] = [float(x) for x in np.clip(head, -1, 1)]
         return v
 
     def _move(self, targets: dict, tol: float, speed: float = EE_STEP):
         """Move the goal of each side in `targets` along a straight line; stop on arrival, stall or reach limit."""
-        tol = max(tol, .005)
+        tol = max(tol, 0.005)
         targets = {sd: np.asarray(p, float) for sd, p in targets.items()}
         hist: list[float] = []
         steps = 0
@@ -404,15 +526,18 @@ class HumanoidBackend(EmbodiedBackend):
                 deltas[sd] = off if n <= speed else off * speed / n
             hist.append(sum(err.values()))
             steps += 1
-            if steps > 25 and hist[-20] - hist[-1] < .004:
+            if steps > 25 and hist[-20] - hist[-1] < 0.004:
                 gerr = max(float(np.linalg.norm(self.goal[sd] - p)) for sd, p in targets.items())
-                status = "out_of_reach" if gerr > .02 else "blocked"
+                status = "out_of_reach" if gerr > 0.02 else "blocked"
                 break
             yield self._act(deltas)
         out = {"status": status, "reached": status == "reached"}
         for sd, p in targets.items():
-            out[sd] = {"hand": r3(self.ee(sd)), "distance_m": round(float(np.linalg.norm(self.ee(sd) - p)), 3),
-                       "touching": sorted(self.touching(self.hand_geoms[sd]))}
+            out[sd] = {
+                "hand": r3(self.ee(sd)),
+                "distance_m": round(float(np.linalg.norm(self.ee(sd) - p)), 3),
+                "touching": sorted(self.touching(self.hand_geoms[sd])),
+            }
         return out
 
     def skill_reach(self, side: str, x: float, y: float, z: float, tol: float):
@@ -424,7 +549,7 @@ class HumanoidBackend(EmbodiedBackend):
         return res
 
     def skill_home(self):
-        res = yield from self._move({sd: self.task.home[sd] for sd in SIDES}, .02)
+        res = yield from self._move({sd: self.task.home[sd] for sd in SIDES}, 0.02)
         return res
 
     def skill_wait(self, steps: int):
@@ -438,11 +563,14 @@ class HumanoidBackend(EmbodiedBackend):
             q0 = self.data.qpos[self.servo.qadr[self.finger_idx[side]]].copy()
             yield self._act(grip={side: 1.0})
             dq = float(np.abs(self.data.qpos[self.servo.qadr[self.finger_idx[side]]] - q0).max())
-            still = still + 1 if dq < .01 else 0
+            still = still + 1 if dq < 0.01 else 0
             if i >= 5 and still >= 3:
                 break
-        return {"grip": round(self.grip[side], 2), "touching": sorted(self.touching(self.hand_geoms[side])),
-                "holding": self.hand_holding(side)}
+        return {
+            "grip": round(self.grip[side], 2),
+            "touching": sorted(self.touching(self.hand_geoms[side])),
+            "holding": self.hand_holding(side),
+        }
 
     def skill_release(self, side: str):
         for _ in range(8):
@@ -483,19 +611,23 @@ class HumanoidBackend(EmbodiedBackend):
                 J[:, j] = (err(q) - err(q + dq)) / 1e-3
             want = np.clip(q + np.linalg.lstsq(J, e, rcond=None)[0], lo, hi)
             a = (want - self.head_q) / HEAD_RATE * np.array([1, self._pitch_sign()])
-            if float(np.abs(want - q).max()) < math.radians(.3):
+            if float(np.abs(want - q).max()) < math.radians(0.3):
                 break  # at a joint limit, or there
             yield self._act(head=a)
         p, f = self._head_view(qa())
         w = target - p
         off = math.degrees(math.acos(float(np.clip(f @ (w / np.linalg.norm(w)), -1, 1))))
-        return {"yaw_deg": round(math.degrees(self.head_q[0]), 1), "pitch_deg": round(math.degrees(self.head_q[1]), 1),
-                "off_target_deg": round(off, 1)}
+        return {
+            "yaw_deg": round(math.degrees(self.head_q[0]), 1),
+            "pitch_deg": round(math.degrees(self.head_q[1]), 1),
+            "off_target_deg": round(off, 1),
+        }
 
 
 # ------------------------------------------------------------------------------------------------------------------
 # reference solutions (socket only)
 # ------------------------------------------------------------------------------------------------------------------
+
 
 def oracle_main(env: str) -> None:
     from .sim.oracles import ORACLES

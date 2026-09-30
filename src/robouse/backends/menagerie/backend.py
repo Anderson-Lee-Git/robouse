@@ -28,47 +28,95 @@ which task objects the arm touches; every task object's position (the centre of 
 vertical and yaw (degrees); and the task's public goal fields. Success is a physical predicate of the task
 family (families.py), judged by the trusted server after `robo done` and a 10-step hold.
 """
+
 from __future__ import annotations
 
 import numpy as np
 
-from ..base import ActionSpec, Backend, StepInfo, G
+from ..base import ActionSpec, Backend, G, StepInfo
 
-STEP_M = .02
-YAW_STEP = np.deg2rad(10.)
-LEAD_M = .05
-WORK_LO = np.array([-.75, -.46, .012])
-WORK_HI = np.array([.75, .32, .50])
-YAW_LIMIT = np.deg2rad(100.)
+STEP_M = 0.02
+YAW_STEP = np.deg2rad(10.0)
+LEAD_M = 0.05
+WORK_LO = np.array([-0.75, -0.46, 0.012])
+WORK_HI = np.array([0.75, 0.32, 0.50])
+YAW_LIMIT = np.deg2rad(100.0)
 RESET_SETTLE_STEPS = 20
 
 
 # id -> task definition. `family` names a class in menagerie_sim.families; `arms` the action layout.
 TASKS: dict[str, dict] = {
-    "menagerie-panda-precise-landing": dict(family="landing", embodiment="dual_panda", seed=0, arms="left", max_steps=600),
-    "menagerie-aloha-pawn-landing": dict(family="landing", embodiment="aloha2", seed=1, arms="right", max_steps=600,
-                                         params={"kind": "pawn"}),
-    "menagerie-panda-clutter-retrieval": dict(family="clutter", embodiment="dual_panda", seed=0, arms="left", max_steps=800),
-    "menagerie-aloha-clutter-retrieval": dict(family="clutter", embodiment="aloha2", seed=1, arms="right", max_steps=800),
-    "menagerie-aloha-gentle-insertion": dict(family="insertion", embodiment="aloha2", seed=0, arms="left", max_steps=1200),
-    "menagerie-panda-two-bowls-to-board": dict(family="two_bowls", embodiment="dual_panda", seed=0, arms="both", max_steps=3000),
-    "menagerie-aloha-opening-four": dict(family="two_bowls", embodiment="aloha2", seed=3, arms="both", max_steps=2000,
-                                         params={"kinds": ("pawn", "rook"), "require_both_arms": True}),
-    "menagerie-panda-clutter-retrieval-vision": dict(family="clutter", embodiment="dual_panda", seed=2, arms="left", max_steps=800,
-                                                     vision={"cameras": ["workspace", "top"], "hide_objects": True}),
-    "menagerie-aloha-pawn-landing-vision": dict(family="landing", embodiment="aloha2", seed=4, arms="left", max_steps=600,
-                                                params={"kind": "pawn"}, vision={"cameras": ["workspace", "top"], "hide_objects": True}),
-    "menagerie-panda-keyed-insertion": dict(family="keyed_insertion", embodiment="dual_panda", seed=1, arms="right", yaw=True,
-                                            max_steps=1500),
-    "menagerie-panda-pattern-apprentice": dict(family="pattern", embodiment="dual_panda", seed=5, arms="switch", max_steps=2000,
-                                               params={"split": "development"}),
-    "menagerie-aloha-pattern-heldout": dict(family="pattern", embodiment="aloha2", seed=5, arms="switch", max_steps=2000,
-                                            params={"split": "heldout"}),
-    "menagerie-panda-fragile-kit": dict(family="fragile_kit", embodiment="dual_panda", seed=2, arms="switch", max_steps=2500,
-                                        vision={"cameras": ["workspace", "inspect"], "private": ["vial_labels"]}),
-    "menagerie-panda-route-around": dict(family="route_around", embodiment="dual_panda", seed=0, arms="left", max_steps=1000),
-    "menagerie-panda-fragile-disposal": dict(family="fragile_disposal", embodiment="dual_panda", seed=0, arms="left",
-                                             max_steps=1000),
+    "menagerie-panda-precise-landing": dict(
+        family="landing", embodiment="dual_panda", seed=0, arms="left", max_steps=600
+    ),
+    "menagerie-aloha-pawn-landing": dict(
+        family="landing", embodiment="aloha2", seed=1, arms="right", max_steps=600, params={"kind": "pawn"}
+    ),
+    "menagerie-panda-clutter-retrieval": dict(
+        family="clutter", embodiment="dual_panda", seed=0, arms="left", max_steps=800
+    ),
+    "menagerie-aloha-clutter-retrieval": dict(
+        family="clutter", embodiment="aloha2", seed=1, arms="right", max_steps=800
+    ),
+    "menagerie-aloha-gentle-insertion": dict(
+        family="insertion", embodiment="aloha2", seed=0, arms="left", max_steps=1200
+    ),
+    "menagerie-panda-two-bowls-to-board": dict(
+        family="two_bowls", embodiment="dual_panda", seed=0, arms="both", max_steps=3000
+    ),
+    "menagerie-aloha-opening-four": dict(
+        family="two_bowls",
+        embodiment="aloha2",
+        seed=3,
+        arms="both",
+        max_steps=2000,
+        params={"kinds": ("pawn", "rook"), "require_both_arms": True},
+    ),
+    "menagerie-panda-clutter-retrieval-vision": dict(
+        family="clutter",
+        embodiment="dual_panda",
+        seed=2,
+        arms="left",
+        max_steps=800,
+        vision={"cameras": ["workspace", "top"], "hide_objects": True},
+    ),
+    "menagerie-aloha-pawn-landing-vision": dict(
+        family="landing",
+        embodiment="aloha2",
+        seed=4,
+        arms="left",
+        max_steps=600,
+        params={"kind": "pawn"},
+        vision={"cameras": ["workspace", "top"], "hide_objects": True},
+    ),
+    "menagerie-panda-keyed-insertion": dict(
+        family="keyed_insertion", embodiment="dual_panda", seed=1, arms="right", yaw=True, max_steps=1500
+    ),
+    "menagerie-panda-pattern-apprentice": dict(
+        family="pattern",
+        embodiment="dual_panda",
+        seed=5,
+        arms="switch",
+        max_steps=2000,
+        params={"split": "development"},
+    ),
+    "menagerie-aloha-pattern-heldout": dict(
+        family="pattern", embodiment="aloha2", seed=5, arms="switch", max_steps=2000, params={"split": "heldout"}
+    ),
+    "menagerie-panda-fragile-kit": dict(
+        family="fragile_kit",
+        embodiment="dual_panda",
+        seed=2,
+        arms="switch",
+        max_steps=2500,
+        vision={"cameras": ["workspace", "inspect"], "private": ["vial_labels"]},
+    ),
+    "menagerie-panda-route-around": dict(
+        family="route_around", embodiment="dual_panda", seed=0, arms="left", max_steps=1000
+    ),
+    "menagerie-panda-fragile-disposal": dict(
+        family="fragile_disposal", embodiment="dual_panda", seed=0, arms="left", max_steps=1000
+    ),
 }
 
 _R = lambda v, n=4: [round(float(x), n) for x in np.ravel(v)]
@@ -78,12 +126,13 @@ def _yaw_quat(yaw: float, down) -> np.ndarray:
     import mujoco
 
     out = np.zeros(4)
-    mujoco.mju_mulQuat(out, np.array([np.cos(yaw / 2), 0., 0., np.sin(yaw / 2)]), np.asarray(down, dtype=float))
+    mujoco.mju_mulQuat(out, np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)]), np.asarray(down, dtype=float))
     return out
 
 
 class MenagerieBackend(Backend):
     name = "menagerie"
+
     @property
     def robot_name(self) -> str:
         return str(self.task.get("embodiment", "aloha")).replace("_", "-")
@@ -100,17 +149,29 @@ class MenagerieBackend(Backend):
 
     def action_layout(self) -> list[G]:
         def arm(prefix: str, gripper: str, doc: str = "") -> list[G]:
-            lay = [G(f"{prefix}.ee_delta", 3, "ee_delta_pos", "gripper target, 2 cm per unit per step", frame="world", doc=doc)]
+            lay = [
+                G(
+                    f"{prefix}.ee_delta",
+                    3,
+                    "ee_delta_pos",
+                    "gripper target, 2 cm per unit per step",
+                    frame="world",
+                    doc=doc,
+                )
+            ]
             if self.yaw_enabled:
                 lay.append(G(f"{prefix}.yaw_delta", 1, "ee_delta_rot", "10 degrees per unit"))
-            lay.append(G(gripper, 1, "gripper", "normalized", doc="0 keeps the fingers, > 0 closes, -f opens to fraction f"))
+            lay.append(
+                G(gripper, 1, "gripper", "normalized", doc="0 keeps the fingers, > 0 closes, -f opens to fraction f")
+            )
             return lay
 
         if self.arms_mode == "both":
             return arm("left", "left.gripper") + arm("right", "right.gripper")
         if self.arms_mode == "switch":
             return [G("arm.select", 1, "select", doc="-1 left arm, +1 right arm, 0 keep the selected arm")] + arm(
-                "arm", "gripper", doc="drives the selected arm")
+                "arm", "gripper", doc="drives the selected arm"
+            )
         return arm("arm", "gripper")
 
     def __init__(self, spec: dict):
@@ -139,12 +200,14 @@ class MenagerieBackend(Backend):
             names = ["ARM"] + per
         else:
             names = per
-        doc = ("DX/DY/DZ move the gripper target by 2 cm per unit per step (world axes); "
-               + ("DYAW turns it by 10 degrees per unit; " if self.yaw_enabled else "")
-               + "GRIP: 0 keeps the fingers, > 0 closes, -f opens to fraction f (-1 fully open)"
-               + ("; ARM: -1 left arm, +1 right arm, 0 keep the selected arm" if self.arms_mode == "switch" else "")
-               + ("; L_* drive the left arm and R_* the right arm in the same step" if self.arms_mode == "both" else "")
-               + ". One step = 50 ms.")
+        doc = (
+            "DX/DY/DZ move the gripper target by 2 cm per unit per step (world axes); "
+            + ("DYAW turns it by 10 degrees per unit; " if self.yaw_enabled else "")
+            + "GRIP: 0 keeps the fingers, > 0 closes, -f opens to fraction f (-1 fully open)"
+            + ("; ARM: -1 left arm, +1 right arm, 0 keep the selected arm" if self.arms_mode == "switch" else "")
+            + ("; L_* drive the left arm and R_* the right arm in the same step" if self.arms_mode == "both" else "")
+            + ". One step = 50 ms."
+        )
         self.action_spec = ActionSpec(names=names, low=[-1.0] * len(names), high=[1.0] * len(names), doc=doc)
 
     # ---- episode ---------------------------------------------------------------------------------------------
@@ -160,8 +223,15 @@ class MenagerieBackend(Backend):
         self.sim = Simulation(self.scene)
         self._objects = self.family.objects(self.scene)
         self._protected = self.family.protected(self.scene)
-        mon_task = type("T", (), {"DESK_PREFIXES": self.family.desk_prefixes(), "FORCE_PAIRS": self.family.force_pairs(),
-                                  "observation_bodies": staticmethod(lambda s: list(dict.fromkeys(self._objects.values())))})
+        mon_task = type(
+            "T",
+            (),
+            {
+                "DESK_PREFIXES": self.family.desk_prefixes(),
+                "FORCE_PAIRS": self.family.force_pairs(),
+                "observation_bodies": staticmethod(lambda s: list(dict.fromkeys(self._objects.values()))),
+            },
+        )
         self.monitor = Monitor(self.sim, mon_task, self.scene)
         self.ik = {s: ArmIK(self.sim.model, arm) for s, arm in self.scene.arms.items()}
         self.q_cmd = {s: self.sim.arm_joint_positions(s) for s in self.scene.arms}
@@ -242,7 +312,9 @@ class MenagerieBackend(Backend):
             self._max_tilt[n] = max(self._max_tilt[n], s["tilt"])
 
     def protected_ok(self, max_shift: float, max_tilt: float) -> bool:
-        return all(v <= max_shift for v in self._max_shift.values()) and all(v <= max_tilt for v in self._max_tilt.values())
+        return all(v <= max_shift for v in self._max_shift.values()) and all(
+            v <= max_tilt for v in self._max_tilt.values()
+        )
 
     # ---- observation -----------------------------------------------------------------------------------------
     def _arm_fields(self, side: str, prefix: str) -> dict:
@@ -250,9 +322,12 @@ class MenagerieBackend(Backend):
         pos, _ = self.sim.tcp_pose(side)
         fingers = self.sim.finger_positions(side)
         touching = sorted(n for n, b in self._objects.items() if side in self.monitor.current_touch.get(b, set()))
-        out = {f"{prefix}hand_pos": _R(pos), f"{prefix}hand_target": _R(self.target[side]),
-               f"{prefix}gripper_open": round(float(np.clip(np.mean(np.abs(fingers)) / arm.finger_open_m, 0, 1)), 3),
-               f"{prefix}touching": touching}
+        out = {
+            f"{prefix}hand_pos": _R(pos),
+            f"{prefix}hand_target": _R(self.target[side]),
+            f"{prefix}gripper_open": round(float(np.clip(np.mean(np.abs(fingers)) / arm.finger_open_m, 0, 1)), 3),
+            f"{prefix}touching": touching,
+        }
         if self.yaw_enabled:
             out[f"{prefix}hand_yaw_deg"] = round(float(np.degrees(self.yaw_cmd[side])), 1)
         return out
@@ -260,8 +335,10 @@ class MenagerieBackend(Backend):
     def observe(self) -> dict:
         from .sim.families import body_state
 
-        st: dict = {"robot": "panda" if self.scene.embodiment == "dual_panda" else "aloha",
-                    "time_s": round(float(self.sim.data.time), 2)}
+        st: dict = {
+            "robot": "panda" if self.scene.embodiment == "dual_panda" else "aloha",
+            "time_s": round(float(self.sim.data.time), 2),
+        }
         if self.arms_mode in ("left", "right"):
             st["arm"] = self.arms_mode
             st.update(self._arm_fields(self.arms_mode, ""))

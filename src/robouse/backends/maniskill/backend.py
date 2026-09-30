@@ -17,11 +17,10 @@ Observation: the hand pose, gripper opening, and the task's objects and goals (t
 observation gives its policies). Success is ManiSkill's own `evaluate()["success"]`, judged after `robo done` and a
 10-step hold.
 """
+
 from __future__ import annotations
 
-import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -32,7 +31,15 @@ from ...workers.client import StdioWorker
 from ..base import ActionSpec, Backend, StepInfo
 
 WORKER = Path(__file__).with_name("worker.py")
-MOLTENVK_ICD = ("moltenvk", "MoltenVK", "MoltenVK", "dynamic", "dylib", "macOS", "MoltenVK_icd.json")  # under the cache dir
+MOLTENVK_ICD = (
+    "moltenvk",
+    "MoltenVK",
+    "MoltenVK",
+    "dynamic",
+    "dylib",
+    "macOS",
+    "MoltenVK_icd.json",
+)  # under the cache dir
 
 # task id -> ManiSkill env id, seed (object layout), step budget
 TASKS: dict[str, dict] = {
@@ -66,16 +73,21 @@ class ManiSkillBackend(Backend):
         self.render_size = int(spec.get("render_size", 384))
         self._grip = 0.0  # `robo move-to` without --grip keeps the fingers as they are
         self.action_spec = ActionSpec(
-            names=["DX", "DY", "DZ", "DROLL", "DPITCH", "DYAW", "GRIP"], low=[-1.0] * 7, high=[1.0] * 7,
+            names=["DX", "DY", "DZ", "DROLL", "DPITCH", "DYAW", "GRIP"],
+            low=[-1.0] * 7,
+            high=[1.0] * 7,
             doc="DX/DY/DZ move the gripper by 2 cm per unit per step along world x/y/z; DROLL/DPITCH/DYAW turn it by 0.1 rad "
-                "per unit per step about world x/y/z; GRIP > 0 closes, -f opens to fraction f (-1 fully open), 0 keeps the fingers. "
-                "One step = 50 ms.")
+            "per unit per step about world x/y/z; GRIP > 0 closes, -f opens to fraction f (-1 fully open), 0 keeps the fingers. "
+            "One step = 50 ms.",
+        )
         env = dict(os.environ)
         icd = config.cache_dir().joinpath(*MOLTENVK_ICD)
         if sys.platform == "darwin" and "VK_ICD_FILENAMES" not in env and icd.exists():
             env["VK_ICD_FILENAMES"] = str(icd)  # SAPIEN renders through MoltenVK on macOS
         env.setdefault("MVK_CONFIG_LOG_LEVEL", "0")
-        self.worker = StdioWorker("maniskill", config.sim_python("maniskill", "maniskill"), WORKER, setup="docs/suites/maniskill.md", env=env)
+        self.worker = StdioWorker(
+            "maniskill", config.sim_python("maniskill", "maniskill"), WORKER, setup="docs/suites/maniskill.md", env=env
+        )
         self._state = None
         self._success = False
         self.last_judge = None
@@ -120,6 +132,7 @@ class ManiSkillBackend(Backend):
 
     def close(self) -> None:
         self.worker.close()
+
 
 def oracle_main(env: str) -> None:
     from .oracles import run

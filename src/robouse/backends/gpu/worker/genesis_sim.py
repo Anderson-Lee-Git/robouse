@@ -11,14 +11,13 @@ Robot interface (Franka Panda from Genesis's bundled MJCF, base at the world ori
   robo skill gripper open|close
   robo skill wait [N]                    hold still for N control steps (default 10)
 """
+
 from __future__ import annotations
 
 import math
-import os
 import tempfile
 
 import numpy as np
-
 from common import jpeg, pose_dict, quat_mul, quat_to_mat, r3, rpy_deg_to_quat
 
 IMG_W, IMG_H = 640, 480
@@ -69,33 +68,47 @@ class GSTask:
         gs.init(backend=gs.gpu, logging_level="warning", seed=seed)
         self.gs = gs
         kind = self.cfg["kind"]
-        opt = dict(sim_options=gs.options.SimOptions(dt=0.01, substeps=25 if kind == "pour" else 10),
-                   vis_options=gs.options.VisOptions(show_world_frame=False, visualize_sph_boundary=False,
-                                                     ambient_light=(0.4, 0.4, 0.4)),
-                   renderer=gs.renderers.Rasterizer(), show_viewer=False)
+        opt = dict(
+            sim_options=gs.options.SimOptions(dt=0.01, substeps=25 if kind == "pour" else 10),
+            vis_options=gs.options.VisOptions(
+                show_world_frame=False, visualize_sph_boundary=False, ambient_light=(0.4, 0.4, 0.4)
+            ),
+            renderer=gs.renderers.Rasterizer(),
+            show_viewer=False,
+        )
         if kind == "pour":
-            opt["sph_options"] = gs.options.SPHOptions(lower_bound=(-0.2, -0.6, -0.02), upper_bound=(1.0, 0.6, 0.8),
-                                                       particle_size=0.007, pressure_solver="DFSPH")
+            opt["sph_options"] = gs.options.SPHOptions(
+                lower_bound=(-0.2, -0.6, -0.02),
+                upper_bound=(1.0, 0.6, 0.8),
+                particle_size=0.007,
+                pressure_solver="DFSPH",
+            )
         if kind == "cloth":
-            opt["pbd_options"] = gs.options.PBDOptions(lower_bound=(-0.2, -0.6, -0.02), upper_bound=(1.0, 0.6, 0.8),
-                                                       particle_size=0.01)
+            opt["pbd_options"] = gs.options.PBDOptions(
+                lower_bound=(-0.2, -0.6, -0.02), upper_bound=(1.0, 0.6, 0.8), particle_size=0.01
+            )
         self.scene = gs.Scene(**opt)
         self.scene.add_entity(gs.morphs.Plane(), surface=gs.surfaces.Default(color=(0.82, 0.78, 0.72)))
         self.robot = self.scene.add_entity(gs.morphs.MJCF(file="xml/franka_emika_panda/panda.xml"))
         getattr(self, f"_build_{kind}")()
-        self.cam_cfg = {"scene": ((1.35, -0.9, 0.95), (0.5, 0.0, 0.1), (0.0, 0.0, 1.0), 40),
-                        "front": ((1.3, 0.0, 0.45), (0.5, 0.0, 0.1), (0.0, 0.0, 1.0), 45),
-                        "top": ((0.55, 0.0, 1.3), (0.55, 0.0, 0.0), (1.0, 0.0, 0.0), 50)}
-        self.cams = {n: self.scene.add_camera(res=(IMG_W, IMG_H), pos=c[0], lookat=c[1], up=c[2], fov=c[3])
-                     for n, c in self.cam_cfg.items()}
+        self.cam_cfg = {
+            "scene": ((1.35, -0.9, 0.95), (0.5, 0.0, 0.1), (0.0, 0.0, 1.0), 40),
+            "front": ((1.3, 0.0, 0.45), (0.5, 0.0, 0.1), (0.0, 0.0, 1.0), 45),
+            "top": ((0.55, 0.0, 1.3), (0.55, 0.0, 0.0), (1.0, 0.0, 0.0), 50),
+        }
+        self.cams = {
+            n: self.scene.add_camera(res=(IMG_W, IMG_H), pos=c[0], lookat=c[1], up=c[2], fov=c[3])
+            for n, c in self.cam_cfg.items()
+        }
         self.scene.build()
         self.hand = self.robot.get_link("hand")
         self.arm = np.arange(7)
         self.fingers = np.arange(7, 9)
         self.robot.set_dofs_kp(np.array([4500, 4500, 3500, 3500, 2000, 2000, 2000, 300, 300]))
         self.robot.set_dofs_kv(np.array([450, 450, 350, 350, 200, 200, 200, 30, 30]))
-        self.robot.set_dofs_force_range(np.array([-87, -87, -87, -87, -12, -12, -12, -40, -40]),
-                                        np.array([87, 87, 87, 87, 12, 12, 12, 40, 40]))
+        self.robot.set_dofs_force_range(
+            np.array([-87, -87, -87, -87, -12, -12, -12, -40, -40]), np.array([87, 87, 87, 87, 12, 12, 12, 40, 40])
+        )
         self.init_state = None
         self.frames: list[str] = []
         self._recording = False
@@ -119,7 +132,8 @@ class GSTask:
         self.water = self.scene.add_entity(
             material=gs.materials.SPH.Liquid(),
             morph=gs.morphs.Box(pos=(*self.glass_xy, self.glass_wall + 0.004 + 0.04), size=(fill, fill, 0.08)),
-            surface=gs.surfaces.Default(color=(0.25, 0.55, 0.95, 1.0), vis_mode="particle"))
+            surface=gs.surfaces.Default(color=(0.25, 0.55, 0.95, 1.0), vis_mode="particle"),
+        )
 
     def _build_cloth(self) -> None:
         gs = self.gs
@@ -128,12 +142,20 @@ class GSTask:
         self.cloth_yaw = float(r.uniform(-20, 20))
         self.cloth_size = 0.30
         self.cloth = self.scene.add_entity(
-            material=gs.materials.PBD.Cloth(rho=float(self.cfg.get("rho", 1.0)), static_friction=float(self.cfg.get("mu_s", 0.6)),
-                                            kinetic_friction=float(self.cfg.get("mu_k", 0.5)),
-                                            bending_compliance=float(self.cfg.get("bend", 1e-3))),
-            morph=gs.morphs.Mesh(file="meshes/cloth.obj", scale=self.cloth_size / 0.5, pos=(*self.cloth_xy, 0.005),
-                                 euler=(0.0, 0.0, self.cloth_yaw)),
-            surface=gs.surfaces.Default(color=(0.85, 0.2, 0.25, 1.0), vis_mode="visual"))
+            material=gs.materials.PBD.Cloth(
+                rho=float(self.cfg.get("rho", 1.0)),
+                static_friction=float(self.cfg.get("mu_s", 0.6)),
+                kinetic_friction=float(self.cfg.get("mu_k", 0.5)),
+                bending_compliance=float(self.cfg.get("bend", 1e-3)),
+            ),
+            morph=gs.morphs.Mesh(
+                file="meshes/cloth.obj",
+                scale=self.cloth_size / 0.5,
+                pos=(*self.cloth_xy, 0.005),
+                euler=(0.0, 0.0, self.cloth_yaw),
+            ),
+            surface=gs.surfaces.Default(color=(0.85, 0.2, 0.25, 1.0), vis_mode="visual"),
+        )
 
     # ---- low-level -------------------------------------------------------------------------------------------------
     def _q(self) -> np.ndarray:
@@ -145,8 +167,9 @@ class GSTask:
         return p + quat_to_mat(q) @ np.array([0, 0, TCP_OFFSET]), q
 
     def _ik(self, pos, quat):
-        q = self.robot.inverse_kinematics(link=self.hand, pos=np.asarray(pos), quat=np.asarray(quat),
-                                          local_point=np.array([0, 0, TCP_OFFSET]))
+        q = self.robot.inverse_kinematics(
+            link=self.hand, pos=np.asarray(pos), quat=np.asarray(quat), local_point=np.array([0, 0, TCP_OFFSET])
+        )
         return q.cpu().numpy() if hasattr(q, "cpu") else np.asarray(q)
 
     def _sim(self, n: int = 5) -> None:
@@ -168,29 +191,84 @@ class GSTask:
 
     # ---- server methods --------------------------------------------------------------------------------------------
     def info(self) -> dict:
-        return {"action": {"names": ["dx", "dy", "dz", "drx", "dry", "drz", "grip"], "low": [-1.0] * 7, "high": [1.0] * 7,
-                           "doc": "TCP translation 1 cm and rotation 3 degrees per unit per 0.05 s step (world axes); grip +1 open, -1 closed"},
-                "skills": ["move X Y Z [ROLL PITCH YAW] [speed=S] - straight-line TCP move (degrees; no orientation = keep; S in 0.1-2 scales 0.25 m/s and 45 deg/s)",
-                           "gripper open|close", "wait [N] - hold still N control steps (default 10)"]
-                + (["depth CAMERA U V - 3D world point seen at pixel (U, V) of CAMERA (RGB-D camera)"] if self.cfg.get("vision") else []),
-                "camera": "scene", "cameras": list(self.cams), "hold_last": 1.0, "max_steps": self.cfg["max_steps"],
-                "embodiment": self.embodiment()}
+        return {
+            "action": {
+                "names": ["dx", "dy", "dz", "drx", "dry", "drz", "grip"],
+                "low": [-1.0] * 7,
+                "high": [1.0] * 7,
+                "doc": "TCP translation 1 cm and rotation 3 degrees per unit per 0.05 s step (world axes); grip +1 open, -1 closed",
+            },
+            "skills": [
+                "move X Y Z [ROLL PITCH YAW] [speed=S] - straight-line TCP move (degrees; no orientation = keep; S in 0.1-2 scales 0.25 m/s and 45 deg/s)",
+                "gripper open|close",
+                "wait [N] - hold still N control steps (default 10)",
+            ]
+            + (
+                ["depth CAMERA U V - 3D world point seen at pixel (U, V) of CAMERA (RGB-D camera)"]
+                if self.cfg.get("vision")
+                else []
+            ),
+            "camera": "scene",
+            "cameras": list(self.cams),
+            "hold_last": 1.0,
+            "max_steps": self.cfg["max_steps"],
+            "embodiment": self.embodiment(),
+        }
 
     def embodiment(self) -> dict:
-        return {"spec_version": "1", "name": "franka-panda-genesis", "kind": "arm", "step_s": CTRL_DT,
-                "action_groups": [
-                    {"name": "arm.ee_delta", "components": ["dx", "dy", "dz"], "low": [-1] * 3, "high": [1] * 3,
-                     "units": "x 1 cm per step", "mode": "ee_delta_pos", "frame": "world", "hold": "zero"},
-                    {"name": "arm.ee_rot_delta", "components": ["drx", "dry", "drz"], "low": [-1] * 3, "high": [1] * 3,
-                     "units": "x 3 deg per step", "mode": "ee_delta_rot", "frame": "world", "hold": "zero"},
-                    {"name": "gripper", "components": ["grip"], "low": [-1], "high": [1], "units": "normalized",
-                     "mode": "gripper", "hold": "last", "initial": [1], "doc": "+1 open, -1 closed"}],
-                "sensors": {"cameras": [{"name": c, "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": False}
-                                        for c in self.cams],
-                            "proprioception": [{"name": "tcp", "shape": [7]}, {"name": "gripper", "shape": []}]},
-                "skills": [{"name": "move", "impl": "backend"}, {"name": "gripper", "impl": "backend"},
-                           {"name": "wait", "impl": "backend"}],
-                "budgets": {"max_steps": self.cfg["max_steps"]}, "reward": {"dense": "sparse", "success_mode": "final"}}
+        return {
+            "spec_version": "1",
+            "name": "franka-panda-genesis",
+            "kind": "arm",
+            "step_s": CTRL_DT,
+            "action_groups": [
+                {
+                    "name": "arm.ee_delta",
+                    "components": ["dx", "dy", "dz"],
+                    "low": [-1] * 3,
+                    "high": [1] * 3,
+                    "units": "x 1 cm per step",
+                    "mode": "ee_delta_pos",
+                    "frame": "world",
+                    "hold": "zero",
+                },
+                {
+                    "name": "arm.ee_rot_delta",
+                    "components": ["drx", "dry", "drz"],
+                    "low": [-1] * 3,
+                    "high": [1] * 3,
+                    "units": "x 3 deg per step",
+                    "mode": "ee_delta_rot",
+                    "frame": "world",
+                    "hold": "zero",
+                },
+                {
+                    "name": "gripper",
+                    "components": ["grip"],
+                    "low": [-1],
+                    "high": [1],
+                    "units": "normalized",
+                    "mode": "gripper",
+                    "hold": "last",
+                    "initial": [1],
+                    "doc": "+1 open, -1 closed",
+                },
+            ],
+            "sensors": {
+                "cameras": [
+                    {"name": c, "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": False}
+                    for c in self.cams
+                ],
+                "proprioception": [{"name": "tcp", "shape": [7]}, {"name": "gripper", "shape": []}],
+            },
+            "skills": [
+                {"name": "move", "impl": "backend"},
+                {"name": "gripper", "impl": "backend"},
+                {"name": "wait", "impl": "backend"},
+            ],
+            "budgets": {"max_steps": self.cfg["max_steps"]},
+            "reward": {"dense": "sparse", "success_mode": "final"},
+        }
 
     def reset(self, seed: int | None = None) -> dict:
         if self.init_state is None:
@@ -242,7 +320,11 @@ class GSTask:
         p, _ = self._tcp()
         gp = self.glass.get_pos().cpu().numpy()
         half = self.glass_inner / 2 + self.glass_wall
-        if abs(p[0] - gp[0]) < half and abs(p[1] - gp[1]) < half + 0.01 and gp[2] - 0.01 < p[2] < gp[2] + self.glass_h + 0.01:
+        if (
+            abs(p[0] - gp[0]) < half
+            and abs(p[1] - gp[1]) < half + 0.01
+            and gp[2] - 0.01 < p[2] < gp[2] + self.glass_h + 0.01
+        ):
             self.scene.sim.rigid_solver.add_weld_constraint(self.glass.base_link.idx, self.hand.idx)
             self.welded = True
 
@@ -284,8 +366,14 @@ class GSTask:
             ok, msg = False, str(e)
         finally:
             self._recording = False
-        out = {"ok": ok, "message": msg, "tcp": pose_dict(*self._tcp()), "frames": self.frames,
-               "frame": jpeg(self._render("scene")), "hold_last": self.grip}
+        out = {
+            "ok": ok,
+            "message": msg,
+            "tcp": pose_dict(*self._tcp()),
+            "frames": self.frames,
+            "frame": jpeg(self._render("scene")),
+            "hold_last": self.grip,
+        }
         self.frames = []
         return out
 
@@ -330,7 +418,11 @@ class GSTask:
                 self._set_targets(qa)
                 self._sim(5)
             held = " holding the glass" if self.welded else ""
-            return f"gripper {args[0]}" + held + (f"; holding {len(self.attached)} cloth particles" if self.attached is not None else "")
+            return (
+                f"gripper {args[0]}"
+                + held
+                + (f"; holding {len(self.attached)} cloth particles" if self.attached is not None else "")
+            )
         if name == "wait":
             n = max(1, min(100, int(args[0]) if args else 10))
             qa = self._q()
@@ -343,13 +435,18 @@ class GSTask:
                 raise ValueError("no depth camera in this task")
             cam, uu, vv = args[0], int(float(args[1])), int(float(args[2]))
             return f"camera {cam} pixel ({uu}, {vv}) sees world point {self._deproject(cam, uu, vv)}"
-        raise ValueError(f"unknown skill {name!r}; skills: move, gripper, wait" + (", depth" if self.cfg.get("vision") else ""))
+        raise ValueError(
+            f"unknown skill {name!r}; skills: move, gripper, wait" + (", depth" if self.cfg.get("vision") else "")
+        )
 
     # ---- observation and success ---------------------------------------------------------------------------------
     def observe(self, privileged: bool = False) -> dict:
         p, q = self._tcp()
-        st = {"tcp": pose_dict(p, q), "gripper": "open" if self.grip > 0 else "closed",
-              "finger_gap_m": round(float(self._q()[7:9].sum()), 4)}
+        st = {
+            "tcp": pose_dict(p, q),
+            "gripper": "open" if self.grip > 0 else "closed",
+            "finger_gap_m": round(float(self._q()[7:9].sum()), 4),
+        }
         st.update(getattr(self, f"_obs_{self.cfg['kind']}")())
         if privileged:
             if self.plan is None:
@@ -364,16 +461,29 @@ class GSTask:
     def _obs_pour(self) -> dict:
         gp = self.glass.get_pos().cpu().numpy()
         gq = self.glass.get_quat().cpu().numpy()
-        return {"glass": {**pose_dict(gp, gq), "inner_width_m": self.glass_inner, "height_m": self.glass_h,
-                          "wall_m": self.glass_wall},
-                "bowl": {"pos": r3(self.bowl.get_pos().cpu().numpy()), "inner_width_m": self.bowl_inner,
-                         "height_m": self.bowl_h, "wall_m": self.bowl_wall}}
+        return {
+            "glass": {
+                **pose_dict(gp, gq),
+                "inner_width_m": self.glass_inner,
+                "height_m": self.glass_h,
+                "wall_m": self.glass_wall,
+            },
+            "bowl": {
+                "pos": r3(self.bowl.get_pos().cpu().numpy()),
+                "inner_width_m": self.bowl_inner,
+                "height_m": self.bowl_h,
+                "wall_m": self.bowl_wall,
+            },
+        }
 
     def _obs_cloth(self) -> dict:
         pts = self.cloth.get_particles_pos().cpu().numpy()
         c = self._corner_idx()
-        return {"cloth_corners": {k: r3(pts[i]) for k, i in c.items()}, "cloth_center": r3(pts.mean(0)),
-                "cloth_size_m": self.cloth_size}
+        return {
+            "cloth_corners": {k: r3(pts[i]) for k, i in c.items()},
+            "cloth_center": r3(pts.mean(0)),
+            "cloth_size_m": self.cloth_size,
+        }
 
     def _corner_idx(self) -> dict:
         if not hasattr(self, "_corners"):
@@ -382,24 +492,40 @@ class GSTask:
             yaw = math.radians(self.cloth_yaw)
             R = np.array([[math.cos(yaw), -math.sin(yaw)], [math.sin(yaw), math.cos(yaw)]])
             loc = (pts[:, :2] - c[:2]) @ R
-            self._corners = {name: int(np.argmin(np.linalg.norm(loc - np.array(s) * self.cloth_size / 2, axis=1)))
-                             for name, s in (("c1", (1, 1)), ("c2", (-1, 1)), ("c3", (-1, -1)), ("c4", (1, -1)))}
+            self._corners = {
+                name: int(np.argmin(np.linalg.norm(loc - np.array(s) * self.cloth_size / 2, axis=1)))
+                for name, s in (("c1", (1, 1)), ("c2", (-1, 1)), ("c3", (-1, -1)), ("c4", (1, -1)))
+            }
         return self._corners
 
     def _measure(self) -> dict:
         if self.cfg["kind"] == "pour":
             pts = self.water.get_particles_pos().cpu().numpy()
-            inb = _inside_box(pts, self.bowl.get_pos().cpu().numpy(), np.array([1, 0, 0, 0]), self.bowl_inner, self.bowl_h)
-            ing = _inside_box(pts, self.glass.get_pos().cpu().numpy(), self.glass.get_quat().cpu().numpy(),
-                              self.glass_inner, self.glass_h + 0.02)
+            inb = _inside_box(
+                pts, self.bowl.get_pos().cpu().numpy(), np.array([1, 0, 0, 0]), self.bowl_inner, self.bowl_h
+            )
+            ing = _inside_box(
+                pts,
+                self.glass.get_pos().cpu().numpy(),
+                self.glass.get_quat().cpu().numpy(),
+                self.glass_inner,
+                self.glass_h + 0.02,
+            )
             n = len(pts)
-            return {"in_bowl": round(float(inb.sum()) / n, 3), "in_glass": round(float((ing & ~inb).sum()) / n, 3),
-                    "spilled": round(float((~inb & ~ing).sum()) / n, 3)}
+            return {
+                "in_bowl": round(float(inb.sum()) / n, 3),
+                "in_glass": round(float((ing & ~inb).sum()) / n, 3),
+                "spilled": round(float((~inb & ~ing).sum()) / n, 3),
+            }
         pts = self.cloth.get_particles_pos().cpu().numpy()
         c = self._corner_idx()
-        return {"corner_dist": {f"{a}-{b}": round(float(np.linalg.norm(pts[c[a]] - pts[c[b]])), 4)
-                                for a, b in (("c1", "c2"), ("c1", "c4"), ("c2", "c3"), ("c3", "c4"), ("c1", "c3"), ("c2", "c4"))},
-                "max_height": round(float(pts[:, 2].max()), 4)}
+        return {
+            "corner_dist": {
+                f"{a}-{b}": round(float(np.linalg.norm(pts[c[a]] - pts[c[b]])), 4)
+                for a, b in (("c1", "c2"), ("c1", "c4"), ("c2", "c3"), ("c3", "c4"), ("c1", "c3"), ("c2", "c4"))
+            },
+            "max_height": round(float(pts[:, 2].max()), 4),
+        }
 
     def _success(self) -> bool:
         m = self._measure()
@@ -445,8 +571,16 @@ class GSTask:
         out = []
         for c in cameras:
             K, E, pos, _ = self._intrinsics(c)
-            out.append({"name": c, "width": IMG_W, "height": IMG_H, "fovy_deg": float(self.cam_cfg[c][3]),
-                        "position": r3(pos), "projection": projection(K, E)})
+            out.append(
+                {
+                    "name": c,
+                    "width": IMG_W,
+                    "height": IMG_H,
+                    "fovy_deg": float(self.cam_cfg[c][3]),
+                    "position": r3(pos),
+                    "projection": projection(K, E),
+                }
+            )
         return out
 
     def _deproject(self, cam: str, u: int, v: int) -> list[float]:
@@ -501,7 +635,7 @@ class GSTask:
         yield ["skill", "wait", [10]]
 
     def _plan_cloth(self):
-        pts = lambda: self.cloth.get_particles_pos().cpu().numpy()  # noqa: E731
+        pts = lambda: self.cloth.get_particles_pos().cpu().numpy()
         c = self._corner_idx()
         down = (180.0, 0.0, 0.0)
 

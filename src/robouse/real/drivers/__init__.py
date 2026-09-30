@@ -1,5 +1,6 @@
 """Driver registry: `make_driver(profile, cfg)` by `cfg["driver"]` (lerobot | piper | rosbridge | mock) or a `robouse.drivers`
 entry point. `mock` replays a recorded fixture, or for `robot: ros` runs a mock rosbridge server."""
+
 from __future__ import annotations
 
 from ..robots import Profile
@@ -16,7 +17,11 @@ def make_driver(prof: Profile, cfg: dict) -> ArmDriver:
 
         scale = math.pi / 180 if prof.units[0] == "deg" else 1.0
         cams = list(cfg.get("cameras") or {})
-        topics = {c: f"/{c}/image_raw/compressed" for c in cams} if not isinstance(cfg.get("cameras"), dict) else cfg["cameras"]
+        topics = (
+            {c: f"/{c}/image_raw/compressed" for c in cams}
+            if not isinstance(cfg.get("cameras"), dict)
+            else cfg["cameras"]
+        )
         srv = MockRosbridge(prof.joints, [v * scale for v in prof.park], cameras=list(topics.values()))
         drv = RosbridgeDriver(prof, {**cfg, "url": srv.url, "cameras": topics}, mock=True)
         drv.mock_server = srv
@@ -38,9 +43,14 @@ def make_driver(prof: Profile, cfg: dict) -> ArmDriver:
         from .lerobot_arm import LeRobotArmDriver
 
         cams = list(cfg.get("cameras") or fx.cameras)
-        drv = LeRobotArmDriver(prof, {**cfg, "cameras": {c: "mock" for c in cams}},
-                               robot_factory=lambda c, p: ReplayRobot(fx, p, cameras=cams, noise_deg=float(cfg.get("mock_noise_deg", 0.0))),
-                               mock=True)
+        drv = LeRobotArmDriver(
+            prof,
+            {**cfg, "cameras": {c: "mock" for c in cams}},
+            robot_factory=lambda c, p: ReplayRobot(
+                fx, p, cameras=cams, noise_deg=float(cfg.get("mock_noise_deg", 0.0))
+            ),
+            mock=True,
+        )
         drv.fixture = fx
         return drv
     if kind == "lerobot":

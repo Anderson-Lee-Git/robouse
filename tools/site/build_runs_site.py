@@ -51,15 +51,13 @@ import argparse
 import html
 import importlib.util
 import json
-import os
 import re
 import shutil
 import subprocess
 import sys
-import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -1209,7 +1207,7 @@ def build_task(task: str, info: dict, trials: list[dict], tdoc: dict, chosen: di
     fams = sorted({HM[i].get("family") or "" for i in idxs} - {""})
     harn = sorted({HM[i].get("harness_label") or HM[i]["harness"] for i in idxs})
     many = len(idxs) > 1
-    ctrl = (f'<div class="fbar"><div class="frow ctl-row">'
+    ctrl = ('<div class="fbar"><div class="frow ctl-row">'
             + (f'<select data-lf="family" aria-label="Model family"><option value="">All families</option>{sel_opts(fams)}</select>' if len(fams) > 1 else "")
             + (f'<select data-lf="harness" aria-label="Harness"><option value="">All harnesses</option>{sel_opts(harn)}</select>' if len(harn) > 1 else "")
             + '<select data-lf="outcome" aria-label="Outcome"><option value="">Any result</option><option value="ok">Solved</option><option value="no">Not solved</option>'
@@ -1489,7 +1487,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
     rich = [k for k in tasks if any((t["dir"] / "artifacts" / "recording.mp4").is_file() and (t["dir"] / "agent" / "trajectory.json").is_file() for t in by_task[k])]
     borrow = set(rich[:2])
     trials, jobs = [], {}
-    t0 = datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp()
+    t0 = datetime(2026, 9, 1, tzinfo=UTC).timestamp()
     for ti, task in enumerate(tasks):
         srcs = sorted(by_task[task], key=lambda t: (not t.get("counted"), t["infra"], t["trial"]))
         src = next((t for t in srcs if (t["dir"] / "artifacts" / "recording.mp4").is_file()), srcs[0])
@@ -1511,7 +1509,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
                      "partial": False, "outcome": "infra_error" if infra else ("success_reached" if solved else "max_steps_reached"),
                      "steps_used": None if infra else rng.randint(8, mx), "max_steps": mx, "wall": round(wall, 1), "checks": {"robo_requests": rng.randint(5, 120)},
                      "infra_items": [{"id": "synthetic", "evidence": "fabricated infrastructure failure"}] if infra else [], "agent_text": "", "final_message": "",
-                     "started": datetime.fromtimestamp(start, timezone.utc).isoformat(), "finished": datetime.fromtimestamp(start + wall, timezone.utc).isoformat(),
+                     "started": datetime.fromtimestamp(start, UTC).isoformat(), "finished": datetime.fromtimestamp(start + wall, UTC).isoformat(),
                      "src_trial": src["trial"] if real_dir else None}
                 if ti == 0 and i == 0 and seed == 1:  # one fabricated trial carries every optional block (leaderboard spec section 5)
                     t["fake_extra"] = {
@@ -1569,7 +1567,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     out = a.out.expanduser().resolve()
     site = out.parent
-    VER = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+    VER = datetime.now(UTC).strftime("%Y%m%d%H%M")
     SYNTH = a.synthetic > 0
     if SYNTH:
         if out.is_relative_to(REAL_SITE.resolve()) or out.is_relative_to(REAL_SITE.parent.resolve()):
@@ -1680,7 +1678,7 @@ def main(argv: list[str] | None = None) -> int:
     for p in out.iterdir():  # suites from an earlier build that are no longer published
         if p.is_dir() and p.name not in suites and p.name not in ("t", "v", "f", "d", "task", "jobs", "compare") and (p / "index.html").is_file():
             shutil.rmtree(p)
-    gen = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    gen = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     stats = {"trials": len(trials), "counted": sum(len(ts) for ts in chosen.values()), "withheld": withheld, "gen": gen}
     (out / "index.html").write_text(build_index(chosen, suites, tinfo, cols, suite_state, stats))
     by_suite = defaultdict(list)

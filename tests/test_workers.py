@@ -1,4 +1,5 @@
 """The simulator-worker framework: StdioWorker against a worker script, HttpWorker against serve_http."""
+
 from __future__ import annotations
 
 import socket
@@ -85,8 +86,9 @@ def test_http_worker_roundtrip_and_secret() -> None:
             raise RuntimeError("nope")
         return {"got": req["args"], "session": req.get("session")}
 
-    threading.Thread(target=serve_http, args=(handle, port, "s3cret"), kwargs={"host": "127.0.0.1"},
-                     daemon=True).start()
+    threading.Thread(
+        target=serve_http, args=(handle, port, "s3cret"), kwargs={"host": "127.0.0.1"}, daemon=True
+    ).start()
     w = HttpWorker(f"http://127.0.0.1:{port}", "s3cret", timeout=10, retry=frozenset({"observe"}))
     for _ in range(50):
         try:

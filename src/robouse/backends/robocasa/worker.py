@@ -5,18 +5,17 @@ The robouse `robocasa` backend (robocasa.py) starts this script as a subprocess 
 one JSON request per line, one JSON response per line; a `render` response is followed by the raw RGB bytes.
 Only numpy, robosuite and robocasa are imported here (never the robouse package).
 """
+
 from __future__ import annotations
 
 import json
 import os
-import sys
 
+import numpy as np
 
-import numpy as np  # noqa: E402
-
-STEP_M = .02        # metres per action unit per step (world frame)
-OSC_MAX = .05       # robosuite OSC_POSE output_max for position (m per step at input 1)
-LEAD_M = .05
+STEP_M = 0.02  # metres per action unit per step (world frame)
+OSC_MAX = 0.05  # robosuite OSC_POSE output_max for position (m per step at input 1)
+LEAD_M = 0.05
 
 
 def _rotvec(R):
@@ -37,9 +36,13 @@ def _rot(axis, ang):
 
 def _quat_to_mat(q_xyzw):
     x, y, z, w = q_xyzw
-    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def _assets_root() -> str:
@@ -82,8 +85,16 @@ class Worker:
         self.env = None
 
     # ---- setup ---------------------------------------------------------------------------------------------------
-    def make(self, env_name: str, layout: int, style: int, seed: int, tool: str = "down", kwargs: dict | None = None,
-             ep_meta: dict | None = None) -> dict:
+    def make(
+        self,
+        env_name: str,
+        layout: int,
+        style: int,
+        seed: int,
+        tool: str = "down",
+        kwargs: dict | None = None,
+        ep_meta: dict | None = None,
+    ) -> dict:
         import random
 
         import robocasa  # noqa: F401  (registers the kitchen environments)
@@ -92,7 +103,6 @@ class Worker:
         np.random.seed(int(seed))
         import robosuite
         from robosuite.controllers import load_composite_controller_config
-
         from robosuite.environments.base import REGISTERED_ENVS
 
         # Only the lightwheel object registry is installed (see docs/suites/robocasa.md); object groups that exist only in
@@ -114,11 +124,20 @@ class Worker:
         if patched not in REGISTERED_ENVS:
             type(patched, (base,), {"_get_obj_cfgs": _get_obj_cfgs})
         self.env = robosuite.make(
-            patched, robots="PandaOmron",
+            patched,
+            robots="PandaOmron",
             controller_configs=load_composite_controller_config(controller=None, robot="PandaOmron"),
-            has_renderer=False, has_offscreen_renderer=True, use_camera_obs=False, ignore_done=True,
-            layout_ids=[int(layout)], style_ids=[int(style)], obj_registries=("lightwheel",), seed=int(seed),
-            translucent_robot=False, **(kwargs or {}))
+            has_renderer=False,
+            has_offscreen_renderer=True,
+            use_camera_obs=False,
+            ignore_done=True,
+            layout_ids=[int(layout)],
+            style_ids=[int(style)],
+            obj_registries=("lightwheel",),
+            seed=int(seed),
+            translucent_robot=False,
+            **(kwargs or {}),
+        )
         if ep_meta:  # replay a recorded episode layout exactly (RoboCasa's own demo-replay mechanism)
             self.env.set_ep_meta(_resolve_paths(ep_meta))
         self.obs = self.env.reset()
@@ -128,7 +147,7 @@ class Worker:
         if tool == "forward":  # pitch the hand so the fingers point along the robot's forward direction
             fwd = self._base_R()[:, 0]
             left = np.cross([0, 0, 1], fwd)
-            self.target_R = _rot(left, -np.pi / 2) @ R0 if R0[:, 2] @ fwd < .5 else R0
+            self.target_R = _rot(left, -np.pi / 2) @ R0 if R0[:, 2] @ fwd < 0.5 else R0
         else:
             self.target_R = R0
         self.target_p = np.asarray(self.obs["robot0_eef_pos"], dtype=float).copy()
@@ -138,13 +157,19 @@ class Worker:
         return {"lang": self.env.get_ep_meta().get("lang", ""), "cameras": list(self.env.sim.model.camera_names)}
 
     def ep_meta(self) -> dict:
-        meta = json.loads(json.dumps(self.env.get_ep_meta(), default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o)))
+        meta = json.loads(
+            json.dumps(self.env.get_ep_meta(), default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o))
+        )
         return _relative_paths(meta)
 
     # ---- helpers -------------------------------------------------------------------------------------------------
     def _pos(self, name: str):
         m, d = self.env.sim.model, self.env.sim.data
-        for kind, getter in (("geom", lambda i: d.geom_xpos[i]), ("body", lambda i: d.xpos[i]), ("site", lambda i: d.site_xpos[i])):
+        for kind, getter in (
+            ("geom", lambda i: d.geom_xpos[i]),
+            ("body", lambda i: d.xpos[i]),
+            ("site", lambda i: d.site_xpos[i]),
+        ):
             try:
                 i = getattr(m, f"{kind}_name2id")(name)
             except Exception:
@@ -158,7 +183,12 @@ class Worker:
         return [n for n in m.geom_names if n and sub in n]
 
     def _handle_pos(self, fx):
-        for name in (f"{fx.name}_door_handle_reg_main", f"{fx.name}_handle_reg_main", fx.handle_name, f"{fx.name}_door_handle_main"):
+        for name in (
+            f"{fx.name}_door_handle_reg_main",
+            f"{fx.name}_handle_reg_main",
+            fx.handle_name,
+            f"{fx.name}_door_handle_main",
+        ):
             p = self._pos(name)
             if p is not None:
                 return p
@@ -208,7 +238,7 @@ class Worker:
         Rb = self._base_R()
         full = np.zeros(self.adim)
         full[0:3] = np.clip(Rb.T @ np.asarray(d_world) / OSC_MAX, -1, 1)
-        full[3:6] = np.clip(Rb.T @ w_world / .5, -1, 1)
+        full[3:6] = np.clip(Rb.T @ w_world / 0.5, -1, 1)
         full[6] = self.grip
         full[-1] = -1.0  # arm mode (base does not move)
         self.obs, _, _, _ = self.env.step(full)
@@ -241,11 +271,13 @@ class Worker:
     # ---- observation ---------------------------------------------------------------------------------------------
     def observe(self, features: list[str]) -> dict:
         o, env = self.obs, self.env
-        st = {"hand_pos": [round(float(v), 4) for v in o["robot0_eef_pos"]],
-              "hand_target": [round(float(v), 4) for v in self.target_p],
-              "gripper_open": round(float(np.clip(np.mean(np.abs(o["robot0_gripper_qpos"])) / .04, 0, 1)), 3),
-              "robot_base_pos": [round(float(v), 4) for v in o["robot0_base_pos"]],
-              "robot_forward": [round(float(v), 4) for v in self._base_R()[:, 0]]}
+        st = {
+            "hand_pos": [round(float(v), 4) for v in o["robot0_eef_pos"]],
+            "hand_target": [round(float(v), 4) for v in self.target_p],
+            "gripper_open": round(float(np.clip(np.mean(np.abs(o["robot0_gripper_qpos"])) / 0.04, 0, 1)), 3),
+            "robot_base_pos": [round(float(v), 4) for v in o["robot0_base_pos"]],
+            "robot_forward": [round(float(v), 4) for v in self._base_R()[:, 0]],
+        }
         r = lambda v: None if v is None else [round(float(x), 4) for x in v]
         for f in features:
             if f == "object":
@@ -264,7 +296,9 @@ class Worker:
                 centre = p0 + ((px - p0) + (py - p0) + (pz - p0)) / 2
                 key = "sink_basin" if f == "sink" else "cabinet_interior"
                 st[f"{key}_center"] = r(centre)
-                st[f"{key}_half_size"] = r(np.abs(np.array([np.linalg.norm(px - p0), np.linalg.norm(py - p0), np.linalg.norm(pz - p0)])) / 2)
+                st[f"{key}_half_size"] = r(
+                    np.abs(np.array([np.linalg.norm(px - p0), np.linalg.norm(py - p0), np.linalg.norm(pz - p0)])) / 2
+                )
                 st[f"{key}_bottom_z"] = round(float(p0[2]), 4)
                 if f == "cabinet":
                     st["cabinet_interior_top_z"] = round(float(pz[2]), 4)
@@ -361,4 +395,8 @@ class Worker:
     def camera(self, name: str) -> dict:
         m, d = self.env.sim.model, self.env.sim.data
         i = m.camera_name2id(name)
-        return {"pos": [float(v) for v in d.cam_xpos[i]], "xmat": [float(v) for v in d.cam_xmat[i]], "fovy": float(m.cam_fovy[i])}
+        return {
+            "pos": [float(v) for v in d.cam_xpos[i]],
+            "xmat": [float(v) for v in d.cam_xmat[i]],
+            "fovy": float(m.cam_fovy[i]),
+        }

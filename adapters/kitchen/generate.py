@@ -7,6 +7,7 @@ joint-velocity action. Reference solutions drive the robot only through the robo
 
 Usage: python adapters/kitchen/generate.py [--out tasks/kitchen]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -144,16 +145,27 @@ def build(task_id: str, subs: list[str]) -> tuple[dict, str]:
             "suite": "kitchen",
             "category": "manipulation",
             "difficulty": "medium" if single else "hard",
-            "tags": ["franka", "mujoco", "single-arm", "articulated", "kitchen"] + ([] if single else ["long-horizon", "multi-goal"]),
+            "tags": ["franka", "mujoco", "single-arm", "articulated", "kitchen"]
+            + ([] if single else ["long-horizon", "multi-goal"]),
         },
         "agent": {"timeout_sec": 900 if single else 1800},
         "verifier": {"timeout_sec": 120},
-        "robouse": {"id": task_id, "backend": "kitchen", "env": task_id, "seed": 0, "max_steps": max_steps,
-                    "camera": "front", "skills": True, "success_mode": "final"},
+        "robouse": {
+            "id": task_id,
+            "backend": "kitchen",
+            "env": task_id,
+            "seed": 0,
+            "max_steps": max_steps,
+            "camera": "front",
+            "skills": True,
+            "success_mode": "final",
+        },
     }
     body = (
-        f"# {title}\n\n{SCENE}\n\n**Goal:** {goal}\n\n{success}\n\n{judged}\n\n" + "\n\n".join(notes)
-        + f"\n\n{OBSERVE}\n\n{CONTROL}\n\nThe step budget is {max_steps} steps.\n\n" + ROBO_USAGE
+        f"# {title}\n\n{SCENE}\n\n**Goal:** {goal}\n\n{success}\n\n{judged}\n\n"
+        + "\n\n".join(notes)
+        + f"\n\n{OBSERVE}\n\n{CONTROL}\n\nThe step budget is {max_steps} steps.\n\n"
+        + ROBO_USAGE
     )
     return meta, body
 
@@ -167,8 +179,10 @@ def main() -> None:
         shutil.rmtree(out)
     for task_id, subs in TASKS.items():
         meta, body = build(task_id, subs)
-        oracle = ("#!/bin/bash\n# Reference solution: scripted end-effector waypoints per subtask, through the robo socket only (public observations).\n"
-                  f"set -euo pipefail\npython -m robouse.oracle --backend kitchen --env {task_id}\n")
+        oracle = (
+            "#!/bin/bash\n# Reference solution: scripted end-effector waypoints per subtask, through the robo socket only (public observations).\n"
+            f"set -euo pipefail\npython -m robouse.oracle --backend kitchen --env {task_id}\n"
+        )
         write_task(out / task_id, meta, body, oracle, VERIFY)
     print(f"wrote {len(TASKS)} tasks to {out}")
 

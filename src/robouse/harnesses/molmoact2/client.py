@@ -20,6 +20,7 @@ LIBERO (dx, dy, dz) -> robouse (-dy, dx, dz); rotation deltas are dropped; the g
 (both use -1 open, +1 close). Hand positions are re-centred so the episode's first hand position maps to
 LIBERO's usual start pose.
 """
+
 from __future__ import annotations
 
 import base64
@@ -31,8 +32,8 @@ import time
 import urllib.request
 
 LIBERO_CAMS = ("agentview", "robot0_eye_in_hand")
-LIBERO_START = (-0.21, 0.0, 1.17)       # typical LIBERO end-effector start position
-DOWN_QUAT = (1.0, 0.0, 0.0, 0.0)        # LIBERO's gripper-pointing-down orientation (x, y, z, w)
+LIBERO_START = (-0.21, 0.0, 1.17)  # typical LIBERO end-effector start position
+DOWN_QUAT = (1.0, 0.0, 0.0, 0.0)  # LIBERO's gripper-pointing-down orientation (x, y, z, w)
 
 
 def robo(req: dict) -> dict:
@@ -89,8 +90,15 @@ def main() -> int:
     backend, dim = info["backend"], len(info["action"]["names"])
     language = os.environ.get("ROBOUSE_TASK_LANGUAGE", "").strip()
     episode = f"{info.get('task')}-{os.getpid()}-{int(time.time())}"
-    emit(type="start", task=info.get("task"), backend=backend, action_dim=dim, max_steps=info["max_steps"],
-         language=language, server=os.environ.get("ROBOUSE_MOLMOACT2_URL", ""))
+    emit(
+        type="start",
+        task=info.get("task"),
+        backend=backend,
+        action_dim=dim,
+        max_steps=info["max_steps"],
+        language=language,
+        server=os.environ.get("ROBOUSE_MOLMOACT2_URL", ""),
+    )
     post("/reset", {"episode": episode})
     offset = None
     chunk = 0
@@ -116,18 +124,35 @@ def main() -> int:
                 offset = [LIBERO_START[0] - h[1], LIBERO_START[1] + h[0], LIBERO_START[2] - h[2]]
             g = float(st.get("gripper_open", 1.0))
             g = max(0.0, min(1.0, g if g <= 1.0 else g / 0.08))
-            state = {"eef_pos": [h[1] + offset[0], -h[0] + offset[1], h[2] + offset[2]], "eef_quat": list(DOWN_QUAT),
-                     "gripper_qpos": [0.04 * g, -0.04 * g]}
+            state = {
+                "eef_pos": [h[1] + offset[0], -h[0] + offset[1], h[2] + offset[2]],
+                "eef_quat": list(DOWN_QUAT),
+                "gripper_qpos": [0.04 * g, -0.04 * g],
+            }
         # 2. policy
         t0 = time.time()
-        out = post("/act", {"episode": episode, "task": language, "state": state,
-                            "images": {"image": b64(paths[0]), "wrist_image": b64(paths[1])}})
+        out = post(
+            "/act",
+            {
+                "episode": episode,
+                "task": language,
+                "state": state,
+                "images": {"image": b64(paths[0]), "wrist_image": b64(paths[1])},
+            },
+        )
         if "actions" not in out:
             emit(type="error", error=out.get("error"))
             break
         chunk += 1
-        emit(type="chunk", chunk=chunk, steps_used=r["result"].get("steps_used"), state=state,
-             server_latency_s=out.get("latency_s"), roundtrip_s=round(time.time() - t0, 3), actions=out["actions"])
+        emit(
+            type="chunk",
+            chunk=chunk,
+            steps_used=r["result"].get("steps_used"),
+            state=state,
+            server_latency_s=out.get("latency_s"),
+            roundtrip_s=round(time.time() - t0, 3),
+            actions=out["actions"],
+        )
         # 3. act
         for a in out["actions"]:
             if backend == "libero":

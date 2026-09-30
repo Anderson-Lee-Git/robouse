@@ -15,6 +15,7 @@ Docker). `--engine benchflow` runs them as one BenchFlow job in Docker (needs ro
 
 TASK is a task folder or the id of a bundled task (e.g. `arc-gravity`); ROOT defaults to the bundled tasks.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,23 +29,37 @@ DESCRIPTION = "Robo Use: run robot tasks with an agent harness as the policy. ht
 
 
 def _analysis(sub: argparse._SubParsersAction) -> None:
-    rp = sub.add_parser("report", help="metrics with 95%% confidence intervals over job folders, grouped by trial "
-                        "attributes")
+    rp = sub.add_parser(
+        "report", help="metrics with 95%% confidence intervals over job folders, grouped by trial attributes"
+    )
     rp.add_argument("jobs", nargs="+", help="job folders (run-many --out)")
-    rp.add_argument("--by", action="append", help="group keys, comma-separated (repeatable): harness, model, suite, "
-                    "category, difficulty, task, split, seed, mode, job, regime, released (default harness,model)")
-    rp.add_argument("--metrics", action="append", help="metrics to show, comma-separated (default: the nine robot "
-                    "metrics and cost)")
+    rp.add_argument(
+        "--by",
+        action="append",
+        help="group keys, comma-separated (repeatable): harness, model, suite, "
+        "category, difficulty, task, split, seed, mode, job, regime, released (default harness,model)",
+    )
+    rp.add_argument(
+        "--metrics", action="append", help="metrics to show, comma-separated (default: the nine robot metrics and cost)"
+    )
     rp.add_argument("--json", help="write the full report as JSON")
     rp.add_argument("--cost-quality", help="write cost-versus-success points (JSON) for groups with a known cost")
     rp.add_argument("--svg", help="write a cost-versus-success scatter (SVG)")
-    rp.set_defaults(func=lambda a: _call("..analysis.report", "main", a.jobs, a.by, a.metrics, a.json, a.cost_quality, a.svg))
+    rp.set_defaults(
+        func=lambda a: _call("..analysis.report", "main", a.jobs, a.by, a.metrics, a.json, a.cost_quality, a.svg)
+    )
 
-    gr = sub.add_parser("grade", help="a vision-language model's second opinion on finished trials, from their video "
-                        "frames (writes <trial>/grader/vlm.json)")
+    gr = sub.add_parser(
+        "grade",
+        help="a vision-language model's second opinion on finished trials, from their video "
+        "frames (writes <trial>/grader/vlm.json)",
+    )
     gr.add_argument("trials", nargs="+", help="trial folders or job folders")
-    gr.add_argument("--model", default="moonshotai/Kimi-K3", help="vision-language model, OpenAI-compatible "
-                    "(default: Kimi K3 on Baseten)")
+    gr.add_argument(
+        "--model",
+        default="moonshotai/Kimi-K3",
+        help="vision-language model, OpenAI-compatible (default: Kimi K3 on Baseten)",
+    )
     gr.add_argument("--rubric", help="extra rubric text appended to the task's success rule")
     gr.set_defaults(func=lambda a: _call("..analysis.grader", "main", a.trials, a.model, a.rubric))
 
@@ -53,8 +68,9 @@ def _analysis(sub: argparse._SubParsersAction) -> None:
     su.add_argument("-o", "--out", help="output file (default: <trial>/learnings.md; - for stdout)")
     su.set_defaults(func=_summarize)
 
-    d = sub.add_parser("doctor", help="what this machine can run: backends, harnesses, credentials, VLA, real-robot SDKs, "
-                       "plugins")
+    d = sub.add_parser(
+        "doctor", help="what this machine can run: backends, harnesses, credentials, VLA, real-robot SDKs, plugins"
+    )
     d.set_defaults(func=lambda a: _call(".doctor", "run"))
 
 
@@ -91,8 +107,11 @@ def parser() -> argparse.ArgumentParser:
     run.register(sub)
     sub.add_parser("tasks", help="list, compose, scaffold and check tasks")
     sub.add_parser("components", help="list, show and check components")
-    f = sub.add_parser("fetch-assets", help="download the MuJoCo Menagerie robot models (menagerie, roboharm, drone; "
-                       "--robot or --all for the embodiment suites and composed tasks)")
+    f = sub.add_parser(
+        "fetch-assets",
+        help="download the MuJoCo Menagerie robot models (menagerie, roboharm, drone; "
+        "--robot or --all for the embodiment suites and composed tasks)",
+    )
     f.add_argument("--dest", help="target folder (default: <cache>/menagerie, or $ROBOUSE_MENAGERIE_ASSETS)")
     f.add_argument("--robot", action="append", help="only this Menagerie robot folder (repeatable), e.g. unitree_go2")
     f.add_argument("--all", action="store_true", help="every robot the bundled suites use (about 2 GB)")
@@ -107,6 +126,8 @@ def main(argv: list[str] | None = None) -> int:
     if args and args[0] in ("tasks", "components", "remix"):  # these parse their own arguments (nested subcommands)
         from . import tasks
 
-        return {"tasks": tasks.tasks_main, "components": tasks.components_main, "remix": tasks.remix_alias}[args[0]](args[1:])
+        return {"tasks": tasks.tasks_main, "components": tasks.components_main, "remix": tasks.remix_alias}[args[0]](
+            args[1:]
+        )
     a = parser().parse_args(args)
     return int(a.func(a))

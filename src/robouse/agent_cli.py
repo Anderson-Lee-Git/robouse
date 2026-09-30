@@ -12,6 +12,7 @@ Finds the episode socket from $ROBOUSE_SOCKET (set by the runner) and sends one 
   robo give-up ["message"]           end the episode without claiming success
 Add --json to any command for raw JSON output.
 """
+
 from __future__ import annotations
 
 import json
@@ -92,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
         if name in args:
             i = args.index(name)
             v = cast(args[i + 1])
-            del args[i:i + 2]
+            del args[i : i + 2]
             return v
         return default
 
@@ -104,7 +105,10 @@ def main(argv: list[str] | None = None) -> int:
             args = rest
             cam = opt("--camera", None, str)
             if os.environ.get("ROBOUSE_TEXT_ONLY") and ("--image" in args or cam):
-                print("note: this harness's model cannot read images, so --image and --camera are ignored", file=sys.stderr)
+                print(
+                    "note: this harness's model cannot read images, so --image and --camera are ignored",
+                    file=sys.stderr,
+                )
                 return _print(_send({"op": "observe", "image": False, "camera": None}), as_json)
             return _print(_send({"op": "observe", "image": "--image" in args, "camera": cam}), as_json)
         if cmd == "act":
@@ -116,7 +120,12 @@ def main(argv: list[str] | None = None) -> int:
             grip = opt("--grip", None, float)
             ms = opt("--max-steps", 100, int)
             tol = opt("--tol", 0.01, float)
-            return _print(_send({"op": "move_to", "pos": [float(x) for x in args[:3]], "grip": grip, "max_steps": ms, "tol": tol}), as_json)
+            return _print(
+                _send(
+                    {"op": "move_to", "pos": [float(x) for x in args[:3]], "grip": grip, "max_steps": ms, "tol": tol}
+                ),
+                as_json,
+            )
         if cmd == "grip":
             args = rest
             steps = opt("--steps", 15, int)

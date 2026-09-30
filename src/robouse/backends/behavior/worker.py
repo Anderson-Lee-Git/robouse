@@ -36,6 +36,7 @@ Usage (on the GPU machine):
   OMNIGIBSON_HEADLESS=1 python worker.py --activity turning_on_radio --scene house_double_floor_lower \
     --instance 0 --port 8765
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,9 +45,7 @@ import io
 import json
 import math
 import os
-import sys
 import time
-import traceback
 import types
 
 try:
@@ -54,13 +53,13 @@ try:
 except ImportError:
     from robouse.workers.wire import serve_http
 
-REACH_M = 1.25          # max horizontal distance from the robot base to a target object's bounding box
-NAV_OFFSETS = (0.35, 0.5, 0.7, 0.9, 1.1)   # stand-off distances (m) from the target's bounding box tried by navigate_to
-ROBOT_RADIUS_M = 0.38   # clearance checked on the traversability map around a candidate base position
-PLACE_ATTEMPTS = 4     # placement sampler draws before place_on_top / place_inside reports failure
-PLACE_BUDGET_S = 60    # ... or fewer, once the draws have taken this long
+REACH_M = 1.25  # max horizontal distance from the robot base to a target object's bounding box
+NAV_OFFSETS = (0.35, 0.5, 0.7, 0.9, 1.1)  # stand-off distances (m) from the target's bounding box tried by navigate_to
+ROBOT_RADIUS_M = 0.38  # clearance checked on the traversability map around a candidate base position
+PLACE_ATTEMPTS = 4  # placement sampler draws before place_on_top / place_inside reports failure
+PLACE_BUDGET_S = 60  # ... or fewer, once the draws have taken this long
 MAX_GRASP_EXTENT_M = float(os.environ.get("ROBOUSE_BEHAVIOR_MAX_GRASP_M", "2.5"))
-FRAME_EVERY = 3         # during a skill, keep one video frame every N env steps
+FRAME_EVERY = 3  # during a skill, keep one video frame every N env steps
 MAX_FRAMES_PER_SKILL = 12
 IMG_W, IMG_H = 640, 480
 
@@ -117,17 +116,32 @@ class Worker:
         robot_cfg["include_sensor_names"] = None
         robot_cfg["grasping_mode"] = "sticky"
         robot_cfg.setdefault("sensor_config", {}).setdefault("VisionSensor", {})["sensor_kwargs"] = {
-            "image_height": IMG_H, "image_width": IMG_W}
+            "image_height": IMG_H,
+            "image_width": IMG_W,
+        }
         cfg = {
             "env": {"action_frequency": 30, "rendering_frequency": 30, "physics_frequency": 120},
             "render": {"viewer_width": IMG_W, "viewer_height": IMG_H},
-            "scene": {"type": "InteractiveTraversableScene", "scene_model": scene_model, "trav_map_with_objects": True,
-                      "load_room_types": None, "load_room_instances": rooms, "include_robots": False},
+            "scene": {
+                "type": "InteractiveTraversableScene",
+                "scene_model": scene_model,
+                "trav_map_with_objects": True,
+                "load_room_types": None,
+                "load_room_instances": rooms,
+                "include_robots": False,
+            },
             "robots": [robot_cfg],
-            "task": {"type": "BehaviorTask", "activity_name": activity, "activity_definition_id": 0,
-                     "activity_instance_id": 0, "online_object_sampling": False,
-                     "use_presampled_robot_pose": True, "highlight_task_relevant_objects": False,
-                     "termination_config": {"max_steps": 100000}, "include_obs": False},
+            "task": {
+                "type": "BehaviorTask",
+                "activity_name": activity,
+                "activity_definition_id": 0,
+                "activity_instance_id": 0,
+                "online_object_sampling": False,
+                "use_presampled_robot_pose": True,
+                "highlight_task_relevant_objects": False,
+                "termination_config": {"max_steps": 100000},
+                "include_obs": False,
+            },
         }
         t = time.time()
         self.env = og.Environment(configs=cfg)
@@ -137,7 +151,9 @@ class Worker:
         self.scene = self.env.scenes[0]
         self.robot = self.scene.robots[0]
         from omnigibson.action_primitives.symbolic_semantic_action_primitives import (
-            SymbolicSemanticActionPrimitives, SymbolicSemanticActionPrimitiveSet)
+            SymbolicSemanticActionPrimitives,
+            SymbolicSemanticActionPrimitiveSet,
+        )
 
         self.P = SymbolicSemanticActionPrimitiveSet
         self.prims = SymbolicSemanticActionPrimitives(self.env, self.robot)
@@ -145,8 +161,11 @@ class Worker:
         self._frames: list[str] = []
         self.cam = og.sim.viewer_camera
         self.cam.add_modality("rgb")
-        self.scope_names = [n for n, e in self.env.task.object_scopes[0].items()
-                            if e is not None and not n.startswith("agent") and hasattr(e, "aabb")]
+        self.scope_names = [
+            n
+            for n, e in self.env.task.object_scopes[0].items()
+            if e is not None and not n.startswith("agent") and hasattr(e, "aabb")
+        ]
         if instance:
             self._load_instance(scene_model, activity, instance)
         self.env.reset()
@@ -158,9 +177,15 @@ class Worker:
         cached instance-0 scene, as omnigibson.eval.evaluator does, and make it the state that reset() restores."""
         from omnigibson.utils.python_utils import recursively_convert_to_torch
 
-        root = os.path.join(self.og.macros.gm.DATA_PATH, "2026-challenge-task-instances", "scenes", scene_model, "json",
-                            f"{scene_model}_task_{activity}_instances",
-                            f"{scene_model}_task_{activity}_0_{instance}_template-tro_state.json")
+        root = os.path.join(
+            self.og.macros.gm.DATA_PATH,
+            "2026-challenge-task-instances",
+            "scenes",
+            scene_model,
+            "json",
+            f"{scene_model}_task_{activity}_instances",
+            f"{scene_model}_task_{activity}_0_{instance}_template-tro_state.json",
+        )
         with open(root) as f:
             tro = recursively_convert_to_torch(json.load(f))
         scope = self.env.task.object_scopes[0]
@@ -192,8 +217,11 @@ class Worker:
         return e
 
     def _empty_action(self):
-        return self.prims._empty_action() if hasattr(self.prims, "_empty_action") else \
-            self.prims._postprocess_action(self.robot.q_to_action(self.robot.get_joint_positions()))
+        return (
+            self.prims._empty_action()
+            if hasattr(self.prims, "_empty_action")
+            else self.prims._postprocess_action(self.robot.q_to_action(self.robot.get_joint_positions()))
+        )
 
     def _step(self, action, record: bool = True):
         # robot action + one simulator step, without env.step's observation, reward and termination bookkeeping
@@ -218,8 +246,6 @@ class Worker:
             self._step(action)
 
     def _robot_xy_yaw(self):
-        import torch as th
-
         pos, quat = self.robot.get_position_orientation()
         x, y, z, w = [float(v) for v in quat]
         yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
@@ -258,8 +284,9 @@ class Worker:
                 if e in out:
                     continue
                 try:
-                    on = (S.Inside in e.states and e.states[S.Inside].get_value(base)) or \
-                         (S.OnTop in e.states and e.states[S.OnTop].get_value(base))
+                    on = (S.Inside in e.states and e.states[S.Inside].get_value(base)) or (
+                        S.OnTop in e.states and e.states[S.OnTop].get_value(base)
+                    )
                 except Exception:
                     on = False
                 if on:
@@ -269,8 +296,8 @@ class Worker:
 
     def _pose_riders(self, obj):
         """Keep carried contents at their pose relative to obj."""
-        import torch as th
         import omnigibson.utils.transform_utils as T
+        import torch as th
 
         riders = getattr(self, "_riders", [])
         if not riders:
@@ -405,8 +432,10 @@ class Worker:
                 p = cands[0][2]
                 z = float(self.robot.get_position_orientation()[0][2])
                 yaw = math.atan2(p[1] - ry, p[0] - rx)
-                self.robot.set_position_orientation(th.tensor([p[0], p[1], z], dtype=th.float32),
-                                                    euler2quat(th.tensor([0.0, 0.0, yaw], dtype=th.float32)))
+                self.robot.set_position_orientation(
+                    th.tensor([p[0], p[1], z], dtype=th.float32),
+                    euler2quat(th.tensor([0.0, 0.0, yaw], dtype=th.float32)),
+                )
                 self._settle(10, record=True)
                 return
         for off in NAV_OFFSETS:
@@ -429,8 +458,9 @@ class Worker:
         p = cands[0][2]
         yaw = math.atan2(center[1] - p[1], center[0] - p[0])
         z = float(self.robot.get_position_orientation()[0][2])
-        self.robot.set_position_orientation(th.tensor([p[0], p[1], z], dtype=th.float32),
-                                            euler2quat(th.tensor([0.0, 0.0, yaw], dtype=th.float32)))
+        self.robot.set_position_orientation(
+            th.tensor([p[0], p[1], z], dtype=th.float32), euler2quat(th.tensor([0.0, 0.0, yaw], dtype=th.float32))
+        )
         self._settle(10, record=True)
 
     def _place(self, target, target_name: str, how: str) -> dict:
@@ -466,8 +496,10 @@ class Worker:
                 break
         if not ok:
             where = "inside" if how == "place_inside" else "on top of"
-            raise SkillError(f"could not place {held_name} {where} {target_name} (no free spot found or it fell off); "
-                             f"it was released and is no longer held")
+            raise SkillError(
+                f"could not place {held_name} {where} {target_name} (no free spot found or it fell off); "
+                f"it was released and is no longer held"
+            )
         return {"message": f"{how} {target_name}: ok ({held_name})"}
 
     @staticmethod
@@ -490,8 +522,9 @@ class Worker:
             px, py = x + d * math.cos(yaw), y + d * math.sin(yaw)
             if not (float(tlo[0]) <= px <= float(thi[0]) and float(tlo[1]) <= py <= float(thi[1])):
                 continue
-            held.set_position_orientation(position=th.tensor([px, py, float(thi[2]) + base_to_bottom + 0.01],
-                                                             dtype=th.float32))
+            held.set_position_orientation(
+                position=th.tensor([px, py, float(thi[2]) + base_to_bottom + 0.01], dtype=th.float32)
+            )
             return True
         return False
 
@@ -501,8 +534,11 @@ class Worker:
         lo, _ = held.aabb
         pos = held.get_position_orientation()[0]
         c, (_, thi) = target.aabb_center, target.aabb
-        held.set_position_orientation(position=th.tensor(
-            [float(c[0]), float(c[1]), float(thi[2]) + float(pos[2]) - float(lo[2]) + 0.01], dtype=th.float32))
+        held.set_position_orientation(
+            position=th.tensor(
+                [float(c[0]), float(c[1]), float(thi[2]) + float(pos[2]) - float(lo[2]) + 0.01], dtype=th.float32
+            )
+        )
 
     def skill(self, name: str, args: list[str]) -> dict:
         self._frames = []
@@ -551,9 +587,16 @@ class Worker:
         else:
             if self._held() is not None:
                 raise SkillError(f"cannot {name} while holding {self._name(self._held())}; place or release it first")
-            prim = {"open": self.P.OPEN, "close": self.P.CLOSE, "toggle_on": self.P.TOGGLE_ON,
-                    "toggle_off": self.P.TOGGLE_OFF}[name]
-        from omnigibson.action_primitives.action_primitive_set_base import ActionPrimitiveErrorGroup, ActionPrimitiveError
+            prim = {
+                "open": self.P.OPEN,
+                "close": self.P.CLOSE,
+                "toggle_on": self.P.TOGGLE_ON,
+                "toggle_off": self.P.TOGGLE_OFF,
+            }[name]
+        from omnigibson.action_primitives.action_primitive_set_base import (
+            ActionPrimitiveError,
+            ActionPrimitiveErrorGroup,
+        )
 
         try:
             self._run(self.prims.apply_ref(prim, obj, attempts=3))
@@ -569,13 +612,22 @@ class Worker:
         held = self._held()
         scope = self._scope()
         movable = {n: e for n, e in scope.items() if not getattr(e, "fixed_base", False)}
-        out = {"robot": {"xy": [round(x, 2), round(y, 2)], "yaw_deg": round(math.degrees(yaw)),
-                         "room": self._room_of_point([x, y]), "holding": self._name(held) if held is not None else None}}
+        out = {
+            "robot": {
+                "xy": [round(x, 2), round(y, 2)],
+                "yaw_deg": round(math.degrees(yaw)),
+                "room": self._room_of_point([x, y]),
+                "holding": self._name(held) if held is not None else None,
+            }
+        }
         objs = {}
         for n, e in scope.items():
-            d = {"category": getattr(e, "category", ""), "room": self._room(e),
-                 "position": [round(float(v), 2) for v in e.aabb_center],
-                 "distance_m": round(self._box_dist_xy(e), 2)}
+            d = {
+                "category": getattr(e, "category", ""),
+                "room": self._room(e),
+                "position": [round(float(v), 2) for v in e.aabb_center],
+                "distance_m": round(self._box_dist_xy(e), 2),
+            }
             d["in_reach"] = d["distance_m"] <= REACH_M
             if S.Open in e.states:
                 d["open"] = bool(e.states[S.Open].get_value())
@@ -647,8 +699,14 @@ class Worker:
     # ---- rpc -------------------------------------------------------------------------------------------------------
     def call(self, method: str, a: dict):
         if method == "info":
-            return {"activity": self.activity, "instance": self.instance, "load_s": self.load_s, "objects": self.scope_names,
-                    "skills": SKILLS, "robot": self.robot.model if hasattr(self.robot, "model") else type(self.robot).__name__}
+            return {
+                "activity": self.activity,
+                "instance": self.instance,
+                "load_s": self.load_s,
+                "objects": self.scope_names,
+                "skills": SKILLS,
+                "robot": self.robot.model if hasattr(self.robot, "model") else type(self.robot).__name__,
+            }
         if method == "reset":
             self._drop()
             self.env.reset()
@@ -691,8 +749,14 @@ def main():
     w = Worker(a.activity, a.instance, a.scene, [r for r in a.rooms.split(",") if r] or None)
     print(json.dumps({"ready": True, "activity": a.activity, "load_s": w.load_s, "objects": w.scope_names}), flush=True)
 
-    serve_http(lambda req: w.call(req.get("method", ""), req.get("args") or {}), a.port, secret,
-               name=f"behavior worker ({a.activity})", threaded=False)
+    serve_http(
+        lambda req: w.call(req.get("method", ""), req.get("args") or {}),
+        a.port,
+        secret,
+        name=f"behavior worker ({a.activity})",
+        threaded=False,
+    )
+
 
 if __name__ == "__main__":
     main()

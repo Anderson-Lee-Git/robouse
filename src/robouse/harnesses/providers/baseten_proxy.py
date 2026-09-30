@@ -11,6 +11,7 @@ response changes; responses (SSE streams included) are relayed byte for byte.
 It also holds the Baseten key: Claude Code gets a dummy ANTHROPIC_AUTH_TOKEN and the proxy sends the real Bearer
 token upstream, so the key is in no child process environment. Never printed or written.
 """
+
 from __future__ import annotations
 
 import http.client
@@ -24,7 +25,16 @@ MAX_IMAGES, BATCH = 8, 5
 # BF_BASETEN_KEEP_IMAGES=k (1..7): a sensitivity setting that keeps only the newest k screenshots on every request
 KEEP = int(os.environ.get("BF_BASETEN_KEEP_IMAGES") or 0)
 PLACEHOLDER = "[older screenshot removed: the model endpoint accepts at most 8 images per request]"
-HOP = {"host", "authorization", "x-api-key", "content-length", "connection", "keep-alive", "transfer-encoding", "accept-encoding"}
+HOP = {
+    "host",
+    "authorization",
+    "x-api-key",
+    "content-length",
+    "connection",
+    "keep-alive",
+    "transfer-encoding",
+    "accept-encoding",
+}
 
 
 def removed_count(n: int) -> int:
@@ -38,7 +48,7 @@ def removed_count(n: int) -> int:
 
 def prune(body: dict, stats: dict) -> dict:
     """Replace the oldest image blocks (in messages, including inside tool_result content) with a text placeholder."""
-    refs = []   # (container list, index) of every image block, in conversation order
+    refs = []  # (container list, index) of every image block, in conversation order
     for m in body.get("messages") or []:
         content = m.get("content")
         if not isinstance(content, list):
@@ -63,14 +73,23 @@ def prune(body: dict, stats: dict) -> dict:
 def start(key: str, stats: dict | None = None) -> tuple[int, dict]:
     """Serve on 127.0.0.1 (a free port) in a daemon thread. Returns (port, stats)."""
     stats = stats if stats is not None else {}
-    stats.update({"keep_images": KEEP or f"{MAX_IMAGES - BATCH + 1}-{MAX_IMAGES}", "requests": 0, "pruned_requests": 0, "max_images_seen": 0, "images_removed_last": 0,
-                  "upstream_errors": 0, "status_counts": {}})
+    stats.update(
+        {
+            "keep_images": KEEP or f"{MAX_IMAGES - BATCH + 1}-{MAX_IMAGES}",
+            "requests": 0,
+            "pruned_requests": 0,
+            "max_images_seen": 0,
+            "images_removed_last": 0,
+            "upstream_errors": 0,
+            "status_counts": {},
+        }
+    )
     lock = threading.Lock()
 
     class H(BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.0"   # the response ends when the connection closes, so SSE relays without re-chunking
+        protocol_version = "HTTP/1.0"  # the response ends when the connection closes, so SSE relays without re-chunking
 
-        def log_message(self, *a):  # noqa: D401  (quiet)
+        def log_message(self, *a):
             pass
 
         def _relay(self, method: str) -> None:
@@ -86,7 +105,9 @@ def start(key: str, stats: dict | None = None) -> tuple[int, dict]:
                 except ValueError:
                     pass
             hdrs = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
-            hdrs.update({"Authorization": f"Bearer {key}", "Content-Length": str(len(data)), "Accept-Encoding": "identity"})
+            hdrs.update(
+                {"Authorization": f"Bearer {key}", "Content-Length": str(len(data)), "Accept-Encoding": "identity"}
+            )
             with lock:
                 stats["requests"] += 1
             try:
@@ -99,7 +120,11 @@ def start(key: str, stats: dict | None = None) -> tuple[int, dict]:
                 self.send_response(502)
                 self.send_header("content-type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"type": "error", "error": {"type": "api_error", "message": f"proxy: {type(e).__name__}"}}).encode())
+                self.wfile.write(
+                    json.dumps(
+                        {"type": "error", "error": {"type": "api_error", "message": f"proxy: {type(e).__name__}"}}
+                    ).encode()
+                )
                 return
             with lock:
                 stats["status_counts"][str(r.status)] = stats["status_counts"].get(str(r.status), 0) + 1
@@ -121,10 +146,10 @@ def start(key: str, stats: dict | None = None) -> tuple[int, dict]:
             finally:
                 conn.close()
 
-        def do_POST(self):  # noqa: N802
+        def do_POST(self):
             self._relay("POST")
 
-        def do_GET(self):  # noqa: N802
+        def do_GET(self):
             self._relay("GET")
 
     srv = ThreadingHTTPServer(("127.0.0.1", 0), H)

@@ -44,7 +44,7 @@ PORT = 8000
 if "--port" in sys.argv:
     i = sys.argv.index("--port")
     PORT = int(sys.argv[i + 1])
-    del sys.argv[i:i + 2]
+    del sys.argv[i : i + 2]
 if "--" in sys.argv:
     sys.argv.remove("--")
 
@@ -62,9 +62,13 @@ LOCK = threading.Lock()
 
 def _quat2mat(q) -> np.ndarray:
     x, y, z, w = [float(v) for v in q]
-    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def _raw_image(b64: str) -> np.ndarray:
@@ -154,12 +158,24 @@ def main(cfg: EvalPipelineConfig) -> None:
     policy = make_policy(cfg=cfg.policy, env_cfg=cfg.env, rename_map=cfg.rename_map)
     policy.eval()
     pre, post = make_pre_post_processors(
-        policy_cfg=cfg.policy, pretrained_path=cfg.policy.pretrained_path,
-        preprocessor_overrides={"device_processor": {"device": str(policy.config.device)},
-                                "rename_observations_processor": {"rename_map": cfg.rename_map}})
+        policy_cfg=cfg.policy,
+        pretrained_path=cfg.policy.pretrained_path,
+        preprocessor_overrides={
+            "device_processor": {"device": str(policy.config.device)},
+            "rename_observations_processor": {"rename_map": cfg.rename_map},
+        },
+    )
     env_pre, env_post = make_env_pre_post_processors(env_cfg=cfg.env, policy_cfg=cfg.policy)
-    STATE.update(policy=policy, pre=pre, post=post, env_pre=env_pre, env_post=env_post, episodes={},
-                 model=str(cfg.policy.pretrained_path), n=policy.config.n_action_steps)
+    STATE.update(
+        policy=policy,
+        pre=pre,
+        post=post,
+        env_pre=env_pre,
+        env_post=env_post,
+        episodes={},
+        model=str(cfg.policy.pretrained_path),
+        n=policy.config.n_action_steps,
+    )
     logging.info("MolmoAct2 server ready on port %d (n_action_steps=%d)", PORT, policy.config.n_action_steps)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 

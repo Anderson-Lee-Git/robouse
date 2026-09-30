@@ -17,14 +17,19 @@ Success is the env's own `info["success"]` after the step: Door hinge >= 1.35 ra
 fully-driven position; Pen orientation similarity > 0.95 with the pen within 7.5 cm of its start point; Relocate ball
 within 10 cm of the target. success_mode final: judged after `robo done` and 10 steps holding the targets.
 """
+
 from __future__ import annotations
 
 import numpy as np
 
 from ..base import ActionSpec, Backend, StepInfo
 
-ENVS = {"door": "AdroitHandDoor-v1", "hammer": "AdroitHandHammer-v1", "pen": "AdroitHandPen-v1",
-        "relocate": "AdroitHandRelocate-v1"}
+ENVS = {
+    "door": "AdroitHandDoor-v1",
+    "hammer": "AdroitHandHammer-v1",
+    "pen": "AdroitHandPen-v1",
+    "relocate": "AdroitHandRelocate-v1",
+}
 FINGERS = ["ff", "mf", "rf", "lf", "th"]
 
 _R = lambda v, n=4: [round(float(x), n) for x in np.ravel(v)]
@@ -70,10 +75,12 @@ class AdroitBackend(Backend):
         self.jnt_dadr = [int(m.jnt_dofadr[m.actuator_trnid[i, 0]]) for i in range(m.nu)]
         width_ = self.hi - self.lo
         self.action_spec = ActionSpec(
-            names=self.act_names, low=_R(-width_), high=_R(width_),
+            names=self.act_names,
+            low=_R(-width_),
+            high=_R(width_),
             doc="one number per actuator: the change of its position target this step (rad for hinges, m for the arm "
-                "slides ARTx/ARTy/ARTz); the target stays inside the actuator's range; all zeros holds. One step = "
-                f"{self.u.dt * 1000:.0f} ms",
+            "slides ARTx/ARTy/ARTz); the target stays inside the actuator's range; all zeros holds. One step = "
+            f"{self.u.dt * 1000:.0f} ms",
         )
         self._sid = lambda n: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, n)
         self._palm = self._sid("S_grasp")
@@ -131,44 +138,76 @@ class AdroitBackend(Backend):
         }
         if self.kind == "door":
             hinge = float(d.qpos[u.door_hinge_addrs])
-            out.update({"handle_pos": _R(d.site_xpos[u.handle_site_id]), "door_hinge": round(hinge, 4),
-                        "latch": round(float(d.qpos[-1]), 4), "door_open": hinge >= 1.35})
+            out.update(
+                {
+                    "handle_pos": _R(d.site_xpos[u.handle_site_id]),
+                    "door_hinge": round(hinge, 4),
+                    "latch": round(float(d.qpos[-1]), 4),
+                    "door_open": hinge >= 1.35,
+                }
+            )
         elif self.kind == "hammer":
             nail = d.site_xpos[u.target_obj_site_id]
             goal = d.site_xpos[u.goal_site_id]
             from gymnasium_robotics.utils.rotations import quat2euler
 
-            out.update({"hammer_pos": _R(d.xpos[u.obj_body_id]),
-                        "hammer_rot": _R(quat2euler(d.xquat[u.obj_body_id].copy())),
-                        "hammer_head_pos": _R(d.site_xpos[u.tool_site_id]),
-                        "nail_pos": _R(nail), "nail_goal_pos": _R(goal),
-                        "nail_goal_distance": round(float(np.linalg.norm(nail - goal)), 4)})
+            out.update(
+                {
+                    "hammer_pos": _R(d.xpos[u.obj_body_id]),
+                    "hammer_rot": _R(quat2euler(d.xquat[u.obj_body_id].copy())),
+                    "hammer_head_pos": _R(d.site_xpos[u.tool_site_id]),
+                    "nail_pos": _R(nail),
+                    "nail_goal_pos": _R(goal),
+                    "nail_goal_distance": round(float(np.linalg.norm(nail - goal)), 4),
+                }
+            )
         elif self.kind == "pen":
             pos = d.xpos[u.obj_body_id]
             po = (d.site_xpos[u.obj_t_site_id] - d.site_xpos[u.obj_b_site_id]) / u.pen_length
             to = (d.site_xpos[u.tar_t_site_id] - d.site_xpos[u.tar_b_site_id]) / u.tar_length
             want = d.site_xpos[u.eps_ball_site_id]
-            out.update({"pen_pos": _R(pos), "pen_dir": _R(po), "target_dir": _R(to),
-                        "orientation_similarity": round(float(po @ to), 4),
-                        "pen_home_pos": _R(want), "pen_home_distance": round(float(np.linalg.norm(pos - want)), 4)})
+            out.update(
+                {
+                    "pen_pos": _R(pos),
+                    "pen_dir": _R(po),
+                    "target_dir": _R(to),
+                    "orientation_similarity": round(float(po @ to), 4),
+                    "pen_home_pos": _R(want),
+                    "pen_home_distance": round(float(np.linalg.norm(pos - want)), 4),
+                }
+            )
         else:
             ball = d.xpos[u.obj_body_id]
             tgt = d.site_xpos[u.target_obj_site_id]
-            out.update({"ball_pos": _R(ball), "target_pos": _R(tgt),
-                        "ball_target_distance": round(float(np.linalg.norm(ball - tgt)), 4)})
+            out.update(
+                {
+                    "ball_pos": _R(ball),
+                    "target_pos": _R(tgt),
+                    "ball_target_distance": round(float(np.linalg.norm(ball - tgt)), 4),
+                }
+            )
         return out
 
     def info_extra(self) -> dict:
-        return {"actuators": {n: {"range": [round(float(lo), 6), round(float(hi), 6)],
-                                  "unit": "m" if n.startswith("ART") else "rad"}
-                              for n, lo, hi in zip(self.act_names, self.lo, self.hi)},
-                "step_seconds": round(float(self.u.dt), 4),
-                "named_skills": [
-                    "set NAME VALUE [NAME VALUE ...] [steps=N]: ramp those targets (absolute, rad or m) there over N steps (default 10)",
-                    "hand open|close|pinch [AMOUNT 0..1] [steps=N]: finger synergy (open: straight; close: power grasp; pinch: first finger and thumb)",
-                    "wait [N]: hold the targets for N steps (default 10)",
-                ] + (["move_palm X Y Z [SPEED]: straight-line move of palm_pos with the arm slides and forearm tilt (m/s, default 0.1)"]
-                     if self.kind == "relocate" else [])}
+        return {
+            "actuators": {
+                n: {"range": [round(float(lo), 6), round(float(hi), 6)], "unit": "m" if n.startswith("ART") else "rad"}
+                for n, lo, hi in zip(self.act_names, self.lo, self.hi)
+            },
+            "step_seconds": round(float(self.u.dt), 4),
+            "named_skills": [
+                "set NAME VALUE [NAME VALUE ...] [steps=N]: ramp those targets (absolute, rad or m) there over N steps (default 10)",
+                "hand open|close|pinch [AMOUNT 0..1] [steps=N]: finger synergy (open: straight; close: power grasp; pinch: first finger and thumb)",
+                "wait [N]: hold the targets for N steps (default 10)",
+            ]
+            + (
+                [
+                    "move_palm X Y Z [SPEED]: straight-line move of palm_pos with the arm slides and forearm tilt (m/s, default 0.1)"
+                ]
+                if self.kind == "relocate"
+                else []
+            ),
+        }
 
     # ---- skills (closed-loop generators; each yielded action is one ordinary step) ---------------
     def skills(self) -> list[str]:
@@ -181,11 +220,15 @@ class AdroitBackend(Backend):
             return self._skill_hand(args)
         if name == "move_palm":
             if not {"ARTx", "ARTy", "ARTz"} <= set(self.act_names):
-                raise ValueError("move_palm needs an arm with slides (Relocate only); use `robo act` / `set` on the arm joints")
+                raise ValueError(
+                    "move_palm needs an arm with slides (Relocate only); use `robo act` / `set` on the arm joints"
+                )
             return self._skill_move_palm(args)
         if name == "wait":
             return self._skill_wait(args)
-        raise ValueError(f"unknown skill {name!r}; skills: set, hand, wait" + (", move_palm" if self.kind == "relocate" else ""))
+        raise ValueError(
+            f"unknown skill {name!r}; skills: set, hand, wait" + (", move_palm" if self.kind == "relocate" else "")
+        )
 
     def _index(self, n: str) -> int:
         n = n.removeprefix("A_")
@@ -291,15 +334,24 @@ class AdroitBackend(Backend):
             ref_prev = ref
             integ += 0.01 * solve(J, ref - self.palm_pos(), self.d.qpos[qa])  # integral on the palm error (gravity sag)
             qd = self.d.qvel[[self.jnt_dadr[i] for i in slides]]
-            want = np.clip(q_ref + integ - 0.1 * qd, self.lo[slides], self.hi[slides])  # velocity damping: the servos ring
+            want = np.clip(
+                q_ref + integ - 0.1 * qd, self.lo[slides], self.hi[slides]
+            )  # velocity damping: the servos ring
             a = np.zeros(self.m.nu)
             a[slides] = want - self.target[slides]
             yield list(a)
-            if k >= n_move and np.linalg.norm(goal - self.palm_pos()) < 0.01 and np.linalg.norm(self.d.qvel[[self.jnt_dadr[i] for i in slides]]) < 0.02:
+            if (
+                k >= n_move
+                and np.linalg.norm(goal - self.palm_pos()) < 0.01
+                and np.linalg.norm(self.d.qvel[[self.jnt_dadr[i] for i in slides]]) < 0.02
+            ):
                 break
         p = self.palm_pos()
-        return {"palm_pos": _R(p), "remaining_m": round(float(np.linalg.norm(goal - p)), 4),
-                "reached": bool(np.linalg.norm(goal - p) < 0.015)}
+        return {
+            "palm_pos": _R(p),
+            "remaining_m": round(float(np.linalg.norm(goal - p)), 4),
+            "reached": bool(np.linalg.norm(goal - p) < 0.015),
+        }
 
     def _skill_wait(self, args):
         """wait [N]: hold the targets for N steps (default 10)."""
@@ -334,6 +386,7 @@ class AdroitBackend(Backend):
 
 
 # ---- reference solution: replay the recorded DAPG human demonstration through the socket -------------------------------
+
 
 def oracle_main(env: str) -> None:
     """env: path to oracle/demo.json ({"actions": [[upstream normalised action], ...], ...})."""

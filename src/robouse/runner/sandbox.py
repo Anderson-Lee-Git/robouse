@@ -1,4 +1,5 @@
 """The macOS Seatbelt profile the local runner puts around agent processes."""
+
 from __future__ import annotations
 
 import os
@@ -18,7 +19,9 @@ def sandbox_profile(workspace: str | Path | None = None, local_ports: tuple[int,
       from local viewers and servers (e.g. a runs viewer on localhost) while the episode Unix socket and the
       network (model APIs) stay reachable.
     Set ROBOUSE_SANDBOX=0 to disable."""
-    denied = [os.path.realpath(os.path.expanduser(d)) for d in config.sandbox_denied_paths()]  # Seatbelt matches resolved paths (/tmp -> /private/tmp)
+    denied = [
+        os.path.realpath(os.path.expanduser(d)) for d in config.sandbox_denied_paths()
+    ]  # Seatbelt matches resolved paths (/tmp -> /private/tmp)
     rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in dict.fromkeys(denied))
     rules += '(deny file-read* (regex #"/site-packages/robouse(/|$)") (regex #"/src/robouse(/|$)"))'
     rules += '(deny file-read* file-write* (regex #"/robouse-ws-[^/]*(/|$)"))'

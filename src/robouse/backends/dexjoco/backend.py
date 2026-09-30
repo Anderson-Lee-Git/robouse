@@ -17,18 +17,17 @@ Success is DexJoCo's own success signal for the task (most need the goal to hold
 ends as solved the first time it fires (success_mode: first). Some tasks also have a failure event (spraying away from
 the plant, pressing a wrong passcode digit) after which the episode can no longer succeed.
 """
+
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from pathlib import Path
 
 import numpy as np
 
 from ... import config
 from ...workers.client import StdioWorker
-from ..base import ActionSpec, Backend, StepInfo, G
+from ..base import ActionSpec, Backend, G, StepInfo
 
 WORKER = Path(__file__).with_name("worker.py")
 POS_STEP, ROT_STEP, HAND_STEP = 0.02, 0.2, 0.3
@@ -56,13 +55,21 @@ class DexjocoBackend(Backend):
 
     def action_layout(self) -> list[G]:
         lay = []
-        for arm in (["right", "left"] if self.bimanual else ["arm"]):
+        for arm in ["right", "left"] if self.bimanual else ["arm"]:
             hand = f"{arm}.hand" if self.bimanual else "hand"
-            lay += [G(f"{arm}.ee_delta", 3, "ee_delta_pos", "2 cm per unit (commanded pose)", frame="world"),
-                    G(f"{arm}.ee_rot_delta", 3, "ee_delta_rot", "0.2 rad per unit (commanded pose)", frame="world"),
-                    G(f"{hand}.joints", 16, "joint_delta", "0.3 rad per unit",
-                      doc="Allegro joint targets: index 0-3, middle 4-7, ring 8-11, thumb 12-15")]
+            lay += [
+                G(f"{arm}.ee_delta", 3, "ee_delta_pos", "2 cm per unit (commanded pose)", frame="world"),
+                G(f"{arm}.ee_rot_delta", 3, "ee_delta_rot", "0.2 rad per unit (commanded pose)", frame="world"),
+                G(
+                    f"{hand}.joints",
+                    16,
+                    "joint_delta",
+                    "0.3 rad per unit",
+                    doc="Allegro joint targets: index 0-3, middle 4-7, ring 8-11, thumb 12-15",
+                ),
+            ]
         return lay
+
     image_flipped = False
 
     def __init__(self, spec: dict):
@@ -76,12 +83,17 @@ class DexjocoBackend(Backend):
         names = []
         for a in arms:
             names += [f"{a}DX", f"{a}DY", f"{a}DZ", f"{a}RX", f"{a}RY", f"{a}RZ"] + [f"{a}F{i}" for i in range(16)]
-        doc = ("Per arm: DX DY DZ move the commanded hand pose 2 cm per unit along world x/y/z; RX RY RZ rotate it 0.2 rad per unit "
-               "about world x/y/z; F0..F15 move the commanded Allegro joint angles 0.3 rad per unit (index 0-3, middle 4-7, "
-               "ring 8-11, thumb 12-15). One step = 20 ms." + (" Right arm first (R_), then left arm (L_)." if self.bimanual else ""))
+        doc = (
+            "Per arm: DX DY DZ move the commanded hand pose 2 cm per unit along world x/y/z; RX RY RZ rotate it 0.2 rad per unit "
+            "about world x/y/z; F0..F15 move the commanded Allegro joint angles 0.3 rad per unit (index 0-3, middle 4-7, "
+            "ring 8-11, thumb 12-15). One step = 20 ms."
+            + (" Right arm first (R_), then left arm (L_)." if self.bimanual else "")
+        )
         lim = ([POS_LIM] * 3 + [ROT_LIM] * 3 + [HAND_LIM] * 16) * len(arms)
         self.action_spec = ActionSpec(names=names, low=[-x for x in lim], high=lim, doc=doc)
-        self.worker = StdioWorker("dexjoco", config.sim_python("dexjoco", "dexjoco"), WORKER, setup="docs/suites/dexjoco.md")
+        self.worker = StdioWorker(
+            "dexjoco", config.sim_python("dexjoco", "dexjoco"), WORKER, setup="docs/suites/dexjoco.md"
+        )
         self._state = None
         self._success = False
         self._grip = 0.0  # skills and the settle hold send 0 = keep the hand as commanded
@@ -122,6 +134,7 @@ class DexjocoBackend(Backend):
 
     def close(self) -> None:
         self.worker.close()
+
 
 def _q2R(q):
     from scipy.spatial.transform import Rotation as R

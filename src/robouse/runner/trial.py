@@ -13,6 +13,7 @@
   artifacts/recording.mp4     episode video
   artifacts/recording_index.json   video time for each trajectory step
 """
+
 from __future__ import annotations
 
 import json
@@ -25,17 +26,16 @@ import sys
 import tempfile
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from .. import config, harnesses
+from .. import harnesses
 from ..tasks import Task
 from .cost import trial_cost
 from .sandbox import sandbox_profile
 
 AGENT_CLI = Path(__file__).resolve().parents[1] / "agent_cli.py"
 SRC = Path(__file__).resolve().parents[2]  # the folder holding the robouse package
-
 
 
 def provenance() -> dict:
@@ -49,8 +49,12 @@ def provenance() -> dict:
     try:
         root = SRC.parent
         rev = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)
-        dirty = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"], capture_output=True,
-                               text=True, timeout=5)
+        dirty = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
         if rev.returncode == 0:
             out["git_commit"] = rev.stdout.strip()
             out["git_dirty"] = bool(dirty.stdout.strip())
@@ -80,7 +84,7 @@ def _variant(task: Task, split: str | None, extra: str, learnings: str | None) -
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _make_workspace(task: Task) -> Path:
@@ -101,7 +105,9 @@ def _wait_ready(p: Path, proc: subprocess.Popen, timeout: float = 120, log: Path
             return
         if proc.poll() is not None:
             last = ""
-            if log is not None and log.exists():  # the server's last line usually names the cause (e.g. a missing simulator)
+            if (
+                log is not None and log.exists()
+            ):  # the server's last line usually names the cause (e.g. a missing simulator)
                 lines = [l for l in log.read_text(errors="replace").splitlines() if l.strip()]
                 last = f": {lines[-1].strip()[:300]}" if lines else ""
             raise RuntimeError(f"episode server exited early ({proc.returncode}){last}")
@@ -109,9 +115,20 @@ def _wait_ready(p: Path, proc: subprocess.Popen, timeout: float = 120, log: Path
     raise TimeoutError("episode server did not start")
 
 
-def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: float | None = None,
-              seed: int | None = None, trial_name: str | None = None, epoch: int = 0, split: str | None = None,
-              extra_instruction: str = "", prior_learnings: str | None = None, attempt: int = 0) -> dict:
+def run_trial(
+    task: Task,
+    harness: str,
+    model: str,
+    job_dir: Path,
+    timeout: float | None = None,
+    seed: int | None = None,
+    trial_name: str | None = None,
+    epoch: int = 0,
+    split: str | None = None,
+    extra_instruction: str = "",
+    prior_learnings: str | None = None,
+    attempt: int = 0,
+) -> dict:
     job_dir.mkdir(parents=True, exist_ok=True)
     if split or extra_instruction or prior_learnings:
         task = _variant(task, split, extra_instruction, prior_learnings)
@@ -125,47 +142,103 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
     ready = ws / ".robouse" / "ready"
     started = now()
     t0 = time.time()
-    cfg = {"task": task.id, "task_path": str(task.path), "harness": harness, "model": model, "seed": seed,
-           "agent_timeout_s": timeout, "trial_name": trial_name, "started_at": started, "workspace": str(ws),
-           "metadata": task.metadata, "epoch": epoch, "split": split, "attempt": attempt,
-           "extra_instruction": extra_instruction or None, "prior_learnings": prior_learnings,
-           "provenance": provenance()}
+    cfg = {
+        "task": task.id,
+        "task_path": str(task.path),
+        "harness": harness,
+        "model": model,
+        "seed": seed,
+        "agent_timeout_s": timeout,
+        "trial_name": trial_name,
+        "started_at": started,
+        "workspace": str(ws),
+        "metadata": task.metadata,
+        "epoch": epoch,
+        "split": split,
+        "attempt": attempt,
+        "extra_instruction": extra_instruction or None,
+        "prior_learnings": prior_learnings,
+        "provenance": provenance(),
+    }
     (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
 
     py = sys.executable
-    server_cmd = [py, "-m", "robouse.cli", "serve", "--task", str(task.path), "--run-dir", str(tdir / "episode"),
-                  "--socket", sock, "--workspace", str(ws), "--ready-file", str(ready), "--max-wall-s", str(timeout + 60)]
+    server_cmd = [
+        py,
+        "-m",
+        "robouse.cli",
+        "serve",
+        "--task",
+        str(task.path),
+        "--run-dir",
+        str(tdir / "episode"),
+        "--socket",
+        sock,
+        "--workspace",
+        str(ws),
+        "--ready-file",
+        str(ready),
+        "--max-wall-s",
+        str(timeout + 60),
+    ]
     if seed is not None:
         server_cmd += ["--seed", str(seed)]
     if split:
         server_cmd += ["--split", split]
     oracle_token = uuid.uuid4().hex
-    server = subprocess.Popen(server_cmd, env={**os.environ, "ROBOUSE_ORACLE_TOKEN": oracle_token}, stdout=open(tdir / "episode" / "server.log", "w"), stderr=subprocess.STDOUT)
+    server = subprocess.Popen(
+        server_cmd,
+        env={**os.environ, "ROBOUSE_ORACLE_TOKEN": oracle_token},
+        stdout=open(tdir / "episode" / "server.log", "w"),
+        stderr=subprocess.STDOUT,
+    )
     exc = None
     launch = None
     agent_rc = None
     timed_out = False
     try:
-        _wait_ready(ready, server, timeout=float(task.spec.get("ready_timeout_s", 300)), log=tdir / "episode" / "server.log")
+        _wait_ready(
+            ready, server, timeout=float(task.spec.get("ready_timeout_s", 300)), log=tdir / "episode" / "server.log"
+        )
         (ws / ".robouse" / "socket").write_text(sock)
-        base_env = {k: v for k, v in os.environ.items() if not k.startswith(("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN"))}
-        base_env["PATH"] = f"{ws / '.robouse' / 'bin'}:{Path(py).parent}:{base_env.get('PATH', '')}" if harness == "oracle" \
+        base_env = {
+            k: v
+            for k, v in os.environ.items()
+            if not k.startswith(("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN"))
+        }
+        base_env["PATH"] = (
+            f"{ws / '.robouse' / 'bin'}:{Path(py).parent}:{base_env.get('PATH', '')}"
+            if harness == "oracle"
             else f"{ws / '.robouse' / 'bin'}:{base_env.get('PATH', '')}"
+        )
         base_env["ROBOUSE_SOCKET"] = sock
         base_env["PYTHONPATH"] = str(SRC) if harness == "oracle" else ""
         base_env.pop("ROBOUSE_ORACLE_TOKEN", None)
         if harness == "oracle":  # only the reference solution may see privileged state in vision tasks
             base_env["ROBOUSE_ORACLE_TOKEN"] = oracle_token
         launch = harnesses.build(harness, model, task.instruction, ws, task, base_env)
-        sandboxed = harness not in ("oracle", "noop") and sys.platform == "darwin" and os.environ.get("ROBOUSE_SANDBOX", "1") != "0"
+        sandboxed = (
+            harness not in ("oracle", "noop")
+            and sys.platform == "darwin"
+            and os.environ.get("ROBOUSE_SANDBOX", "1") != "0"
+        )
         if sandboxed:
-            ports = tuple(int(m) for v in launch.env.values() for m in re.findall(r"//(?:127\.0\.0\.1|localhost):(\d+)", str(v)))
+            ports = tuple(
+                int(m) for v in launch.env.values() for m in re.findall(r"//(?:127\.0\.0\.1|localhost):(\d+)", str(v))
+            )
             launch.cmd = ["sandbox-exec", "-p", sandbox_profile(ws, ports), *launch.cmd]
         cfg["sandbox"] = "macos-seatbelt" if sandboxed else "none"
         (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
         with open(tdir / "agent" / "stdout.jsonl", "w") as out, open(tdir / "agent" / "stderr.txt", "w") as err:
-            agent = subprocess.Popen(launch.cmd, cwd=ws, env=launch.env, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
-                                     start_new_session=True)
+            agent = subprocess.Popen(
+                launch.cmd,
+                cwd=ws,
+                env=launch.env,
+                stdout=out,
+                stderr=err,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
             try:
                 agent_rc = agent.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -188,7 +261,12 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
         except OSError:  # the server is still busy (e.g. a slow remote simulator step); it ends on its own clock
             st = {}
         if st.get("ok") and not st["result"]["finished"]:
-            _send({"op": "give_up", "text": "[runner] agent timed out" if timed_out else "[runner] agent exited without robo done"})
+            _send(
+                {
+                    "op": "give_up",
+                    "text": "[runner] agent timed out" if timed_out else "[runner] agent exited without robo done",
+                }
+            )
         try:
             server.wait(timeout=60)
         except subprocess.TimeoutExpired:
@@ -199,8 +277,16 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
     if timed_out and episode.get("outcome") == "gave_up":
         episode["outcome"] = "agent_timeout"
     # verifier: the task's own verifier/test.sh turns the trusted verdict into reward.txt
-    vt = subprocess.run(["bash", str(task.verifier_script)], capture_output=True, text=True,
-                        env={**os.environ, "ROBOUSE_EPISODE_DIR": str(tdir / "episode"), "ROBOUSE_VERIFIER_DIR": str(tdir / "verifier")})
+    vt = subprocess.run(
+        ["bash", str(task.verifier_script)],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "ROBOUSE_EPISODE_DIR": str(tdir / "episode"),
+            "ROBOUSE_VERIFIER_DIR": str(tdir / "verifier"),
+        },
+    )
     (tdir / "verifier" / "test-stdout.txt").write_text(vt.stdout + vt.stderr)
     rf = tdir / "verifier" / "reward.txt"
     reward = float(rf.read_text().strip()) if rf.exists() and rf.read_text().strip() else 0.0
@@ -221,24 +307,34 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
     except Exception as e:  # trajectory conversion is best effort; raw output is kept
         (tdir / "agent" / "trajectory_error.txt").write_text(f"{type(e).__name__}: {e}")
 
-    cost = trial_cost(tdir, (launch.notes.get("model") if launch else model) or "", launch.notes.get("provider") if launch else None)
+    cost = trial_cost(
+        tdir, (launch.notes.get("model") if launch else model) or "", launch.notes.get("provider") if launch else None
+    )
     res = {
-        "task_name": task.id, "trial_name": trial_name, "source": task.metadata.get("source_benchmark"),
+        "task_name": task.id,
+        "trial_name": trial_name,
+        "source": task.metadata.get("source_benchmark"),
         "agent_info": {"name": harness, "model_info": {"name": (launch.notes.get("model") if launch else model)}},
         "verifier_result": {"rewards": {"reward": reward}},
-        "episode": episode, "agent_return_code": agent_rc, "agent_timed_out": timed_out,
+        "episode": episode,
+        "agent_return_code": agent_rc,
+        "agent_timed_out": timed_out,
         "exception_info": {"exception_type": exc.split(":")[0], "exception_message": exc} if exc else None,
-        "started_at": started, "finished_at": now(), "wall_time_s": round(time.time() - t0, 1),
-        "embodiment_mode": episode.get("embodiment_mode", "sim"), "cost": cost,
+        "started_at": started,
+        "finished_at": now(),
+        "wall_time_s": round(time.time() - t0, 1),
+        "embodiment_mode": episode.get("embodiment_mode", "sim"),
+        "cost": cost,
     }
     if launch and isinstance(launch.helper, dict):
         res["proxy_stats"] = launch.helper
     (tdir / "result.json").write_text(json.dumps(res, indent=2))
     shutil.rmtree(ws, ignore_errors=True)
-    return {"trial": trial_name, "reward": reward, "outcome": episode.get("outcome"), "steps": episode.get("steps_used"),
-            "wall_s": res["wall_time_s"], "exception": exc}
-
-
-
-
-
+    return {
+        "trial": trial_name,
+        "reward": reward,
+        "outcome": episode.get("outcome"),
+        "steps": episode.get("steps_used"),
+        "wall_s": res["wall_time_s"],
+        "exception": exc,
+    }

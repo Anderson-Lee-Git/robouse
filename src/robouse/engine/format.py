@@ -13,6 +13,7 @@ from `benchflow.embodied.sidecar.EmbodiedTaskFormat` (BenchFlow's docs/embodied.
 ``materialize_variant(noop=True)`` writes a negative-control oracle that only looks (`robo info`, `robo observe`)
 and exits without `robo done`; it must score 0. ``seed=N`` writes ``<task-id>--seed-N`` (``bench eval run --seeds``).
 """
+
 from __future__ import annotations
 
 import io
@@ -123,7 +124,8 @@ def _metaworld_policies(dst: Path) -> None:
                     out.parent.mkdir(parents=True, exist_ok=True)
                     out.write_bytes(z.read(name))
     (dst / "metaworld" / "__init__.py").write_text(
-        '"""Vendored subset of Meta-World (MIT): only the scripted expert policies (numpy only)."""\n')
+        '"""Vendored subset of Meta-World (MIT): only the scripted expert policies (numpy only)."""\n'
+    )
 
 
 class RobouseTaskFormat(EmbodiedTaskFormat):
@@ -177,25 +179,39 @@ class RobouseTaskFormat(EmbodiedTaskFormat):
         for f in sorted(extra.iterdir()):  # data the oracle reads (e.g. DexJoCo demo.json, BEHAVIOR plan.json)
             if f.name != "solve.sh" and f.is_file():
                 shutil.copy2(f, dst / f.name)
-        body = [ln for ln in task.oracle_script.read_text().splitlines()
-                if ln.strip() and not ln.startswith("#") and not ln.startswith("set ")]
+        body = [
+            ln
+            for ln in task.oracle_script.read_text().splitlines()
+            if ln.strip() and not ln.startswith("#") and not ln.startswith("set ")
+        ]
         body = [re.sub(r"^python3? ", "python3 ", ln) for ln in body]
-        (dst / "solve.sh").write_text("\n".join([
-            "#!/bin/bash",
-            "# Reference solution. Runs in the agent container and drives the robot only through the robo socket",
-            "# ($ROBO_SOCKET), like an agent would. vendor/ holds the robouse oracle code and BenchFlow's embodied",
-            "# client (and, for Meta-World, the scripted expert policies). BenchFlow hides /oracle from agents.",
-            "set -euo pipefail",
-            'export PYTHONPATH="$(cd "$(dirname "$0")" && pwd)/vendor${PYTHONPATH:+:$PYTHONPATH}"',
-            f"export ROBO_ORACLE_TOKEN={token}",
-            *body,
-            "",
-        ]))
+        (dst / "solve.sh").write_text(
+            "\n".join(
+                [
+                    "#!/bin/bash",
+                    "# Reference solution. Runs in the agent container and drives the robot only through the robo socket",
+                    "# ($ROBO_SOCKET), like an agent would. vendor/ holds the robouse oracle code and BenchFlow's embodied",
+                    "# client (and, for Meta-World, the scripted expert policies). BenchFlow hides /oracle from agents.",
+                    "set -euo pipefail",
+                    'export PYTHONPATH="$(cd "$(dirname "$0")" && pwd)/vendor${PYTHONPATH:+:$PYTHONPATH}"',
+                    f"export ROBO_ORACLE_TOKEN={token}",
+                    *body,
+                    "",
+                ]
+            )
+        )
         (dst / "solve.sh").chmod(0o755)
 
 
-def materialize(task_dir: Path, out_root: Path, *, noop: bool = False, seed: int | None = None,
-                timeout: float | None = None, flat: bool = False) -> Path:
+def materialize(
+    task_dir: Path,
+    out_root: Path,
+    *,
+    noop: bool = False,
+    seed: int | None = None,
+    timeout: float | None = None,
+    flat: bool = False,
+) -> Path:
     """Write (or reuse) the native BenchFlow package for one robouse task and return its folder."""
     return RobouseTaskFormat().materialize_variant(task_dir, out_root, seed=seed, noop=noop, timeout=timeout, flat=flat)
 

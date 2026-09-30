@@ -1,4 +1,5 @@
 """The episode video: frames written as they are rendered, with the wall-clock time and env step of each."""
+
 from __future__ import annotations
 
 import json
@@ -44,10 +45,14 @@ class VideoRecorder:
             import imageio.v2 as imageio
 
             self.size = (img.shape[1], img.shape[0])
-            enc = ({"quality": None, "macro_block_size": 2, "output_params": ["-crf", "18", "-preset", "medium"]}
-                   if self.exact else {"quality": 7, "macro_block_size": 16})
-            self._writer = imageio.get_writer(self.run_dir / "recording.mp4", fps=FPS, codec="libx264",
-                                              ffmpeg_log_level="error", **enc)
+            enc = (
+                {"quality": None, "macro_block_size": 2, "output_params": ["-crf", "18", "-preset", "medium"]}
+                if self.exact
+                else {"quality": 7, "macro_block_size": 16}
+            )
+            self._writer = imageio.get_writer(
+                self.run_dir / "recording.mp4", fps=FPS, codec="libx264", ffmpeg_log_level="error", **enc
+            )
         elif (img.shape[1], img.shape[0]) != self.size:
             from PIL import Image
 

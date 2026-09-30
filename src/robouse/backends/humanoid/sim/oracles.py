@@ -1,5 +1,6 @@
 """Reference solutions for the humanoid suite. They use only the episode socket (`Oracle`: robo observe / skill / act)
 and the public observation fields an agent sees; they prove each task is solvable through the public interface."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -15,15 +16,16 @@ def _hand(o, side) -> np.ndarray:
 
 # ---- G1 (Dex3 hands) -------------------------------------------------------------------------------------------------
 
-def g1_pick(o, side: str, name: str, lift: float = .12, dz: float = -.005) -> float:
+
+def g1_pick(o, side: str, name: str, lift: float = 0.12, dz: float = -0.005) -> float:
     """Approach from behind at grasp height (the object slides in between the thumb and the fingers), wrap grasp
     around the object's middle, lift. Returns the hand-object height offset."""
     p = _obj(o, name)
     o.skill("release", side)
     h = _hand(o, side)
-    o.skill("reach", side, h[0], h[1], max(h[2], p[2] + .13))
-    o.skill("reach", side, p[0] - .14, p[1], p[2] + .13)
-    o.skill("reach", side, p[0] - .14, p[1], p[2] + dz)
+    o.skill("reach", side, h[0], h[1], max(h[2], p[2] + 0.13))
+    o.skill("reach", side, p[0] - 0.14, p[1], p[2] + 0.13)
+    o.skill("reach", side, p[0] - 0.14, p[1], p[2] + dz)
     o.skill("reach", side, p[0], p[1], p[2] + dz, "tol=0.01")
     o.skill("grasp", side)
     o.skill("reach", side, p[0], p[1], p[2] + lift)
@@ -34,11 +36,11 @@ def g1_place(o, side: str, name: str, x: float, y: float, z_center: float, carry
     """Carry at carry_z, lower until the object's centre is at z_center (+4 mm), open, lift straight up."""
     off = float(_hand(o, side)[2] - _obj(o, name)[2])
     o.skill("reach", side, x, y, carry_z)
-    o.skill("reach", side, x, y, z_center + .004 + off, "tol=0.01")
+    o.skill("reach", side, x, y, z_center + 0.004 + off, "tol=0.01")
     o.skill("release", side)
     h = _hand(o, side)
-    o.skill("reach", side, h[0] - .13, h[1], h[2] + .005)   # back out the way the object came in, then up
-    o.skill("reach", side, h[0] - .13, h[1], h[2] + .1)
+    o.skill("reach", side, h[0] - 0.13, h[1], h[2] + 0.005)  # back out the way the object came in, then up
+    o.skill("reach", side, h[0] - 0.13, h[1], h[2] + 0.1)
 
 
 def g1_can_to_plate(o) -> None:
@@ -47,7 +49,7 @@ def g1_can_to_plate(o) -> None:
     can = _obj(o, "can")
     g1_pick(o, "right", "can")
     half_h = can[2] - st["scene"]["table"]["top_height"]
-    g1_place(o, "right", "can", plate["center"][0], plate["center"][1], plate["center"][2] + half_h, can[2] + .12)
+    g1_place(o, "right", "can", plate["center"][0], plate["center"][1], plate["center"][2] + half_h, can[2] + 0.12)
     o.skill("home")
 
 
@@ -59,9 +61,9 @@ def g1_pass_across(o) -> None:
     # the right hand cannot reach the coaster and the left hand cannot reach the bottle: put it down in the middle,
     # left of the glass, carrying it high enough to clear the glass
     g = st["objects"]["glass"]
-    carry = table_h + g["height"] + half_h + .06
+    carry = table_h + g["height"] + half_h + 0.06
     g1_pick(o, "right", "bottle")
-    g1_place(o, "right", "bottle", .29, .07, table_h + half_h, carry)
+    g1_place(o, "right", "bottle", 0.29, 0.07, table_h + half_h, carry)
     o.skill("home")
     g1_pick(o, "left", "bottle")
     c = st["scene"]["coaster"]["center"]
@@ -73,15 +75,15 @@ def g1_drawer_stow(o) -> None:
     st = o.state()
     h = st["scene"]["drawer"]["handle"]["center"]
     # 1. right hand: slide the open hand forward around the vertical handle bar, close, pull the drawer 13 cm open
-    o.skill("reach", "right", h[0] - .14, h[1], h[2] + .02)
-    o.skill("reach", "right", h[0] - .14, h[1], h[2])
+    o.skill("reach", "right", h[0] - 0.14, h[1], h[2] + 0.02)
+    o.skill("reach", "right", h[0] - 0.14, h[1], h[2])
     o.skill("reach", "right", h[0], h[1], h[2], "tol=0.01")
     o.skill("grasp", "right")
-    o.skill("reach", "right", h[0] - .15, h[1], h[2])
+    o.skill("reach", "right", h[0] - 0.15, h[1], h[2])
     o.skill("release", "right")
     hr = _hand(o, "right")
-    o.skill("reach", "right", hr[0] - .1, hr[1], hr[2])
-    o.skill("reach", "right", .2, -.2, .94)
+    o.skill("reach", "right", hr[0] - 0.1, hr[1], hr[2])
+    o.skill("reach", "right", 0.2, -0.2, 0.94)
     # 2. left hand: the soap into the open part of the tray
     st = o.state()
     tray = st["scene"]["drawer"]["tray_inside"]
@@ -89,25 +91,34 @@ def g1_drawer_stow(o) -> None:
     half_h = soap[2] - st["scene"]["table"]["top_height"]
     g1_pick(o, "left", "soap")
     # the hand cannot go below the drawer front's top edge: hold the soap just above it and let it drop in
-    x = st["scene"]["cabinet"]["front_x"] - .045
-    g1_place(o, "left", "soap", x, .04, st["scene"]["cabinet"]["top_height"] + half_h + .025, soap[2] + .14)
+    x = st["scene"]["cabinet"]["front_x"] - 0.045
+    g1_place(o, "left", "soap", x, 0.04, st["scene"]["cabinet"]["top_height"] + half_h + 0.025, soap[2] + 0.14)
     o.skill("home")
     # 3. right hand: push the handle bar with the palm until the drawer is shut
     h = o.state()["scene"]["drawer"]["handle"]["center"]
-    o.skill("reach", "right", h[0] - .14, h[1], h[2])
-    o.skill("reach", "right", h[0] + .2, h[1], h[2])   # the bar meets the palm about 4 cm behind the control point
+    o.skill("reach", "right", h[0] - 0.14, h[1], h[2])
+    o.skill("reach", "right", h[0] + 0.2, h[1], h[2])  # the bar meets the palm about 4 cm behind the control point
     hr = _hand(o, "right")
-    o.skill("reach", "right", hr[0] - .12, hr[1], hr[2])
+    o.skill("reach", "right", hr[0] - 0.12, hr[1], hr[2])
     o.skill("home")
 
 
 # ---- H1 (fists) ------------------------------------------------------------------------------------------------------
 
-H1_FIST_R = .033
+H1_FIST_R = 0.033
 
 
-def squeeze_carry(o, name: str, target_xy, target_top: float, fist_r: float, squeeze: float = .03, clear: float = .08,
-                  lift: float = .14, over: float = .12) -> None:
+def squeeze_carry(
+    o,
+    name: str,
+    target_xy,
+    target_top: float,
+    fist_r: float,
+    squeeze: float = 0.03,
+    clear: float = 0.08,
+    lift: float = 0.14,
+    over: float = 0.12,
+) -> None:
     """Bimanual squeeze: hands beside the box at its mid height, press inward, lift, carry, lower onto the target
     surface (top at target_top), open the hands, back off."""
     st = o.state()
@@ -125,9 +136,9 @@ def squeeze_carry(o, name: str, target_xy, target_top: float, fist_r: float, squ
     dy = ty - b[1]
     o.skill("reach_both", tx, yl - squeeze + dy, zc + lift, tx, yr + squeeze + dy, zc + lift)
     zt = target_top + size[2] / 2
-    o.skill("reach_both", tx, yl - squeeze + dy, zt + .005, tx, yr + squeeze + dy, zt + .005)
-    o.skill("reach_both", tx, yl + clear + dy, zt + .005, tx, yr - clear + dy, zt + .005)
-    o.skill("reach_both", tx - .06, yl + clear + dy, zt + .1, tx - .06, yr - clear + dy, zt + .1)
+    o.skill("reach_both", tx, yl - squeeze + dy, zt + 0.005, tx, yr + squeeze + dy, zt + 0.005)
+    o.skill("reach_both", tx, yl + clear + dy, zt + 0.005, tx, yr - clear + dy, zt + 0.005)
+    o.skill("reach_both", tx - 0.06, yl + clear + dy, zt + 0.1, tx - 0.06, yr - clear + dy, zt + 0.1)
     o.skill("home")
 
 
@@ -136,16 +147,16 @@ def h1_box_to_shelf(o) -> None:
     squeeze_carry(o, "box", sh["top_center"][:2], sh["top_center"][2], H1_FIST_R)
 
 
-def press_sequence(o, seq, reach_r: float, depth: float = .012) -> None:
+def press_sequence(o, seq, reach_r: float, depth: float = 0.012) -> None:
     """Press each button with the hand on its side: line up in front of it, push in along +x, back off."""
     st = o.state()
     btns = st["scene"]["panel"]["buttons"]
     for n in seq:
         c = btns[n]["center"]
         side = "left" if c[1] > 0 else "right"
-        o.skill("reach", side, c[0] - reach_r - .08, c[1], c[2])
+        o.skill("reach", side, c[0] - reach_r - 0.08, c[1], c[2])
         o.skill("reach", side, c[0] - reach_r + depth, c[1], c[2], "tol=0.006")
-        o.skill("reach", side, c[0] - reach_r - .08, c[1], c[2])
+        o.skill("reach", side, c[0] - reach_r - 0.08, c[1], c[2])
     o.skill("home")
 
 
@@ -155,7 +166,7 @@ def h1_panel_sequence(o) -> None:
 
 # ---- Apollo (flat hand plates, palms facing each other) -----------------------------------------------------------------
 
-APOLLO_HALF_PALM = .02   # half thickness of the hand plate: the control point is at the plate's centre
+APOLLO_HALF_PALM = 0.02  # half thickness of the hand plate: the control point is at the plate's centre
 
 
 def apollo_box_into_bin(o) -> None:
@@ -163,8 +174,10 @@ def apollo_box_into_bin(o) -> None:
     b = st["scene"]["bin"]
     # lift high enough to clear the bin wall with the box bottom
     box = st["objects"]["box"]
-    lift = b["wall_height"] + .06
-    squeeze_carry(o, "box", b["center"][:2], b["floor_height"], APOLLO_HALF_PALM, squeeze=.02, clear=.06, lift=lift, over=.1)
+    lift = b["wall_height"] + 0.06
+    squeeze_carry(
+        o, "box", b["center"][:2], b["floor_height"], APOLLO_HALF_PALM, squeeze=0.02, clear=0.06, lift=lift, over=0.1
+    )
 
 
 def apollo_carry_tray(o) -> None:
@@ -173,30 +186,39 @@ def apollo_carry_tray(o) -> None:
     t = np.array(tray["pos"], float)
     hy = tray["size"][1] / 2
     table_h = st["scene"]["table"]["top_height"]
-    z = table_h + .085                   # the hand plate (8 cm tall) overlaps the upper part of the tray's side
+    z = table_h + 0.085  # the hand plate (8 cm tall) overlaps the upper part of the tray's side
     yl, yr = t[1] + hy + APOLLO_HALF_PALM, t[1] - hy - APOLLO_HALF_PALM
-    sq, cl = .015, .06
-    o.skill("reach_both", t[0], yl + cl, z + .12, t[0], yr - cl, z + .12)
+    sq, cl = 0.015, 0.06
+    o.skill("reach_both", t[0], yl + cl, z + 0.12, t[0], yr - cl, z + 0.12)
     o.skill("reach_both", t[0], yl + cl, z, t[0], yr - cl, z)
     o.skill("reach_both", t[0], yl - sq, z, t[0], yr + sq, z)
     o.skill("wait", 6)
-    o.skill("reach_both", t[0], yl - sq, z + .08, t[0], yr + sq, z + .08)
+    o.skill("reach_both", t[0], yl - sq, z + 0.08, t[0], yr + sq, z + 0.08)
     m = st["scene"]["mat"]["center"]
     dy = m[1] - t[1]
-    o.skill("reach_both", m[0], yl - sq + dy, z + .08, m[0], yr + sq + dy, z + .08)
-    o.skill("reach_both", m[0], yl - sq + dy, z + .004, m[0], yr + sq + dy, z + .004)
-    o.skill("reach_both", m[0], yl + cl + dy, z + .004, m[0], yr - cl + dy, z + .004)
-    o.skill("reach_both", m[0] - .08, yl + cl + dy, z + .12, m[0] - .08, yr - cl + dy, z + .12)
+    o.skill("reach_both", m[0], yl - sq + dy, z + 0.08, m[0], yr + sq + dy, z + 0.08)
+    o.skill("reach_both", m[0], yl - sq + dy, z + 0.004, m[0], yr + sq + dy, z + 0.004)
+    o.skill("reach_both", m[0], yl + cl + dy, z + 0.004, m[0], yr - cl + dy, z + 0.004)
+    o.skill("reach_both", m[0] - 0.08, yl + cl + dy, z + 0.12, m[0] - 0.08, yr - cl + dy, z + 0.12)
     o.skill("home")
 
 
 # ---- T1 (rigid cylindrical hands) -----------------------------------------------------------------------------------
 
-T1_HAND_R = .03
+T1_HAND_R = 0.03
 
 
-def push_to(o, side: str, name: str, target, hand_r: float, obj_r: float, tol: float = .012, z_off: float = .045,
-            max_rounds: int = 8) -> None:
+def push_to(
+    o,
+    side: str,
+    name: str,
+    target,
+    hand_r: float,
+    obj_r: float,
+    tol: float = 0.012,
+    z_off: float = 0.045,
+    max_rounds: int = 8,
+) -> None:
     """Closed-loop pushing: line the hand up behind the object (opposite the target), push it part of the way,
     re-observe, repeat."""
     table_h = o.state()["scene"]["table"]["top_height"]
@@ -209,19 +231,19 @@ def push_to(o, side: str, name: str, target, hand_r: float, obj_r: float, tol: f
         if dist < tol:
             break
         u = d / dist
-        pre = p - u * (obj_r + hand_r + .03)
+        pre = p - u * (obj_r + hand_r + 0.03)
         h = _hand(o, side)
-        if float(np.linalg.norm(h[:2] - pre)) > .02:
-            o.skill("reach", side, h[0], h[1], z + .08)
-            o.skill("reach", side, pre[0], pre[1], z + .08)
+        if float(np.linalg.norm(h[:2] - pre)) > 0.02:
+            o.skill("reach", side, h[0], h[1], z + 0.08)
+            o.skill("reach", side, pre[0], pre[1], z + 0.08)
             o.skill("reach", side, pre[0], pre[1], z)
-        step = min(dist, .07)
-        end = p + u * step - u * (obj_r + hand_r - .004)
+        step = min(dist, 0.07)
+        end = p + u * step - u * (obj_r + hand_r - 0.004)
         o.skill("reach", side, end[0], end[1], z, "tol=0.006")
     h = _hand(o, side)
-    back = h[:2] - (target - h[:2]) / max(float(np.linalg.norm(target - h[:2])), 1e-6) * .03
+    back = h[:2] - (target - h[:2]) / max(float(np.linalg.norm(target - h[:2])), 1e-6) * 0.03
     o.skill("reach", side, back[0], back[1], h[2])
-    o.skill("reach", side, back[0], back[1], h[2] + .08)
+    o.skill("reach", side, back[0], back[1], h[2] + 0.08)
 
 
 def t1_push_pucks(o) -> None:
@@ -236,7 +258,9 @@ def t1_push_pucks(o) -> None:
 
 def t1_box_onto_step(o) -> None:
     sh = o.state()["scene"]["step"]
-    squeeze_carry(o, "box", sh["top_center"][:2], sh["top_center"][2], T1_HAND_R, squeeze=.025, clear=.06, lift=.1, over=.1)
+    squeeze_carry(
+        o, "box", sh["top_center"][:2], sh["top_center"][2], T1_HAND_R, squeeze=0.025, clear=0.06, lift=0.1, over=0.1
+    )
 
 
 ORACLES = {

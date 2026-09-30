@@ -6,6 +6,7 @@ numpy.random.RandomState(seed).uniform(0.6, 0.9, 2), exactly as upstream, so see
 Action: (dx, dy) clipped to +-0.1 per step; success the first time the distance is <= 0.05 (upstream terminates there).
 Camera `top`: upstream's 32x32 image (cube green, effector red, +x right, +y down), upscaled 8x.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -22,8 +23,12 @@ class CubePickBackend(Backend):
         self.start = np.array([0.1, 0.1])
         self.camera = "top"
         self.max_steps = int(spec.get("max_steps", 80))
-        self.action_spec = ActionSpec(["dx", "dy"], [-0.1, -0.1], [0.1, 0.1],
-                                      doc="end-effector position change in the unit square, at most 0.1 per axis per step")
+        self.action_spec = ActionSpec(
+            ["dx", "dy"],
+            [-0.1, -0.1],
+            [0.1, 0.1],
+            doc="end-effector position change in the unit square, at most 0.1 per axis per step",
+        )
 
     def reset(self, seed: int) -> None:
         self.cube = np.random.RandomState(seed).uniform(0.6, 0.9, size=2)
@@ -39,8 +44,11 @@ class CubePickBackend(Backend):
         return float(np.linalg.norm(self.eef - self.cube)) <= self.goal_radius
 
     def observe(self) -> dict:
-        return {"eef_pos": [round(float(x), 4) for x in self.eef], "cube_pos": [round(float(x), 4) for x in self.cube],
-                "distance": round(float(np.linalg.norm(self.eef - self.cube)), 4)}
+        return {
+            "eef_pos": [round(float(x), 4) for x in self.eef],
+            "cube_pos": [round(float(x), 4) for x in self.cube],
+            "distance": round(float(np.linalg.norm(self.eef - self.cube)), 4),
+        }
 
     def metrics_point(self):
         return [float(self.eef[0]), float(self.eef[1]), 0.0]

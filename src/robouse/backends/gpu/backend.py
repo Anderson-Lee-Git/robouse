@@ -13,6 +13,7 @@ Task spec (the `robouse:` block): backend: gpu, sim: <family>, env: <task key in
 optional `opts` passed to the task's constructor on the worker. The worker's `info` supplies the action space, the
 skills, the cameras and the embodiment (BenchFlow embodied spec, docs/embodied.md).
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,10 +36,17 @@ class GpuBackend(Backend):
         self.spec = spec
         self.sim = spec["sim"]
         self.task = spec["env"]
-        self.worker = remote_worker(load_endpoints("gpu", SETUP), self.sim, "GPU",
-                                    float(spec.get("rpc_timeout_s", 600)), RETRY_METHODS)
-        opened = self._call("open", task=self.task, seed=int(spec.get("seed", 0)), opts=spec.get("opts") or {},
-                            load_timeout_s=float(spec.get("ready_timeout_s", 900)), _timeout=float(spec.get("ready_timeout_s", 900)) + 60)
+        self.worker = remote_worker(
+            load_endpoints("gpu", SETUP), self.sim, "GPU", float(spec.get("rpc_timeout_s", 600)), RETRY_METHODS
+        )
+        opened = self._call(
+            "open",
+            task=self.task,
+            seed=int(spec.get("seed", 0)),
+            opts=spec.get("opts") or {},
+            load_timeout_s=float(spec.get("ready_timeout_s", 900)),
+            _timeout=float(spec.get("ready_timeout_s", 900)) + 60,
+        )
         self.worker.session = opened["session"]
         self.remote_info = opened["info"]
         a = self.remote_info["action"]
@@ -144,7 +152,13 @@ def oracle_main(env: str) -> None:
             raise ValueError(f"bad oracle action {nxt!r}")
         resp = _send(req)
         res = resp.get("result") or {}
-        print(nxt[0], nxt[1] if nxt[0] == "skill" else "", resp.get("ok"), res.get("message", "") or resp.get("error", ""), flush=True)
+        print(
+            nxt[0],
+            nxt[1] if nxt[0] == "skill" else "",
+            resp.get("ok"),
+            res.get("message", "") or resp.get("error", ""),
+            flush=True,
+        )
         if not resp.get("ok") or "episode" in res:
             return
     _send({"op": "done", "text": "oracle plan finished"})

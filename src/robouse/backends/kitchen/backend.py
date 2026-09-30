@@ -11,6 +11,7 @@ against furniture stalls instead of winding up. grip +1 closes the fingers, -1 o
 Success is the upstream per-subtask completion check: for every goal subtask of the task, the norm of (the subtask's
 joint values - its goal values) < BONUS_THRESH (0.3), evaluated on the current physical state (success_mode final).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -63,7 +64,6 @@ class KitchenBackend(Backend):
         import gymnasium as gym
         import gymnasium_robotics
         import mujoco
-
         from gymnasium_robotics.envs.franka_kitchen import kitchen_env as ke
 
         self._ke = ke
@@ -74,8 +74,13 @@ class KitchenBackend(Backend):
         self._w, self._h = width, height
         gym.register_envs(gymnasium_robotics)
         # the episode server enforces the step budget and ends the episode; keep the upstream env running
-        self.env = gym.make("FrankaKitchen-v1", tasks_to_complete=self.goals, terminate_on_tasks_completed=False,
-                            remove_task_when_completed=False, max_episode_steps=10**9)
+        self.env = gym.make(
+            "FrankaKitchen-v1",
+            tasks_to_complete=self.goals,
+            terminate_on_tasks_completed=False,
+            remove_task_when_completed=False,
+            max_episode_steps=10**9,
+        )
         self.u = self.env.unwrapped
         self.m, self.d = self.u.model, self.u.data
         self._site = {k: mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_SITE, s) for k, s in LANDMARKS.items()}
@@ -83,10 +88,12 @@ class KitchenBackend(Backend):
         self._mw_hinge = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, "microdoorroot")
         self._cab_hinge = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, "hingerightdoor")
         self.action_spec = ActionSpec(
-            names=["dx", "dy", "dz", "droll", "grip"], low=[-1] * 5, high=[1] * 5,
+            names=["dx", "dy", "dz", "droll", "grip"],
+            low=[-1] * 5,
+            high=[1] * 5,
             doc="dx/dy/dz: move the gripper up to 3 cm per unit per step along world x/y/z; droll: turn the gripper "
-                "about its pointing axis (+y) by up to 0.1 rad per unit per step (+ = its top toward +x); "
-                "grip: +1 close, -1 open. One step = 80 ms",
+            "about its pointing axis (+y) by up to 0.1 rad per unit per step (+ = its top toward +x); "
+            "grip: +1 close, -1 open. One step = 80 ms",
         )
         self._renderer = None
         self._grip = -1.0
@@ -115,7 +122,9 @@ class KitchenBackend(Backend):
         R = d.site_xmat[self._ee].reshape(3, 3)
         e_pos = self._target - d.site_xpos[self._ee]
         c, s = np.cos(self._roll), np.sin(self._roll)
-        Ry = np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])  # roll about world +y (the gripper's pointing axis at the start)
+        Ry = np.array(
+            [[c, 0, s], [0, 1, 0], [-s, 0, c]]
+        )  # roll about world +y (the gripper's pointing axis at the start)
         Rt = Ry @ self._R0
         e_rot = 0.5 * sum(np.cross(R[:, i], Rt[:, i]) for i in range(3))
         e = np.concatenate([e_pos, 0.5 * e_rot])
@@ -188,10 +197,17 @@ class KitchenBackend(Backend):
         subs = {}
         for s in SUBTASKS:
             cur, goal, dist = self.subtask_state(s)
-            subs[_key(s)] = {"joints": _R(cur), "goal": _R(goal), "distance": round(dist, 4),
-                             "complete": bool(dist < self._ke.BONUS_THRESH), "required": s in self.goals}
+            subs[_key(s)] = {
+                "joints": _R(cur),
+                "goal": _R(goal),
+                "distance": round(dist, 4),
+                "complete": bool(dist < self._ke.BONUS_THRESH),
+                "required": s in self.goals,
+            }
         out["subtasks"] = subs
-        out["goals_complete"] = f"{sum(self.subtask_state(s)[2] < self._ke.BONUS_THRESH for s in self.goals)}/{len(self.goals)}"
+        out["goals_complete"] = (
+            f"{sum(self.subtask_state(s)[2] < self._ke.BONUS_THRESH for s in self.goals)}/{len(self.goals)}"
+        )
         return out
 
     # ---- rendering ------------------------------------------------------------------------------
@@ -237,6 +253,7 @@ class KitchenBackend(Backend):
 
 # ---- reference solution: scripted end-effector waypoints per subtask (socket client only; public observation fields) ----
 
+
 class _Finished(Exception):
     pass
 
@@ -258,11 +275,15 @@ def _state() -> dict:
 
 
 def _act(dx, dy, dz, droll, grip, repeat: int = 1) -> dict:
-    return _call({"op": "act", "action": [float(dx), float(dy), float(dz), float(droll), float(grip)], "repeat": int(repeat)})["state"]
+    return _call(
+        {"op": "act", "action": [float(dx), float(dy), float(dz), float(droll), float(grip)], "repeat": int(repeat)}
+    )["state"]
 
 
 def _move(pos, grip: float, tol: float = 0.01, max_steps: int = 80) -> dict:
-    return _call({"op": "move_to", "pos": [float(x) for x in pos], "grip": float(grip), "tol": tol, "max_steps": max_steps})["state"]
+    return _call(
+        {"op": "move_to", "pos": [float(x) for x in pos], "grip": float(grip), "tol": tol, "max_steps": max_steps}
+    )["state"]
 
 
 def _grip(v: float, steps: int = 8) -> dict:
@@ -299,7 +320,9 @@ def _arc(center, handle, key: str, sign: float, done, step: float = 0.05, grip: 
     rad, a = float(np.linalg.norm(r0)), float(np.arctan2(r0[1], r0[0]))
     st = _state()
     for _ in range(45):
-        if done(st) or np.linalg.norm(np.array(st[key]) - np.array(st["hand_pos"])) > 0.05:  # done, or the handle slipped
+        if (
+            done(st) or np.linalg.norm(np.array(st[key]) - np.array(st["hand_pos"])) > 0.05
+        ):  # done, or the handle slipped
             break
         a += sign * step
         st = _move(np.r_[c + rad * np.array([np.cos(a), np.sin(a)]), h[2]], grip, tol=0.01, max_steps=8)
@@ -311,7 +334,9 @@ def _microwave(st: dict) -> dict:
     _move(hp + [0, -0.12, 0], -1)
     _move(hp, -1, tol=0.008)
     _grip(1, 8)
-    st = _arc(st["microwave_hinge_pos"], hp, "microwave_handle_pos", -1.0, lambda s: _sub(s, "microwave")["joints"][0] < -0.65)
+    st = _arc(
+        st["microwave_hinge_pos"], hp, "microwave_handle_pos", -1.0, lambda s: _sub(s, "microwave")["joints"][0] < -0.65
+    )
     _grip(-1, 5)
     return _retreat(_state())
 
@@ -321,7 +346,13 @@ def _hinge_cabinet(st: dict) -> dict:
     _move(hp + [0, -0.12, 0], -1)
     _move(hp, -1, tol=0.008)
     _grip(1, 8)
-    st = _arc(st["hinge_cabinet_hinge_pos"], hp, "hinge_handle_pos", 1.0, lambda s: _sub(s, "hinge_cabinet")["joints"][1] > 1.42)
+    st = _arc(
+        st["hinge_cabinet_hinge_pos"],
+        hp,
+        "hinge_handle_pos",
+        1.0,
+        lambda s: _sub(s, "hinge_cabinet")["joints"][1] > 1.42,
+    )
     _grip(-1, 5)
     return _retreat(_state())
 
@@ -362,7 +393,9 @@ def _light_switch(st: dict) -> dict:
     for k in range(20):  # sweep the lever tip toward -x
         if _sub(st, "light_switch")["joints"][0] < -0.66:
             break
-        st = _move(np.array(st["hand_pos"]) * [0, 1, 1] + [lp[0] + 0.05 - 0.012 * (k + 1), 0, 0], 1, tol=0.005, max_steps=6)
+        st = _move(
+            np.array(st["hand_pos"]) * [0, 1, 1] + [lp[0] + 0.05 - 0.012 * (k + 1), 0, 0], 1, tol=0.005, max_steps=6
+        )
     return _retreat(st, 1)
 
 

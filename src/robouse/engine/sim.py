@@ -8,6 +8,7 @@ verifier and the rollout traces. robouse keeps the simulator backends; this modu
   episode_from_task      the same for a task folder; the simulator sidecar runs it through
                          `python -m benchflow.embodied.serve --factory robouse.engine.sim:episode_from_task`
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -99,27 +100,40 @@ class RobouseSim:
         from benchflow.embodied.cameras import mujoco_camera
 
         model, data = m_d
-        return mujoco_camera(model, data, name, width, height, image_flipped=bool(getattr(self.b, "image_flipped", False)))
+        return mujoco_camera(
+            model, data, name, width, height, image_flipped=bool(getattr(self.b, "image_flipped", False))
+        )
 
     def close(self) -> None:
         self.b.close()
 
 
-
-def episode_from_spec(spec: dict, run_dir: Path, workspace: Path | None = None, seed: int | None = None,
-                      max_wall_s: float | None = None) -> EpisodeServer:
+def episode_from_spec(
+    spec: dict, run_dir: Path, workspace: Path | None = None, seed: int | None = None, max_wall_s: float | None = None
+) -> EpisodeServer:
     sim = RobouseSim(make_backend(spec))
     block = dict(spec)
     block.setdefault("visible_fields", list(LEGACY_VISIBLE))  # protocol-1 default for vision tasks
     # robouse's `settle_steps` is a backend setting (LIBERO: still steps at reset), not the post-`done` settle
     block.pop("settle_steps", None)
-    cfg = EpisodeConfig.from_task(block, sim.embodiment(), seed=seed, default_camera=sim.default_camera,
-                                  max_wall_s=1800.0 if max_wall_s is None else max_wall_s)
+    cfg = EpisodeConfig.from_task(
+        block,
+        sim.embodiment(),
+        seed=seed,
+        default_camera=sim.default_camera,
+        max_wall_s=1800.0 if max_wall_s is None else max_wall_s,
+    )
     return EpisodeServer(sim, cfg, run_dir, workspace)
 
 
-def episode_from_task(task_dir: Path, *, run_dir: Path, workspace: Path | None = None, seed: int | None = None,
-                      max_wall_s: float | None = None) -> EpisodeServer:
+def episode_from_task(
+    task_dir: Path,
+    *,
+    run_dir: Path,
+    workspace: Path | None = None,
+    seed: int | None = None,
+    max_wall_s: float | None = None,
+) -> EpisodeServer:
     from ..tasks import load_task
 
     return episode_from_spec(load_task(task_dir).spec, run_dir, workspace, seed, max_wall_s)

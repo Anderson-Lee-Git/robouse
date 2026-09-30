@@ -1,5 +1,6 @@
 """Reference solutions for the humanoidbench suite. They drive the robot only through the episode socket (robo skills and
 actions, public observation), like an agent. Each is a function of an `Oracle` client (backends/embodied.py)."""
+
 from __future__ import annotations
 
 import math
@@ -123,7 +124,7 @@ def _hand_track(o: Oracle, targets, until, max_steps=300, fwd=None, speed=1.0):
         for side, fn in targets.items():
             k = 3 if side == "left" else 6
             g = np.asarray(_body(r, fn(st)), float) - np.asarray(r["hands"][side]["goal_body"], float)
-            a[k:k + 3] = list(np.clip(g / 0.02, -speed, speed))
+            a[k : k + 3] = list(np.clip(g / 0.02, -speed, speed))
         o.act(a, 1)
         st = o.state()
     return st
@@ -158,8 +159,10 @@ def push(o: Oracle) -> None:
         return lambda st: [st["scene"]["box"]["pos"][0], st["scene"]["box"]["pos"][1] + sgn * off, z]
 
     def near(st):
-        return all(np.linalg.norm(np.asarray(st["robot"]["hands"][sd]["pos"]) - np.asarray(f(st))) < 0.04
-                   for sd, f in (("left", beside(1, 0.19)), ("right", beside(-1, 0.19))))
+        return all(
+            np.linalg.norm(np.asarray(st["robot"]["hands"][sd]["pos"]) - np.asarray(f(st))) < 0.04
+            for sd, f in (("left", beside(1, 0.19)), ("right", beside(-1, 0.19)))
+        )
 
     _hand_track(o, {"left": beside(1, 0.19), "right": beside(-1, 0.19)}, near, 100)
 
@@ -170,6 +173,7 @@ def push(o: Oracle) -> None:
             n = float(np.linalg.norm(d))
             c = b[:2] + d * min(1.0, 0.05 / max(n, 1e-6))
             return [c[0], c[1] + sgn * (0.1 + 0.02 - 0.04), z]
+
         return f
 
     _hand_track(o, {"left": carry(1), "right": carry(-1)}, lambda st: st["progress"]["solved"], 400, speed=0.5)

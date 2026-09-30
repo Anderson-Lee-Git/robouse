@@ -22,6 +22,7 @@ robosuite 1.5 is loaded from an isolated directory (default `<venv>/robosuite-1.
 ROBOUSE_ROBOSUITE_PATH) because LIBERO pins robosuite 1.4.0 in the same environment; each episode server is its own
 process, so the two versions never meet.
 """
+
 from __future__ import annotations
 
 import os
@@ -29,7 +30,7 @@ import sys
 
 import numpy as np
 
-from ..base import ActionSpec, Backend, StepInfo, G
+from ..base import ActionSpec, Backend, G, StepInfo
 
 TWO_ARM = {"TwoArmLift", "TwoArmPegInHole", "TwoArmHandover", "TwoArmTransport"}
 
@@ -46,8 +47,10 @@ def _import_robosuite():
     import robosuite
 
     if not robosuite.__version__.startswith("1.5"):
-        raise ImportError(f"robosuite 1.5 needed, found {robosuite.__version__} at {robosuite.__file__}; "
-                          f"install it with: uv pip install --no-deps --target {path} robosuite==1.5.2")
+        raise ImportError(
+            f"robosuite 1.5 needed, found {robosuite.__version__} at {robosuite.__file__}; "
+            f"install it with: uv pip install --no-deps --target {path} robosuite==1.5.2"
+        )
     logging.getLogger("robosuite_logs").setLevel(logging.ERROR)
     from robosuite.controllers import load_composite_controller_config
 
@@ -86,13 +89,16 @@ class RobosuiteBackend(Backend):
             pre = f"r{i}." if multi else ""
             n = e - s
             if kind == "arm":
-                lay += [G(f"{pre}arm.ee_delta", 3, "ee_delta_pos", "OSC: 1.0 asks for 5 cm", frame="world"),
-                        G(f"{pre}arm.ee_rot_delta", 3, "ee_delta_rot", "OSC: 1.0 asks for 0.5 rad", frame="world")]
+                lay += [
+                    G(f"{pre}arm.ee_delta", 3, "ee_delta_pos", "OSC: 1.0 asks for 5 cm", frame="world"),
+                    G(f"{pre}arm.ee_rot_delta", 3, "ee_delta_rot", "OSC: 1.0 asks for 0.5 rad", frame="world"),
+                ]
             elif kind == "grip":
                 lay.append(G(f"{pre}gripper", n, "gripper", "normalized", doc="+1 close, -1 open, 0 keep"))
             else:
                 lay.append(G(f"{pre}{kind}", n, "other"))
         return lay
+
     image_flipped = False  # mujoco.Renderer returns upright images
 
     def __init__(self, spec: dict):
@@ -129,9 +135,20 @@ class RobosuiteBackend(Backend):
         if self.env_configuration:
             kw["env_configuration"] = self.env_configuration
         self.env = suite.make(
-            self.env_name, robots=self.robots if len(self.robots) > 1 else self.robots[0], controller_configs=cfg,
-            has_renderer=False, has_offscreen_renderer=False, use_camera_obs=False, use_object_obs=True,
-            reward_shaping=False, control_freq=20, horizon=10**7, ignore_done=True, seed=seed, **kw)
+            self.env_name,
+            robots=self.robots if len(self.robots) > 1 else self.robots[0],
+            controller_configs=cfg,
+            has_renderer=False,
+            has_offscreen_renderer=False,
+            use_camera_obs=False,
+            use_object_obs=True,
+            reward_shaping=False,
+            control_freq=20,
+            horizon=10**7,
+            ignore_done=True,
+            seed=seed,
+            **kw,
+        )
         self._seed = seed
         self._renderer = None
         names, self._layout = [], []  # layout: (robot index, part kind, start, end)
@@ -156,9 +173,11 @@ class RobosuiteBackend(Backend):
         assert len(names) == self.env.action_dim, (names, self.env.action_dim)
         self._grip_index = [s for (i, k, s, e) in self._layout if k == "grip"]
         self.has_gripper = bool(self._grip_index)
-        doc = ("OSC end-effector deltas in the world frame, 20 steps per second. dx/dy/dz: 1.0 asks for a 5 cm move "
-               "(held at 1.0 the hand travels about 1.1 cm per step); droll/dpitch/dyaw: rotation about world x/y/z, "
-               "1.0 asks for 0.5 rad. ")
+        doc = (
+            "OSC end-effector deltas in the world frame, 20 steps per second. dx/dy/dz: 1.0 asks for a 5 cm move "
+            "(held at 1.0 the hand travels about 1.1 cm per step); droll/dpitch/dyaw: rotation about world x/y/z, "
+            "1.0 asks for 0.5 rad. "
+        )
         if self.has_gripper:
             doc += "grip: +1 close, -1 open, 0 keep (fingers move gradually). "
         if multi:
@@ -183,7 +202,7 @@ class RobosuiteBackend(Backend):
         """Skills (move_to / grip) send [dx, dy, dz, grip]; map it onto a single arm's full action."""
         full = np.zeros(self.env.action_dim)
         arm = [(s, e) for (i, k, s, e) in self._layout if k == "arm"][0]
-        full[arm[0]:arm[0] + 3] = a[:3]
+        full[arm[0] : arm[0] + 3] = a[:3]
         for s in self._grip_index:
             full[s] = a[3]
         return full
@@ -263,7 +282,9 @@ class RobosuiteBackend(Backend):
             wiped = set(id(m) for m in env.wiped_markers)
             left = [m for m in env.model.mujoco_arena.markers if id(m) not in wiped]
             ex["markers_left"] = len(left)
-            ex["dirt_markers_xy"] = [_r(sim.data.geom_xpos[sim.model.geom_name2id(m.visual_geoms[0])][:2], 3) for m in left]
+            ex["dirt_markers_xy"] = [
+                _r(sim.data.geom_xpos[sim.model.geom_name2id(m.visual_geoms[0])][:2], 3) for m in left
+            ]
             ex["table_height"] = round(float(env.table_offset[2]), 4)
             arm = env.robots[0].arms[0]
             ex["hand_force_N"] = round(float(np.linalg.norm(env.robots[0].ee_force[arm])), 2)
@@ -279,7 +300,9 @@ class RobosuiteBackend(Backend):
             ex["peg_hole_cos"] = round(float(cos), 4)
         elif n == "Door":
             jid = sim.model.joint_name2id(env.door.joints[0])  # the hinge: a fixed, visible fixture
-            ex["door_hinge_pos"] = _r(sim.data.xanchor[jid] if hasattr(sim.data, "xanchor") else sim.data._data.xanchor[jid])
+            ex["door_hinge_pos"] = _r(
+                sim.data.xanchor[jid] if hasattr(sim.data, "xanchor") else sim.data._data.xanchor[jid]
+            )
             ex["table_height"] = round(float(np.asarray(env.table_offset)[2]), 4)
         elif n == "TwoArmHandover":
             hm = env.hammer

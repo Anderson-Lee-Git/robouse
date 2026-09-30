@@ -1,5 +1,6 @@
 """Client side of the simulator-worker protocol (see `wire.py`): a simulator in its own virtualenv (`StdioWorker`) or
 on a remote GPU machine (`HttpWorker`), called the same way: `worker.call(name, **kwargs)`."""
+
 from __future__ import annotations
 
 import http.client
@@ -34,18 +35,34 @@ class StdioWorker:
     `name` is the backend (used for messages and for $ROBOUSE_<NAME>_QUIET); `python` is the virtualenv's interpreter
     and `script` the worker script (a module with a `Worker` class). `setup` says where the setup is documented."""
 
-    def __init__(self, name: str, python: Path, script: Path, *, env: dict[str, str] | None = None,
-                 cwd: Path | None = None, setup: str = "", timeout: float = 600):
+    def __init__(
+        self,
+        name: str,
+        python: Path,
+        script: Path,
+        *,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+        setup: str = "",
+        timeout: float = 600,
+    ):
         self.name, self.timeout = name, timeout
         if not Path(python).exists():
-            raise WorkerError(f"{name}: simulator virtualenv not found at {python}"
-                              + (f"; see {setup}" if setup else "") + f" (or set ROBOUSE_{name.upper()}_PYTHON)")
+            raise WorkerError(
+                f"{name}: simulator virtualenv not found at {python}"
+                + (f"; see {setup}" if setup else "")
+                + f" (or set ROBOUSE_{name.upper()}_PYTHON)"
+            )
         var = f"ROBOUSE_{name.upper()}_QUIET"
         quiet = config.flag(var, default=True) if var in config.ENV else True
         self.proc = subprocess.Popen(
-            [str(python), str(WIRE), str(script)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL if quiet else None, cwd=str(cwd or Path(script).parent),
-            env={**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", **(env or {})})
+            [str(python), str(WIRE), str(script)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL if quiet else None,
+            cwd=str(cwd or Path(script).parent),
+            env={**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", **(env or {})},
+        )
         self._buf = b""
         self._hint = f"; run with ROBOUSE_{name.upper()}_QUIET=0 to see its output" if quiet else ""
 
@@ -117,12 +134,16 @@ def load_endpoints(name: str, setup: str) -> dict:
      "worker_headers": {KEY: {...}}}."""
     p = config.remote_endpoints(name)
     if p is None:
-        raise WorkerError(f"{name} worker endpoints are not configured: set ROBOUSE_{name.upper()}_REMOTE or write "
-                          f"{config.config_dir() / 'remote' / (name + '.json')}; see {setup}")
+        raise WorkerError(
+            f"{name} worker endpoints are not configured: set ROBOUSE_{name.upper()}_REMOTE or write "
+            f"{config.config_dir() / 'remote' / (name + '.json')}; see {setup}"
+        )
     return json.loads(p.read_text())
 
 
-def remote_worker(endpoints: dict, key: str, kind: str, timeout: float, retry: frozenset[str] = frozenset()) -> HttpWorker:
+def remote_worker(
+    endpoints: dict, key: str, kind: str, timeout: float, retry: frozenset[str] = frozenset()
+) -> HttpWorker:
     """The HttpWorker for `key` in an endpoints file: its URL plus the file's shared headers, then the worker's own."""
     w = endpoints.get("workers", {}).get(key)
     if not w:
@@ -137,8 +158,14 @@ class HttpWorker:
     time). Calls in `retry` are idempotent and retried twice on a transport error; `session`, when set, is sent with
     every call."""
 
-    def __init__(self, url: str, secret: str, headers: dict[str, str] | None = None, timeout: float = 300,
-                 retry: frozenset[str] = frozenset()):
+    def __init__(
+        self,
+        url: str,
+        secret: str,
+        headers: dict[str, str] | None = None,
+        timeout: float = 300,
+        retry: frozenset[str] = frozenset(),
+    ):
         u = urllib.parse.urlparse(url)
         if u.scheme not in ("http", "https") or not u.hostname:
             raise WorkerError(f"bad worker URL {url!r}")

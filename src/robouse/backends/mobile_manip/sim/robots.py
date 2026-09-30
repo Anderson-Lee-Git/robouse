@@ -29,6 +29,7 @@ Controllers (every 2 ms physics step unless noted):
   gripper: [G] > 0 closes, < 0 opens, 0 holds the finger target; the target never runs more than a small margin past
       the measured finger position, so a grasp squeezes with a bounded force (a stalled gripper, like the real ones).
 """
+
 from __future__ import annotations
 
 import math
@@ -53,12 +54,12 @@ class Robot:
     name = ""
     asset = ""
     prefix = "robot/"
-    cameras = {}      # upstream camera name -> public name (prefixed with "robot/")
+    cameras = {}  # upstream camera name -> public name (prefixed with "robot/")
     root_body = "base_link"
     # physical / controller limits
-    v_max = .4
+    v_max = 0.4
     wz_max = math.radians(60)
-    a_max = .6       # m/s^2
+    a_max = 0.6  # m/s^2
     alpha_max = 2.0  # rad/s^2
 
     def __init__(self):
@@ -81,9 +82,14 @@ class Robot:
         # chase camera: follows the robot, fixed world orientation, looking north and down from behind
         from ...embodied import lookat_xyaxes
 
-        pos, tgt = [0, -1.25, 3.2], [0, .35, .45]
-        r.body(self.root_body).add_camera(name="chase", pos=pos, xyaxes=[float(v) for v in lookat_xyaxes(pos, tgt).split()],
-                                          fovy=62, mode=mujoco.mjtCamLight.mjCAMLIGHT_TRACKCOM)
+        pos, tgt = [0, -1.25, 3.2], [0, 0.35, 0.45]
+        r.body(self.root_body).add_camera(
+            name="chase",
+            pos=pos,
+            xyaxes=[float(v) for v in lookat_xyaxes(pos, tgt).split()],
+            fovy=62,
+            mode=mujoco.mjtCamLight.mjCAMLIGHT_TRACKCOM,
+        )
         frame = s.worldbody.add_frame(pos=[0, 0, 0])
         s.attach(r, prefix=self.prefix, frame=frame)
         for c in s.cameras:
@@ -109,9 +115,13 @@ class Robot:
         pre = self.prefix
         import mujoco
 
-        self.robot_bodies = {b for b in range(m.nbody) if (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) or "").startswith(pre)}
+        self.robot_bodies = {
+            b for b in range(m.nbody) if (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) or "").startswith(pre)
+        }
         self.robot_geoms = {g for g in range(m.ngeom) if m.geom_bodyid[g] in self.robot_bodies}
-        self.finger_geoms = {g for g in self.robot_geoms if m.geom_bodyid[g] in {self.body_id(b) for b in self.finger_bodies}}
+        self.finger_geoms = {
+            g for g in self.robot_geoms if m.geom_bodyid[g] in {self.body_id(b) for b in self.finger_bodies}
+        }
         # "body" geoms: everything except the arm (the base, wheels, mast, torso, head): driving into things
         arm_root = self.body_id(self.arm_root)
 
@@ -123,7 +133,10 @@ class Robot:
             return False
 
         self.base_geoms = {g for g in self.robot_geoms if not in_arm(m.geom_bodyid[g])}
-        self.side_geoms = [{g for g in self.robot_geoms if m.geom_bodyid[g] in {self.body_id(b) for b in side}} for side in self.finger_sides]
+        self.side_geoms = [
+            {g for g in self.robot_geoms if m.geom_bodyid[g] in {self.body_id(b) for b in side}}
+            for side in self.finger_sides
+        ]
         self.v_cur, self.wz_cur, self.vy_cur = 0.0, 0.0, 0.0
         self.v_cmd, self.wz_cmd, self.vy_cmd = 0.0, 0.0, 0.0
 
@@ -155,12 +168,12 @@ class Robot:
         if tilt is not None and np.any(tilt):
             a = float(np.linalg.norm(tilt))
             q = [math.cos(a / 2), *(np.asarray(tilt) / a * math.sin(a / 2))]
-        qpos[adr:adr + 7] = [0, 0, 0, *q]
+        qpos[adr : adr + 7] = [0, 0, 0, *q]
 
     def base_tilt(self) -> np.ndarray:
         """Tilt of the base (rotation vector without the yaw), small-angle."""
         R = _rotz(-self.base_pose()[2]) @ self.base_R()
-        return .5 * np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]])
+        return 0.5 * np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]])
 
     def to_world(self, p_b) -> np.ndarray:
         x, y, yaw = self.base_pose()
@@ -196,11 +209,12 @@ class Robot:
 # bases
 # ------------------------------------------------------------------------------------------------------------------
 
+
 class DiffDriveMixin:
     wheel_acts: tuple[str, str]  # (left, right)
     wheel_gear = 1.0
-    wheel_radius = .1
-    track = .4
+    wheel_radius = 0.1
+    track = 0.4
     wheel_max = 5.0  # rad/s
 
     def _drive_substep(self, dt: float) -> None:
@@ -220,16 +234,26 @@ class DiffDriveMixin:
 # damped-least-squares IK arm (TIAGo, Google Robot)
 # ------------------------------------------------------------------------------------------------------------------
 
-class IKArm:
-    STEP = .02          # m per unit action per step
-    LEAD = .08          # the target stays within this distance of the measured gripper point
-    ROT_W = .25         # weight of the orientation error (m per rad)
-    LAM = .03           # damping
-    KI = 3.0            # joint-space integral gain (1/s) on the actuator setpoints
-    QI_MAX = .2
 
-    def __init__(self, robot: Robot, joints: list[str], acts: list[str], site: str, q_rest: list[float],
-                 box_lo, box_hi, posture_gain: float = .05):
+class IKArm:
+    STEP = 0.02  # m per unit action per step
+    LEAD = 0.08  # the target stays within this distance of the measured gripper point
+    ROT_W = 0.25  # weight of the orientation error (m per rad)
+    LAM = 0.03  # damping
+    KI = 3.0  # joint-space integral gain (1/s) on the actuator setpoints
+    QI_MAX = 0.2
+
+    def __init__(
+        self,
+        robot: Robot,
+        joints: list[str],
+        acts: list[str],
+        site: str,
+        q_rest: list[float],
+        box_lo,
+        box_hi,
+        posture_gain: float = 0.05,
+    ):
         m = robot.m
         self.r = robot
         self.jid = [robot.j(n).id for n in joints]
@@ -243,9 +267,9 @@ class IKArm:
         self.box_lo, self.box_hi = np.array(box_lo, float), np.array(box_hi, float)
         self.posture_gain = posture_gain
         # slide joints (a torso lift) move metres, not radians: give them a lower weight so the arm joints do most of it
-        self.weights = np.array([.3 if m.jnt_type[j] == 2 else 1.0 for j in self.jid])
+        self.weights = np.array([0.3 if m.jnt_type[j] == 2 else 1.0 for j in self.jid])
         # joint speed limits for the actuator targets: 1.2 rad/s, 0.07 m/s for a torso lift (TIAGo's)
-        self.rate = np.array([.07 if m.jnt_type[j] == 2 else 1.2 for j in self.jid])
+        self.rate = np.array([0.07 if m.jnt_type[j] == 2 else 1.2 for j in self.jid])
         import mujoco
 
         self.scratch = mujoco.MjData(m)
@@ -308,7 +332,7 @@ class IKArm:
             p = s.site_xpos[self.site]
             R = s.site_xmat[self.site].reshape(3, 3)
             ep = target_w - p
-            er = .5 * (np.cross(R[:, 0], R_w[:, 0]) + np.cross(R[:, 1], R_w[:, 1]) + np.cross(R[:, 2], R_w[:, 2]))
+            er = 0.5 * (np.cross(R[:, 0], R_w[:, 0]) + np.cross(R[:, 1], R_w[:, 1]) + np.cross(R[:, 2], R_w[:, 2]))
             err = float(np.linalg.norm(ep))
             jp = np.zeros((3, m.nv))
             jr = np.zeros((3, m.nv))
@@ -316,16 +340,18 @@ class IKArm:
             J = np.vstack([jp[:, self.dadr], self.ROT_W * jr[:, self.dadr]])
             e = np.concatenate([ep, self.ROT_W * er])
             free = np.ones(n, bool)
-            for _ in range(4):  # weighted damped least squares; joints that would pass a limit are locked and it is re-solved
+            for _ in range(
+                4
+            ):  # weighted damped least squares; joints that would pass a limit are locked and it is re-solved
                 W = np.diag(self.weights * free)
                 JW = J @ W
-                A = JW @ J.T + self.LAM ** 2 * np.eye(6)
+                A = JW @ J.T + self.LAM**2 * np.eye(6)
                 Jpinv = W @ J.T @ np.linalg.inv(A)
                 dq = Jpinv @ e
                 dq += (np.eye(n) - Jpinv @ J) @ (W @ (self.posture_gain * (self.q_rest - q)))
                 mx = float(np.max(np.abs(dq)))
-                if mx > .25:
-                    dq *= .25 / mx
+                if mx > 0.25:
+                    dq *= 0.25 / mx
                 qn = q + dq
                 bad = free & (((qn < self.lo) & (dq < 0)) | ((qn > self.hi) & (dq > 0)))
                 if not bad.any():
@@ -344,11 +370,11 @@ class IKArm:
             self.moved = False
             return
         # the base leans a little on its casters when the arm reaches out: compensate the slow (static) part of its tilt
-        self.tilt_f += .1 * (self.r.base_tilt() - self.tilt_f)
+        self.tilt_f += 0.1 * (self.r.base_tilt() - self.tilt_f)
         q, _ = self.solve(self.target_b, R_FORWARD, self.q_cmd)
         # keep the commanded joints close to the measured ones (no wind-up when the arm is blocked)
         qm = d.qpos[self.qadr]
-        self.q_cmd = np.clip(q, qm - .3, qm + .3)
+        self.q_cmd = np.clip(q, qm - 0.3, qm + 0.3)
         self.moved = False
 
     def substep(self, dt: float) -> None:
@@ -358,14 +384,14 @@ class IKArm:
         k = float(np.max(np.abs(dq) / (self.rate * dt)))
         self.q_sp = self.q_sp + (dq / k if k > 1 else dq)  # all joints scaled together: a straight joint-space path
         # joint-space integral on the setpoint: removes the static error of soft servos (joint friction, payload)
-        if k <= 1 and float(np.max(np.abs(d.qvel[self.dadr]))) < .08:  # only near rest (no wind-up during motion)
+        if k <= 1 and float(np.max(np.abs(d.qvel[self.dadr]))) < 0.08:  # only near rest (no wind-up during motion)
             self.qi = np.clip(self.qi + self.KI * (self.q_sp - d.qpos[self.qadr]) * dt, -self.QI_MAX, self.QI_MAX)
         d.ctrl[self.aid] = np.clip(self.q_sp + self.qi, self.lo, self.hi)
 
     def move_joints(self, q) -> None:
         self.joint_goal = np.clip(np.asarray(q, float), self.lo, self.hi)
 
-    def joints_done(self, tol: float = .03) -> bool:
+    def joints_done(self, tol: float = 0.03) -> bool:
         return self.joint_goal is not None and float(np.max(np.abs(self.r.d.qpos[self.qadr] - self.joint_goal))) < tol
 
     def release_joints(self) -> None:
@@ -382,30 +408,40 @@ class IKArm:
 # PAL TIAGo
 # ------------------------------------------------------------------------------------------------------------------
 
+
 class Tiago(DiffDriveMixin, Robot):
     key = "tiago"
     name = "PAL TIAGo"
     asset = "pal_tiago"
     cameras = {"head_camera": "head"}
     wheel_acts = ("wheel_left_joint_vel", "wheel_right_joint_vel")
-    wheel_radius = .0985
-    track = .4044
-    wheel_max = 5.0          # upstream ctrlrange +-5 rad/s
-    v_max = .45
+    wheel_radius = 0.0985
+    track = 0.4044
+    wheel_max = 5.0  # upstream ctrlrange +-5 rad/s
+    v_max = 0.45
     wz_max = math.radians(60)
-    a_max = .5
+    a_max = 0.5
     alpha_max = 1.2
     finger_bodies = ("gripper_left_finger_link", "gripper_right_finger_link")
     finger_sides = (("gripper_left_finger_link",), ("gripper_right_finger_link",))
     arm_root = "arm_1_link"
-    ARM = ["torso_lift_joint", "arm_1_joint", "arm_2_joint", "arm_3_joint", "arm_4_joint", "arm_5_joint", "arm_6_joint", "arm_7_joint"]
+    ARM = [
+        "torso_lift_joint",
+        "arm_1_joint",
+        "arm_2_joint",
+        "arm_3_joint",
+        "arm_4_joint",
+        "arm_5_joint",
+        "arm_6_joint",
+        "arm_7_joint",
+    ]
     ARM_ACTS = ["torso_lift_joint_position"] + [f"arm_position_{i}_position" for i in range(1, 8)]
     # stowed: the upstream `home` keyframe (arm folded at the side), torso at 0.15
-    STOW = [.15, .20, -1.34, -.20, 1.94, -1.57, 1.37, 0.0]
+    STOW = [0.15, 0.20, -1.34, -0.20, 1.94, -1.57, 1.37, 0.0]
     # ready: gripper ~0.55 m ahead of the base centre at 0.85 m, pointing forward (found with the IK below)
-    READY = [.317, .572, -.558, -1.212, 2.134, .93, 1.228, 1.538]
-    FINGER_OPEN = .045
-    GRIP_MARGIN = .004
+    READY = [0.317, 0.572, -0.558, -1.212, 2.134, 0.93, 1.228, 1.538]
+    FINGER_OPEN = 0.045
+    GRIP_MARGIN = 0.004
 
     def load_spec(self):
         import mujoco
@@ -424,10 +460,19 @@ class Tiago(DiffDriveMixin, Robot):
             b = r.body(nm)
             for g in b.geoms:
                 g.contype, g.conaffinity = 0, 0
-            b.add_geom(name=f"{nm}_pad", type=mujoco.mjtGeom.mjGEOM_BOX, pos=[sgn * .004, 0, -.1459], size=[.004, .02, .0725],
-                       rgba=[.1, .1, .1, 0], friction=[2.0, .01, .001], contype=1, conaffinity=1, group=3)
+            b.add_geom(
+                name=f"{nm}_pad",
+                type=mujoco.mjtGeom.mjGEOM_BOX,
+                pos=[sgn * 0.004, 0, -0.1459],
+                size=[0.004, 0.02, 0.0725],
+                rgba=[0.1, 0.1, 0.1, 0],
+                friction=[2.0, 0.01, 0.001],
+                contype=1,
+                conaffinity=1,
+                group=3,
+            )
         b = r.body("arm_7_link")
-        b.add_site(name="grasp", pos=[0, 0, .262], size=[.008, 0, 0], rgba=[1, 0, 0, 0], group=5)
+        b.add_site(name="grasp", pos=[0, 0, 0.262], size=[0.008, 0, 0], rgba=[1, 0, 0, 0], group=5)
 
     def bind(self, m, d) -> None:
         super().bind(m, d)
@@ -443,17 +488,25 @@ class Tiago(DiffDriveMixin, Robot):
         m, d = self.m, self.d
         x, y, yaw = self.start
         adr = m.jnt_qposadr[self.j("reference").id]
-        d.qpos[adr:adr + 7] = [x, y, .0, math.cos(yaw / 2), 0, 0, math.sin(yaw / 2)]
+        d.qpos[adr : adr + 7] = [x, y, 0.0, math.cos(yaw / 2), 0, 0, math.sin(yaw / 2)]
         d.qpos[self.arm_q] = self.STOW
         for a in self.fing_adr:
             d.qpos[a] = self.FINGER_OPEN
         self.grip_target = self.FINGER_OPEN
-        d.qpos[self.head_adr[1]] = -.3
-        d.ctrl[self.head_act[1]] = -.3
+        d.qpos[self.head_adr[1]] = -0.3
+        d.ctrl[self.head_act[1]] = -0.3
 
     def make_arm(self) -> None:
-        self.arm = IKArm(self, self.ARM, self.ARM_ACTS, "grasp", q_rest=self.READY,
-                         box_lo=[.15, -.6, .25], box_hi=[1.0, .6, 1.45], posture_gain=.08)
+        self.arm = IKArm(
+            self,
+            self.ARM,
+            self.ARM_ACTS,
+            "grasp",
+            q_rest=self.READY,
+            box_lo=[0.15, -0.6, 0.25],
+            box_hi=[1.0, 0.6, 1.45],
+            posture_gain=0.08,
+        )
         self.d.ctrl[self.arm.aid] = self.d.qpos[self.arm.qadr]
 
     def ee_pos(self) -> np.ndarray:
@@ -466,7 +519,7 @@ class Tiago(DiffDriveMixin, Robot):
         if g == 0:
             return
         meas = float(np.mean([self.d.qpos[a] for a in self.fing_adr]))
-        t = self.grip_target - g * .1 * self.FINGER_OPEN
+        t = self.grip_target - g * 0.1 * self.FINGER_OPEN
         t = float(np.clip(t, 0.0, self.FINGER_OPEN))
         if g > 0:
             t = max(t, meas - self.GRIP_MARGIN * 4)
@@ -483,7 +536,7 @@ class Tiago(DiffDriveMixin, Robot):
 
     def set_head(self, pan: float, tilt: float) -> None:
         self.d.ctrl[self.head_act[0]] = float(np.clip(pan, -1.309, 1.309))
-        self.d.ctrl[self.head_act[1]] = float(np.clip(tilt, -1.0472, .785))
+        self.d.ctrl[self.head_act[1]] = float(np.clip(tilt, -1.0472, 0.785))
 
     def head_angles(self) -> tuple[float, float]:
         return float(self.d.qpos[self.head_adr[0]]), float(self.d.qpos[self.head_adr[1]])
@@ -493,21 +546,30 @@ class Tiago(DiffDriveMixin, Robot):
 # Google Robot (planar base added)
 # ------------------------------------------------------------------------------------------------------------------
 
+
 class GoogleRobot(Robot):
     key = "google"
     name = "Google Robot"
     asset = "google_robot"
     cameras = {"head_camera": "head"}
-    v_max = .5
+    v_max = 0.5
     wz_max = math.radians(60)
-    a_max = .6
+    a_max = 0.6
     finger_bodies = ("link_finger_right", "link_finger_left", "link_finger_tip_right", "link_finger_tip_left")
     finger_sides = (("link_finger_left", "link_finger_tip_left"), ("link_finger_right", "link_finger_tip_right"))
     arm_root = "link_torso"
-    ARM = ["joint_torso", "joint_shoulder", "joint_bicep", "joint_elbow", "joint_forearm", "joint_wrist", "joint_gripper"]
+    ARM = [
+        "joint_torso",
+        "joint_shoulder",
+        "joint_bicep",
+        "joint_elbow",
+        "joint_forearm",
+        "joint_wrist",
+        "joint_gripper",
+    ]
     STOW = [0.0, 0.0, 0.0, 2.6, 0.0, 1.1, 0.0]
-    READY = [-.784, 1.338, 1.849, 1.657, .442, -.961, -1.875]
-    FINGER_OPEN, FINGER_CLOSED = .01, 1.3
+    READY = [-0.784, 1.338, 1.849, 1.657, 0.442, -0.961, -1.875]
+    FINGER_OPEN, FINGER_CLOSED = 0.01, 1.3
 
     def load_spec(self):
         import mujoco
@@ -520,19 +582,32 @@ class GoogleRobot(Robot):
         import mujoco
 
         b = r.body("base_link")
-        b.pos = [0, 0, .06205 + .003]  # wheels 3 mm above the floor: the planar joints carry the base
-        for nm, typ, ax in (("base_x", mujoco.mjtJoint.mjJNT_SLIDE, [1, 0, 0]), ("base_y", mujoco.mjtJoint.mjJNT_SLIDE, [0, 1, 0]),
-                            ("base_yaw", mujoco.mjtJoint.mjJNT_HINGE, [0, 0, 1])):
+        b.pos = [0, 0, 0.06205 + 0.003]  # wheels 3 mm above the floor: the planar joints carry the base
+        for nm, typ, ax in (
+            ("base_x", mujoco.mjtJoint.mjJNT_SLIDE, [1, 0, 0]),
+            ("base_y", mujoco.mjtJoint.mjJNT_SLIDE, [0, 1, 0]),
+            ("base_yaw", mujoco.mjtJoint.mjJNT_HINGE, [0, 0, 1]),
+        ):
             b.add_joint(name=nm, type=typ, axis=ax, damping=0.0, armature=0.0)
-        b.add_camera(name="head_camera", pos=[.13, 0, 1.30], xyaxes=[0, -1, 0, .45, 0, .89], fovy=60)
+        b.add_camera(name="head_camera", pos=[0.13, 0, 1.30], xyaxes=[0, -1, 0, 0.45, 0, 0.89], fovy=60)
         g = r.body("link_gripper")
-        g.add_site(name="grasp", pos=[0, 0, .115], size=[.008, 0, 0], rgba=[1, 0, 0, 0], group=5)
+        g.add_site(name="grasp", pos=[0, 0, 0.115], size=[0.008, 0, 0], rgba=[1, 0, 0, 0], group=5)
         for i, a in enumerate(r.actuators):  # upstream actuators are unnamed
             a.name = a.name or f"a_{self.ARM[i] if i < 7 else ['joint_finger_right', 'joint_finger_left'][i - 7]}"
-        for nm, gain, frc in (("base_x", 3000., 500.), ("base_y", 3000., 500.), ("base_yaw", 600., 150.)):
-            r.add_actuator(name=f"{nm}_vel", target=nm, trntype=mujoco.mjtTrn.mjTRN_JOINT, gaintype=mujoco.mjtGain.mjGAIN_FIXED,
-                           biastype=mujoco.mjtBias.mjBIAS_AFFINE, gainprm=[gain] + [0] * 9, biasprm=[0, 0, -gain] + [0] * 7,
-                           ctrlrange=[-1.5, 1.5], ctrllimited=True, forcerange=[-frc, frc], forcelimited=True)
+        for nm, gain, frc in (("base_x", 3000.0, 500.0), ("base_y", 3000.0, 500.0), ("base_yaw", 600.0, 150.0)):
+            r.add_actuator(
+                name=f"{nm}_vel",
+                target=nm,
+                trntype=mujoco.mjtTrn.mjTRN_JOINT,
+                gaintype=mujoco.mjtGain.mjGAIN_FIXED,
+                biastype=mujoco.mjtBias.mjBIAS_AFFINE,
+                gainprm=[gain] + [0] * 9,
+                biasprm=[0, 0, -gain] + [0] * 7,
+                ctrlrange=[-1.5, 1.5],
+                ctrllimited=True,
+                forcerange=[-frc, frc],
+                forcelimited=True,
+            )
 
     def bind(self, m, d) -> None:
         super().bind(m, d)
@@ -564,8 +639,16 @@ class GoogleRobot(Robot):
         self.grip_target = self.FINGER_OPEN
 
     def make_arm(self) -> None:
-        self.arm = IKArm(self, self.ARM, [f"a_{n}" for n in self.ARM], "grasp", q_rest=self.READY,
-                         box_lo=[.2, -.7, .15], box_hi=[1.0, .5, 1.5], posture_gain=.08)
+        self.arm = IKArm(
+            self,
+            self.ARM,
+            [f"a_{n}" for n in self.ARM],
+            "grasp",
+            q_rest=self.READY,
+            box_lo=[0.2, -0.7, 0.15],
+            box_hi=[1.0, 0.5, 1.5],
+            posture_gain=0.08,
+        )
         self.d.ctrl[self.arm.aid] = self.d.qpos[self.arm.qadr]
 
     def ee_pos(self) -> np.ndarray:
@@ -580,9 +663,9 @@ class GoogleRobot(Robot):
             return
         meas = float(np.mean([self.d.qpos[a] for a in self.fing_adr]))
         span = self.FINGER_CLOSED - self.FINGER_OPEN
-        t = float(np.clip(self.grip_target + g * .1 * span, self.FINGER_OPEN, self.FINGER_CLOSED))
+        t = float(np.clip(self.grip_target + g * 0.1 * span, self.FINGER_OPEN, self.FINGER_CLOSED))
         if g > 0:
-            t = min(t, meas + .5)
+            t = min(t, meas + 0.5)
         self.grip_target = t
 
     def substep(self, dt: float) -> None:
@@ -607,6 +690,7 @@ class GoogleRobot(Robot):
 # Hello Robot Stretch 3
 # ------------------------------------------------------------------------------------------------------------------
 
+
 class Stretch(DiffDriveMixin, Robot):
     key = "stretch"
     name = "Hello Robot Stretch 3"
@@ -614,22 +698,22 @@ class Stretch(DiffDriveMixin, Robot):
     cameras = {"d435i_camera_rgb": "head", "d405_rgb": "wrist"}
     wheel_acts = ("left_wheel_vel", "right_wheel_vel")
     wheel_gear = 3.0
-    wheel_radius = .0508
-    track = .3407
+    wheel_radius = 0.0508
+    track = 0.3407
     wheel_max = 5.0
-    v_max = .25
+    v_max = 0.25
     wz_max = math.radians(60)
-    a_max = .4
+    a_max = 0.4
     alpha_max = 1.5
     finger_bodies = ("link_gripper_finger_left", "link_gripper_finger_right", "rubber_tip_left", "rubber_tip_right")
     finger_sides = (("link_gripper_finger_left", "rubber_tip_left"), ("link_gripper_finger_right", "rubber_tip_right"))
     arm_root = "link_lift"
     LIFT = (0.0, 1.1)
-    EXT = (0.0, .52)
+    EXT = (0.0, 0.52)
     WYAW = (-1.39, 4.42)
-    WPITCH = (-1.57, .56)
-    SLIDE_OPEN, SLIDE_CLOSED = .04, -.02
-    STOW = dict(lift=.25, ext=0.0, wyaw=3.14, wpitch=-.4, wroll=0.0)
+    WPITCH = (-1.57, 0.56)
+    SLIDE_OPEN, SLIDE_CLOSED = 0.04, -0.02
+    STOW = dict(lift=0.25, ext=0.0, wyaw=3.14, wpitch=-0.4, wroll=0.0)
 
     def load_spec(self):
         import mujoco
@@ -644,30 +728,48 @@ class Stretch(DiffDriveMixin, Robot):
                 a.ctrlrange = [-15, 15]
         # grasp point: where the rubber fingertips meet when closing on a small object, 0.21 m out from the gripper body
         # (the upstream link_grasp_center, 0.23 m out, is where the open fingertips are)
-        r.body("link_SG3_gripper_body").add_site(name="grasp", pos=[0, 0, .21], size=[.008, 0, 0], rgba=[1, 0, 0, 0], group=5)
+        r.body("link_SG3_gripper_body").add_site(
+            name="grasp", pos=[0, 0, 0.21], size=[0.008, 0, 0], rgba=[1, 0, 0, 0], group=5
+        )
 
     def bind(self, m, d) -> None:
         super().bind(m, d)
         self._bind_wheels()
-        self.q = {n: m.jnt_qposadr[self.j(n).id] for n in ("joint_lift", "joint_arm_l0", "joint_arm_l1", "joint_arm_l2", "joint_arm_l3",
-                                                           "joint_wrist_yaw", "joint_wrist_pitch", "joint_wrist_roll",
-                                                           "joint_gripper_slide", "joint_head_pan", "joint_head_tilt")}
-        self.a = {n: self.act_id(n) for n in ("lift", "arm", "wrist_yaw", "wrist_pitch", "wrist_roll", "gripper", "head_pan", "head_tilt")}
+        self.q = {
+            n: m.jnt_qposadr[self.j(n).id]
+            for n in (
+                "joint_lift",
+                "joint_arm_l0",
+                "joint_arm_l1",
+                "joint_arm_l2",
+                "joint_arm_l3",
+                "joint_wrist_yaw",
+                "joint_wrist_pitch",
+                "joint_wrist_roll",
+                "joint_gripper_slide",
+                "joint_head_pan",
+                "joint_head_tilt",
+            )
+        }
+        self.a = {
+            n: self.act_id(n)
+            for n in ("lift", "arm", "wrist_yaw", "wrist_pitch", "wrist_roll", "gripper", "head_pan", "head_tilt")
+        }
         self.site = m.site(self.prefix + "grasp").id
 
     def init_state(self) -> None:
         m, d = self.m, self.d
         x, y, yaw = self.start
         adr = m.jnt_qposadr[m.body_jntadr[self.root]]
-        d.qpos[adr:adr + 7] = [x, y, 0.0, math.cos(yaw / 2), 0, 0, math.sin(yaw / 2)]
+        d.qpos[adr : adr + 7] = [x, y, 0.0, math.cos(yaw / 2), 0, 0, math.sin(yaw / 2)]
         s = self.STOW
         self.t = dict(lift=s["lift"], ext=s["ext"], wyaw=s["wyaw"], wpitch=s["wpitch"], wroll=s["wroll"], slide=0.0)
         d.qpos[self.q["joint_lift"]] = s["lift"]
         d.qpos[self.q["joint_wrist_yaw"]] = s["wyaw"]
         d.qpos[self.q["joint_wrist_pitch"]] = s["wpitch"]
         d.qpos[self.q["joint_gripper_slide"]] = 0.0
-        d.qpos[self.q["joint_head_tilt"]] = -.5
-        self.head = [0.0, -.5]
+        d.qpos[self.q["joint_head_tilt"]] = -0.5
+        self.head = [0.0, -0.5]
         self.qi = [0.0, 0.0]
         self._write()
 
@@ -709,16 +811,16 @@ class Stretch(DiffDriveMixin, Robot):
             return
         meas = float(self.d.qpos[self.q["joint_gripper_slide"]])
         span = self.SLIDE_OPEN - self.SLIDE_CLOSED
-        t = float(np.clip(self.t["slide"] - g * .1 * span, self.SLIDE_CLOSED, self.SLIDE_OPEN))
+        t = float(np.clip(self.t["slide"] - g * 0.1 * span, self.SLIDE_CLOSED, self.SLIDE_OPEN))
         if g > 0:
-            t = max(t, meas - .012)
+            t = max(t, meas - 0.012)
         self.t["slide"] = t
 
     def _write(self, dt: float = 0.0) -> None:
         d, a, t = self.d, self.a, self.t
         # integral on the lift / telescope setpoints (joint friction and payload), like the real motor controllers
-        self.qi[0] = float(np.clip(self.qi[0] + 4.0 * (t["lift"] - self.lift()) * dt, -.05, .05))
-        self.qi[1] = float(np.clip(self.qi[1] + 6.0 * (t["ext"] - self.ext()) * dt, -.1, .1))
+        self.qi[0] = float(np.clip(self.qi[0] + 4.0 * (t["lift"] - self.lift()) * dt, -0.05, 0.05))
+        self.qi[1] = float(np.clip(self.qi[1] + 6.0 * (t["ext"] - self.ext()) * dt, -0.1, 0.1))
         d.ctrl[a["lift"]] = float(np.clip(t["lift"] + self.qi[0], *self.LIFT))
         d.ctrl[a["arm"]] = float(np.clip(t["ext"] + self.qi[1], *self.EXT))
         d.ctrl[a["wrist_yaw"]] = t["wyaw"]
@@ -733,7 +835,7 @@ class Stretch(DiffDriveMixin, Robot):
         self._write(dt)
 
     def set_head(self, pan: float, tilt: float) -> None:
-        self.head = [float(np.clip(pan, -4.04, 1.73)), float(np.clip(tilt, -1.53, .79))]
+        self.head = [float(np.clip(pan, -4.04, 1.73)), float(np.clip(tilt, -1.53, 0.79))]
 
     def head_angles(self) -> tuple[float, float]:
         return float(self.d.qpos[self.q["joint_head_pan"]]), float(self.d.qpos[self.q["joint_head_tilt"]])

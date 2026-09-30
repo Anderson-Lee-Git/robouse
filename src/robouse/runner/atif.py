@@ -26,6 +26,7 @@ itself (status, the closing give_up) are not the agent's and become a final syst
 
   python -m robouse.runner.atif TRIAL_DIR [TRIAL_DIR ...]     (re)build both files for existing trials
 """
+
 from __future__ import annotations
 
 import json
@@ -33,7 +34,7 @@ import os
 import re
 import sys
 from bisect import bisect_right
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -42,8 +43,15 @@ OBS_LIMIT = 4000  # characters kept of one tool result (head and tail)
 MSG_LIMIT = 20000
 ORACLE_ACTS_PER_STEP = 10
 # what the harnesses run when config.json leaves the model empty (see harnesses.py)
-DEFAULT_MODELS = {"claude-code": "claude-opus-5-5", "codex": "gpt-6-astra", "claude-code-glm": "zai-org/GLM-5.3",
-                  "codex-glm": "zai-org/GLM-5.3", "mini-swe-agent-glm": "zai-org/GLM-5.3", "oracle": "scripted", "noop": "none"}
+DEFAULT_MODELS = {
+    "claude-code": "claude-opus-5-5",
+    "codex": "gpt-6-astra",
+    "claude-code-glm": "zai-org/GLM-5.3",
+    "codex-glm": "zai-org/GLM-5.3",
+    "mini-swe-agent-glm": "zai-org/GLM-5.3",
+    "oracle": "scripted",
+    "noop": "none",
+}
 ROBO_SUBCOMMANDS = ("info", "observe", "act", "move-to", "move_to", "grip", "done", "give-up", "give_up")
 ROBO_RE = re.compile(r"(?:^|[^\w.-])robo\s+(" + "|".join(re.escape(s) for s in ROBO_SUBCOMMANDS) + r")(?![\w-])", re.M)
 SCRIPT_RE = re.compile(r"(?:^|[\s;&|(])(?:python\d?(?:\.\d+)?|bash|sh|zsh|node|\./)", re.M)
@@ -94,7 +102,7 @@ def _clip(text: str, limit: int = OBS_LIMIT) -> str:
 def _iso(epoch: float | None) -> str | None:
     if epoch is None:
         return None
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.fromtimestamp(epoch, tz=UTC).isoformat().replace("+00:00", "Z")
 
 
 def _parse_iso(s: Any) -> float | None:
@@ -151,14 +159,31 @@ def _label(cmd: str, limit: int = 90) -> str:
 
 
 def _step(source: str, message: str = "", **kw) -> dict:
-    return {"source": source, "message": message, "reasoning": kw.get("reasoning"), "calls": kw.get("calls") or [],
-            "model": kw.get("model"), "metrics": kw.get("metrics"), "epoch": kw.get("epoch"), "extra": kw.get("extra") or {},
-            "notes": kw.get("notes") or []}
+    return {
+        "source": source,
+        "message": message,
+        "reasoning": kw.get("reasoning"),
+        "calls": kw.get("calls") or [],
+        "model": kw.get("model"),
+        "metrics": kw.get("metrics"),
+        "epoch": kw.get("epoch"),
+        "extra": kw.get("extra") or {},
+        "notes": kw.get("notes") or [],
+    }
 
 
 def _call(cid: str, name: str, args: dict, command: str | None = None) -> dict:
-    return {"id": cid, "name": name, "args": args if isinstance(args, dict) else {"input": args}, "command": command,
-            "output": None, "is_error": None, "images": [], "trace": [], "epoch_end": None}
+    return {
+        "id": cid,
+        "name": name,
+        "args": args if isinstance(args, dict) else {"input": args},
+        "command": command,
+        "output": None,
+        "is_error": None,
+        "images": [],
+        "trace": [],
+        "epoch_end": None,
+    }
 
 
 # ---------------------------------------------------------------------------------------------
@@ -173,14 +198,22 @@ def _parse_claude(events: list[dict], trial: Path) -> tuple[list[dict], dict]:
     for ev in events:
         et = ev.get("type")
         if et == "system" and ev.get("subtype") == "init":
-            meta.update({k: ev.get(k) for k in ("session_id", "model", "cwd", "claude_code_version", "permissionMode") if ev.get(k)})
+            meta.update(
+                {
+                    k: ev.get(k)
+                    for k in ("session_id", "model", "cwd", "claude_code_version", "permissionMode")
+                    if ev.get(k)
+                }
+            )
             meta["tools"] = ev.get("tools")
         elif et == "system":
             # api retries, compaction and similar notices: keep them visible
             sub = ev.get("subtype") or "system"
             txt = ev.get("message") or ev.get("error") or ev.get("content") or ""
             if sub not in ("init",) and (txt or sub in ("api_retry", "compact_boundary")):
-                steps.append(_step("system", _clip(f"[{sub}] {_text_of(txt) if not isinstance(txt, str) else txt}".strip())))
+                steps.append(
+                    _step("system", _clip(f"[{sub}] {_text_of(txt) if not isinstance(txt, str) else txt}".strip()))
+                )
         elif et == "assistant":
             msg = ev.get("message") or {}
             mid = msg.get("id") or f"anon-{len(steps)}"
@@ -193,8 +226,11 @@ def _parse_claude(events: list[dict], trial: Path) -> tuple[list[dict], dict]:
                 if u:
                     cached = int(u.get("cache_read_input_tokens") or 0)
                     prompt = int(u.get("input_tokens") or 0) + cached + int(u.get("cache_creation_input_tokens") or 0)
-                    st["metrics"] = {"prompt_tokens": prompt, "completion_tokens": int(u.get("output_tokens") or 0),
-                                     "cached_tokens": cached}
+                    st["metrics"] = {
+                        "prompt_tokens": prompt,
+                        "completion_tokens": int(u.get("output_tokens") or 0),
+                        "cached_tokens": cached,
+                    }
             texts, thinks = [], []
             for b in msg.get("content") or []:
                 if not isinstance(b, dict):
@@ -244,9 +280,22 @@ def _parse_claude(events: list[dict], trial: Path) -> tuple[list[dict], dict]:
                 elif b.get("type") == "text" and str(b.get("text", "")).strip():
                     steps.append(_step("user", _clip(str(b["text"]), MSG_LIMIT)))
         elif et == "result":
-            meta["result"] = {k: ev.get(k) for k in ("subtype", "is_error", "num_turns", "duration_ms", "duration_api_ms",
-                                                     "total_cost_usd", "stop_reason", "usage", "result", "api_error_status")
-                              if ev.get(k) is not None}
+            meta["result"] = {
+                k: ev.get(k)
+                for k in (
+                    "subtype",
+                    "is_error",
+                    "num_turns",
+                    "duration_ms",
+                    "duration_api_ms",
+                    "total_cost_usd",
+                    "stop_reason",
+                    "usage",
+                    "result",
+                    "api_error_status",
+                )
+                if ev.get(k) is not None
+            }
         elif et == "rate_limit_event":
             info = ev.get("rate_limit_info") or {}
             if info.get("status") not in (None, "allowed", "allowed_warning"):
@@ -268,8 +317,12 @@ def _claude_final(meta: dict) -> dict | None:
         return None
     cached = int(u.get("cache_read_input_tokens") or 0)
     prompt = int(u.get("input_tokens") or 0) + cached + int(u.get("cache_creation_input_tokens") or 0)
-    fm: dict[str, Any] = {"total_prompt_tokens": prompt or None, "total_completion_tokens": u.get("output_tokens"),
-                          "total_cached_tokens": cached or None, "total_cost_usd": r.get("total_cost_usd")}
+    fm: dict[str, Any] = {
+        "total_prompt_tokens": prompt or None,
+        "total_completion_tokens": u.get("output_tokens"),
+        "total_cached_tokens": cached or None,
+        "total_cost_usd": r.get("total_cost_usd"),
+    }
     fm["extra"] = {k: r[k] for k in ("subtype", "num_turns", "duration_ms", "stop_reason", "is_error") if k in r}
     return {k: v for k, v in fm.items() if v is not None}
 
@@ -322,7 +375,11 @@ def _parse_codex(events: list[dict], trial: Path) -> tuple[list[dict], dict]:
             raw = str(it.get("command", ""))
             cmd = _unwrap_shell(raw)
             c = _call(str(it.get("id")), "shell", {"command": cmd}, cmd)
-            c["output"] = it.get("aggregated_output") if it.get("_done") else (it.get("aggregated_output") or "[no result: command did not finish]")
+            c["output"] = (
+                it.get("aggregated_output")
+                if it.get("_done")
+                else (it.get("aggregated_output") or "[no result: command did not finish]")
+            )
             c["is_error"] = it.get("exit_code") not in (0, None) or it.get("status") == "failed"
             c["exit_code"] = it.get("exit_code")
             add(_step("agent", calls=[c]))
@@ -332,13 +389,19 @@ def _parse_codex(events: list[dict], trial: Path) -> tuple[list[dict], dict]:
             add(_step("agent", calls=[c]))
         elif typ == "mcp_tool_call":
             c = _call(str(it.get("id")), f"{it.get('server')}.{it.get('tool')}", it.get("arguments") or {})
-            c["output"] = _text_of((it.get("result") or {}).get("content") if isinstance(it.get("result"), dict) else it.get("result")) or it.get("error")
+            c["output"] = _text_of(
+                (it.get("result") or {}).get("content") if isinstance(it.get("result"), dict) else it.get("result")
+            ) or it.get("error")
             add(_step("agent", calls=[c]))
         elif typ == "web_search":
             c = _call(str(it.get("id")), "web_search", {"query": it.get("query")})
             add(_step("agent", calls=[c]))
         elif typ == "todo_list":
-            items_txt = "\n".join(f"[{'x' if t.get('completed') else ' '}] {t.get('text')}" for t in it.get("items") or [] if isinstance(t, dict))
+            items_txt = "\n".join(
+                f"[{'x' if t.get('completed') else ' '}] {t.get('text')}"
+                for t in it.get("items") or []
+                if isinstance(t, dict)
+            )
             add(_step("agent", f"(plan)\n{items_txt}"))
         elif typ == "error":
             add(_step("system", _clip(f"[codex] {it.get('message', '')}")))
@@ -353,9 +416,12 @@ def _codex_final(meta: dict) -> dict | None:
     us = meta.get("usage") or []
     if not us:
         return None
-    tot = lambda k: sum(int(u.get(k) or 0) for u in us)  # noqa: E731
-    fm = {"total_prompt_tokens": tot("input_tokens"), "total_completion_tokens": tot("output_tokens"),
-          "total_cached_tokens": tot("cached_input_tokens")}
+    tot = lambda k: sum(int(u.get(k) or 0) for u in us)
+    fm = {
+        "total_prompt_tokens": tot("input_tokens"),
+        "total_completion_tokens": tot("output_tokens"),
+        "total_cached_tokens": tot("cached_input_tokens"),
+    }
     fm["extra"] = {"reasoning_output_tokens": tot("reasoning_output_tokens"), "turns": len(us)}
     return fm
 
@@ -392,7 +458,12 @@ def _parse_mini(data: dict) -> tuple[list[dict], dict]:
                 except ValueError:
                     args = {"raw": fn.get("arguments")}
                 cmd = args.get("command") if isinstance(args, dict) else None
-                c = _call(str(tc.get("id") or f"call-{i}"), str(fn.get("name") or "bash"), args, cmd if isinstance(cmd, str) else None)
+                c = _call(
+                    str(tc.get("id") or f"call-{i}"),
+                    str(fn.get("name") or "bash"),
+                    args,
+                    cmd if isinstance(cmd, str) else None,
+                )
                 st["calls"].append(c)
                 by_call[c["id"]] = c
             if not tcs:  # text-based format: actions parsed from ```bash blocks
@@ -402,8 +473,11 @@ def _parse_mini(data: dict) -> tuple[list[dict], dict]:
                         st["calls"].append(c)
             u = (ex.get("response") or {}).get("usage") if isinstance(ex.get("response"), dict) else None
             if isinstance(u, dict):
-                st["metrics"] = {"prompt_tokens": u.get("prompt_tokens"), "completion_tokens": u.get("completion_tokens"),
-                                 "cost_usd": ex.get("cost")}
+                st["metrics"] = {
+                    "prompt_tokens": u.get("prompt_tokens"),
+                    "completion_tokens": u.get("completion_tokens"),
+                    "cost_usd": ex.get("cost"),
+                }
             steps.append(st)
             last_agent = st
         elif role == "tool" or (role == "user" and last_agent is not None and "raw_output" in ex):
@@ -432,16 +506,24 @@ def _req_label(req: dict) -> str:
     if op == "act":
         a = req.get("action") or []
         r = req.get("repeat", 1)
-        return f"robo act {' '.join(f'{x:.2f}' if isinstance(x, (int, float)) else str(x) for x in a)}" + (f" --repeat {r}" if r and r != 1 else "")
+        return f"robo act {' '.join(f'{x:.2f}' if isinstance(x, (int, float)) else str(x) for x in a)}" + (
+            f" --repeat {r}" if r and r != 1 else ""
+        )
     if op == "move_to":
         p = req.get("pos") or []
-        return f"robo move-to {' '.join(str(x) for x in p)}" + (f" --grip {req['grip']}" if req.get("grip") is not None else "")
+        return f"robo move-to {' '.join(str(x) for x in p)}" + (
+            f" --grip {req['grip']}" if req.get("grip") is not None else ""
+        )
     if op == "grip":
         return f"robo grip {req.get('value')}"
     if op == "observe":
         return "robo observe" + (" --image" if req.get("image") else "")
     if op in ("done", "give_up"):
-        return f"robo {op.replace('_', '-')} {json.dumps(req.get('text', ''))}" if req.get("text") else f"robo {op.replace('_', '-')}"
+        return (
+            f"robo {op.replace('_', '-')} {json.dumps(req.get('text', ''))}"
+            if req.get("text")
+            else f"robo {op.replace('_', '-')}"
+        )
     return f"robo {op}"
 
 
@@ -484,9 +566,14 @@ def _steps_from_trace(entries: list[int], trace: list[dict], harness: str) -> li
             st["calls"].append(c)
         ops = [trace[j].get("req", {}).get("op") for j in cur]
         motion = [o for o in ops if o in ("act", "move_to", "grip")]
-        st["message"] = (f"{harness}: {len(motion)} motion request(s)" if motion else f"{harness}: {', '.join(str(o) for o in ops)}")
+        st["message"] = (
+            f"{harness}: {len(motion)} motion request(s)" if motion else f"{harness}: {', '.join(str(o) for o in ops)}"
+        )
         if any(o in ("done", "give_up") for o in ops):
-            txt = next((trace[j]["req"].get("text") for j in cur if trace[j].get("req", {}).get("op") in ("done", "give_up")), "")
+            txt = next(
+                (trace[j]["req"].get("text") for j in cur if trace[j].get("req", {}).get("op") in ("done", "give_up")),
+                "",
+            )
             st["message"] = f"{harness}: {ops[-1]}" + (f" ({txt})" if txt else "")
         steps.append(st)
         cur, acts = [], 0
@@ -577,7 +664,7 @@ def _align(steps: list[dict], agent_entries: list[int], trace: list[dict]) -> li
     n = len(agent_entries)
     calls = [c for st in steps for c in st["calls"] if isinstance(c.get("command"), str)]
     k_static = [len(ROBO_RE.findall(c["command"])) for c in calls]
-    need_after = [sum(k_static[i + 1:]) for i in range(len(calls))]
+    need_after = [sum(k_static[i + 1 :]) for i in range(len(calls))]
     pos = 0
     pending: dict | None = None  # an earlier call that may have made more requests than we could see
     blind = False  # True when that call showed no robo results at all (a script)
@@ -594,8 +681,9 @@ def _align(steps: list[dict], agent_entries: list[int], trace: list[dict]) -> li
         if found is not None:
             osig, after = found
             hi = min(n, pos + max(k, 1) + 400)
-            cands = [q for q in range(pos, hi) if _sig_match(sigs[q], osig) and q + after <= n - 1 - need_after[i]] or \
-                    [q for q in range(pos, hi) if _sig_match(sigs[q], osig)]
+            cands = [q for q in range(pos, hi) if _sig_match(sigs[q], osig) and q + after <= n - 1 - need_after[i]] or [
+                q for q in range(pos, hi) if _sig_match(sigs[q], osig)
+            ]
             if cands:
                 if pending is not None and blind:
                     best = max(cands)  # a script made requests we could not see: take the latest fit
@@ -614,7 +702,7 @@ def _align(steps: list[dict], agent_entries: list[int], trace: list[dict]) -> li
             # requests before this command's own ones: the earlier script or loop made them without printing
             pending["trace"] = (pending.get("trace") or []) + agent_entries[pos:own_start]
             start = own_start
-        c["trace"] = agent_entries[start:end + 1]
+        c["trace"] = agent_entries[start : end + 1]
         pos = end + 1
         pending, blind = (c, False) if (scripty or LOOP_RE.search(cmd)) else (None, False)
     rest = agent_entries[pos:]
@@ -650,7 +738,11 @@ class Video:
         else:
             b = max(a, bisect_right(self.ts, t1 - 1e-6) - 1)
         real = (self.ts[b] - t0) if b > a else None
-        return round(a / self.fps, 3), round((b + 1) / self.fps, 3), (round(real, 3) if real is not None and real >= 0 else None)
+        return (
+            round(a / self.fps, 3),
+            round((b + 1) / self.fps, 3),
+            (round(real, 3) if real is not None and real >= 0 else None),
+        )
 
     @property
     def duration(self) -> float:
@@ -709,14 +801,20 @@ def _to_atif_step(sid: int, st: dict, default_model: str | None) -> dict:
         if st.get("reasoning") and st.get("llm_call_count") != 0:
             out["reasoning_content"] = st["reasoning"]
         if st["calls"]:
-            out["tool_calls"] = [{"tool_call_id": c["id"], "function_name": c["name"], "arguments": c["args"]}
-                                 for c in st["calls"]]
+            out["tool_calls"] = [
+                {"tool_call_id": c["id"], "function_name": c["name"], "arguments": c["args"]} for c in st["calls"]
+            ]
             results = []
             for c in st["calls"]:
-                content: Any = _clip(c["output"]) if isinstance(c.get("output"), str) else ("" if c.get("output") is None else _clip(json.dumps(c["output"])))
+                content: Any = (
+                    _clip(c["output"])
+                    if isinstance(c.get("output"), str)
+                    else ("" if c.get("output") is None else _clip(json.dumps(c["output"])))
+                )
                 if c.get("image_paths"):
-                    content = ([{"type": "text", "text": content}] if content else []) + \
-                        [{"type": "image", "source": {"media_type": "image/png", "path": p}} for p in c["image_paths"]]
+                    content = ([{"type": "text", "text": content}] if content else []) + [
+                        {"type": "image", "source": {"media_type": "image/png", "path": p}} for p in c["image_paths"]
+                    ]
                 r: dict[str, Any] = {"source_call_id": c["id"], "content": content}
                 ex = {}
                 if c.get("is_error"):
@@ -752,7 +850,11 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
     frames = _read_jsonl(trial / "episode" / "frames.jsonl")
     video = Video(frames)
     epoch0 = _episode_epoch(trial, episode)
-    model = ((res.get("agent_info") or {}).get("model_info") or {}).get("name") or cfg.get("model") or DEFAULT_MODELS.get(harness)
+    model = (
+        ((res.get("agent_info") or {}).get("model_info") or {}).get("name")
+        or cfg.get("model")
+        or DEFAULT_MODELS.get(harness)
+    )
     notes: list[str] = []
 
     runner_entries = [j for j, e in enumerate(trace) if _is_runner_entry(e)]
@@ -764,8 +866,10 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
     if harness in TRACE_HARNESSES:
         steps = _steps_from_trace(agent_entries, trace, harness)
         leftover: list[int] = []
-        notes.append(f"{harness} harness: no LLM; steps are the episode server's trace of robo requests "
-                     f"(up to {ORACLE_ACTS_PER_STEP} motion requests per step).")
+        notes.append(
+            f"{harness} harness: no LLM; steps are the episode server's trace of robo requests "
+            f"(up to {ORACLE_ACTS_PER_STEP} motion requests per step)."
+        )
     else:
         if harness.startswith("mini-swe-agent") and (trial / "agent" / "mini_traj.json").is_file():
             data = _read_json(trial / "agent" / "mini_traj.json")
@@ -795,15 +899,19 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
                     notes.append("agent/stdout.jsonl is empty or missing")
             n_bad = 0
             try:
-                n_bad = sum(1 for line in raw.read_text(errors="replace").splitlines() if line.strip().startswith("{")) - len(events)
+                n_bad = sum(
+                    1 for line in raw.read_text(errors="replace").splitlines() if line.strip().startswith("{")
+                ) - len(events)
             except OSError:
                 pass
             if n_bad > 0:
                 notes.append(f"{n_bad} malformed JSON line(s) in agent/stdout.jsonl skipped")
         leftover = _align(steps, agent_entries, trace)
         if leftover:
-            notes.append(f"{len(leftover)} robo request(s) in the trace could not be matched to a tool call; "
-                         "listed in the last system step")
+            notes.append(
+                f"{len(leftover)} robo request(s) in the trace could not be matched to a tool call; "
+                "listed in the last system step"
+            )
 
     # prompt step first (unless the harness recorded its own user message first)
     if not steps or steps[0]["source"] != "user":
@@ -812,15 +920,22 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
     # the final system step: runner requests, unmatched requests, the episode's verdict
     tail_lines = []
     if leftover:
-        tail_lines.append("robo requests not matched to a tool call:\n" + "\n".join(
-            f"  t={trace[j].get('t')}s {_req_label(trace[j].get('req') or {})} -> {_resp_text(trace[j].get('resp') or {})[:200]}" for j in leftover))
+        tail_lines.append(
+            "robo requests not matched to a tool call:\n"
+            + "\n".join(
+                f"  t={trace[j].get('t')}s {_req_label(trace[j].get('req') or {})} -> {_resp_text(trace[j].get('resp') or {})[:200]}"
+                for j in leftover
+            )
+        )
     for j in runner_entries:
         req = trace[j].get("req") or {}
         if req.get("op") == "give_up":
             tail_lines.append(f"runner closed the episode: {req.get('text')}")
     if episode:
-        tail_lines.append(f"episode: outcome={episode.get('outcome')} success={episode.get('success')} "
-                          f"steps_used={episode.get('steps_used')}/{episode.get('max_steps')}")
+        tail_lines.append(
+            f"episode: outcome={episode.get('outcome')} success={episode.get('success')} "
+            f"steps_used={episode.get('steps_used')}/{episode.get('max_steps')}"
+        )
     rw = ((res.get("verifier_result") or {}).get("rewards") or {}).get("reward")
     if rw is None:
         try:
@@ -852,13 +967,29 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
                 st["epoch"] = epoch0 + t_first
             s0 = max(0, int(trace[ents[0]].get("steps") or 0) - _env_steps_of(trace[ents[0]]))
             s1 = int(trace[last].get("steps") or 0)
-            st["video"] = {"t_video_start_s": a, "t_video_end_s": b, "episode_t_s": t_first, "env_steps": [s0, s1],
-                           "robo_requests": len(ents), "trace_lines": [ents[0] + 1, last + 1]}
-            row.update({"t_video_start_s": a, "t_video_end_s": b, "real_duration_s": real, "episode_t_s": t_first,
-                        "env_steps": [s0, s1], "robo_requests": len(ents)})
+            st["video"] = {
+                "t_video_start_s": a,
+                "t_video_end_s": b,
+                "episode_t_s": t_first,
+                "env_steps": [s0, s1],
+                "robo_requests": len(ents),
+                "trace_lines": [ents[0] + 1, last + 1],
+            }
+            row.update(
+                {
+                    "t_video_start_s": a,
+                    "t_video_end_s": b,
+                    "real_duration_s": real,
+                    "episode_t_s": t_first,
+                    "env_steps": [s0, s1],
+                    "robo_requests": len(ents),
+                }
+            )
             last_end = b
         else:
-            row.update({"t_video_start_s": round(last_end, 3), "t_video_end_s": round(last_end, 3), "real_duration_s": None})
+            row.update(
+                {"t_video_start_s": round(last_end, 3), "t_video_end_s": round(last_end, 3), "real_duration_s": None}
+            )
         index_rows.append(row)
 
     atif_steps = [_to_atif_step(i, st, model) for i, st in enumerate(steps, start=1)]
@@ -874,10 +1005,17 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
         "agent": {k: v for k, v in agent.items() if v is not None},
         "steps": atif_steps,
         "notes": " ".join(["Converted by robouse.atif from " + _source_name(trial, harness) + "."] + notes),
-        "extra": {"robouse": {"task": cfg.get("task") or res.get("task_name"), "harness": harness,
-                              "episode_outcome": episode.get("outcome"), "episode_success": episode.get("success"),
-                              "robo_requests": len(agent_entries), "runner_requests": len(runner_entries),
-                              "recording_index": "artifacts/recording_index.json"}},
+        "extra": {
+            "robouse": {
+                "task": cfg.get("task") or res.get("task_name"),
+                "harness": harness,
+                "episode_outcome": episode.get("outcome"),
+                "episode_success": episode.get("success"),
+                "robo_requests": len(agent_entries),
+                "runner_requests": len(runner_entries),
+                "recording_index": "artifacts/recording_index.json",
+            }
+        },
     }
     fm = dict(fm or {})
     fm["total_steps"] = len(atif_steps)
@@ -886,16 +1024,18 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
         if ms.get("instance_cost") is not None:
             fm["total_cost_usd"] = ms["instance_cost"]
     traj["final_metrics"] = {k: v for k, v in fm.items() if v is not None}
-    if meta.get("result", {}).get("result") and not any(s["source"] == "agent" and s.get("message") for s in atif_steps[-3:]):
+    if meta.get("result", {}).get("result") and not any(
+        s["source"] == "agent" and s.get("message") for s in atif_steps[-3:]
+    ):
         traj["extra"]["final_result_text"] = _clip(str(meta["result"]["result"]), MSG_LIMIT)
 
     size = _video_size(trial / "artifacts" / "recording.mp4")
     index = {
         "synthesised": False,
         "source": "robouse episode server: MuJoCo offscreen render of the simulator, one frame every few env steps "
-                  "while the robot moves (episode/frames.jsonl)",
+        "while the robot moves (episode/frames.jsonl)",
         "time_axis": "video time runs only while the simulator steps; the agent's thinking time between robo "
-                     "requests is not in the video",
+        "requests is not in the video",
         "fps": FPS,
         "size": size,
         "n_frames": video.n,
@@ -911,12 +1051,29 @@ def _video_size(mp4: Path) -> list[int] | None:
     import shutil
     import subprocess
 
-    probe = shutil.which("ffprobe") or ("/opt/homebrew/bin/ffprobe" if Path("/opt/homebrew/bin/ffprobe").exists() else None)
+    probe = shutil.which("ffprobe") or (
+        "/opt/homebrew/bin/ffprobe" if Path("/opt/homebrew/bin/ffprobe").exists() else None
+    )
     if not probe or not mp4.is_file():
         return None
     try:
-        r = subprocess.run([probe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
-                            "-of", "csv=p=0", str(mp4)], capture_output=True, text=True, timeout=20)
+        r = subprocess.run(
+            [
+                probe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=p=0",
+                str(mp4),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
         w, h = (int(x) for x in r.stdout.strip().split(",")[:2])
         return [w, h]
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -954,8 +1111,17 @@ def _source_name(trial: Path, harness: str) -> str:
         return "episode/trace.jsonl"
     if harness.startswith("mini-swe-agent") and (trial / "agent" / "mini_traj.json").is_file():
         return "agent/mini_traj.json"
-    return "agent/stdout.jsonl (" + ("Codex exec --json" if harness.startswith("codex") else "Claude Code stream-json"
-                                     if harness.startswith("claude-code") else "raw output") + ")"
+    return (
+        "agent/stdout.jsonl ("
+        + (
+            "Codex exec --json"
+            if harness.startswith("codex")
+            else "Claude Code stream-json"
+            if harness.startswith("claude-code")
+            else "raw output"
+        )
+        + ")"
+    )
 
 
 def write_trajectory(trial_dir: Path, harness: str) -> None:

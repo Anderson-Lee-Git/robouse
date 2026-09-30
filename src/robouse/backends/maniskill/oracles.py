@@ -7,6 +7,7 @@ Every solution servos the commanded hand pose (`hand_target_pos`, `hand_target_q
 7-number action [DX, DY, DZ, DROLL, DPITCH, DYAW, GRIP] and waits until the measured hand (`hand_pos`, `hand_quat`) is
 there. Quaternions are (w, x, y, z), ManiSkill's convention.
 """
+
 from __future__ import annotations
 
 import math
@@ -20,11 +21,16 @@ STEP_M, STEP_RAD = 0.02, 0.1
 
 # ---- rotations --------------------------------------------------------------------------------------------------------
 
+
 def qmat(q) -> np.ndarray:
     w, x, y, z = [float(v) for v in q]
-    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def rotvec(R) -> np.ndarray:
@@ -90,6 +96,7 @@ def clear_face_heading(yaw_deg: float, current: float, at, others) -> float:
 
 # ---- controller -------------------------------------------------------------------------------------------------------
 
+
 class Ctl(Oracle):
     def __init__(self):
         super().__init__()
@@ -98,8 +105,16 @@ class Ctl(Oracle):
     def s(self) -> dict:
         return self.state()
 
-    def goto(self, p, R=None, grip: float | None = None, tol: float = 0.004, rtol: float = 0.03, max_steps: int = 150,
-             speed: float = 1.0) -> dict:
+    def goto(
+        self,
+        p,
+        R=None,
+        grip: float | None = None,
+        tol: float = 0.004,
+        rtol: float = 0.03,
+        max_steps: int = 150,
+        speed: float = 1.0,
+    ) -> dict:
         """Servo the commanded hand pose to (p, R) and wait until the measured hand is within tol / rtol of it."""
         g = self.g if grip is None else grip
         p = np.asarray(p, dtype=float)
@@ -138,6 +153,7 @@ class Ctl(Oracle):
 
 
 # ---- task solutions ---------------------------------------------------------------------------------------------------
+
 
 def pick_cube(o: Ctl) -> None:
     s = o.s()
@@ -181,7 +197,9 @@ def stack_pyramid(o: Ctl) -> None:
     yb = math.radians(s["green_cube_yaw_deg"])
     axes = [np.array([math.cos(yb + k * math.pi / 2), math.sin(yb + k * math.pi / 2)]) for k in range(4)]
     c0 = np.asarray(s["blue_cube_pos"])
-    d = max(axes, key=lambda v: min(np.linalg.norm(b[:2] + v * 0.042 - c0[:2]), 0.08) + 0.01 * float(v @ (a[:2] - b[:2])))
+    d = max(
+        axes, key=lambda v: min(np.linalg.norm(b[:2] + v * 0.042 - c0[:2]), 0.08) + 0.01 * float(v @ (a[:2] - b[:2]))
+    )
     th = clear_face_heading(s["red_cube_yaw_deg"], o.hand_heading(), a, [b, c0])
     o.pick(a, th)
     dst = b[:2] + d * 0.042
@@ -224,8 +242,12 @@ def poke_cube(o: Ctl) -> None:
     peg, axis_yaw = np.asarray(s["peg_pos"]), math.radians(s["peg_yaw_deg"])
     ax = np.array([math.cos(axis_yaw), math.sin(axis_yaw), 0.0])
     grasp = peg - ax * (s["peg_half_length"] * 0.5)  # grip the peg's tail half; the head end pokes
-    o.pick(grasp, nearest_heading([axis_yaw + math.pi / 2, axis_yaw - math.pi / 2], o.hand_heading()),
-           z_above=0.05, z_grasp=float(peg[2]))
+    o.pick(
+        grasp,
+        nearest_heading([axis_yaw + math.pi / 2, axis_yaw - math.pi / 2], o.hand_heading()),
+        z_above=0.05,
+        z_grasp=float(peg[2]),
+    )
     s = o.s()
     goal = np.asarray(s["goal_pos"])
     for _ in range(12):
@@ -237,8 +259,11 @@ def poke_cube(o: Ctl) -> None:
         d = goal[:2] - cube[:2]
         d /= np.linalg.norm(d) + 1e-9
         hand = np.asarray(s["hand_pos"])
-        want_head = np.r_[cube[:2] - d * 0.022, head[2]] if np.linalg.norm(head[:2] - (cube[:2] - d * 0.03)) > 0.015 else \
-            np.r_[head[:2] + (goal[:2] - cube[:2]) * 1.0, head[2]]
+        want_head = (
+            np.r_[cube[:2] - d * 0.022, head[2]]
+            if np.linalg.norm(head[:2] - (cube[:2] - d * 0.03)) > 0.015
+            else np.r_[head[:2] + (goal[:2] - cube[:2]) * 1.0, head[2]]
+        )
         tgt = hand + (want_head - head)
         tgt[2] = float(s["peg_half_width"]) + 0.004 + (hand[2] - head[2])
         o.goto(tgt, tol=0.004, speed=0.4, max_steps=60)
@@ -265,7 +290,9 @@ def roll_ball(o: Ctl) -> None:
     ball, goal = np.asarray(s["ball_pos"]), np.asarray(s["goal_pos"])
     d = goal[:2] - ball[:2]
     d /= np.linalg.norm(d)
-    R = down(nearest_heading([heading(d) + math.pi / 2, heading(d) - math.pi / 2], o.hand_heading()))  # flat face hits the ball
+    R = down(
+        nearest_heading([heading(d) + math.pi / 2, heading(d) - math.pi / 2], o.hand_heading())
+    )  # flat face hits the ball
     o.grip(1, 4)
     back = ball[:2] - d * 0.1
     hand = np.asarray(s["hand_pos"])
@@ -330,8 +357,18 @@ def align_rot(cur_axis, want_axis) -> np.ndarray:
     return np.zeros(3) if n < 1e-9 else c / n * math.atan2(n, float(a @ b))
 
 
-def insert_servo(o: Ctl, tip_key: str, axis_key: str, hole, hax, along_goal: float, tol_lat: float, tol_along: float,
-                 n: int, speed: float) -> float:
+def insert_servo(
+    o: Ctl,
+    tip_key: str,
+    axis_key: str,
+    hole,
+    hax,
+    along_goal: float,
+    tol_lat: float,
+    tol_along: float,
+    n: int,
+    speed: float,
+) -> float:
     """Move the held object so its tip (state[tip_key]) sits on the line through `hole` along `hax`, at `along_goal`
     along it, with its axis (state[axis_key]) parallel to hax. Returns the remaining lateral error."""
     lat_n = 1.0
@@ -350,7 +387,9 @@ def insert_servo(o: Ctl, tip_key: str, axis_key: str, hole, hax, along_goal: flo
         # rotating about the hand moves the tip: aim the hand so the tip lands on the line after the turn
         hand = np.asarray(st["hand_pos"])
         tip_after = hand + rot(rv) @ (tip - hand)
-        o.goto(hand + err + (tip - tip_after), rot(rv) @ Rh, tol=min(tol_lat, 0.002), rtol=0.01, speed=speed, max_steps=40)
+        o.goto(
+            hand + err + (tip - tip_after), rot(rv) @ Rh, tol=min(tol_lat, 0.002), rtol=0.01, speed=speed, max_steps=40
+        )
     return lat_n
 
 
@@ -363,11 +402,19 @@ def peg_insertion_side(o: Ctl) -> None:
     # grasp with the finger heading that needs the smaller turn once the peg is lined up with the hole
     dth = wrap(heading(hax) - heading(ax))
     h0 = o.hand_heading()
-    th = min([heading(ax) + math.pi / 2, heading(ax) - math.pi / 2], key=lambda t: abs(wrap(t + dth - h0)) + abs(wrap(t - h0)))
+    th = min(
+        [heading(ax) + math.pi / 2, heading(ax) - math.pi / 2],
+        key=lambda t: abs(wrap(t + dth - h0)) + abs(wrap(t - h0)),
+    )
     o.pick(grasp, th, z_above=0.2, z_grasp=float(peg[2]))
     s = o.s()
-    o.goto(np.asarray(s["hand_pos"]), rot([0, 0, wrap(heading(hax) - heading(s["peg_axis"]))]) @ qmat(s["hand_target_quat"]),
-           tol=0.01, rtol=0.02, max_steps=200)
+    o.goto(
+        np.asarray(s["hand_pos"]),
+        rot([0, 0, wrap(heading(hax) - heading(s["peg_axis"]))]) @ qmat(s["hand_target_quat"]),
+        tol=0.01,
+        rtol=0.02,
+        max_steps=200,
+    )
     insert_servo(o, "peg_head_pos", "peg_axis", hole, hax, -(L + 0.04), 0.004, 0.01, 6, 1.0)
     insert_servo(o, "peg_head_pos", "peg_axis", hole, hax, -(L + 0.015), 0.001, 0.003, 12, 0.3)
     for a in np.arange(-L + 0.005, 0.0151, 0.01):  # in, a centimetre at a time, re-centring on the way
@@ -381,7 +428,10 @@ def plug_charger(o: Ctl) -> None:
     goal, gax = np.asarray(s["goal_pos"]), np.asarray(s["goal_plug_axis"])
     dth = wrap(heading(gax) - heading(ax))
     h0 = o.hand_heading()
-    th = min([heading(ax) + math.pi / 2, heading(ax) - math.pi / 2], key=lambda t: abs(wrap(t + dth - h0)) + abs(wrap(t - h0)))
+    th = min(
+        [heading(ax) + math.pi / 2, heading(ax) - math.pi / 2],
+        key=lambda t: abs(wrap(t + dth - h0)) + abs(wrap(t - h0)),
+    )
     # grip the back half of the base, the hand tilted 15 degrees back (palm away from the plug) so it clears the receptacle
     R = down(th)
     fing = R[:, 1]
@@ -394,8 +444,13 @@ def plug_charger(o: Ctl) -> None:
     s = o.s()
     o.goto(np.r_[np.asarray(s["hand_pos"])[:2], 0.16], tilt, tol=0.01)
     s = o.s()
-    o.goto(np.asarray(s["hand_pos"]), rot([0, 0, wrap(heading(gax) - heading(s["charger_plug_axis"]))]) @ qmat(s["hand_target_quat"]),
-           tol=0.01, rtol=0.02, max_steps=200)
+    o.goto(
+        np.asarray(s["hand_pos"]),
+        rot([0, 0, wrap(heading(gax) - heading(s["charger_plug_axis"]))]) @ qmat(s["hand_target_quat"]),
+        tol=0.01,
+        rtol=0.02,
+        max_steps=200,
+    )
     # the charger's origin is where the pins leave the base; at the goal it sits on the receptacle face
     insert_servo(o, "charger_pos", "charger_plug_axis", goal, gax, -0.05, 0.003, 0.01, 6, 1.0)
     insert_servo(o, "charger_pos", "charger_plug_axis", goal, gax, -0.03, 0.0003, 0.002, 15, 0.15)
@@ -415,8 +470,9 @@ def pull_cube_tool(o: Ctl) -> None:
     hand, tool = np.asarray(s["hand_pos"]), np.asarray(s["tool_pos"])
     off = tool - hand  # tool origin relative to the hand while held
     # tool origin such that the hook's inner face is just beyond the cube and the hook spans the cube's y
-    want = np.r_[cube[0] + s["cube_half_size"] + 0.012 - (s["tool_handle_length"] - s["tool_hook_length"]),
-                 cube[1] - 0.055, 0.0]
+    want = np.r_[
+        cube[0] + s["cube_half_size"] + 0.012 - (s["tool_handle_length"] - s["tool_hook_length"]), cube[1] - 0.055, 0.0
+    ]
     R = qmat(s["hand_target_quat"])
     o.goto(np.r_[(want - off)[:2], 0.12], R, tol=0.01)
     o.goto(np.r_[(want - off)[:2], s["tool_height"] / 2 + 0.004 - off[2]], R, tol=0.004, speed=0.4)

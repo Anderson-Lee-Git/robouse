@@ -1,4 +1,5 @@
 """Tokens and USD per trial."""
+
 from __future__ import annotations
 
 import json
@@ -12,13 +13,22 @@ PRICING = Path(__file__).with_name("pricing.json")
 def trial_cost(tdir: Path, model: str, provider: str | None) -> dict:
     """Tokens and USD for one trial, from the ATIF trajectory's final metrics; USD from the harness when it reports one,
     else from pricing.json (per 1M tokens). Scripted harnesses (oracle, noop, VLAs) cost 0 model tokens."""
-    out = {"prompt_tokens": None, "completion_tokens": None, "cached_tokens": None, "cost_usd": None, "cost_source": None}
+    out = {
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "cached_tokens": None,
+        "cost_usd": None,
+        "cost_source": None,
+    }
     try:
         fm = json.loads((tdir / "agent" / "trajectory.json").read_text()).get("final_metrics") or {}
     except (OSError, ValueError):  # no trajectory (the harness wrote none) or an unreadable one
         fm = {}
-    out.update(prompt_tokens=fm.get("total_prompt_tokens"), completion_tokens=fm.get("total_completion_tokens"),
-               cached_tokens=fm.get("total_cached_tokens"))
+    out.update(
+        prompt_tokens=fm.get("total_prompt_tokens"),
+        completion_tokens=fm.get("total_completion_tokens"),
+        cached_tokens=fm.get("total_cached_tokens"),
+    )
     prices = json.loads(config.path("ROBOUSE_PRICING", PRICING).read_text())
     price = prices.get(model)
     if price and out["prompt_tokens"] is not None:

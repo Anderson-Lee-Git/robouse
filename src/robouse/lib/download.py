@@ -1,4 +1,5 @@
 """Downloads checked against a pinned SHA-256."""
+
 from __future__ import annotations
 
 import hashlib

@@ -9,6 +9,7 @@ Offsets are drawn per object from a generator seeded by (split, seed, object nam
 always yields the same scene. Backends that support splits (tabletop pick-and-place scenes) apply them to the movable
 objects' start positions, reject draws that leave the table or collide, and record them in result.json `placement`.
 """
+
 from __future__ import annotations
 
 import hashlib

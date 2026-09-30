@@ -17,6 +17,7 @@ Harnesses
                          $ROBOUSE_VLA_URL; overrides from $ROBOUSE_VLA_POLICY_CONFIG (JSON file)
 Third-party harnesses register a callable with `build`'s signature under the `robouse.harnesses` entry point group.
 """
+
 from __future__ import annotations
 
 import json
@@ -52,13 +53,37 @@ Builder = Callable[[str, str, Path, Any, dict], Launch]  # (model, prompt, works
 
 
 def _claude_cmd(prompt: str, model: str) -> list[str]:
-    return ["claude", "-p", PROMPT_PREFIX + prompt, "--model", model, "--output-format", "stream-json", "--verbose",
-            "--dangerously-skip-permissions", "--max-turns", "400", "--disallowedTools", DISALLOWED_CLAUDE_TOOLS]
+    return [
+        "claude",
+        "-p",
+        PROMPT_PREFIX + prompt,
+        "--model",
+        model,
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--dangerously-skip-permissions",
+        "--max-turns",
+        "400",
+        "--disallowedTools",
+        DISALLOWED_CLAUDE_TOOLS,
+    ]
 
 
 def _codex_cmd(prompt: str, model: str, workspace: Path, extra: list[str] = ()) -> list[str]:
-    return ["codex", "exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox",
-            *extra, "-m", model, "-C", str(workspace), PROMPT_PREFIX + prompt]
+    return [
+        "codex",
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        *extra,
+        "-m",
+        model,
+        "-C",
+        str(workspace),
+        PROMPT_PREFIX + prompt,
+    ]
 
 
 def _oracle(model, prompt, workspace, task, env) -> Launch:
@@ -81,10 +106,19 @@ def _claude_code_glm(model, prompt, workspace, task, env) -> Launch:
 
     bm = model or GLM_MODEL
     port, stats = baseten_proxy.start(credentials.baseten_key())
-    env.update({"ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}", "ANTHROPIC_AUTH_TOKEN": "proxy-held",
-                "ANTHROPIC_API_KEY": "", "ANTHROPIC_MODEL": bm, "ANTHROPIC_DEFAULT_OPUS_MODEL": bm,
-                "ANTHROPIC_DEFAULT_SONNET_MODEL": bm, "ANTHROPIC_DEFAULT_HAIKU_MODEL": bm,
-                "ANTHROPIC_SMALL_FAST_MODEL": bm, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"})
+    env.update(
+        {
+            "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}",
+            "ANTHROPIC_AUTH_TOKEN": "proxy-held",
+            "ANTHROPIC_API_KEY": "",
+            "ANTHROPIC_MODEL": bm,
+            "ANTHROPIC_DEFAULT_OPUS_MODEL": bm,
+            "ANTHROPIC_DEFAULT_SONNET_MODEL": bm,
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": bm,
+            "ANTHROPIC_SMALL_FAST_MODEL": bm,
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        }
+    )
     env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
     env["CLAUDE_CONFIG_DIR"] = credentials.clean_claude_home()
     return Launch(_claude_cmd(prompt, bm), env, helper=stats, notes={"model": bm, "provider": "baseten"})
@@ -105,29 +139,65 @@ def _codex_glm(model, prompt, workspace, task, env) -> Launch:
     bm = model or GLM_MODEL
     env["BASETEN_API_KEY"] = credentials.baseten_key()
     env["ROBOUSE_TEXT_ONLY"] = "1"  # Baseten's Responses API rejects images; Codex attaches PNGs it sees in output
-    env["CODEX_HOME"] = credentials.clean_codex_home("# Baseten provider, set on the command line\n"
-                                                     "# Baseten's Responses API rejects image input\n"
-                                                     "[tools]\nview_image = false\n")
-    cfg = ["-c", 'model_providers.baseten.name="Baseten"', "-c", f'model_providers.baseten.base_url="{BASETEN_OPENAI}"',
-           "-c", 'model_providers.baseten.env_key="BASETEN_API_KEY"', "-c", 'model_providers.baseten.wire_api="responses"',
-           "-c", 'model_provider="baseten"']
+    env["CODEX_HOME"] = credentials.clean_codex_home(
+        "# Baseten provider, set on the command line\n"
+        "# Baseten's Responses API rejects image input\n"
+        "[tools]\nview_image = false\n"
+    )
+    cfg = [
+        "-c",
+        'model_providers.baseten.name="Baseten"',
+        "-c",
+        f'model_providers.baseten.base_url="{BASETEN_OPENAI}"',
+        "-c",
+        'model_providers.baseten.env_key="BASETEN_API_KEY"',
+        "-c",
+        'model_providers.baseten.wire_api="responses"',
+        "-c",
+        'model_provider="baseten"',
+    ]
     return Launch(_codex_cmd(prompt, bm, workspace, cfg), env, notes={"model": bm, "provider": "baseten"})
 
 
 def _mini_swe_agent_glm(model, prompt, workspace, task, env) -> Launch:
     bm = model or GLM_MODEL
-    env.update({"OPENAI_API_KEY": credentials.baseten_key(), "OPENAI_API_BASE": BASETEN_OPENAI,
-                "MSWEA_CONFIGURED": "true", "MSWEA_COST_TRACKING": "ignore_errors"})
+    env.update(
+        {
+            "OPENAI_API_KEY": credentials.baseten_key(),
+            "OPENAI_API_BASE": BASETEN_OPENAI,
+            "MSWEA_CONFIGURED": "true",
+            "MSWEA_COST_TRACKING": "ignore_errors",
+        }
+    )
     exe = shutil.which("mini") or str(Path.home() / ".local" / "bin" / "mini")
     (workspace / ".robouse" / "task.txt").write_text(PROMPT_PREFIX + prompt)
-    return Launch([exe, "-y", "--exit-immediately", "-l", "0", "-m", f"openai/{bm}", "-t", PROMPT_PREFIX + prompt,
-                   "-o", str(workspace / ".robouse" / "mini_traj.json")], env, notes={"model": bm, "provider": "baseten"})
+    return Launch(
+        [
+            exe,
+            "-y",
+            "--exit-immediately",
+            "-l",
+            "0",
+            "-m",
+            f"openai/{bm}",
+            "-t",
+            PROMPT_PREFIX + prompt,
+            "-o",
+            str(workspace / ".robouse" / "mini_traj.json"),
+        ],
+        env,
+        notes={"model": bm, "provider": "baseten"},
+    )
 
 
 def _task_language(task) -> str:
     """The instruction a VLA gets: the source benchmark's own language instruction, else the task description."""
-    return str(task.metadata.get("language_instruction") or task.meta.get("real", {}).get("goal_text")
-               or task.spec.get("real", {}).get("goal_text") or task.meta.get("task", {}).get("description", ""))
+    return str(
+        task.metadata.get("language_instruction")
+        or task.meta.get("real", {}).get("goal_text")
+        or task.spec.get("real", {}).get("goal_text")
+        or task.meta.get("task", {}).get("description", "")
+    )
 
 
 def _molmoact2(model, prompt, workspace, task, env) -> Launch:
@@ -156,13 +226,22 @@ def _vla(model, prompt, workspace, task, env) -> Launch:
     if config.env("ROBOUSE_VLA_TOKEN"):
         env["ROBOUSE_VLA_TOKEN"] = config.env("ROBOUSE_VLA_TOKEN")
     env["ROBOUSE_TASK_LANGUAGE"] = _task_language(task)
-    return Launch([config.env("ROBOUSE_VLA_PYTHON", "python3"), str(client)], env,
-                  notes={"model": cfg["preset"], "wire": cfg["wire"], "server": env["ROBOUSE_VLA_URL"], "provider": "vla"})
+    return Launch(
+        [config.env("ROBOUSE_VLA_PYTHON", "python3"), str(client)],
+        env,
+        notes={"model": cfg["preset"], "wire": cfg["wire"], "server": env["ROBOUSE_VLA_URL"], "provider": "vla"},
+    )
 
 
 HARNESSES: dict[str, Builder] = {
-    "oracle": _oracle, "noop": _noop, "claude-code": _claude_code, "claude-code-glm": _claude_code_glm,
-    "codex": _codex, "codex-glm": _codex_glm, "mini-swe-agent-glm": _mini_swe_agent_glm, "molmoact2": _molmoact2,
+    "oracle": _oracle,
+    "noop": _noop,
+    "claude-code": _claude_code,
+    "claude-code-glm": _claude_code_glm,
+    "codex": _codex,
+    "codex-glm": _codex_glm,
+    "mini-swe-agent-glm": _mini_swe_agent_glm,
+    "molmoact2": _molmoact2,
     "vla": _vla,
 }
 

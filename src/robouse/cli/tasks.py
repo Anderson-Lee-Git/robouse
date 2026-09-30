@@ -1,16 +1,17 @@
 """`robouse tasks` and `robouse components`: list, compose, scaffold and check tasks; list, show and check components.
 
-  robouse tasks [list] [ROOT] [--path]                list tasks (default: the bundled tasks)
-  robouse tasks init DIR                              scaffold a blank task folder (task.md, oracle/, verifier/)
-  robouse tasks init --embodiment E --scene S --task T [modifiers] [--seed N] --out DIR
-                                                      compose a task from components; keep it only if the reference
-                                                      solution scores 1 and the no-op agent 0
-  robouse tasks init --grid --embodiment E1,E2 ... --out DIR
-                                                      compose every compatible combination of the listed values
-  robouse tasks init --from DIR --out OUT [--upgrade] regenerate a composed task from its recorded instance
-  robouse tasks check DIR                             schema, BenchFlow's `bench tasks check`, reference 1, no-op 0
-  robouse components list [KIND] | show ID | check E S T [modifiers]
+robouse tasks [list] [ROOT] [--path]                list tasks (default: the bundled tasks)
+robouse tasks init DIR                              scaffold a blank task folder (task.md, oracle/, verifier/)
+robouse tasks init --embodiment E --scene S --task T [modifiers] [--seed N] --out DIR
+                                                    compose a task from components; keep it only if the reference
+                                                    solution scores 1 and the no-op agent 0
+robouse tasks init --grid --embodiment E1,E2 ... --out DIR
+                                                    compose every compatible combination of the listed values
+robouse tasks init --from DIR --out OUT [--upgrade] regenerate a composed task from its recorded instance
+robouse tasks check DIR                             schema, BenchFlow's `bench tasks check`, reference 1, no-op 0
+robouse components list [KIND] | show ID | check E S T [modifiers]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -20,11 +21,13 @@ import shutil
 import sys
 from pathlib import Path
 
-MODS = [("obs", "--obs", "MODE", "observation mode: state (default), vision or noisy"),
-        ("budget", "--budget", "BUDGET", "step budget: normal (default), loose or tight"),
-        ("perturbation", "--perturb", "KIND", "perturbation: none (default), push, dynamics or clutter"),
-        ("safety", "--safety", "LEVEL", "safety overlay: none (default), direct, indirect or privacy"),
-        ("roles", "--roles", "ROLES", "roles: single (default) or planner-operator")]
+MODS = [
+    ("obs", "--obs", "MODE", "observation mode: state (default), vision or noisy"),
+    ("budget", "--budget", "BUDGET", "step budget: normal (default), loose or tight"),
+    ("perturbation", "--perturb", "KIND", "perturbation: none (default), push, dynamics or clutter"),
+    ("safety", "--safety", "LEVEL", "safety overlay: none (default), direct, indirect or privacy"),
+    ("roles", "--roles", "ROLES", "roles: single (default) or planner-operator"),
+]
 DEFAULTS = {"obs": "state", "budget": "normal", "perturbation": "none", "safety": "none", "roles": "single"}
 
 
@@ -45,6 +48,7 @@ def _err(msg: str, code: int = 1) -> int:
 # robouse tasks
 # ---------------------------------------------------------------------------------------------------------------------
 
+
 def tasks_main(argv: list[str], prog: str = "robouse tasks") -> int:
     if not argv or argv[0] not in ("list", "init", "check", "-h", "--help"):
         argv = ["list", *argv]  # `robouse tasks [ROOT] [--path]` lists, as before
@@ -55,9 +59,12 @@ def tasks_main(argv: list[str], prog: str = "robouse tasks") -> int:
     ls.add_argument("root", nargs="?", metavar="ROOT", help="task root (default: the bundled tasks)")
     ls.add_argument("--path", action="store_true", help="print the bundled task directory and exit")
 
-    it = sub.add_parser("init", help="compose a task from components, regenerate one, or scaffold a blank task",
-                        description="compose a task from components and validate it (--embodiment, --scene, --task), "
-                                    "regenerate a composed task from its recorded instance (--from), or scaffold a blank task (DIR)")
+    it = sub.add_parser(
+        "init",
+        help="compose a task from components, regenerate one, or scaffold a blank task",
+        description="compose a task from components and validate it (--embodiment, --scene, --task), "
+        "regenerate a composed task from its recorded instance (--from), or scaffold a blank task (DIR)",
+    )
     it.add_argument("dir", nargs="?", metavar="DIR", help="blank task folder to create (scaffold mode)")
     it.add_argument("--embodiment", metavar="ID", help="embodiment component id (robouse components list)")
     it.add_argument("--scene", metavar="ID", help="scene component id")
@@ -65,17 +72,40 @@ def tasks_main(argv: list[str], prog: str = "robouse tasks") -> int:
     _mod_args(it)
     it.add_argument("--seed", default="0", metavar="N", help="instance seed (default 0)")
     it.add_argument("--out", metavar="DIR", help="folder to write the composed task folder(s) into")
-    it.add_argument("--grid", action="store_true", help="comma-separated values in any flag: compose every compatible combination")
-    it.add_argument("--from", dest="src", metavar="DIR", help="regenerate the composed task in this folder from its recorded instance")
-    it.add_argument("--upgrade", action="store_true", help="with --from: use the installed component versions if they differ")
-    it.add_argument("--no-validate", action="store_true", help="write without running the reference solution and the no-op control")
-    it.add_argument("--keep-trials", "--keep-runs", dest="keep_runs", metavar="DIR", help="keep the validation trials in this folder")
+    it.add_argument(
+        "--grid", action="store_true", help="comma-separated values in any flag: compose every compatible combination"
+    )
+    it.add_argument(
+        "--from",
+        dest="src",
+        metavar="DIR",
+        help="regenerate the composed task in this folder from its recorded instance",
+    )
+    it.add_argument(
+        "--upgrade", action="store_true", help="with --from: use the installed component versions if they differ"
+    )
+    it.add_argument(
+        "--no-validate", action="store_true", help="write without running the reference solution and the no-op control"
+    )
+    it.add_argument(
+        "--keep-trials",
+        "--keep-runs",
+        dest="keep_runs",
+        metavar="DIR",
+        help="keep the validation trials in this folder",
+    )
 
-    ck = sub.add_parser("check", help="validate a task: schema, `bench tasks check`, reference solution 1, no-op control 0")
+    ck = sub.add_parser(
+        "check", help="validate a task: schema, `bench tasks check`, reference solution 1, no-op control 0"
+    )
     ck.add_argument("dir", metavar="DIR", help="task folder")
-    ck.add_argument("--level", default="structural", metavar="LEVEL", help="`bench tasks check` level (default structural)")
+    ck.add_argument(
+        "--level", default="structural", metavar="LEVEL", help="`bench tasks check` level (default structural)"
+    )
     ck.add_argument("--no-run", action="store_true", help="skip the reference solution and no-op control trials")
-    ck.add_argument("--keep-trials", "--keep-runs", dest="keep_runs", metavar="DIR", help="keep the trials in this folder")
+    ck.add_argument(
+        "--keep-trials", "--keep-runs", dest="keep_runs", metavar="DIR", help="keep the trials in this folder"
+    )
 
     a = ap.parse_args(argv)
     if a.tcmd == "list":
@@ -167,13 +197,23 @@ def scaffold(d: Path) -> int:
 
 # ---- compose ----------------------------------------------------------------------------------------------------------
 
+
 def _values(a) -> dict[str, list[str]]:
     keys = ["embodiment", "scene", "task", "seed"] + [k for k, *_ in MODS]
     return {k: [x.strip() for x in str(getattr(a, k)).split(",") if x.strip()] for k in keys}
 
 
-def compose_one(emb: str, scene: str, task: str, mods: dict, seed: int, out: Path, validate_it: bool = True,
-                keep_runs: str | None = None, quiet: bool = False) -> tuple[bool, str, Path | None]:
+def compose_one(
+    emb: str,
+    scene: str,
+    task: str,
+    mods: dict,
+    seed: int,
+    out: Path,
+    validate_it: bool = True,
+    keep_runs: str | None = None,
+    quiet: bool = False,
+) -> tuple[bool, str, Path | None]:
     """Check, write and (optionally) validate one composed task. Returns (accepted, message, folder)."""
     from ..components.compose import ComposeError, record_validation, validate, write
     from ..components.registry import load
@@ -198,7 +238,11 @@ def compose_one(emb: str, scene: str, task: str, mods: dict, seed: int, out: Pat
     msg = _validation_message(v)
     if not v["accepted"]:
         shutil.rmtree(d, ignore_errors=True)
-        return False, msg + "; rejected (the reference solution must score 1 and the no-op control 0); the folder was removed", None
+        return (
+            False,
+            msg + "; rejected (the reference solution must score 1 and the no-op control 0); the folder was removed",
+            None,
+        )
     record_validation(d, v)
     return True, msg, d
 
@@ -206,12 +250,17 @@ def compose_one(emb: str, scene: str, task: str, mods: dict, seed: int, out: Pat
 def _validation_message(v: dict) -> str:
     """One line on the reference solution and no-op trials; a trial that could not run says why (e.g. missing robot
     models, with the `robouse fetch-assets` command that installs them)."""
-    broken = [f"the {name} trial did not run: {v[key]['exception']}" for key, name in
-              (("oracle", "reference solution"), ("noop", "no-op control")) if v[key].get("exception")]
+    broken = [
+        f"the {name} trial did not run: {v[key]['exception']}"
+        for key, name in (("oracle", "reference solution"), ("noop", "no-op control"))
+        if v[key].get("exception")
+    ]
     if broken:
         return "; ".join(broken)
-    return (f"reference solution reward {v['oracle']['reward']} ({v['oracle']['outcome']}, {v['oracle']['steps']} steps); "
-            f"no-op control reward {v['noop']['reward']} ({v['noop']['outcome']})")
+    return (
+        f"reference solution reward {v['oracle']['reward']} ({v['oracle']['outcome']}, {v['oracle']['steps']} steps); "
+        f"no-op control reward {v['noop']['reward']} ({v['noop']['outcome']})"
+    )
 
 
 def _compose(a) -> int:
@@ -232,8 +281,16 @@ def _compose(a) -> int:
         except ValueError:
             return _err("--seed must be an integer", 2)
         mods = modifiers({k: vals[k][0] for k, *_ in MODS})
-        ok, msg, d = compose_one(vals["embodiment"][0], vals["scene"][0], vals["task"][0], mods, seed, Path(a.out),
-                                 not a.no_validate, a.keep_runs)
+        ok, msg, d = compose_one(
+            vals["embodiment"][0],
+            vals["scene"][0],
+            vals["task"][0],
+            mods,
+            seed,
+            Path(a.out),
+            not a.no_validate,
+            a.keep_runs,
+        )
         if not ok:
             return _err(msg)
         if not a.no_validate:
@@ -245,16 +302,28 @@ def _compose(a) -> int:
     combos = [dict(zip(keys, c)) for c in itertools.product(*(vals[k] for k in keys))]
 
     def label(c: dict) -> str:
-        return " + ".join([c["embodiment"], c["scene"], c["task"]] + [f"{k}={c[k]}" for k, *_ in MODS if c[k] != DEFAULTS[k]]
-                          + ([f"seed={c['seed']}"] if len(vals["seed"]) > 1 or c["seed"] != "0" else []))
+        return " + ".join(
+            [c["embodiment"], c["scene"], c["task"]]
+            + [f"{k}={c[k]}" for k, *_ in MODS if c[k] != DEFAULTS[k]]
+            + ([f"seed={c['seed']}"] if len(vals["seed"]) > 1 or c["seed"] != "0" else [])
+        )
 
     w = max(len(label(c)) for c in combos)
     print(f"{'result':<9} {'combination':<{w}}  task folder, or why it was rejected", flush=True)
     n = 0
     for c in combos:
         mods = modifiers({k: c[k] for k, *_ in MODS})
-        ok, msg, d = compose_one(c["embodiment"], c["scene"], c["task"], mods, int(c["seed"]), Path(a.out),
-                                 not a.no_validate, a.keep_runs, quiet=True)
+        ok, msg, d = compose_one(
+            c["embodiment"],
+            c["scene"],
+            c["task"],
+            mods,
+            int(c["seed"]),
+            Path(a.out),
+            not a.no_validate,
+            a.keep_runs,
+            quiet=True,
+        )
         n += ok
         print(f"{'accepted' if ok else 'rejected':<9} {label(c):<{w}}  {d.name if ok else msg}", flush=True)
     print(f"{n} accepted, {len(combos) - n} rejected, of {len(combos)} combinations; task folders in {Path(a.out)}")
@@ -282,24 +351,41 @@ def _from(a) -> int:
     old = {k: rec["versions"].get(k, "") for k in now}
     changed = {k: (old[k], now[k]) for k in now if old[k] and old[k] != now[k]}
     if changed and not a.upgrade:
-        return _err("recorded component versions differ from the installed ones ("
-                    + ", ".join(f"{rec[k]} {o} -> {n}" for k, (o, n) in changed.items()) + "); add --upgrade to regenerate with them")
-    ok, msg, d = compose_one(rec["embodiment"], rec["scene"], rec["task"], rec["modifiers"], rec["seed"], Path(a.out),
-                             not a.no_validate, a.keep_runs)
+        return _err(
+            "recorded component versions differ from the installed ones ("
+            + ", ".join(f"{rec[k]} {o} -> {n}" for k, (o, n) in changed.items())
+            + "); add --upgrade to regenerate with them"
+        )
+    ok, msg, d = compose_one(
+        rec["embodiment"],
+        rec["scene"],
+        rec["task"],
+        rec["modifiers"],
+        rec["seed"],
+        Path(a.out),
+        not a.no_validate,
+        a.keep_runs,
+    )
     if not ok:
         return _err(msg)
     new = read_block(load_task(d).spec)
     same = yaml.safe_dump(new["instance"], sort_keys=True) == yaml.safe_dump(rec["instance"], sort_keys=True)
     if not same and not (changed or a.upgrade):
-        print(f"robouse: the regenerated layout differs from the recorded one in {a.src} (the component code changed without a "
-              "version bump); kept the new folder, compare the two", file=sys.stderr)
+        print(
+            f"robouse: the regenerated layout differs from the recorded one in {a.src} (the component code changed without a "
+            "version bump); kept the new folder, compare the two",
+            file=sys.stderr,
+        )
         return 1
-    print(("same layout as recorded" if same else "layout regenerated with the upgraded components")
-          + (f"; {msg}" if not a.no_validate else ""))
+    print(
+        ("same layout as recorded" if same else "layout regenerated with the upgraded components")
+        + (f"; {msg}" if not a.no_validate else "")
+    )
     return 0
 
 
 # ---- check ------------------------------------------------------------------------------------------------------------
+
 
 def check_task(d: Path, level: str = "structural", run: bool = True, keep_runs: str | None = None) -> int:
     from ..tasks import load_task
@@ -344,7 +430,9 @@ def check_task(d: Path, level: str = "structural", run: bool = True, keep_runs: 
         if v["oracle"].get("exception") or v["noop"].get("exception"):
             print(_validation_message(v))
         else:
-            print(f"reference solution: reward {v['oracle']['reward']} ({v['oracle']['outcome']}, {v['oracle']['steps']} steps)")
+            print(
+                f"reference solution: reward {v['oracle']['reward']} ({v['oracle']['outcome']}, {v['oracle']['steps']} steps)"
+            )
             print(f"no-op control: reward {v['noop']['reward']} ({v['noop']['outcome']})")
         if v["oracle"]["reward"] != 1:
             problems.append("the reference solution does not score 1")
@@ -360,13 +448,18 @@ def check_task(d: Path, level: str = "structural", run: bool = True, keep_runs: 
 # robouse components
 # ---------------------------------------------------------------------------------------------------------------------
 
+
 def components_main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog="robouse components", description="the embodiments, scenes, task templates and "
-                                 "modifiers composed tasks are built from")
+    ap = argparse.ArgumentParser(
+        prog="robouse components",
+        description="the embodiments, scenes, task templates and modifiers composed tasks are built from",
+    )
     sub = ap.add_subparsers(dest="ccmd", required=True, metavar="{list,show,check}")
     cl = sub.add_parser("list", help="list components")
     cl.add_argument("kind", nargs="?", choices=["embodiments", "scenes", "tasks", "modifiers"], help="only this kind")
-    cl.add_argument("--all", action="store_true", help="also list fixed components (the existing suites' robots and scenes)")
+    cl.add_argument(
+        "--all", action="store_true", help="also list fixed components (the existing suites' robots and scenes)"
+    )
     cs = sub.add_parser("show", help="print one component's manifest")
     cs.add_argument("id", metavar="ID", help="component id")
     cs.add_argument("--compatible", action="store_true", help="also list the combinations it composes into")
@@ -393,16 +486,21 @@ def components_main(argv: list[str]) -> int:
         return 0
     reg = load()
     if a.ccmd == "list":
-        for kind in ([a.kind] if a.kind else ["embodiments", "scenes", "tasks", "modifiers"]):
+        for kind in [a.kind] if a.kind else ["embodiments", "scenes", "tasks", "modifiers"]:
             print(f"{'task templates' if kind == 'tasks' else kind}:")
             for cid, m in sorted(getattr(reg, kind).items()):
                 if not m.get("composable") and not a.all:
                     continue
-                extra = {"embodiments": lambda m: f"{m.get('track', '')}, {m.get('placement', 'fixed')}",
-                         "scenes": lambda m: m.get("scenario", ""),
-                         "tasks": lambda m: ", ".join(m.get("capabilities", [])),
-                         "modifiers": lambda m: ", ".join(m.get("values", {}))}[kind](m)
-                print(f"  {cid:<24} {m['version']:<7} {m['title']}  ({extra})" + ("" if m.get("composable") else "  [fixed]"))
+                extra = {
+                    "embodiments": lambda m: f"{m.get('track', '')}, {m.get('placement', 'fixed')}",
+                    "scenes": lambda m: m.get("scenario", ""),
+                    "tasks": lambda m: ", ".join(m.get("capabilities", [])),
+                    "modifiers": lambda m: ", ".join(m.get("values", {})),
+                }[kind](m)
+                print(
+                    f"  {cid:<24} {m['version']:<7} {m['title']}  ({extra})"
+                    + ("" if m.get("composable") else "  [fixed]")
+                )
         return 0
     if a.ccmd == "show":
         for kind in ("embodiments", "scenes", "tasks", "modifiers"):
@@ -412,7 +510,9 @@ def components_main(argv: list[str]) -> int:
             print(dump(m), end="")
             if a.compatible and kind != "modifiers" and m.get("composable"):
                 print("compatible:")
-                for e, s, t in itertools.product(reg.composable("embodiments"), reg.composable("scenes"), reg.composable("tasks")):
+                for e, s, t in itertools.product(
+                    reg.composable("embodiments"), reg.composable("scenes"), reg.composable("tasks")
+                ):
                     if a.id not in (e, s, t) or not check(reg, e, s, t).ok:
                         continue
                     try:
@@ -434,8 +534,19 @@ def components_main(argv: list[str]) -> int:
             except ComposeError as e:
                 rep.ok, rep.reasons = False, [str(e)]
         if a.json:
-            print(json.dumps({"embodiment": a.embodiment, "scene": a.scene, "task": a.task, "modifiers": mods, "seed": a.seed,
-                              **rep.as_dict()}, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "embodiment": a.embodiment,
+                        "scene": a.scene,
+                        "task": a.task,
+                        "modifiers": mods,
+                        "seed": a.seed,
+                        **rep.as_dict(),
+                    },
+                    indent=2,
+                )
+            )
         elif rep.ok:
             print(f"compatible: {a.embodiment} + {a.scene} + {a.task}")
         else:
@@ -458,8 +569,11 @@ def components_main(argv: list[str]) -> int:
 
 def remix_alias(argv: list[str]) -> int:
     """`robouse remix` (renamed): prints where it moved and runs the new command, for one release."""
-    print("robouse: `robouse remix` is renamed to `robouse tasks init` (and `remix --check` to `robouse components check`); "
-          "the old name works until the next release", file=sys.stderr)
+    print(
+        "robouse: `robouse remix` is renamed to `robouse tasks init` (and `remix --check` to `robouse components check`); "
+        "the old name works until the next release",
+        file=sys.stderr,
+    )
     if "--check" in argv:
         rest = [x for x in argv if x not in ("--check",)]
         pos = {}
@@ -470,5 +584,7 @@ def remix_alias(argv: list[str]) -> int:
                 pos[x] = next(it)
             else:
                 out.append(x)
-        return components_main(["check", pos.get("--embodiment", ""), pos.get("--scene", ""), pos.get("--task", ""), *out])
+        return components_main(
+            ["check", pos.get("--embodiment", ""), pos.get("--scene", ""), pos.get("--task", ""), *out]
+        )
     return tasks_main(["init", *argv])

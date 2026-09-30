@@ -7,6 +7,7 @@ stored in git. `robouse fetch-assets` downloads the files listed in the provenan
 Menagerie commit, checks each SHA-256, and stores them in <cache>/menagerie: by default the base robots, with `--all`
 every robot, with `--robot NAME` only the named ones. $ROBOUSE_MENAGERIE_ASSETS overrides the location.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,7 +36,9 @@ def asset_root() -> Path:
     if _checkout_root().is_dir():
         return _checkout_root()
     if not cache().is_dir():
-        raise FileNotFoundError(f"robot model assets not found in {cache()}; run `robouse fetch-assets` once (about 43 MB)")
+        raise FileNotFoundError(
+            f"robot model assets not found in {cache()}; run `robouse fetch-assets` once (about 43 MB)"
+        )
     return cache()
 
 
@@ -46,8 +49,10 @@ def robot_dir(robot: str) -> Path:
     for r in roots:
         if (r / robot).is_dir():
             return r / robot
-    raise FileNotFoundError(f"robot model {robot!r} not found in {', '.join(map(str, roots))}; "
-                            f"run `robouse fetch-assets --robot {robot}` once")
+    raise FileNotFoundError(
+        f"robot model {robot!r} not found in {', '.join(map(str, roots))}; "
+        f"run `robouse fetch-assets --robot {robot}` once"
+    )
 
 
 def manifests() -> list[Path]:
@@ -59,8 +64,12 @@ def manifests() -> list[Path]:
     return [root / "provenance.json", root / "skydio_x2" / "PROVENANCE.json", root / EMBODIMENTS_MANIFEST]
 
 
-def fetch(dest: Path | None = None, log: Callable[[str], object] = print, robots: list[str] | None = None,
-          everything: bool = False) -> Path:
+def fetch(
+    dest: Path | None = None,
+    log: Callable[[str], object] = print,
+    robots: list[str] | None = None,
+    everything: bool = False,
+) -> Path:
     """Download the manifest files that are missing or differ from their pinned hash: the base robots (Panda, ALOHA,
     Skydio X2), every robot with `everything`, or only `robots`."""
     dest = Path(dest or config.env("ROBOUSE_MENAGERIE_ASSETS") or cache())

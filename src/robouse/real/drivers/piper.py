@@ -8,10 +8,12 @@ SDK calls used (piper_sdk V2 interface): `C_PiperInterface_V2(can_name)`, `Conne
 `JointCtrl(j1..j6)` (0.001 deg), `GripperCtrl(pos_0.001mm, effort_0.001Nm, 0x01, 0)`, `DisablePiper()`.
 The `sdk_factory` seam lets tests (and the mock) substitute the SDK object.
 """
+
 from __future__ import annotations
 
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 

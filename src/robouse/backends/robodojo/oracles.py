@@ -5,14 +5,15 @@ Each plan is a function of an `Oracle` (backends/embodied.py). The helpers here 
 object is on (left arm for x < 0, right arm for x > 0), approach from above, grasp across the object's narrow side and
 place with the fingers pointing down.
 """
+
 from __future__ import annotations
 
 import math
 
 import numpy as np
 
-UP = 0.12      # clearance above the table/objects for transfers (m)
-FAST = 0.022   # transfer speed (m per 40 ms step)
+UP = 0.12  # clearance above the table/objects for transfers (m)
+FAST = 0.022  # transfer speed (m per 40 ms step)
 
 
 def objects(s: dict) -> dict:
@@ -29,9 +30,13 @@ def top_z(o: dict) -> float:
 
 def quat_R(q) -> np.ndarray:
     w, x, y, z = q
-    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def narrow_yaw(o: dict) -> float:
@@ -40,11 +45,11 @@ def narrow_yaw(o: dict) -> float:
     horizontal ones are compared by size."""
     R = quat_R(o["quat"])
     size = o.get("size", [0.05, 0.05, 0.05])
-    horiz = sorted(range(3), key=lambda i: abs(R[2, i]))[:2]   # the two local axes closest to horizontal
+    horiz = sorted(range(3), key=lambda i: abs(R[2, i]))[:2]  # the two local axes closest to horizontal
     i = min(horiz, key=lambda k: size[k])
     ax = R[:2, i]
     heading = math.degrees(math.atan2(ax[1], ax[0]))
-    yaw = heading - 90.0   # fingers close along (-sin yaw, cos yaw): closing heading = yaw + 90
+    yaw = heading - 90.0  # fingers close along (-sin yaw, cos yaw): closing heading = yaw + 90
     while yaw < 0:
         yaw += 180.0
     while yaw >= 180.0:
@@ -62,8 +67,16 @@ def reach_pitch(arm: str, x: float, y: float) -> float:
     return 90.0 if d < 0.42 else 60.0
 
 
-def pick(o, arm: str, pos, yaw: float = 90.0, lift: float = UP, depth: float = 0.0, speed: float = FAST,
-         pitch: float | None = None):
+def pick(
+    o,
+    arm: str,
+    pos,
+    yaw: float = 90.0,
+    lift: float = UP,
+    depth: float = 0.0,
+    speed: float = FAST,
+    pitch: float | None = None,
+):
     """Grasp at `pos` (grasp point) from above and lift to `lift` above it."""
     x, y, z = pos
     z = z - depth
@@ -120,8 +133,8 @@ def grasp_candidates(ob: dict, depth: float = 0.02):
     L = size[long_i]
     ax = R[:2, long_i] / (np.linalg.norm(R[:2, long_i]) + 1e-9)
     cl = R[:2, short_i]
-    yaw_short = (math.degrees(math.atan2(cl[1], cl[0])) - 90.0) % 180.0   # close across the short axis
-    yaw_long = (math.degrees(math.atan2(ax[1], ax[0])) - 90.0) % 180.0    # close across the long axis
+    yaw_short = (math.degrees(math.atan2(cl[1], cl[0])) - 90.0) % 180.0  # close across the short axis
+    yaw_long = (math.degrees(math.atan2(ax[1], ax[0])) - 90.0) % 180.0  # close across the long axis
     out = []
     if size[short_i] < 0.085:
         out.append((c, yaw_short))
@@ -145,7 +158,7 @@ def plan_general_pickup(o):
         o.skill("move", arm, x, y, z, 90, yaw, 0.008)
         o.skill("grip", arm, 0.0, 12)
         o.skill("move", arm, x, y, z + 0.04, 90, yaw, 0.012)
-        if objects(o.state())["target"]["pos"][2] > z0 + 0.02:   # it came up with the hand
+        if objects(o.state())["target"]["pos"][2] > z0 + 0.02:  # it came up with the hand
             # lift while drawing the object toward the arm's base: straight up runs out of reach at the table's edges
             bx = -0.3 if arm == "left" else 0.3
             o.skill("move", arm, x + 0.4 * (bx - x), min(y, -0.1), z + 0.15, 90, yaw, 0.012)
@@ -264,7 +277,7 @@ def stack_on(o, label: str, onto: str, depth: float = 0.02, drop: float = 0.006,
     gp = grasp_point(b, depth)
     yaw = narrow_yaw(b)
     pick(o, arm, gp, yaw, lift=lift)
-    below = gp[2] - b["bbox_min"][2]          # grasp point height above the held object's bottom
+    below = gp[2] - b["bbox_min"][2]  # grasp point height above the held object's bottom
     t = objects(o.state())[onto]
     z = t["bbox_max"][2] + below + drop
     # keep the same yaw as the object below when it is a box, so the faces line up
@@ -367,14 +380,27 @@ def pick_checked(o, arm: str, label: str, depth: float, lift: float = UP, tries:
     return gp, yaw
 
 
-def move_object_to(o, label: str, xy, z_bottom: float, target_yaw: float | None = None, depth: float = 0.015,
-                   arm: str | None = None, symmetric: int = 1):
+def move_object_to(
+    o,
+    label: str,
+    xy,
+    z_bottom: float,
+    target_yaw: float | None = None,
+    depth: float = 0.015,
+    arm: str | None = None,
+    symmetric: int = 1,
+):
     """Pick `label` from above and set it down with its bottom at `z_bottom`, centred on `xy`. With `target_yaw`, the
     object is turned so its yaw_deg ends at target_yaw (modulo 360/`symmetric`)."""
     ob = objects(o.state())[label]
     if arm is None:  # the arm that has the shorter total reach to the object and to the destination
-        arm = min(("left", "right"), key=lambda a: max(math.hypot(ob["pos"][0] - BASE[a][0], ob["pos"][1] - BASE[a][1]),
-                                                        math.hypot(xy[0] - BASE[a][0], xy[1] - BASE[a][1])))
+        arm = min(
+            ("left", "right"),
+            key=lambda a: max(
+                math.hypot(ob["pos"][0] - BASE[a][0], ob["pos"][1] - BASE[a][1]),
+                math.hypot(xy[0] - BASE[a][0], xy[1] - BASE[a][1]),
+            ),
+        )
     yaw0 = ob["yaw_deg"]
     gp, yaw = pick_checked(o, arm, label, depth)
     place_yaw = yaw
@@ -556,8 +582,10 @@ def plan_classify_objects(o):
     cats = [sorted(k for k in ob if k.startswith(f"cat{i}_")) for i in range(3)]
     baskets = ["basket0", "basket1", "basket2"]
     # any category may go to any basket (one per basket): pick the assignment with the least carrying
-    best = min(itertools.permutations(range(3)), key=lambda perm: sum(
-        abs(ob[k]["pos"][0] - ob[baskets[perm[i]]]["pos"][0]) for i in range(3) for k in cats[i]))
+    best = min(
+        itertools.permutations(range(3)),
+        key=lambda perm: sum(abs(ob[k]["pos"][0] - ob[baskets[perm[i]]]["pos"][0]) for i in range(3) for k in cats[i]),
+    )
     last = None
     for i in range(3):
         bk = baskets[best[i]]
@@ -636,7 +664,7 @@ def plan_pour_balls_into_vase(o):
     arm = arm_for(cup["pos"][0] + 1e-3)
     cx, cy = (cup["bbox_min"][0] + cup["bbox_max"][0]) / 2, (cup["bbox_min"][1] + cup["bbox_max"][1]) / 2
     r = 0.5 * (cup["bbox_max"][0] - cup["bbox_min"][0])
-    side = 1.0 if arm == "right" else -1.0          # grasp the rim on the side facing the arm
+    side = 1.0 if arm == "right" else -1.0  # grasp the rim on the side facing the arm
     gx, gy, gz = cx + side * (r - 0.008), cy, cup["bbox_max"][2] - 0.015
     # top-down rim grasp, fingers closing along x across the rim wall; turning the hand's pitch then tips the cup
     # about the x axis through the grasp point, which leaves the rim's centre (on that axis) in place
@@ -645,10 +673,10 @@ def plan_pour_balls_into_vase(o):
     z = vase["bbox_max"][2] + 0.08
     px = vx + side * (r - 0.008)
     o.skill("move", arm, gx, gy, z, 90, 90, 0.012)
-    o.skill("move", arm, px, vy, z, 60, 90, FAST)     # tipping starts on the way (a level hand is out of reach here)
+    o.skill("move", arm, px, vy, z, 60, 90, FAST)  # tipping starts on the way (a level hand is out of reach here)
     o.skill("move", arm, px, vy, z, 25, 90, 0.004)
     o.skill("move", arm, px, vy, z, 5, 90, 0.004)
-    o.skill("move", arm, px, vy, z, -10, 90, 0.004)   # the opening now faces -y and down: the balls roll out
+    o.skill("move", arm, px, vy, z, -10, 90, 0.004)  # the opening now faces -y and down: the balls roll out
     o.skill("wait", 30)
     o.skill("move", arm, px, vy, z, 60, 90, 0.004)
     o.skill("move", arm, gx, gy, z, 90, 90, FAST)

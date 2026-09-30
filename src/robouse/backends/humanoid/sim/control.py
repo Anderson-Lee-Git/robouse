@@ -13,6 +13,7 @@ Firmware model (runs under `robo act`):
     MAX_DQ rad per joint per step. The goal is kept within GOAL_LEAD m of the measured end effector and within the
     arm's reach, so a blocked or out-of-reach arm stops where it is instead of winding up.
 """
+
 from __future__ import annotations
 
 import math
@@ -20,12 +21,12 @@ import math
 import mujoco
 import numpy as np
 
-MAX_DQ = .12          # rad per control step per arm joint
-GOAL_LEAD = .06       # m: goal kept this close to the measured end effector
-REACH_SLACK = .015    # m: goal kept this close to what the IK can reach
+MAX_DQ = 0.12  # rad per control step per arm joint
+GOAL_LEAD = 0.06  # m: goal kept this close to the measured end effector
+REACH_SLACK = 0.015  # m: goal kept this close to what the IK can reach
 DAMP = 3e-3
-ROT_W = .35           # weight of the orientation error (per rad) vs position (per m)
-NULL_K = .08          # posture pull in the null space, per step
+ROT_W = 0.35  # weight of the orientation error (per rad) vs position (per m)
+NULL_K = 0.08  # posture pull in the null space, per step
 
 
 class Servo:
@@ -76,8 +77,8 @@ class ArmIK:
         self.m, self.s = m, scratch
         self.qadr = m.jnt_qposadr[jids]
         self.dadr = m.jnt_dofadr[jids]
-        self.lo = m.jnt_range[jids, 0] + .02
-        self.hi = m.jnt_range[jids, 1] - .02
+        self.lo = m.jnt_range[jids, 0] + 0.02
+        self.hi = m.jnt_range[jids, 1] - 0.02
         self.site = m.site(site).id
         self.orient = orient
         self.q_nom = np.clip(q_nom, self.lo, self.hi)
@@ -104,7 +105,7 @@ class ArmIK:
             ep = goal - x
             if self.orient and self.R_goal is not None:
                 Rerr = self.R_goal @ R.T
-                er = .5 * np.array([Rerr[2, 1] - Rerr[1, 2], Rerr[0, 2] - Rerr[2, 0], Rerr[1, 0] - Rerr[0, 1]])
+                er = 0.5 * np.array([Rerr[2, 1] - Rerr[1, 2], Rerr[0, 2] - Rerr[2, 0], Rerr[1, 0] - Rerr[0, 1]])
                 J = np.vstack([Jp, ROT_W * self.jr[:, self.dadr]])
                 e = np.r_[ep, ROT_W * er]
             else:
@@ -113,7 +114,7 @@ class ArmIK:
             Jpinv = J.T @ np.linalg.inv(JJ)
             dq = Jpinv @ e
             dq += (np.eye(n) - Jpinv @ J) @ (NULL_K * (self.q_nom - q))
-            q = np.clip(q + np.clip(dq, -.08, .08), self.lo, self.hi)
+            q = np.clip(q + np.clip(dq, -0.08, 0.08), self.lo, self.hi)
             q = q0 + np.clip(q - q0, -max_dq, max_dq)
         x, _ = self.fk(q, base_qpos)
         return q, float(np.linalg.norm(goal - x))

@@ -15,9 +15,9 @@ Two kinds of scene:
 The success check runs here, every control step, from the physical state: `in_target` is the task's own "in target"
 condition (e.g. dm_control's sparse reward equal to 1), and `hold_steps` counts consecutive control steps with it true.
 """
+
 from __future__ import annotations
 
-import json
 import math
 import os
 import sys
@@ -28,11 +28,11 @@ if sys.platform.startswith("linux"):
     os.environ.setdefault("MUJOCO_GL", "osmesa")
     os.environ.setdefault("PYOPENGL_PLATFORM", os.environ["MUJOCO_GL"])
 
-import warnings  # noqa: E402
+import warnings
 
 warnings.filterwarnings("ignore")
 
-import numpy as np  # noqa: E402
+import numpy as np
 
 
 def _r(v, n: int = 4):
@@ -50,55 +50,99 @@ def _wrap(a: float) -> float:
 # Control Suite: per domain, the published extras and the "in target" rule
 # ---------------------------------------------------------------------------------------------------------------------
 
+
 def _suite_extras(domain: str, task: str, p) -> dict:
     n, d = p.named.model, p.named.data
     if domain == "cartpole":
         ang = _wrap(float(d.qpos["hinge_1"][0]))  # 0 = upright
-        return {"cart_x": _r(d.qpos["slider"][0]), "cart_vel": _r(d.qvel["slider"][0]), "pole_angle": _r(ang),
-                "pole_angvel": _r(d.qvel["hinge_1"][0])}
+        return {
+            "cart_x": _r(d.qpos["slider"][0]),
+            "cart_vel": _r(d.qvel["slider"][0]),
+            "pole_angle": _r(ang),
+            "pole_angvel": _r(d.qvel["hinge_1"][0]),
+        }
     if domain == "pendulum":
         return {"pole_angle": _r(_wrap(float(d.qpos["hinge"][0]))), "pole_angvel": _r(d.qvel["hinge"][0])}
     if domain == "acrobot":
-        return {"shoulder_angle": _r(_wrap(float(d.qpos["shoulder"][0]))), "elbow_angle": _r(_wrap(float(d.qpos["elbow"][0]))),
-                "shoulder_vel": _r(d.qvel["shoulder"][0]), "elbow_vel": _r(d.qvel["elbow"][0]),
-                "tip_pos": _r(d.site_xpos["tip"][[0, 2]]), "target_pos": _r(d.site_xpos["target"][[0, 2]]),
-                "target_radius": _r(n.site_size["target"][0]), "tip_to_target": _r(p.to_target())}
+        return {
+            "shoulder_angle": _r(_wrap(float(d.qpos["shoulder"][0]))),
+            "elbow_angle": _r(_wrap(float(d.qpos["elbow"][0]))),
+            "shoulder_vel": _r(d.qvel["shoulder"][0]),
+            "elbow_vel": _r(d.qvel["elbow"][0]),
+            "tip_pos": _r(d.site_xpos["tip"][[0, 2]]),
+            "target_pos": _r(d.site_xpos["target"][[0, 2]]),
+            "target_radius": _r(n.site_size["target"][0]),
+            "tip_to_target": _r(p.to_target()),
+        }
     if domain == "reacher":
-        return {"shoulder_angle": _r(_wrap(float(d.qpos["shoulder"][0]))), "wrist_angle": _r(d.qpos["wrist"][0]),
-                "shoulder_vel": _r(d.qvel["shoulder"][0]), "wrist_vel": _r(d.qvel["wrist"][0]),
-                "fingertip_pos": _r(d.geom_xpos["finger"][:2]), "target_pos": _r(d.geom_xpos["target"][:2]),
-                "target_radius": _r(n.geom_size["target"][0] + n.geom_size["finger"][0]),
-                "fingertip_to_target": _r(p.finger_to_target_dist())}
+        return {
+            "shoulder_angle": _r(_wrap(float(d.qpos["shoulder"][0]))),
+            "wrist_angle": _r(d.qpos["wrist"][0]),
+            "shoulder_vel": _r(d.qvel["shoulder"][0]),
+            "wrist_vel": _r(d.qvel["wrist"][0]),
+            "fingertip_pos": _r(d.geom_xpos["finger"][:2]),
+            "target_pos": _r(d.geom_xpos["target"][:2]),
+            "target_radius": _r(n.geom_size["target"][0] + n.geom_size["finger"][0]),
+            "fingertip_to_target": _r(p.finger_to_target_dist()),
+        }
     if domain == "point_mass":
-        return {"mass_pos": _r(d.geom_xpos["pointmass"][:2]), "mass_vel": _r(d.qvel[["root_x", "root_y"]]),
-                "target_pos": _r(d.geom_xpos["target"][:2]), "target_radius": _r(n.geom_size["target"][0]),
-                "mass_to_target": _r(p.mass_to_target_dist())}
+        return {
+            "mass_pos": _r(d.geom_xpos["pointmass"][:2]),
+            "mass_vel": _r(d.qvel[["root_x", "root_y"]]),
+            "target_pos": _r(d.geom_xpos["target"][:2]),
+            "target_radius": _r(n.geom_size["target"][0]),
+            "mass_to_target": _r(p.mass_to_target_dist()),
+        }
     if domain == "finger":
         sd = d.sensordata
-        return {"proximal_angle": _r(sd["proximal"][0]), "distal_angle": _r(sd["distal"][0]),
-                "proximal_vel": _r(sd["proximal_velocity"][0]), "distal_vel": _r(sd["distal_velocity"][0]),
-                "fingertip_pos": _r(d.geom_xpos["fingertip"][[0, 2]]),  # centre of the fingertip capsule
-                "fingertip_end_pos": _r((d.xpos["distal"] + d.xmat["distal"].reshape(3, 3) @ np.array([0, 0, -0.161]))[[0, 2]]),
-                "spinner_center": _r(d.xpos["spinner"][[0, 2]]), "spinner_angle": _r(_wrap(float(d.qpos["hinge"][0]))),
-                "spinner_vel": _r(d.qvel["hinge"][0]), "spinner_tip_pos": _r(sd["tip"][[0, 2]]),
-                "target_pos": _r(sd["target"][[0, 2]]), "target_radius": _r(n.site_size["target"][0]),
-                "tip_to_target": _r(np.linalg.norm(p.to_target()))}
+        return {
+            "proximal_angle": _r(sd["proximal"][0]),
+            "distal_angle": _r(sd["distal"][0]),
+            "proximal_vel": _r(sd["proximal_velocity"][0]),
+            "distal_vel": _r(sd["distal_velocity"][0]),
+            "fingertip_pos": _r(d.geom_xpos["fingertip"][[0, 2]]),  # centre of the fingertip capsule
+            "fingertip_end_pos": _r(
+                (d.xpos["distal"] + d.xmat["distal"].reshape(3, 3) @ np.array([0, 0, -0.161]))[[0, 2]]
+            ),
+            "spinner_center": _r(d.xpos["spinner"][[0, 2]]),
+            "spinner_angle": _r(_wrap(float(d.qpos["hinge"][0]))),
+            "spinner_vel": _r(d.qvel["hinge"][0]),
+            "spinner_tip_pos": _r(sd["tip"][[0, 2]]),
+            "target_pos": _r(sd["target"][[0, 2]]),
+            "target_radius": _r(n.site_size["target"][0]),
+            "tip_to_target": _r(np.linalg.norm(p.to_target())),
+        }
     if domain == "ball_in_cup":
-        return {"cup_pos": _r(d.xpos["cup"][[0, 2]]), "cup_vel": _r(d.qvel[["cup_x", "cup_z"]]),
-                "ball_pos": _r(d.xpos["ball"][[0, 2]]), "ball_vel": _r(d.qvel[["ball_x", "ball_z"]]),
-                "cup_target_center": _r(d.site_xpos["target"][[0, 2]]), "string_length": 0.3}
+        return {
+            "cup_pos": _r(d.xpos["cup"][[0, 2]]),
+            "cup_vel": _r(d.qvel[["cup_x", "cup_z"]]),
+            "ball_pos": _r(d.xpos["ball"][[0, 2]]),
+            "ball_vel": _r(d.qvel[["ball_x", "ball_z"]]),
+            "cup_target_center": _r(d.site_xpos["target"][[0, 2]]),
+            "string_length": 0.3,
+        }
     if domain == "manipulator":
         obj = "peg" if "peg" in task else "ball"
         joints = ["arm_root", "arm_shoulder", "arm_elbow", "arm_wrist", "finger", "fingertip", "thumb", "thumbtip"]
-        out = {"joint_angles": {j: _r(_wrap(float(d.qpos[j][0]))) for j in joints},
-               "joint_vels": {j: _r(d.qvel[j][0]) for j in joints},
-               "grasp_site_pos": _r(d.site_xpos["grasp"][[0, 2]]), "pinch_site_pos": _r(d.site_xpos["pinch"][[0, 2]]),
-               f"{obj}_site_pos": _r(d.site_xpos[obj][[0, 2]]), f"target_{obj}_site_pos": _r(d.site_xpos["target_" + obj][[0, 2]]),
-               f"{obj}_angle": _r(_wrap(float(d.qpos[obj + "_y"][0]))), f"{obj}_to_target": _r(p.site_distance(obj, "target_" + obj))}
+        out = {
+            "joint_angles": {j: _r(_wrap(float(d.qpos[j][0]))) for j in joints},
+            "joint_vels": {j: _r(d.qvel[j][0]) for j in joints},
+            "grasp_site_pos": _r(d.site_xpos["grasp"][[0, 2]]),
+            "pinch_site_pos": _r(d.site_xpos["pinch"][[0, 2]]),
+            f"{obj}_site_pos": _r(d.site_xpos[obj][[0, 2]]),
+            f"target_{obj}_site_pos": _r(d.site_xpos["target_" + obj][[0, 2]]),
+            f"{obj}_angle": _r(_wrap(float(d.qpos[obj + "_y"][0]))),
+            f"{obj}_to_target": _r(p.site_distance(obj, "target_" + obj)),
+        }
         if obj == "peg":
-            out.update({"peg_tip_pos": _r(d.site_xpos["peg_tip"][[0, 2]]), "target_peg_tip_pos": _r(d.site_xpos["target_peg_tip"][[0, 2]]),
-                        "peg_grasp_site_pos": _r(d.site_xpos["peg_grasp"][[0, 2]]),
-                        "peg_tip_to_target": _r(p.site_distance("peg_tip", "target_peg_tip"))})
+            out.update(
+                {
+                    "peg_tip_pos": _r(d.site_xpos["peg_tip"][[0, 2]]),
+                    "target_peg_tip_pos": _r(d.site_xpos["target_peg_tip"][[0, 2]]),
+                    "peg_grasp_site_pos": _r(d.site_xpos["peg_grasp"][[0, 2]]),
+                    "peg_tip_to_target": _r(p.site_distance("peg_tip", "target_peg_tip")),
+                }
+            )
         return out
     return {}
 
@@ -137,12 +181,12 @@ def mjcf_frame(entity):
 # Manipulation (Jaco)
 # ---------------------------------------------------------------------------------------------------------------------
 
-EE_STEP = 0.01          # m of commanded pinch-site motion per unit of DX/DY/DZ
-EE_LIM = 2.0            # |DX|, |DY|, |DZ| <= 2 units per step (2 cm per 40 ms step = 0.5 m/s)
-YAW_STEP = 0.1          # rad of commanded hand yaw per unit of DYAW
+EE_STEP = 0.01  # m of commanded pinch-site motion per unit of DX/DY/DZ
+EE_LIM = 2.0  # |DX|, |DY|, |DZ| <= 2 units per step (2 cm per 40 ms step = 0.5 m/s)
+YAW_STEP = 0.1  # rad of commanded hand yaw per unit of DYAW
 YAW_LIM = 2.0
 WS_LOW, WS_HIGH = [-0.35, -0.35, -0.02], [0.35, 0.35, 0.6]  # the commanded pinch point stays in this box (m)
-FINGER_VEL = 3.0        # rad/s finger velocity at GRIP = +-1
+FINGER_VEL = 3.0  # rad/s finger velocity at GRIP = +-1
 
 
 class Worker:
@@ -162,7 +206,7 @@ class Worker:
             from dm_control import manipulation
 
             self.env = manipulation.load(task, seed=int(seed))
-            self.env._time_limit = float("inf")  # noqa: SLF001  (the robouse step budget ends the episode)
+            self.env._time_limit = float("inf")
             self.physics = self.env.physics
         self.ts = self.env.reset()
         self.physics = self.env.physics
@@ -175,8 +219,13 @@ class Worker:
 
         cams = [mujoco.mj_id2name(m.ptr, mujoco.mjtObj.mjOBJ_CAMERA, i) for i in range(m.ncam)]
         spec = self.env.action_spec()
-        return {"cameras": cams, "control_dt": float(self.env.control_timestep()),
-                "action_low": _r(spec.minimum), "action_high": _r(spec.maximum), "in_target": self.in_target}
+        return {
+            "cameras": cams,
+            "control_dt": float(self.env.control_timestep()),
+            "action_low": _r(spec.minimum),
+            "action_high": _r(spec.maximum),
+            "in_target": self.in_target,
+        }
 
     def _in_target(self) -> bool:
         if self.kind == "suite":
@@ -225,9 +274,18 @@ class Worker:
         p = self.physics
         m = p.model.ptr
         self._pinch = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, "jaco_arm/jaco_hand/pinchsite")
-        self._arm_dofs = [p.model.jnt_dofadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"jaco_arm/joint_{i}")] for i in range(1, 7)]
-        self._arm_q = [p.model.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"jaco_arm/joint_{i}")] for i in range(1, 7)]
-        self._finger_q = [p.model.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"jaco_arm/jaco_hand/finger_{i}")] for i in range(1, 4)]
+        self._arm_dofs = [
+            p.model.jnt_dofadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"jaco_arm/joint_{i}")]
+            for i in range(1, 7)
+        ]
+        self._arm_q = [
+            p.model.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"jaco_arm/joint_{i}")]
+            for i in range(1, 7)
+        ]
+        self._finger_q = [
+            p.model.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"jaco_arm/jaco_hand/finger_{i}")]
+            for i in range(1, 4)
+        ]
         self.cmd_pos = p.data.site_xpos[self._pinch].copy()
         self.cmd_yaw = self._hand_yaw()
         self.grip = 0.0
@@ -238,7 +296,7 @@ class Worker:
         t = self.env.task
         out = {}
         if getattr(t, "_prop", None) is not None:
-            out["brick"] = t._prop  # noqa: SLF001
+            out["brick"] = t._prop
         for i, b in enumerate(getattr(t, "_bricks", None) or []):
             out[f"brick_{i}"] = b
         return out
@@ -282,11 +340,16 @@ class Worker:
 
     def _manip_observe(self) -> dict:
         p = self.physics
-        out = {"hand_pos": _r(p.data.site_xpos[self._pinch]), "hand_target_pos": _r(self.cmd_pos),
-               "hand_yaw_deg": _r(math.degrees(self._hand_yaw()), 1), "hand_target_yaw_deg": _r(math.degrees(self.cmd_yaw), 1),
-               "hand_z_axis": _r(p.data.site_xmat[self._pinch].reshape(3, 3)[:, 2], 3),
-               "arm_joints": _r(p.data.qpos[self._arm_q]), "finger_joints": _r(p.data.qpos[self._finger_q]),
-               "grip_command": _r(self.grip, 2)}
+        out = {
+            "hand_pos": _r(p.data.site_xpos[self._pinch]),
+            "hand_target_pos": _r(self.cmd_pos),
+            "hand_yaw_deg": _r(math.degrees(self._hand_yaw()), 1),
+            "hand_target_yaw_deg": _r(math.degrees(self.cmd_yaw), 1),
+            "hand_z_axis": _r(p.data.site_xmat[self._pinch].reshape(3, 3)[:, 2], 3),
+            "arm_joints": _r(p.data.qpos[self._arm_q]),
+            "finger_joints": _r(p.data.qpos[self._finger_q]),
+            "grip_command": _r(self.grip, 2),
+        }
         for name, e in self._props.items():
             out[f"{name}_pos"] = _r(self._entity_pos(e))
             out[f"{name}_quat_wxyz"] = _r(self._entity_quat(e))
@@ -309,19 +372,23 @@ class Worker:
         name = self.task
         out = {}
         if name.startswith("reach_site"):
-            out["target_pos"] = _r(p.bind(t._target).xpos)  # noqa: SLF001
+            out["target_pos"] = _r(p.bind(t._target).xpos)
             out["target_radius"] = 0.05
-            out["hand_to_target"] = _r(np.linalg.norm(p.data.site_xpos[self._pinch] - p.bind(t._target).xpos))  # noqa: SLF001
+            out["hand_to_target"] = _r(np.linalg.norm(p.data.site_xpos[self._pinch] - p.bind(t._target).xpos))
         elif name.startswith("lift"):
-            out["brick_lowest_point_z"] = _r(min(p.bind(t._prop.vertices).xpos[:, 2]))  # noqa: SLF001
-            out["target_height"] = _r(t._target_height)  # noqa: SLF001
+            out["brick_lowest_point_z"] = _r(min(p.bind(t._prop.vertices).xpos[:, 2]))
+            out["target_height"] = _r(t._target_height)
         elif name.startswith("place"):
-            out["target_pos"] = _r(p.bind(t._pedestal.target_site).xpos)  # noqa: SLF001
+            out["target_pos"] = _r(p.bind(t._pedestal.target_site).xpos)
             out["target_radius"] = 0.05
-            out["brick_to_target"] = _r(np.linalg.norm(p.bind(t._prop_frame).xpos - p.bind(t._pedestal.target_site).xpos))  # noqa: SLF001
-            out["hand_to_target"] = _r(np.linalg.norm(p.data.site_xpos[self._pinch] - p.bind(t._pedestal.target_site).xpos))  # noqa: SLF001
+            out["brick_to_target"] = _r(
+                np.linalg.norm(p.bind(t._prop_frame).xpos - p.bind(t._pedestal.target_site).xpos)
+            )
+            out["hand_to_target"] = _r(
+                np.linalg.norm(p.data.site_xpos[self._pinch] - p.bind(t._pedestal.target_site).xpos)
+            )
         elif name.startswith("stack"):
-            out["desired_order_bottom_to_top"] = [int(i) for i in t._desired_order]  # noqa: SLF001
+            out["desired_order_bottom_to_top"] = [int(i) for i in t._desired_order]
         return out
 
     def _manip_in_target(self) -> bool:
@@ -332,7 +399,7 @@ class Worker:
         g = self.physics.model.vis.global_  # the offscreen buffer must hold the frame (visual only; recordings)
         if width > g.offwidth or height > g.offheight:
             if getattr(self.physics, "_contexts", None):
-                self.physics._free_rendering_contexts()  # noqa: SLF001  rebuilt at the new size on the next render
+                self.physics._free_rendering_contexts()
             g.offwidth, g.offheight = max(g.offwidth, width), max(g.offheight, height)
         img = self.physics.render(height=height, width=width, camera_id=camera)
         return np.ascontiguousarray(img, dtype=np.uint8)

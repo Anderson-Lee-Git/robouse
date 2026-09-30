@@ -1,6 +1,7 @@
 """Backend registry. The `robouse:` block of a task's task.md names a backend (`backend: KIND`) and its parameters;
 each backend is one subpackage of robouse.backends. Third-party simulators register a class taking the block under the
 `robouse.backends` entry point group."""
+
 from __future__ import annotations
 
 import importlib

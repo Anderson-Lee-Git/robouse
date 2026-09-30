@@ -12,18 +12,19 @@ hand joint (0.3 rad per unit), clipped to +-8, +-3 and +-6 units per step and to
 move_to / grip skills) drives the active arm and sets the hand to a generic power-grasp closure G (0 keeps the hand, G > 0
 closes to fraction G of the preset, G < 0 opens fully).
 """
+
 from __future__ import annotations
 
-import json
 import os
-import sys
 import time
 import types
 
-os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")  # DexJoCo's controller inverts small matrices every substep; threaded
-os.environ.setdefault("OMP_NUM_THREADS", "1")       # BLAS makes that ~70x slower on macOS
+os.environ.setdefault(
+    "OPENBLAS_NUM_THREADS", "1"
+)  # DexJoCo's controller inverts small matrices every substep; threaded
+os.environ.setdefault("OMP_NUM_THREADS", "1")  # BLAS makes that ~70x slower on macOS
 
-import numpy as np  # noqa: E402
+import numpy as np
 
 POS_STEP = 0.02
 ROT_STEP = 0.2
@@ -34,27 +35,65 @@ FINGERS = ("ff", "mf", "rf", "th")
 # Per task: which scene quantities `observe` reports. kind: body (current pose of a body), jbody (body carrying a free
 # joint), geom, site, sensor (value), joint (qpos of a 1-dof joint), attr (an attribute of the DexJoCo env).
 FIELDS: dict[str, list[tuple[str, str, str]]] = {
-    "water_plant": [("sprayer", "jbody", "spray_root"), ("sprayer_trigger_angle", "sensor", "spray_joint_0_pos"),
-                    ("nozzle_ref_point", "site", "ref_point"), ("plant", "body", "plant")],
-    "hammer_nail": [("hammer", "jbody", "hammer_joint"), ("nail_head", "attr", "_nail_head"),
-                    ("nail_depth", "attr", "_nail_depth"), ("nail_success_depth", "attr", "_success_depth")],
-    "click_mouse": [("mouse", "jbody", "mouse_root"), ("mouse_left_button", "sensor", "mouse_joint0_pos"),
-                    ("mousepad", "geom", "@mousepad"), ("mousepad_radius", "attr", "_mousepad_radius"),
-                    ("monitor", "jbody", "display_root"), ("display_blue", "attr", "_display_blue")],
-    "pick_bucket": [("bucket", "jbody", "bucket_root"), ("bucket_handle_angle", "joint", "bucket_joint_0"),
-                    ("food_box", "jbody", "boxed_food_0_freejoint")],
-    "pinch_tongs": [("tongs", "jbody", "tongs_root"), ("tongs_opening", "sensor", "tongs_joint_0_pos"),
-                    ("pinch_count", "attr", "_pinch_count"), ("lift_height_z", "attr", "_lift_z")],
-    "fold_glasses": [("glasses", "jbody", "glass_root"), ("left_temple_angle", "joint", "glass_joint_0"),
-                     ("right_temple_angle", "joint", "glass_joint_1"), ("open_box", "body", "open_box")],
-    "bimanual_assembly": [("peg", "jbody", "industreal_round_peg_8mm_joint"),
-                          ("socket", "jbody", "industreal_tray_insert_round_peg_8mm_joint")],
-    "bimanual_microwave_cook": [("hot_dog", "jbody", "hot_dog_free"), ("microwave", "body", "microwave_object"),
-                                ("microwave_door_angle", "joint", "microjoint"), ("start_button", "geom", "start_button")],
-    "bimanual_photograph": [("camera", "jbody", "camera_root"), ("shutter_button", "geom", "@shutter"),
-                            ("camera_view_point", "site", "@view"), ("target_region_center", "geom", "@target_region")],
-    "bimanual_unlock_ipad": [("ipad", "jbody", "ipad_freejoint"), ("stand", "body", "ipad_stand"),
-                             ("digits_entered", "attr", "_unlock_index"), ("unlocked", "attr", "_screen_unlocked")]
+    "water_plant": [
+        ("sprayer", "jbody", "spray_root"),
+        ("sprayer_trigger_angle", "sensor", "spray_joint_0_pos"),
+        ("nozzle_ref_point", "site", "ref_point"),
+        ("plant", "body", "plant"),
+    ],
+    "hammer_nail": [
+        ("hammer", "jbody", "hammer_joint"),
+        ("nail_head", "attr", "_nail_head"),
+        ("nail_depth", "attr", "_nail_depth"),
+        ("nail_success_depth", "attr", "_success_depth"),
+    ],
+    "click_mouse": [
+        ("mouse", "jbody", "mouse_root"),
+        ("mouse_left_button", "sensor", "mouse_joint0_pos"),
+        ("mousepad", "geom", "@mousepad"),
+        ("mousepad_radius", "attr", "_mousepad_radius"),
+        ("monitor", "jbody", "display_root"),
+        ("display_blue", "attr", "_display_blue"),
+    ],
+    "pick_bucket": [
+        ("bucket", "jbody", "bucket_root"),
+        ("bucket_handle_angle", "joint", "bucket_joint_0"),
+        ("food_box", "jbody", "boxed_food_0_freejoint"),
+    ],
+    "pinch_tongs": [
+        ("tongs", "jbody", "tongs_root"),
+        ("tongs_opening", "sensor", "tongs_joint_0_pos"),
+        ("pinch_count", "attr", "_pinch_count"),
+        ("lift_height_z", "attr", "_lift_z"),
+    ],
+    "fold_glasses": [
+        ("glasses", "jbody", "glass_root"),
+        ("left_temple_angle", "joint", "glass_joint_0"),
+        ("right_temple_angle", "joint", "glass_joint_1"),
+        ("open_box", "body", "open_box"),
+    ],
+    "bimanual_assembly": [
+        ("peg", "jbody", "industreal_round_peg_8mm_joint"),
+        ("socket", "jbody", "industreal_tray_insert_round_peg_8mm_joint"),
+    ],
+    "bimanual_microwave_cook": [
+        ("hot_dog", "jbody", "hot_dog_free"),
+        ("microwave", "body", "microwave_object"),
+        ("microwave_door_angle", "joint", "microjoint"),
+        ("start_button", "geom", "start_button"),
+    ],
+    "bimanual_photograph": [
+        ("camera", "jbody", "camera_root"),
+        ("shutter_button", "geom", "@shutter"),
+        ("camera_view_point", "site", "@view"),
+        ("target_region_center", "geom", "@target_region"),
+    ],
+    "bimanual_unlock_ipad": [
+        ("ipad", "jbody", "ipad_freejoint"),
+        ("stand", "body", "ipad_stand"),
+        ("digits_entered", "attr", "_unlock_index"),
+        ("unlocked", "attr", "_screen_unlocked"),
+    ]
     + [(f"button_{d}", "geom", f"btn{d}_cyl") for d in range(10)],
 }
 
@@ -77,8 +116,12 @@ def _pose_fields(pos, q_wxyz):
     zaxis = r.as_matrix()[:, 2]
     tilt = float(np.degrees(np.arccos(np.clip(zaxis[2], -1, 1))))
     yaw = float(np.degrees(np.arctan2(r.as_matrix()[1, 0], r.as_matrix()[0, 0])))
-    return {"pos": [round(float(v), 4) for v in pos], "quat_wxyz": [round(float(v), 4) for v in q_wxyz],
-            "tilt_deg": round(tilt, 1), "yaw_deg": round(yaw, 1)}
+    return {
+        "pos": [round(float(v), 4) for v in pos],
+        "quat_wxyz": [round(float(v), 4) for v in q_wxyz],
+        "tilt_deg": round(tilt, 1),
+        "yaw_deg": round(yaw, 1),
+    }
 
 
 class Worker:
@@ -90,8 +133,8 @@ class Worker:
         import importlib
         import pkgutil
 
-        import mujoco
         import dexjoco.sim.envs as envs_pkg
+        import mujoco
         from dexjoco.tasks.mappings import CONFIG_MAPPING
         from dexjoco.tasks.state_restorers import restore_initial_state
 
@@ -102,8 +145,9 @@ class Worker:
                 mod.time = types.SimpleNamespace(time=time.time, sleep=lambda s: None)
         self.task = task
         cfg = CONFIG_MAPPING[task]()
-        self.env = cfg.get_environment(policy_mode=True, render_mode="none", randomize=False, randomize_dynamics=False,
-                                       seed=int(seed))
+        self.env = cfg.get_environment(
+            policy_mode=True, render_mode="none", randomize=False, randomize_dynamics=False, seed=int(seed)
+        )
         self.env.reset()
         if init_state is not None:
             restore_initial_state(self.env, task, cfg, np.asarray(init_state, dtype=np.float64))
@@ -112,7 +156,10 @@ class Worker:
         self.bimanual = task.startswith("bimanual_")
         self.arms = ["right", "left"] if self.bimanual else ["right"]
         if self.bimanual:
-            self.mocap = {"right": int(getattr(self.raw, "_mocap_right_id", 0)), "left": int(getattr(self.raw, "_mocap_left_id", 1))}
+            self.mocap = {
+                "right": int(getattr(self.raw, "_mocap_right_id", 0)),
+                "left": int(getattr(self.raw, "_mocap_left_id", 1)),
+            }
         else:
             self.mocap = {"right": int(getattr(self.raw, "_panda_mocap_id", 0))}
         ids = np.asarray(self.raw._allegro_ctrl_ids, dtype=int)
@@ -142,14 +189,17 @@ class Worker:
         self._lookup = {}
         mujoco.mj_forward(self.M, self.D)
         cams = [mujoco.mj_id2name(self.M, mujoco.mjtObj.mjOBJ_CAMERA, i) for i in range(self.M.ncam)]
-        return {"cameras": cams, "bimanual": self.bimanual,
-                "hand_ranges": {a: [[round(float(l), 3), round(float(h), 3)] for l, h in zip(self.hand_lo[a], self.hand_hi[a])]
-                                for a in self.arms}}
+        return {
+            "cameras": cams,
+            "bimanual": self.bimanual,
+            "hand_ranges": {
+                a: [[round(float(l), 3), round(float(h), 3)] for l, h in zip(self.hand_lo[a], self.hand_hi[a])]
+                for a in self.arms
+            },
+        }
 
     # ---- helpers -------------------------------------------------------------------------------------------------
     def _hand_qpos(self, arm: str) -> np.ndarray:
-        import mujoco
-
         out = []
         for i in self.hand_ids[arm]:
             jid = int(self.M.actuator_trnid[i, 0])
@@ -158,8 +208,10 @@ class Worker:
 
     def _flange(self, arm: str):
         sfx = f"_{arm}" if self.bimanual else ""
-        return (np.asarray(self.D.sensor(f"franka/flange_pos{sfx}").data).copy(),
-                np.asarray(self.D.sensor(f"franka/flange_quat{sfx}").data).copy())
+        return (
+            np.asarray(self.D.sensor(f"franka/flange_pos{sfx}").data).copy(),
+            np.asarray(self.D.sensor(f"franka/flange_quat{sfx}").data).copy(),
+        )
 
     def _resolve(self, kind: str, name: str):
         """Find a named element; a leading @ means 'first element of that kind whose name contains the rest'."""
@@ -168,10 +220,22 @@ class Worker:
         key = (kind, name)
         if key in self._lookup:
             return self._lookup[key]
-        obj = {"geom": mujoco.mjtObj.mjOBJ_GEOM, "site": mujoco.mjtObj.mjOBJ_SITE, "body": mujoco.mjtObj.mjOBJ_BODY,
-               "sensor": mujoco.mjtObj.mjOBJ_SENSOR, "joint": mujoco.mjtObj.mjOBJ_JOINT, "jbody": mujoco.mjtObj.mjOBJ_JOINT}[kind]
-        n = {"geom": self.M.ngeom, "site": self.M.nsite, "body": self.M.nbody, "sensor": self.M.nsensor,
-             "joint": self.M.njnt, "jbody": self.M.njnt}[kind]
+        obj = {
+            "geom": mujoco.mjtObj.mjOBJ_GEOM,
+            "site": mujoco.mjtObj.mjOBJ_SITE,
+            "body": mujoco.mjtObj.mjOBJ_BODY,
+            "sensor": mujoco.mjtObj.mjOBJ_SENSOR,
+            "joint": mujoco.mjtObj.mjOBJ_JOINT,
+            "jbody": mujoco.mjtObj.mjOBJ_JOINT,
+        }[kind]
+        n = {
+            "geom": self.M.ngeom,
+            "site": self.M.nsite,
+            "body": self.M.nbody,
+            "sensor": self.M.nsensor,
+            "joint": self.M.njnt,
+            "jbody": self.M.njnt,
+        }[kind]
         idx = -1
         if name.startswith("@"):
             for i in range(n):
@@ -207,7 +271,7 @@ class Worker:
             return [round(float(v), 4) for v in self.D.site_xpos[i]]
         if kind == "sensor":
             adr, dim = int(self.M.sensor_adr[i]), int(self.M.sensor_dim[i])
-            v = self.D.sensordata[adr:adr + dim]
+            v = self.D.sensordata[adr : adr + dim]
             return round(float(v[0]), 4) if dim == 1 else [round(float(x), 4) for x in v]
         if kind == "joint":
             return round(float(self.D.qpos[self.M.jnt_qposadr[i]]), 4)
@@ -222,7 +286,11 @@ class Worker:
                 from scipy.spatial.transform import Rotation as R
 
                 self.cmd_quat[arm] = _R2q(R.from_rotvec(rv) * _q2R(self.cmd_quat[arm]))
-            self.cmd_hand[arm] = np.clip(self.cmd_hand[arm] + np.clip(a[6:22], -HAND_LIM, HAND_LIM) * HAND_STEP, self.hand_lo[arm], self.hand_hi[arm])
+            self.cmd_hand[arm] = np.clip(
+                self.cmd_hand[arm] + np.clip(a[6:22], -HAND_LIM, HAND_LIM) * HAND_STEP,
+                self.hand_lo[arm],
+                self.hand_hi[arm],
+            )
         elif hand_mode == "grip":
             if g > 1e-3:
                 lo = np.clip(np.zeros(16), self.hand_lo[arm], self.hand_hi[arm])
@@ -238,7 +306,7 @@ class Worker:
         elif len(a) == per * len(self.arms):
             moved = []
             for k, arm in enumerate(self.arms):
-                blk = a[k * per:(k + 1) * per]
+                blk = a[k * per : (k + 1) * per]
                 self._apply_arm(arm, blk, "full")
                 if np.any(blk != 0):
                     moved.append(arm)
@@ -323,5 +391,8 @@ class Worker:
         import mujoco
 
         cid = mujoco.mj_name2id(self.M, mujoco.mjtObj.mjOBJ_CAMERA, camera)
-        return {"fovy": float(self.M.cam_fovy[cid]), "pos": self.D.cam_xpos[cid].tolist(),
-                "xmat": self.D.cam_xmat[cid].tolist()}
+        return {
+            "fovy": float(self.M.cam_fovy[cid]),
+            "pos": self.D.cam_xpos[cid].tolist(),
+            "xmat": self.D.cam_xmat[cid].tolist(),
+        }

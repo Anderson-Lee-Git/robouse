@@ -15,18 +15,17 @@ Observation: hand_pos (end-effector, world m), gripper_open (0..1), the robot ba
 task-specific fields (object and fixture handle/button positions, fixture state). Success is RoboCasa's own
 `_check_success()` for the task, judged after `robo done` and a 10-step hold.
 """
+
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from pathlib import Path
 
 import numpy as np
 
 from ... import config
 from ...workers.client import StdioWorker
-from ..base import ActionSpec, Backend, StepInfo, G, arm_layout
+from ..base import ActionSpec, Backend, G, StepInfo, arm_layout
 
 WORKER = Path(__file__).with_name("worker.py")
 EPISODES = Path(__file__).with_name("episodes")
@@ -84,8 +83,13 @@ class RobocasaBackend(Backend):
     probe_success = False  # step() already reports success; each probe would be another worker call
 
     def action_layout(self) -> list[G]:
-        return arm_layout("2 cm per unit per step", grip_hold="zero", grip_initial=None,
-                          grip_doc="0 keeps the fingers, > 0 closes, -f opens to fraction f")
+        return arm_layout(
+            "2 cm per unit per step",
+            grip_hold="zero",
+            grip_initial=None,
+            grip_doc="0 keeps the fingers, > 0 closes, -f opens to fraction f",
+        )
+
     image_flipped = False
 
     def __init__(self, spec: dict):
@@ -99,11 +103,20 @@ class RobocasaBackend(Backend):
         self.render_size = tuple(spec.get("render_size", (384, 288)))
         self._grip = 0.0
         self.action_spec = ActionSpec(
-            names=["DX", "DY", "DZ", "GRIP"], low=[-1.0] * 4, high=[1.0] * 4,
+            names=["DX", "DY", "DZ", "GRIP"],
+            low=[-1.0] * 4,
+            high=[1.0] * 4,
             doc="DX/DY/DZ move the gripper by 2 cm per unit per step along world x/y/z; GRIP: 0 keeps the fingers, > 0 closes, "
-                "-f opens to fraction f (-1 fully open). One step = 50 ms.")
+            "-f opens to fraction f (-1 fully open). One step = 50 ms.",
+        )
         # PYTHONHASHSEED: RoboCasa iterates over sets of names when placing objects; fix the order so a seed is reproducible
-        self.worker = StdioWorker("robocasa", config.sim_python("robocasa", "robocasa"), WORKER, setup="docs/suites/robocasa.md", env={"PYTHONHASHSEED": "0"})
+        self.worker = StdioWorker(
+            "robocasa",
+            config.sim_python("robocasa", "robocasa"),
+            WORKER,
+            setup="docs/suites/robocasa.md",
+            env={"PYTHONHASHSEED": "0"},
+        )
         self._state = None
         self._success = False
 
@@ -117,8 +130,15 @@ class RobocasaBackend(Backend):
         ep = EPISODES / f"{self.task_id}.json"
         ep_meta = json.loads(ep.read_text()) if ep.exists() else None
         seed = int((ep_meta or {}).get("robouse_seed", t.get("seed", seed)))
-        self.meta = self._call("make", env_name=t["env"], layout=t["layout"], style=t["style"], seed=seed,
-                               tool=t.get("tool", "down"), ep_meta=ep_meta)
+        self.meta = self._call(
+            "make",
+            env_name=t["env"],
+            layout=t["layout"],
+            style=t["style"],
+            seed=seed,
+            tool=t.get("tool", "down"),
+            ep_meta=ep_meta,
+        )
         self._state = None
 
     def step(self, action) -> StepInfo:
@@ -149,6 +169,7 @@ class RobocasaBackend(Backend):
 
     def close(self) -> None:
         self.worker.close()
+
 
 def oracle_main(env: str) -> None:
     from .oracles import run

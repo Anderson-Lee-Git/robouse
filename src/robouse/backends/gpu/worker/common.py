@@ -1,4 +1,5 @@
 """Helpers shared by the GPU-track simulator modules (run on the GPU worker only)."""
+
 from __future__ import annotations
 
 import base64
@@ -38,7 +39,12 @@ def rpy_deg_to_quat(roll: float, pitch: float, yaw: float) -> list[float]:
     """Inverse of quat_to_rpy_deg: R = Rz(yaw) @ Ry(pitch) @ Rx(roll), returned as [w, x, y, z]."""
     r, p, y = (math.radians(a) / 2 for a in (roll, pitch, yaw))
     cr, sr, cp, sp, cy, sy = math.cos(r), math.sin(r), math.cos(p), math.sin(p), math.cos(y), math.sin(y)
-    return [cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy]
+    return [
+        cr * cp * cy + sr * sp * sy,
+        sr * cp * cy - cr * sp * sy,
+        cr * sp * cy + sr * cp * sy,
+        cr * cp * sy - sr * sp * cy,
+    ]
 
 
 def pose_dict(p, q_wxyz) -> dict:
@@ -49,15 +55,25 @@ def pose_dict(p, q_wxyz) -> dict:
 def quat_mul(a, b):
     w1, x1, y1, z1 = a
     w2, x2, y2, z2 = b
-    return np.array([w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2, w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-                     w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2, w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2])
+    return np.array(
+        [
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+        ]
+    )
 
 
 def quat_to_mat(q):
     w, x, y, z = q
-    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def projection(K, world_to_cam_cv) -> list[list[float]]:

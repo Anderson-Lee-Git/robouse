@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import argparse
 import codecs
-import importlib.util
 import html
+import importlib.util
 import posixpath
 import re
 import shutil

@@ -19,12 +19,11 @@ two seconds of holding its start pose). The layer under `robo act` makes the rob
 One control step = 20 ms (HumanoidBench's own 50 Hz: 10 MuJoCo steps of 2 ms).
 Skills: walk_to, walk, turn_to, stand, reach, hands_home, sit_down.
 """
+
 from __future__ import annotations
 
 import json
 import math
-import os
-import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -32,7 +31,7 @@ import numpy as np
 from ... import config
 from ...workers.client import StdioWorker
 from ..base import StepInfo
-from ..embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg, wrap
+from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Oracle, Sensor, Skill, SkillArg, wrap
 
 WORKER = Path(__file__).with_name("worker.py")
 CONTROL_DT = 0.02
@@ -68,64 +67,175 @@ class HumanoidBenchBackend(EmbodiedBackend):
         self.camera = spec.get("camera", "cam_default")
         self.render_size = tuple(spec.get("render_size", (480, 480)))
         self.decl = self._declare()
-        self.policy_path = str(config.path("ROBOUSE_HUMANOIDBENCH_POLICY", config.cache_dir() / "humanoidbench" / "h1_motion.pt"))
+        self.policy_path = str(
+            config.path("ROBOUSE_HUMANOIDBENCH_POLICY", config.cache_dir() / "humanoidbench" / "h1_motion.pt")
+        )
         if not Path(self.policy_path).exists():
-            raise RuntimeError(f"Unitree H1 locomotion policy not found at {self.policy_path}; see docs/suites/humanoidbench.md")
+            raise RuntimeError(
+                f"Unitree H1 locomotion policy not found at {self.policy_path}; see docs/suites/humanoidbench.md"
+            )
         # run from the worker's own folder so no stray module in the cwd shadows the stdlib
-        self.worker = StdioWorker("humanoidbench", config.sim_python("humanoidbench", "humanoidbench"), WORKER, setup="docs/suites/humanoidbench.md", env={"MKL_NUM_THREADS": "1"})
+        self.worker = StdioWorker(
+            "humanoidbench",
+            config.sim_python("humanoidbench", "humanoidbench"),
+            WORKER,
+            setup="docs/suites/humanoidbench.md",
+            env={"MKL_NUM_THREADS": "1"},
+        )
         self._state = None
         self.last_judge: dict = {}
         self.meta: dict = {}
 
     def _declare(self) -> Embodiment:
         sensors = [
-            Sensor("robot", "proprio", ["robot"], "pelvis position, heading, head height, torso uprightness, centre-of-mass velocity, "
-                   "the current velocity command, hand positions (world and heading frame) and hand goals", units="m, deg, m/s"),
-            Sensor("scene", "world", ["scene"], "the task's objects, goals and landmarks (public positions)", units="m", frame="world"),
-            Sensor("progress", "events", ["progress"], "HumanoidBench's episode return so far, the last step's reward and its terms, "
-                   "the success threshold and whether the task is solved"),
-            Sensor("camera:cam_default", "camera", mount="world", doc="HumanoidBench's default view, following the robot"),
+            Sensor(
+                "robot",
+                "proprio",
+                ["robot"],
+                "pelvis position, heading, head height, torso uprightness, centre-of-mass velocity, "
+                "the current velocity command, hand positions (world and heading frame) and hand goals",
+                units="m, deg, m/s",
+            ),
+            Sensor(
+                "scene",
+                "world",
+                ["scene"],
+                "the task's objects, goals and landmarks (public positions)",
+                units="m",
+                frame="world",
+            ),
+            Sensor(
+                "progress",
+                "events",
+                ["progress"],
+                "HumanoidBench's episode return so far, the last step's reward and its terms, "
+                "the success threshold and whether the task is solved",
+            ),
+            Sensor(
+                "camera:cam_default", "camera", mount="world", doc="HumanoidBench's default view, following the robot"
+            ),
         ]
         groups = [
-            ActionGroup("base.velocity", "base_twist", ["FORWARD", "LEFT", "TURN"], [-MAX_FWD, -MAX_LEFT, -MAX_TURN],
-                        [MAX_FWD, MAX_LEFT, MAX_TURN], "m/s, m/s, rad/s",
-                        "velocity command for the H1 walking controller (heading frame; TURN + = counter-clockwise); zero = step in place",
-                        frame="body"),
-            ActionGroup("left.hand_delta", "ee_delta_pos", ["LDX", "LDY", "LDZ"], [-1] * 3, [1] * 3, "x 2 cm per step",
-                        "moves the left hand's goal point (heading frame: x forward, y left, z up); zero holds it", frame="body"),
-            ActionGroup("right.hand_delta", "ee_delta_pos", ["RDX", "RDY", "RDZ"], [-1] * 3, [1] * 3, "x 2 cm per step",
-                        "moves the right hand's goal point (heading frame); zero holds it", frame="body"),
+            ActionGroup(
+                "base.velocity",
+                "base_twist",
+                ["FORWARD", "LEFT", "TURN"],
+                [-MAX_FWD, -MAX_LEFT, -MAX_TURN],
+                [MAX_FWD, MAX_LEFT, MAX_TURN],
+                "m/s, m/s, rad/s",
+                "velocity command for the H1 walking controller (heading frame; TURN + = counter-clockwise); zero = step in place",
+                frame="body",
+            ),
+            ActionGroup(
+                "left.hand_delta",
+                "ee_delta_pos",
+                ["LDX", "LDY", "LDZ"],
+                [-1] * 3,
+                [1] * 3,
+                "x 2 cm per step",
+                "moves the left hand's goal point (heading frame: x forward, y left, z up); zero holds it",
+                frame="body",
+            ),
+            ActionGroup(
+                "right.hand_delta",
+                "ee_delta_pos",
+                ["RDX", "RDY", "RDZ"],
+                [-1] * 3,
+                [1] * 3,
+                "x 2 cm per step",
+                "moves the right hand's goal point (heading frame); zero holds it",
+                frame="body",
+            ),
         ]
         xy = [SkillArg("x", unit="m"), SkillArg("y", unit="m")]
         side = SkillArg("side", "enum", choices=list(SIDES), doc="which hand")
         skills = [
-            Skill("walk_to", xy + [SkillArg("heading_deg", "float", "deg", 999.0, doc="final heading; 999 = keep the heading of travel"),
-                                   SkillArg("tol", "float", "m", 0.10, doc="arrival tolerance")],
-                  "walk to the floor point (X, Y) (world frame): turn toward it in place, walk, slow down near it and turn to HEADING_DEG; "
-                  "stops when there, when blocked (under 3 cm of progress in 60 steps) or if the robot falls, and reports which. It does "
-                  "not avoid obstacles", 600),
-            Skill("walk", [SkillArg("forward", unit="m/s"), SkillArg("left", unit="m/s", default=0.0), SkillArg("turn", unit="rad/s", default=0.0),
-                           SkillArg("steps", "int", default=50)],
-                  "hold one velocity command (heading frame) for STEPS steps; the same as `robo act FORWARD LEFT TURN 0 0 0 0 0 0` repeated", 1000),
-            Skill("turn_to", [SkillArg("heading_deg", unit="deg"), SkillArg("tol", "float", "deg", 5.0)],
-                  "turn in place to a world heading (0 = +x, counter-clockwise positive)", 300),
-            Skill("stand", [SkillArg("steps", "int", default=50)], "zero velocity command (step in place, balanced) for STEPS steps", 1000),
-            Skill("reach", [side, SkillArg("x", unit="m"), SkillArg("y", unit="m"), SkillArg("z", unit="m"), SkillArg("tol", "float", "m", 0.03)],
-                  "move one hand in a straight line to the world point (X, Y, Z) while the robot steps in place; stops when there, when "
-                  "blocked or at the edge of the arm's reach, and reports which. Afterwards the hand keeps holding that world point "
-                  "(compensating the body's sway) until the next command for that hand", 150),
+            Skill(
+                "walk_to",
+                xy
+                + [
+                    SkillArg(
+                        "heading_deg", "float", "deg", 999.0, doc="final heading; 999 = keep the heading of travel"
+                    ),
+                    SkillArg("tol", "float", "m", 0.10, doc="arrival tolerance"),
+                ],
+                "walk to the floor point (X, Y) (world frame): turn toward it in place, walk, slow down near it and turn to HEADING_DEG; "
+                "stops when there, when blocked (under 3 cm of progress in 60 steps) or if the robot falls, and reports which. It does "
+                "not avoid obstacles",
+                600,
+            ),
+            Skill(
+                "walk",
+                [
+                    SkillArg("forward", unit="m/s"),
+                    SkillArg("left", unit="m/s", default=0.0),
+                    SkillArg("turn", unit="rad/s", default=0.0),
+                    SkillArg("steps", "int", default=50),
+                ],
+                "hold one velocity command (heading frame) for STEPS steps; the same as `robo act FORWARD LEFT TURN 0 0 0 0 0 0` repeated",
+                1000,
+            ),
+            Skill(
+                "turn_to",
+                [SkillArg("heading_deg", unit="deg"), SkillArg("tol", "float", "deg", 5.0)],
+                "turn in place to a world heading (0 = +x, counter-clockwise positive)",
+                300,
+            ),
+            Skill(
+                "stand",
+                [SkillArg("steps", "int", default=50)],
+                "zero velocity command (step in place, balanced) for STEPS steps",
+                1000,
+            ),
+            Skill(
+                "reach",
+                [
+                    side,
+                    SkillArg("x", unit="m"),
+                    SkillArg("y", unit="m"),
+                    SkillArg("z", unit="m"),
+                    SkillArg("tol", "float", "m", 0.03),
+                ],
+                "move one hand in a straight line to the world point (X, Y, Z) while the robot steps in place; stops when there, when "
+                "blocked or at the edge of the arm's reach, and reports which. Afterwards the hand keeps holding that world point "
+                "(compensating the body's sway) until the next command for that hand",
+                150,
+            ),
             Skill("hands_home", [], "both hands back to their start positions (relative to the body)", 150),
-            Skill("sit_down", [], "sit down where the robot stands: the walking controller stops, the feet come together and the hips and "
-                  "knees bend to about 90 degrees in 0.6 s, lowering the pelvis about 0.3 m and moving it about 0.2 m backwards (onto a "
-                  "seat behind the robot, if there is one; otherwise the robot falls). One-way: afterwards FORWARD, LEFT and TURN have no "
-                  "effect. The skill returns after 60 steps", 60),
+            Skill(
+                "sit_down",
+                [],
+                "sit down where the robot stands: the walking controller stops, the feet come together and the hips and "
+                "knees bend to about 90 degrees in 0.6 s, lowering the pelvis about 0.3 m and moving it about 0.2 m backwards (onto a "
+                "seat behind the robot, if there is one; otherwise the robot falls). One-way: afterwards FORWARD, LEFT and TURN have no "
+                "effect. The skill returns after 60 steps",
+                60,
+            ),
         ]
         cams = self._cameras()
-        sensors[-1:] = [Sensor(f"camera:{c}", "camera", mount="world", doc=("HumanoidBench's view for this task, following the robot"
-                                                                            if c == self.camera else "HumanoidBench's default view")) for c in cams]
-        return Embodiment(robot="Unitree H1 with two Shadow hands (HumanoidBench h1hand)", family="humanoid", assets=[],
-                          sensors=sensors, action_groups=groups, skills=skills,
-                          budget=Budget(int(self.task["max_steps"]), CONTROL_DT), cameras=cams)
+        sensors[-1:] = [
+            Sensor(
+                f"camera:{c}",
+                "camera",
+                mount="world",
+                doc=(
+                    "HumanoidBench's view for this task, following the robot"
+                    if c == self.camera
+                    else "HumanoidBench's default view"
+                ),
+            )
+            for c in cams
+        ]
+        return Embodiment(
+            robot="Unitree H1 with two Shadow hands (HumanoidBench h1hand)",
+            family="humanoid",
+            assets=[],
+            sensors=sensors,
+            action_groups=groups,
+            skills=skills,
+            budget=Budget(int(self.task["max_steps"]), CONTROL_DT),
+            cameras=cams,
+        )
 
     def _cameras(self) -> list[str]:
         return list(dict.fromkeys([self.camera, "cam_default"]))
@@ -134,13 +244,17 @@ class HumanoidBenchBackend(EmbodiedBackend):
     def _call(self, cmd: str, **kw):
         return self.worker.call(cmd, **kw)
 
-
     # ---- episode -----------------------------------------------------------------------------------------------
     def reset(self, seed: int) -> None:
         # the seed (task.md's robouse.seed, TASKS[...]["seed"]) fixes HumanoidBench's layout draws (push goal, reach target)
         # and its start-pose noise; the bundled tasks' reference solutions are validated on that seed
-        self.meta = self._call("make", task=self.task["task"], seed=int(seed), policy=self.policy_path,
-                               noise_seed=self.spec.get("noise_seed"))
+        self.meta = self._call(
+            "make",
+            task=self.task["task"],
+            seed=int(seed),
+            policy=self.policy_path,
+            noise_seed=self.spec.get("noise_seed"),
+        )
         self._state = None
         self.events, self._event_keys = [], set()
         self.last = {"success": False, "terminated": False}
@@ -150,7 +264,9 @@ class HumanoidBenchBackend(EmbodiedBackend):
         self.last = self._call("step", action=v)
         self._state = None
         if self.last.get("terminated"):
-            self.event("fall", "fall", "the robot fell (HumanoidBench's termination); the episode can no longer succeed")
+            self.event(
+                "fall", "fall", "the robot fell (HumanoidBench's termination); the episode can no longer succeed"
+            )
 
     def step(self, action) -> StepInfo:
         a = self.action_spec.clip(action)
@@ -197,7 +313,11 @@ class HumanoidBenchBackend(EmbodiedBackend):
 
     @staticmethod
     def _act(fwd=0.0, left=0.0, turn=0.0, hands=None) -> list[float]:
-        v = [float(np.clip(fwd, -MAX_FWD, MAX_FWD)), float(np.clip(left, -MAX_LEFT, MAX_LEFT)), float(np.clip(turn, -MAX_TURN, MAX_TURN))]
+        v = [
+            float(np.clip(fwd, -MAX_FWD, MAX_FWD)),
+            float(np.clip(left, -MAX_LEFT, MAX_LEFT)),
+            float(np.clip(turn, -MAX_TURN, MAX_TURN)),
+        ]
         return v + ([float(x) for x in hands] if hands is not None else [0.0] * 6)
 
     def _pose(self):
@@ -244,8 +364,13 @@ class HumanoidBenchBackend(EmbodiedBackend):
                 break
             yield self._act(fwd, left, float(np.clip(2.0 * eh, -MAX_TURN, MAX_TURN)))
         p, yaw, r = self._pose()
-        return {"status": status, "reached": status == "reached", "pelvis": r["pelvis"], "heading_deg": r["heading_deg"],
-                "distance_m": round(float(np.linalg.norm(tgt - p)), 3)}
+        return {
+            "status": status,
+            "reached": status == "reached",
+            "pelvis": r["pelvis"],
+            "heading_deg": r["heading_deg"],
+            "distance_m": round(float(np.linalg.norm(tgt - p)), 3),
+        }
 
     def skill_walk(self, forward: float, left: float = 0.0, turn: float = 0.0, steps: int = 50):
         for _ in range(max(1, int(steps))):
@@ -298,15 +423,19 @@ class HumanoidBenchBackend(EmbodiedBackend):
                 off = gb - np.asarray(r["hands"][sd]["goal_body"], float)
                 n = float(np.linalg.norm(off))
                 step = off if n <= speed else off * speed / n
-                hands[3 * i:3 * i + 3] = list(np.clip(step / HAND_STEP, -1, 1))
-                if not np.any(np.abs(hands[3 * i:3 * i + 3]) > 1e-6):
+                hands[3 * i : 3 * i + 3] = list(np.clip(step / HAND_STEP, -1, 1))
+                if not np.any(np.abs(hands[3 * i : 3 * i + 3]) > 1e-6):
                     hands[3 * i] = 1e-6  # a nonzero command keeps the hand under this skill's control
             if all(e <= tol for e in err.values()):
                 break
             hist.append(sum(err.values()))
             if len(hist) > 30 and hist[-25] - hist[-1] < 0.005:
-                far = max(float(np.linalg.norm(np.asarray(r["hands"][sd]["goal_body"]) - np.asarray(r["hands"][sd]["pos_body"])))
-                          for sd in goals_world)
+                far = max(
+                    float(
+                        np.linalg.norm(np.asarray(r["hands"][sd]["goal_body"]) - np.asarray(r["hands"][sd]["pos_body"]))
+                    )
+                    for sd in goals_world
+                )
                 status = "blocked" if far > 0.03 else "out_of_reach"
                 break
             yield self._act(hands=hands)
@@ -316,9 +445,13 @@ class HumanoidBenchBackend(EmbodiedBackend):
         status = yield from self._hands_toward({side: (x, y, z)}, max(0.01, float(tol)))
         self._call("set_anchor", side=side, world=[float(x), float(y), float(z)])
         r = self._robot()
-        return {"status": status, "reached": status == "reached", "hand": r["hands"][side]["pos"],
-                "distance_m": round(float(np.linalg.norm(np.asarray(r["hands"][side]["pos"]) - np.array([x, y, z]))), 3),
-                "holding_world_point": [x, y, z]}
+        return {
+            "status": status,
+            "reached": status == "reached",
+            "hand": r["hands"][side]["pos"],
+            "distance_m": round(float(np.linalg.norm(np.asarray(r["hands"][side]["pos"]) - np.array([x, y, z]))), 3),
+            "holding_world_point": [x, y, z],
+        }
 
     def skill_hands_home(self):
         home = self.meta.get("hand_home_body") or {}
@@ -333,7 +466,6 @@ class HumanoidBenchBackend(EmbodiedBackend):
         status = yield from self._hands_toward(goals, 0.04)
         return {"status": status}
 
-
     def skill_sit_down(self):
         self._call("sit_down")
         for _ in range(60):
@@ -341,10 +473,16 @@ class HumanoidBenchBackend(EmbodiedBackend):
             if self._robot()["fallen"]:
                 return {"status": "fell"}
         r = self._robot()
-        return {"status": "seated", "pelvis": r["pelvis"], "head_height": r["head_height"], "torso_upright": r["torso_upright"]}
+        return {
+            "status": "seated",
+            "pelvis": r["pelvis"],
+            "head_height": r["head_height"],
+            "torso_upright": r["torso_upright"],
+        }
 
 
 # ---- reference solutions (socket only, public observation) ----------------------------------------------------------
+
 
 def oracle_main(env: str) -> None:
     from .oracles import ORACLES

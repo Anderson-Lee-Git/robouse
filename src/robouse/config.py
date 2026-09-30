@@ -4,6 +4,7 @@ Code reads settings through the helpers here (`env`, `flag`, `path`, `cache_dir`
 `os.environ` directly, so the list below stays complete (tests/test_config.py checks it against the source).
 Maintainer-only fallbacks (credential pools, endpoint files inside a checkout) live in `robouse._maintainer`.
 """
+
 from __future__ import annotations
 
 import os
@@ -13,20 +14,20 @@ ENV: dict[str, str] = {
     # locations
     "ROBOUSE_CACHE_DIR": "cache for simulator virtualenvs, downloaded assets and harness homes (default ~/.cache/robouse)",
     "ROBOUSE_CONFIG_DIR": "private settings such as remote worker endpoints (default ~/.config/robouse); agents never "
-                          "see it",
+    "see it",
     "ROBOUSE_MENAGERIE_ASSETS": "MuJoCo Menagerie robot models (default: the checkout's assets/menagerie, else "
-                                "<cache>/menagerie)",
+    "<cache>/menagerie)",
     "ROBOUSE_ROBOHARM_TEX": "generated texture cache for the roboharm scenes (default <cache>/roboharm_tex)",
     "ROBOUSE_PRICING": "JSON price table for trial cost (default: the packaged pricing.json)",
     # episode server
     "ROBOUSE_SOCKET": "episode server socket the `robo` client talks to (set by the runner)",
     "ROBOUSE_ORACLE_TOKEN": "per-episode token that unlocks privileged state for the reference solution (set by the "
-                            "runner)",
+    "runner)",
     "ROBOUSE_RECORD_SIZE": "episode video size WIDTHxHEIGHT (default: the backend's native size)",
     "ROBOUSE_EPISODE_DIR": "episode folder a task verifier reads (set by the runner)",
     "ROBOUSE_VERIFIER_DIR": "folder a task verifier writes reward.txt to (set by the runner)",
     "ROBOUSE_TEXT_ONLY": "1: `robo observe --image` prints the path without attaching the image (set for harnesses "
-                         "whose API rejects images)",
+    "whose API rejects images)",
     # local runner sandbox
     "ROBOUSE_SANDBOX": "0 disables the macOS Seatbelt sandbox around agent processes (default 1)",
     "ROBOUSE_SANDBOX_DENY": "extra colon-separated paths agents may neither read nor write",
@@ -38,8 +39,10 @@ ENV: dict[str, str] = {
     "ROBOUSE_METADRIVE_PYTHON": "Python of the MetaDrive virtualenv (default <cache>/metadrive-venv/bin/python)",
     "ROBOUSE_MYOSUITE_PYTHON": "Python of the MyoSuite virtualenv (default <cache>/myosuite-venv/bin/python)",
     "ROBOUSE_ROBOCASA_PYTHON": "Python of the RoboCasa virtualenv (default <cache>/robocasa-venv/bin/python)",
-    **{f"ROBOUSE_{b}_QUIET": f"0 shows the {b.lower()} worker's stderr (default 1)"
-       for b in ("DEXJOCO", "DMCONTROL", "HUMANOIDBENCH", "MANISKILL", "METADRIVE", "MYOSUITE", "ROBOCASA")},
+    **{
+        f"ROBOUSE_{b}_QUIET": f"0 shows the {b.lower()} worker's stderr (default 1)"
+        for b in ("DEXJOCO", "DMCONTROL", "HUMANOIDBENCH", "MANISKILL", "METADRIVE", "MYOSUITE", "ROBOCASA")
+    },
     "ROBOUSE_MANISKILL_DEBUG": "1: the ManiSkill worker logs each request",
     "ROBOUSE_HUMANOIDBENCH_POLICY": "HumanoidBench low-level walking policy (default <cache>/humanoidbench/h1_motion.pt)",
     "ROBOUSE_ROBOSUITE_PATH": "isolated robosuite 1.5 install for the robosuite suite (default <venv>/robosuite-1.5)",
@@ -48,7 +51,7 @@ ENV: dict[str, str] = {
     "ROBOUSE_GPU_REMOTE": "GPU-track worker endpoints file (default <config>/remote/gpu.json)",
     "ROBOUSE_ROBODOJO_REMOTE": "RoboDojo worker endpoints file (default <config>/remote/robodojo.json)",
     "ROBOUSE_BEHAVIOR_SECRET": "shared secret the BEHAVIOR worker requires (worker side; the client reads it from the "
-                               "endpoints file)",
+    "endpoints file)",
     "ROBOUSE_GPU_SECRET": "shared secret the GPU-track worker requires (worker side)",
     "ROBOUSE_ROBODOJO_SECRET": "shared secret the RoboDojo worker requires (worker side)",
     # remote worker tuning (worker side)
@@ -131,8 +134,11 @@ def remote_endpoints(name: str) -> Path | None:
     from . import _maintainer
 
     explicit = env(f"ROBOUSE_{name.upper()}_REMOTE")
-    candidates = [Path(explicit).expanduser()] if explicit else \
-        [config_dir() / "remote" / f"{name}.json", *_maintainer.remote_endpoint_files(name)]
+    candidates = (
+        [Path(explicit).expanduser()]
+        if explicit
+        else [config_dir() / "remote" / f"{name}.json", *_maintainer.remote_endpoint_files(name)]
+    )
     return next((p for p in candidates if p.is_file()), None)
 
 

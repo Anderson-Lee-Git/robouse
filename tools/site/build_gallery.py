@@ -9,19 +9,27 @@ card per trial with its video (relative link to <job>/<trial>/artifacts/recordin
 message and a link to the trial in the full viewer (tools/ops/view.sh). Reads runs/_audit/audit.json when
 present (run tools/analysis/audit.py first to get the audit column). Open it straight from disk or serve runs/.
 """
+
 from __future__ import annotations
 
 import argparse
 import html
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_MODELS = {"claude-code": "claude-opus-5-5", "codex": "gpt-6-astra", "claude-code-glm": "zai-org/GLM-5.3",
-                  "codex-glm": "zai-org/GLM-5.3", "mini-swe-agent-glm": "zai-org/GLM-5.3", "oracle": "scripted", "noop": "none"}
+DEFAULT_MODELS = {
+    "claude-code": "claude-opus-5-5",
+    "codex": "gpt-6-astra",
+    "claude-code-glm": "zai-org/GLM-5.3",
+    "codex-glm": "zai-org/GLM-5.3",
+    "mini-swe-agent-glm": "zai-org/GLM-5.3",
+    "oracle": "scripted",
+    "noop": "none",
+}
 PROVIDER_PREFIXES = (("claude-", "anthropic"), ("gpt-", "openai"), ("gemini-", "google"))
 
 
@@ -41,7 +49,11 @@ def viewer_href(base: str, job: str, trial: str, task: str, harness: str, model:
     elif model:
         provider = next((p for pre, p in PROVIDER_PREFIXES if model.lower().startswith(pre)), None)
     parts = ["_", harness or "_", provider or "_", name or "_", task]
-    return f"{base}/jobs/{quote(job, safe='')}/tasks/" + "/".join(quote(p, safe="") for p in parts) + f"/trials/{quote(trial, safe='')}"
+    return (
+        f"{base}/jobs/{quote(job, safe='')}/tasks/"
+        + "/".join(quote(p, safe="") for p in parts)
+        + f"/trials/{quote(trial, safe='')}"
+    )
 
 
 def final_message(d: Path, harness: str) -> str:
@@ -56,7 +68,12 @@ def final_message(d: Path, harness: str) -> str:
             t = None
     if isinstance(t, dict):
         for st in reversed(t.get("steps") or []):
-            if st.get("source") == "agent" and isinstance(st.get("message"), str) and st["message"].strip() and st.get("llm_call_count") != 0:
+            if (
+                st.get("source") == "agent"
+                and isinstance(st.get("message"), str)
+                and st["message"].strip()
+                and st.get("llm_call_count") != 0
+            ):
                 return st["message"].strip()
     return ""
 
@@ -73,7 +90,11 @@ def collect(runs: Path, viewer: str) -> list[dict]:
         res = rj(d / "result.json") or {}
         ep = rj(d / "episode" / "result.json") or res.get("episode") or {}
         harness = cfg.get("harness") or (res.get("agent_info") or {}).get("name") or "?"
-        model = ((res.get("agent_info") or {}).get("model_info") or {}).get("name") or cfg.get("model") or DEFAULT_MODELS.get(harness)
+        model = (
+            ((res.get("agent_info") or {}).get("model_info") or {}).get("name")
+            or cfg.get("model")
+            or DEFAULT_MODELS.get(harness)
+        )
         meta = cfg.get("metadata") or {}
         reward = ((res.get("verifier_result") or {}).get("rewards") or {}).get("reward")
         if reward is None:
@@ -84,20 +105,40 @@ def collect(runs: Path, viewer: str) -> list[dict]:
         a = by_path.get(str(d.resolve())) or {}
         video = next((r for r in ("artifacts/recording.mp4", "episode/recording.mp4") if (d / r).is_file()), None)
         task = cfg.get("task") or res.get("task_name") or d.name.split("__")[0]
-        status = "running" if not res and not a.get("infra_failure") and a.get("running", True) else ("done" if res else "incomplete")
-        rows.append({
-            "job": d.parent.name, "trial": d.name, "task": task, "suite": meta.get("suite") or "",
-            "source": meta.get("source_benchmark") or res.get("source") or "", "difficulty": meta.get("difficulty") or "",
-            "harness": harness, "model": model or "", "reward": reward, "outcome": ep.get("outcome") or ("running" if status == "running" else "no episode result"),
-            "steps": ep.get("steps_used"), "max_steps": ep.get("max_steps"), "wall": res.get("wall_time_s"),
-            "started": res.get("started_at") or cfg.get("started_at") or "", "status": status,
-            "video": f"../{quote(d.parent.name)}/{quote(d.name)}/{video}" if video else None,
-            "done_text": (ep.get("agent_text") or "")[:1500], "final": final_message(d, harness)[:3000],
-            "viewer": viewer_href(viewer, d.parent.name, d.name, task, harness, model),
-            "flags": [f"{f['severity']}: {f['id']}" for f in a.get("flags", []) if f.get("severity") in ("high", "medium")],
-            "suspicious": bool(a.get("suspicious")), "infra": bool(a.get("infra_failure")),
-            "motion": (a.get("checks") or {}).get("motion_requests"),
-        })
+        status = (
+            "running"
+            if not res and not a.get("infra_failure") and a.get("running", True)
+            else ("done" if res else "incomplete")
+        )
+        rows.append(
+            {
+                "job": d.parent.name,
+                "trial": d.name,
+                "task": task,
+                "suite": meta.get("suite") or "",
+                "source": meta.get("source_benchmark") or res.get("source") or "",
+                "difficulty": meta.get("difficulty") or "",
+                "harness": harness,
+                "model": model or "",
+                "reward": reward,
+                "outcome": ep.get("outcome") or ("running" if status == "running" else "no episode result"),
+                "steps": ep.get("steps_used"),
+                "max_steps": ep.get("max_steps"),
+                "wall": res.get("wall_time_s"),
+                "started": res.get("started_at") or cfg.get("started_at") or "",
+                "status": status,
+                "video": f"../{quote(d.parent.name)}/{quote(d.name)}/{video}" if video else None,
+                "done_text": (ep.get("agent_text") or "")[:1500],
+                "final": final_message(d, harness)[:3000],
+                "viewer": viewer_href(viewer, d.parent.name, d.name, task, harness, model),
+                "flags": [
+                    f"{f['severity']}: {f['id']}" for f in a.get("flags", []) if f.get("severity") in ("high", "medium")
+                ],
+                "suspicious": bool(a.get("suspicious")),
+                "infra": bool(a.get("infra_failure")),
+                "motion": (a.get("checks") or {}).get("motion_requests"),
+            }
+        )
     rows.sort(key=lambda r: (r["task"], r["harness"], r["model"], r["started"]))
     return rows
 
@@ -208,9 +249,11 @@ def main(argv: list[str] | None = None) -> int:
     out = a.runs / "_gallery"
     out.mkdir(parents=True, exist_ok=True)
     data = json.dumps(rows, ensure_ascii=False).replace("</", "<\\/")
-    page = (PAGE.replace("__DATA__", data)
-            .replace("__GENERATED__", html.escape(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")))
-            .replace("__VIEWER__", html.escape(a.viewer)))
+    page = (
+        PAGE.replace("__DATA__", data)
+        .replace("__GENERATED__", html.escape(datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")))
+        .replace("__VIEWER__", html.escape(a.viewer))
+    )
     (out / "index.html").write_text(page)
     print(f"wrote {out / 'index.html'} ({len(rows)} trials)")
     return 0

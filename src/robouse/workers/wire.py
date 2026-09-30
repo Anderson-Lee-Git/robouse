@@ -20,6 +20,7 @@ Remote workers (a GPU machine) serve the same kind of calls over HTTP with `serv
 {"method": NAME, "args": {...}, ...} and the shared secret in the X-Robouse-Secret header; the reply is
 {"ok": true, "result": VALUE} or {"ok": false, "error": ...}. Images in results are PNG base64 strings (`png_b64`).
 """
+
 from __future__ import annotations
 
 import base64
@@ -51,6 +52,7 @@ def _error(e: BaseException) -> dict:
 
 
 # ---- local workers: JSON lines over stdin/stdout ------------------------------------------------------------------
+
 
 def serve_stdio(make_worker: Callable[[], Any]) -> None:
     """Serve the public methods of `make_worker()` on stdin/stdout until `close` or end of input. The protocol keeps the
@@ -101,6 +103,7 @@ def load_worker(path: str) -> Any:
 
 # ---- remote workers: HTTP -----------------------------------------------------------------------------------------
 
+
 def png_b64(img: Any) -> str:
     """An RGB uint8 image as a base64 PNG string (for HTTP results)."""
     import numpy as np
@@ -111,8 +114,15 @@ def png_b64(img: Any) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def serve_http(handle: Callable[[dict], Any], port: int, secret: str, name: str = "robouse worker",
-               host: str = "0.0.0.0", threaded: bool = True, stop: Callable[[], bool] | None = None) -> None:
+def serve_http(
+    handle: Callable[[dict], Any],
+    port: int,
+    secret: str,
+    name: str = "robouse worker",
+    host: str = "0.0.0.0",
+    threaded: bool = True,
+    stop: Callable[[], bool] | None = None,
+) -> None:
     """Serve POST /rpc: `handle(request)` returns the result (wrapped as {"ok": true, "result": ...}), or a dict that
     already has an "ok" key. Every request must carry `secret` in the X-Robouse-Secret header (compared in constant
     time); the server refuses to start without a secret. GET / answers a health check.

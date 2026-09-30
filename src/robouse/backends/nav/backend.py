@@ -22,6 +22,7 @@ with l the geodesic shortest path and d_final the remaining geodesic distance, a
 at least 0.1 m/s achieving under 20 % of it for 0.5 s), time to target, path ratio p / l, excess turning (rad per metre
 driven beyond the turning of the reference path).
 """
+
 from __future__ import annotations
 
 import heapq
@@ -29,8 +30,8 @@ import math
 
 import numpy as np
 
-from ..base import ActionSpec, StepInfo
-from ..embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Sensor, Skill, SkillArg
+from ..base import StepInfo
+from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Sensor, Skill, SkillArg
 
 DT = 0.1
 RADIUS = 0.25
@@ -96,20 +97,60 @@ class NavBackend(EmbodiedBackend):
         self.camera = "local"
         self._field = None
         self.decl = Embodiment(
-            robot=n.get("robot", "mobile base (0.25 m radius, holonomic)"), family="mobile_base", assets=[],
-            sensors=[Sensor("world_state", "world", ["goal", "objects", "way_to_target", "free_space", "robot"],
-                            doc="robot-frame spatial-language WorldState"),
-                     Sensor("camera:local", "camera", mount="body", doc="egocentric top-down view of what the robot can see")],
-            action_groups=[ActionGroup("base.twist", "base_twist", ["vx", "vy", "wz"], [-V_LIN, -V_LAT, -W_MAX], [V_LIN, V_LAT, W_MAX],
-                                       units="m/s, m/s, deg/s", frame="body", doc="body-frame velocity: x forward, y left, wz counter-clockwise")],
-            skills=[Skill("drive", [SkillArg("x", "enum", choices=["forward", "none", "backward"]),
-                                    SkillArg("y", "enum", choices=["left", "none", "right"]),
-                                    SkillArg("yaw", "enum", choices=["turn_left", "none", "turn_right"]),
-                                    SkillArg("seconds", "float", "s", 0.5)],
-                          "Dimensional's discrete drive command (0.5 m/s, 0.8 rad/s) held for SECONDS", max_steps=50),
-                    Skill("turn", [SkillArg("deg", "float", "deg")], "turn in place by DEG (counter-clockwise positive)", max_steps=80),
-                    Skill("forward", [SkillArg("metres", "float", "m")], "drive straight ahead (stops at obstacles)", max_steps=120)],
-            budget=Budget(max_steps=int(spec.get("max_steps", 1200)), control_dt=DT), cameras=["local"])
+            robot=n.get("robot", "mobile base (0.25 m radius, holonomic)"),
+            family="mobile_base",
+            assets=[],
+            sensors=[
+                Sensor(
+                    "world_state",
+                    "world",
+                    ["goal", "objects", "way_to_target", "free_space", "robot"],
+                    doc="robot-frame spatial-language WorldState",
+                ),
+                Sensor(
+                    "camera:local", "camera", mount="body", doc="egocentric top-down view of what the robot can see"
+                ),
+            ],
+            action_groups=[
+                ActionGroup(
+                    "base.twist",
+                    "base_twist",
+                    ["vx", "vy", "wz"],
+                    [-V_LIN, -V_LAT, -W_MAX],
+                    [V_LIN, V_LAT, W_MAX],
+                    units="m/s, m/s, deg/s",
+                    frame="body",
+                    doc="body-frame velocity: x forward, y left, wz counter-clockwise",
+                )
+            ],
+            skills=[
+                Skill(
+                    "drive",
+                    [
+                        SkillArg("x", "enum", choices=["forward", "none", "backward"]),
+                        SkillArg("y", "enum", choices=["left", "none", "right"]),
+                        SkillArg("yaw", "enum", choices=["turn_left", "none", "turn_right"]),
+                        SkillArg("seconds", "float", "s", 0.5),
+                    ],
+                    "Dimensional's discrete drive command (0.5 m/s, 0.8 rad/s) held for SECONDS",
+                    max_steps=50,
+                ),
+                Skill(
+                    "turn",
+                    [SkillArg("deg", "float", "deg")],
+                    "turn in place by DEG (counter-clockwise positive)",
+                    max_steps=80,
+                ),
+                Skill(
+                    "forward",
+                    [SkillArg("metres", "float", "m")],
+                    "drive straight ahead (stops at obstacles)",
+                    max_steps=120,
+                ),
+            ],
+            budget=Budget(max_steps=int(spec.get("max_steps", 1200)), control_dt=DT),
+            cameras=["local"],
+        )
 
     # ---- geometry -----------------------------------------------------------------------------------------------------
     def _free(self, p) -> bool:
@@ -163,7 +204,7 @@ class NavBackend(EmbodiedBackend):
         xs = x0 + (np.arange(nx) + 0.5) * CELL
         ys = y0 + (np.arange(ny) + 0.5) * CELL
         X, Y = np.meshgrid(xs, ys, indexing="ij")
-        free = (X >= x0 + RADIUS) & (X <= x1 - RADIUS) & (Y >= y0 + RADIUS) & (Y <= y1 - RADIUS)
+        free = (x0 + RADIUS <= X) & (x1 - RADIUS >= X) & (y0 + RADIUS <= Y) & (y1 - RADIUS >= Y)
         for b in self.obstacles:
             cx, cy, sx, sy = b
             dx = np.maximum(np.abs(X - cx) - sx / 2, 0)
@@ -186,7 +227,16 @@ class NavBackend(EmbodiedBackend):
                 dist[i, j] = 0.0
                 heap.append((0.0, int(i), int(j)))
         heapq.heapify(heap)
-        steps = [(1, 0, 1.0), (-1, 0, 1.0), (0, 1, 1.0), (0, -1, 1.0), (1, 1, 1.4142), (1, -1, 1.4142), (-1, 1, 1.4142), (-1, -1, 1.4142)]
+        steps = [
+            (1, 0, 1.0),
+            (-1, 0, 1.0),
+            (0, 1, 1.0),
+            (0, -1, 1.0),
+            (1, 1, 1.4142),
+            (1, -1, 1.4142),
+            (-1, 1, 1.4142),
+            (-1, -1, 1.4142),
+        ]
         nx, ny = free.shape
         while heap:
             d, i, j = heapq.heappop(heap)
@@ -219,7 +269,9 @@ class NavBackend(EmbodiedBackend):
     def reset(self, seed: int) -> None:
         self.events, self._event_keys = [], set()
         self.pos = tuple(map(float, self.nav["spawn"][:2]))
-        if not self._free(self.pos):  # imported scenes: a spawn inside the 2-D footprints moves to the nearest free point
+        if not self._free(
+            self.pos
+        ):  # imported scenes: a spawn inside the 2-D footprints moves to the nearest free point
             best = None
             for r in np.arange(0.05, 1.01, 0.05):
                 for a in np.linspace(0, 2 * math.pi, 24, endpoint=False):
@@ -312,7 +364,10 @@ class NavBackend(EmbodiedBackend):
             before = self.pos
             yield [math.copysign(V_LIN, metres), 0.0, 0.0]
             if math.hypot(self.pos[0] - before[0], self.pos[1] - before[1]) < 0.01:
-                return {"moved_m": round(math.hypot(self.pos[0] - start[0], self.pos[1] - start[1]), 2), "stopped": "blocked"}
+                return {
+                    "moved_m": round(math.hypot(self.pos[0] - start[0], self.pos[1] - start[1]), 2),
+                    "stopped": "blocked",
+                }
         return {"moved_m": round(math.hypot(self.pos[0] - start[0], self.pos[1] - start[1]), 2)}
 
     # ---- observation ----------------------------------------------------------------------------------------------------
@@ -325,29 +380,51 @@ class NavBackend(EmbodiedBackend):
         tp = self._target_point(self.pos)
         gdeg, gdist = self._rel(tp)
         tbox = self._target_box_ref()
-        goal = {"label": self.target["label"], "bearing": bearing_word(gdeg), "bearing_deg": round(gdeg, 1),
-                "distance": distance_word(gdist), "distance_m": round(gdist, 2), "visible": self._los(self.pos, tp, tbox),
-                "arrived": self.arrived()}
+        goal = {
+            "label": self.target["label"],
+            "bearing": bearing_word(gdeg),
+            "bearing_deg": round(gdeg, 1),
+            "distance": distance_word(gdist),
+            "distance_m": round(gdist, 2),
+            "visible": self._los(self.pos, tp, tbox),
+            "arrived": self.arrived(),
+        }
         objs = []
         for o in self.objects:
             q = self._target_point_of(o["box"])
             deg, dist = self._rel(q)
             if dist <= 6.0 and self._los(self.pos, q, o["box"]):
-                objs.append({"label": o["label"], "bearing": bearing_word(deg), "bearing_deg": round(deg, 1),
-                             "distance": distance_word(dist), "distance_m": round(dist, 2),
-                             "width_m": round(max(o["box"][2], o["box"][3]), 2), "target": o["box"] == self.target["box"]})
+                objs.append(
+                    {
+                        "label": o["label"],
+                        "bearing": bearing_word(deg),
+                        "bearing_deg": round(deg, 1),
+                        "distance": distance_word(dist),
+                        "distance_m": round(dist, 2),
+                        "width_m": round(max(o["box"][2], o["box"][3]), 2),
+                        "target": o["box"] == self.target["box"],
+                    }
+                )
         objs.sort(key=lambda o: o["distance_m"])
         d_ahead, what = self._raycast(self.pos, self.yaw + math.radians(gdeg), max_d=max(0.1, gdist))
-        way = {"blocked": what != "open" and d_ahead < gdist - 0.05, "blocked_by": None if what == "open" else what,
-               "clear_m": round(d_ahead, 2)}
+        way = {
+            "blocked": what != "open" and d_ahead < gdist - 0.05,
+            "blocked_by": None if what == "open" else what,
+            "clear_m": round(d_ahead, 2),
+        }
         if way["blocked"]:
-            way["open_sides"] = [side for side, off in (("left", 45), ("right", -45))
-                                 if self._raycast(self.pos, self.yaw + math.radians(gdeg + off), 1.5)[0] >= 1.49]
+            way["open_sides"] = [
+                side
+                for side, off in (("left", 45), ("right", -45))
+                if self._raycast(self.pos, self.yaw + math.radians(gdeg + off), 1.5)[0] >= 1.49
+            ]
         free = {}
         for k, name in enumerate(BEARINGS):
             d, _ = self._raycast(self.pos, self.yaw + math.radians(45 * k), 6.0)
-            free[name] = {"clear_m": round(max(0.0, d - RADIUS), 2),
-                          "state": "blocked" if d - RADIUS < 0.5 else "open" if d - RADIUS >= 1.5 else "narrow"}
+            free[name] = {
+                "clear_m": round(max(0.0, d - RADIUS), 2),
+                "state": "blocked" if d - RADIUS < 0.5 else "open" if d - RADIUS >= 1.5 else "narrow",
+            }
         t_back, recent = self.t - 8.0, self.hist[0]
         for h in self.hist:
             if h[0] >= t_back:
@@ -356,15 +433,35 @@ class NavBackend(EmbodiedBackend):
         moved = math.hypot(self.pos[0] - recent[1][0], self.pos[1] - recent[1][1])
         closer = self.geodesic(recent[1]) - self.geodesic(self.pos)
         vx, vy, wz = self.last_cmd
-        motion = "stopped" if max(abs(vx), abs(vy), abs(wz)) < 1e-6 else ("forward" if vx > 0 else "backward" if vx < 0 else "turning")
-        stuck = len(self.hist) > 30 and math.hypot(self.pos[0] - self.hist[-31][1][0], self.pos[1] - self.hist[-31][1][1]) < 0.15 and motion != "stopped"
-        out = {"goal": goal, "objects": objs[:12], "way_to_target": way, "free_space": free,
-               "robot": {"motion": motion, "last_drive": {"vx": vx, "vy": vy, "wz_deg_s": wz},
-                         "recent": {"window_s": 8, "moved_m": round(moved, 2), "turned_deg": round(math.degrees(self.yaw - recent[2]), 1),
-                                    "target_closer_m": round(closer, 2) if math.isfinite(closer) else None,
-                                    "pattern": "stuck" if stuck else "progressing" if closer > 0.3 else "not_progressing"},
-                         "collisions": self.collisions},
-               "time_s": round(self.t, 1)}
+        motion = (
+            "stopped"
+            if max(abs(vx), abs(vy), abs(wz)) < 1e-6
+            else ("forward" if vx > 0 else "backward" if vx < 0 else "turning")
+        )
+        stuck = (
+            len(self.hist) > 30
+            and math.hypot(self.pos[0] - self.hist[-31][1][0], self.pos[1] - self.hist[-31][1][1]) < 0.15
+            and motion != "stopped"
+        )
+        out = {
+            "goal": goal,
+            "objects": objs[:12],
+            "way_to_target": way,
+            "free_space": free,
+            "robot": {
+                "motion": motion,
+                "last_drive": {"vx": vx, "vy": vy, "wz_deg_s": wz},
+                "recent": {
+                    "window_s": 8,
+                    "moved_m": round(moved, 2),
+                    "turned_deg": round(math.degrees(self.yaw - recent[2]), 1),
+                    "target_closer_m": round(closer, 2) if math.isfinite(closer) else None,
+                    "pattern": "stuck" if stuck else "progressing" if closer > 0.3 else "not_progressing",
+                },
+                "collisions": self.collisions,
+            },
+            "time_s": round(self.t, 1),
+        }
         if self.world_coords:
             out["robot"]["pos"] = [round(self.pos[0], 2), round(self.pos[1], 2)]
             out["robot"]["yaw_deg"] = round(math.degrees(self.yaw), 1)
@@ -386,13 +483,18 @@ class NavBackend(EmbodiedBackend):
         for a, b, c in zip(ref, ref[1:], ref[2:]):
             h1, h2 = math.atan2(b[1] - a[1], b[0] - a[0]), math.atan2(c[1] - b[1], c[0] - b[0])
             ref_turn += abs((h2 - h1 + math.pi) % (2 * math.pi) - math.pi)
-        return {"arrived": int(s), "spl": round(s * l / max(p, l), 4),
-                "soft_spl": round(max(0.0, 1 - (d_final if math.isfinite(d_final) else l) / l) * l / max(p, l), 4),
-                "collisions": self.collisions, "time_to_target_s": self.first_arrival,
-                "path_ratio": round(p / l, 3) if l > 0 else None,
-                "excess_turning_rad_per_m": round(max(0.0, self.turn_total - ref_turn) / p, 3) if p > 0.05 else None,
-                "geodesic_m": round(l, 2), "path_m": round(p, 2),
-                "remaining_geodesic_m": round(d_final, 2) if math.isfinite(d_final) else None}
+        return {
+            "arrived": int(s),
+            "spl": round(s * l / max(p, l), 4),
+            "soft_spl": round(max(0.0, 1 - (d_final if math.isfinite(d_final) else l) / l) * l / max(p, l), 4),
+            "collisions": self.collisions,
+            "time_to_target_s": self.first_arrival,
+            "path_ratio": round(p / l, 3) if l > 0 else None,
+            "excess_turning_rad_per_m": round(max(0.0, self.turn_total - ref_turn) / p, 3) if p > 0.05 else None,
+            "geodesic_m": round(l, 2),
+            "path_m": round(p, 2),
+            "remaining_geodesic_m": round(d_final, 2) if math.isfinite(d_final) else None,
+        }
 
     def judge(self, outcome: str, text: str = "") -> bool:
         return outcome == "done" and self.arrived()
@@ -406,7 +508,7 @@ class NavBackend(EmbodiedBackend):
         W, H = (W + 15) // 16 * 16, (H + 15) // 16 * 16
         img = Image.new("RGB", (W, H), (245, 243, 238))
         dr = ImageDraw.Draw(img)
-        P = lambda x, y: ((x - x0) * px_per_m, H - (y - y0) * px_per_m)  # noqa: E731
+        P = lambda x, y: ((x - x0) * px_per_m, H - (y - y0) * px_per_m)
         return img, dr, P
 
     def render(self, width: int = 480, height: int = 480) -> np.ndarray:
@@ -461,7 +563,9 @@ class NavBackend(EmbodiedBackend):
         x, y = P(*self.pos)
         r = RADIUS * ppm
         dr.ellipse([x - r, y - r, x + r, y + r], outline=(20, 110, 60), width=lw)
-        dr.line([(x, y), (x + 1.5 * r * math.cos(self.yaw), y - 1.5 * r * math.sin(self.yaw))], fill=(20, 110, 60), width=lw)
+        dr.line(
+            [(x, y), (x + 1.5 * r * math.cos(self.yaw), y - 1.5 * r * math.sin(self.yaw))], fill=(20, 110, 60), width=lw
+        )
         return np.asarray(img)
 
     def render_record(self, width: int, height: int) -> np.ndarray:
@@ -513,8 +617,12 @@ def oracle_main(env: str) -> None:
             i = int(np.clip(np.searchsorted(xs, b_pos[0]) - 1, 0, len(xs) - 1))
             j = int(np.clip(np.searchsorted(ys, b_pos[1]) - 1, 0, len(ys) - 1))
             if not np.isfinite(dist[i, j]):  # snap to the nearest reachable cell
-                near = [(abs(a - i) + abs(c - j), a, c) for a in range(max(0, i - 5), min(len(xs), i + 6))
-                        for c in range(max(0, j - 5), min(len(ys), j + 6)) if np.isfinite(dist[a, c])]
+                near = [
+                    (abs(a - i) + abs(c - j), a, c)
+                    for a in range(max(0, i - 5), min(len(xs), i + 6))
+                    for c in range(max(0, j - 5), min(len(ys), j + 6))
+                    if np.isfinite(dist[a, c])
+                ]
                 if near:
                     _, i, j = min(near)
             path = [(i, j)]
@@ -522,14 +630,20 @@ def oracle_main(env: str) -> None:
                 a0, c0 = path[-1]
                 if dist[a0, c0] == 0:
                     break
-                nb = [(dist[a, c], a, c) for a in range(max(0, a0 - 1), min(len(xs), a0 + 2))
-                      for c in range(max(0, c0 - 1), min(len(ys), c0 + 2)) if (a, c) != (a0, c0)]
+                nb = [
+                    (dist[a, c], a, c)
+                    for a in range(max(0, a0 - 1), min(len(xs), a0 + 2))
+                    for c in range(max(0, c0 - 1), min(len(ys), c0 + 2))
+                    if (a, c) != (a0, c0)
+                ]
                 d_best, a1, c1 = min(nb)
                 if not d_best < dist[a0, c0]:
                     break
                 path.append((a1, c1))
             look = 4
-            for k in range(min(len(path) - 1, 12), 0, -1):  # farthest of the next 1.2 m of path reachable in a straight line
+            for k in range(
+                min(len(path) - 1, 12), 0, -1
+            ):  # farthest of the next 1.2 m of path reachable in a straight line
                 q = (xs[path[k][0]], ys[path[k][1]])
                 if all(_seg_hits_box(b_pos, q, o, RADIUS * 0.95) is None for o in b.obstacles):
                     look = k

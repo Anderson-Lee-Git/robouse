@@ -6,23 +6,26 @@ observation fields listed in each task's instruction. Numpy only; robosuite is n
 Each controller closes the loop on the observed hand pose: position error -> dx/dy/dz, and the hand's tilt
 away from pointing straight down plus the finger-line yaw error -> droll/dpitch/dyaw (world-frame deltas).
 """
+
 from __future__ import annotations
 
 import numpy as np
 
 ROT_CTL = True  # orientation control on; the Sawyer task turns it off (its OSC stalls when asked to hold the
-                # hand vertical over the table, so its reference solution grasps with position control only)
+# hand vertical over the table, so its reference solution grasps with position control only)
 POS_GAIN = 15.0  # action per metre of position error (1.0 asks for 5 cm)
 ROT_GAIN = 1.2  # action per 0.5 rad of orientation error
 
 
 def quat_mat(q) -> np.ndarray:
     x, y, z, w = [float(v) for v in q]
-    return np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-    ])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def wrap90(a: float) -> float:
@@ -115,10 +118,10 @@ class Arm:
 
     def command(self, target, a: np.ndarray, gain: float = POS_GAIN, vmax: float = 1.0) -> None:
         if target is None:
-            a[self.sl.start:self.sl.start + 3] = 0.0
+            a[self.sl.start : self.sl.start + 3] = 0.0
         else:
-            a[self.sl.start:self.sl.start + 3] = np.clip((np.asarray(target, float) - self.pos()) * gain, -vmax, vmax)
-        a[self.sl.start + 3:self.sl.stop] = self.rot_cmd()
+            a[self.sl.start : self.sl.start + 3] = np.clip((np.asarray(target, float) - self.pos()) * gain, -vmax, vmax)
+        a[self.sl.start + 3 : self.sl.stop] = self.rot_cmd()
         if self.gi is not None:
             a[self.gi] = self.grip_cmd
 
@@ -129,15 +132,26 @@ class Arm:
         return abs(wrap90(self.yaw - st[self.pre + "gripper_yaw_deg"]))
 
 
-def drive(link: Link, arms_targets: list[tuple[Arm, object]], tol: float = 0.008, max_n: int = 120,
-          yaw_tol: float = 4.0, vmax: float = 1.0, min_n: int = 0) -> bool:
+def drive(
+    link: Link,
+    arms_targets: list[tuple[Arm, object]],
+    tol: float = 0.008,
+    max_n: int = 120,
+    yaw_tol: float = 4.0,
+    vmax: float = 1.0,
+    min_n: int = 0,
+) -> bool:
     """Move each arm toward its target (None = hold) until all are within tol (and yaw within yaw_tol)."""
     hist = []
     for n in range(max_n):
         if link.finished:
             return False
         hist.append(np.concatenate([arm.pos() for arm, _ in arms_targets]))
-        if n >= 15 and np.max(np.abs(hist[-1] - hist[-12])) < 0.001 and all(arm.yaw_err() < 3 * yaw_tol for arm, _ in arms_targets):
+        if (
+            n >= 15
+            and np.max(np.abs(hist[-1] - hist[-12])) < 0.001
+            and all(arm.yaw_err() < 3 * yaw_tol for arm, _ in arms_targets)
+        ):
             return False  # stalled (blocked by contact): stop pushing
         ok = all(t is None or np.linalg.norm(np.asarray(t) - arm.pos()) < tol for arm, t in arms_targets)
         ok = ok and all(arm.yaw_err() < yaw_tol for arm, _ in arms_targets)
@@ -170,8 +184,17 @@ def face_yaw(obj_yaw: float, current: float, period: float = 90.0, offset: float
 
 
 # ---- single-arm primitives -------------------------------------------------------------------------------------
-def pick(link: Link, arm: Arm, key: str, grasp_dz: float = 0.0, yaw_offset: float = 0.0, period: float = 90.0,
-         hover: float = 0.10, lift_to: float | None = None, grasp_key: str | None = None) -> np.ndarray:
+def pick(
+    link: Link,
+    arm: Arm,
+    key: str,
+    grasp_dz: float = 0.0,
+    yaw_offset: float = 0.0,
+    period: float = 90.0,
+    hover: float = 0.10,
+    lift_to: float | None = None,
+    grasp_key: str | None = None,
+) -> np.ndarray:
     """Grasp object `key` from above (fingers across its faces) and lift it. Returns hand-minus-object offset."""
     st = link.st
     gk = grasp_key or f"{key}_pos"
@@ -192,8 +215,16 @@ def pick(link: Link, arm: Arm, key: str, grasp_dz: float = 0.0, yaw_offset: floa
     return offset
 
 
-def place(link: Link, arm: Arm, key: str, obj_target, offset, hover: float = 0.12, carry_z: float | None = None,
-          retreat: float = 0.12) -> None:
+def place(
+    link: Link,
+    arm: Arm,
+    key: str,
+    obj_target,
+    offset,
+    hover: float = 0.12,
+    carry_z: float | None = None,
+    retreat: float = 0.12,
+) -> None:
     """Carry the held object so its centre reaches obj_target, release, and move the hand away."""
     obj_target = np.asarray(obj_target, float)
     hand_goal = obj_target + offset
@@ -234,15 +265,17 @@ def solve_stack(link: Link) -> None:
 
 
 PICKPLACE = {  # object key: (grasp height above the object's centre, finger yaw offset from the object's x axis)
-    "can": (0.0, 0.0), "milk": (0.04, 0.0), "bread": (0.0, 90.0), "cereal": (0.03, 90.0),
+    "can": (0.0, 0.0),
+    "milk": (0.04, 0.0),
+    "bread": (0.0, 90.0),
+    "cereal": (0.03, 90.0),
 }
 
 
 def solve_pickplace(link: Link, key: str) -> None:
     arm = Arm(link, None)
     dz, yoff = PICKPLACE[key]
-    off = pick(link, arm, key, grasp_dz=dz, yaw_offset=yoff, period=180.0 if key == "cereal" else 90.0,
-               lift_to=1.10)
+    off = pick(link, arm, key, grasp_dz=dz, yaw_offset=yoff, period=180.0 if key == "cereal" else 90.0, lift_to=1.10)
     tgt = np.asarray(link.st["target_bin_center"], float)
     z_obj = link.st["bin_floor_z"] + (0.07 if key in ("milk", "cereal") else 0.05)
     place(link, arm, key, np.r_[tgt[:2], z_obj], off, carry_z=1.10, retreat=0.15)
@@ -258,8 +291,16 @@ def solve_nut(link: Link, kind: str) -> None:
     along = handle[:2] - center[:2]
     # fingers close across the handle: finger line perpendicular to the handle's long axis
     hy = np.degrees(np.arctan2(along[1], along[0]))
-    off = pick(link, arm, key, grasp_dz=0.0, yaw_offset=wrap90(hy + 90 - st[f"{key}_yaw_deg"]), period=180.0,
-               lift_to=1.0, grasp_key=f"{key}_handle_pos")
+    off = pick(
+        link,
+        arm,
+        key,
+        grasp_dz=0.0,
+        yaw_offset=wrap90(hy + 90 - st[f"{key}_yaw_deg"]),
+        period=180.0,
+        lift_to=1.0,
+        grasp_key=f"{key}_handle_pos",
+    )
     peg = np.asarray(link.st[f"{kind}_peg_pos"], float)
     # turn the nut so its handle points toward the robot (-x) or sideways, never away (+x): the hand holds the
     # handle about 5 cm from the nut's centre, and reaching past the peg stalls the arm. The handle lies on the nut's
@@ -285,8 +326,9 @@ def solve_nut(link: Link, kind: str) -> None:
     hold(link, [arm], 5)
 
 
-def servo_obj(link: Link, arm: Arm, key: str, xy, z_obj: float, kind: str, tol: float, max_n: int,
-              descend: bool = False) -> None:
+def servo_obj(
+    link: Link, arm: Arm, key: str, xy, z_obj: float, kind: str, tol: float, max_n: int, descend: bool = False
+) -> None:
     """Move the held nut (not the hand) so its centre reaches (xy, z_obj); square nuts also keep yaw = 0 mod 90."""
     for n in range(max_n):
         if link.finished:
@@ -424,7 +466,9 @@ def solve_handover(link: Link) -> None:
 
     def on_handle(frac):  # point on the handle: frac -1 = butt end, +1 = head end
         st = link.st
-        return np.asarray(st["hammer_pos"], float) + np.asarray(st["hammer_handle_axis"], float) * frac * (st["hammer_handle_length"] / 2)
+        return np.asarray(st["hammer_pos"], float) + np.asarray(st["hammer_handle_axis"], float) * frac * (
+            st["hammer_handle_length"] / 2
+        )
 
     # each robot takes the part of the handle on its own side: robot0 is at -y, robot1 at +y
     head_side = 1.0 if link.st["hammer_handle_axis"][1] > 0 else -1.0  # +1: the head points toward robot1
@@ -477,9 +521,9 @@ def solve_peg_in_hole(link: Link) -> None:
         n = np.asarray(st["hole_axis"], float)
         n = n if n @ n0 > 0 else -n
         # robot0 aims the peg at the plate's current axis (not the fixed one), so drift of either hand is corrected
-        a[a0.sl.start + 3:a0.sl.stop] = np.clip(rotvec_to(st["peg_axis"], m if hold1 else n) / 0.5, -0.6, 0.6)
+        a[a0.sl.start + 3 : a0.sl.stop] = np.clip(rotvec_to(st["peg_axis"], m if hold1 else n) / 0.5, -0.6, 0.6)
         a1.command(hand1, a, vmax=vmax)
-        a[a1.sl.start + 3:a1.sl.stop] = np.clip(rotvec_to(n, m) / 0.5, -0.6, 0.6)
+        a[a1.sl.start + 3 : a1.sl.stop] = np.clip(rotvec_to(n, m) / 0.5, -0.6, 0.6)
         link.act(a)
 
     for _ in range(120):  # 1) turn both, the peg raised a little and pulled back from the plate

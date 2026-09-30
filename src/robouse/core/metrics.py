@@ -19,16 +19,17 @@ Navigation backends add spl, soft_spl, arrived, collisions, time_to_target_s, pa
 Aggregates (`robouse report`): proportions with Wilson score intervals (well defined at 0 % and 100 %), means with
 percentile bootstrap intervals (2000 resamples, fixed seed), pass@k (unbiased estimator) over repeated seeds.
 """
+
 from __future__ import annotations
 
 import math
 
 import numpy as np
 
-
 # ------------------------------------------------------------------------------------------------------------------
 # per-episode signal metrics
 # ------------------------------------------------------------------------------------------------------------------
+
 
 def _lowpass(x: np.ndarray, fs: float, fc: float = 10.0) -> np.ndarray:
     """Zero-phase FFT low-pass along axis 0 (no-op when the sampling rate cannot resolve fc)."""
@@ -54,7 +55,7 @@ def sparc(speed: np.ndarray, fs: float, padlevel: int = 4, fc: float = 10.0, amp
     idx = np.nonzero(M_sel >= amp_th)[0]
     if len(idx) < 2:
         return -1.0
-    f_sel, M_sel = f_sel[idx[0]:idx[-1] + 1], M_sel[idx[0]:idx[-1] + 1]
+    f_sel, M_sel = f_sel[idx[0] : idx[-1] + 1], M_sel[idx[0] : idx[-1] + 1]
     span = f_sel[-1] - f_sel[0]
     if span <= 0:
         return -1.0
@@ -72,20 +73,32 @@ def trajectory_metrics(points: list, dt: float) -> dict:
     speed = np.linalg.norm(vel, axis=1)
     jerk = np.gradient(np.gradient(vel, dt, axis=0), dt, axis=0)
     s = sparc(speed, fs)
-    return {"smoothness_sparc": None if s is None else round(s, 4),
-            "avg_jerk": round(float(np.mean(np.linalg.norm(jerk, axis=1))), 4),
-            "path_length_m": round(float(np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1))), 4)}
+    return {
+        "smoothness_sparc": None if s is None else round(s, 4),
+        "avg_jerk": round(float(np.mean(np.linalg.norm(jerk, axis=1))), 4),
+        "path_length_m": round(float(np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1))), 4),
+    }
 
 
-def episode_metrics(result: dict, physics: list[dict], dt: float | None, progress: float | None, stages: int | None,
-                    extra: dict | None = None) -> dict:
+def episode_metrics(
+    result: dict,
+    physics: list[dict],
+    dt: float | None,
+    progress: float | None,
+    stages: int | None,
+    extra: dict | None = None,
+) -> dict:
     ok = bool(result.get("success"))
     steps = int(result.get("steps_used") or 0)
     n_safety = len(result.get("safety_events") or [])
     vetoes = int(((result.get("session") or {}).get("vetoes")) or 0)
-    m: dict = {"success": int(ok), "progress": progress if progress is not None else float(ok),
-               "safety_events": n_safety, "safe_failure": None if ok else int(n_safety == 0),
-               "excellent": int(ok and n_safety == 0 and vetoes == 0) if ok else None}
+    m: dict = {
+        "success": int(ok),
+        "progress": progress if progress is not None else float(ok),
+        "safety_events": n_safety,
+        "safe_failure": None if ok else int(n_safety == 0),
+        "excellent": int(ok and n_safety == 0 and vetoes == 0) if ok else None,
+    }
     if dt:
         t = steps * dt
         m["execution_time_s"] = round(t, 3)
@@ -106,8 +119,32 @@ def episode_metrics(result: dict, physics: list[dict], dt: float | None, progres
 # contact force on the robot (MuJoCo)
 # ------------------------------------------------------------------------------------------------------------------
 
-ROBOT_WORDS = ("robot", "gripper", "hand", "finger", "pad", "panda", "wrist", "claw", "link", "arm", "leftpad", "rightpad",
-               "tool", "jaw", "palm", "thumb", "foot", "calf", "thigh", "hip", "trunk", "torso", "pelvis", "base_link")
+ROBOT_WORDS = (
+    "robot",
+    "gripper",
+    "hand",
+    "finger",
+    "pad",
+    "panda",
+    "wrist",
+    "claw",
+    "link",
+    "arm",
+    "leftpad",
+    "rightpad",
+    "tool",
+    "jaw",
+    "palm",
+    "thumb",
+    "foot",
+    "calf",
+    "thigh",
+    "hip",
+    "trunk",
+    "torso",
+    "pelvis",
+    "base_link",
+)
 
 
 def robot_geoms(model) -> set[int]:
@@ -123,7 +160,11 @@ def robot_geoms(model) -> set[int]:
     while changed:  # children of robot bodies are robot bodies
         changed = False
         for b in range(1, model.nbody):
-            if b not in robot_bodies and int(model.body_parentid[b]) in robot_bodies and int(model.body_parentid[b]) != 0:
+            if (
+                b not in robot_bodies
+                and int(model.body_parentid[b]) in robot_bodies
+                and int(model.body_parentid[b]) != 0
+            ):
                 robot_bodies.add(b)
                 changed = True
     return {g for g in range(model.ngeom) if int(model.geom_bodyid[g]) in robot_bodies}
@@ -145,6 +186,7 @@ def max_robot_contact_force(model, data, geoms: set[int]) -> float:
 # ------------------------------------------------------------------------------------------------------------------
 # aggregate statistics
 # ------------------------------------------------------------------------------------------------------------------
+
 
 def wilson(k: int, n: int, z: float = 1.959964) -> tuple[float, float] | None:
     if n <= 0:
@@ -175,9 +217,25 @@ def pass_at_k(n: int, c: int, k: int) -> float:
 
 
 PROPORTIONS = ("success", "safe_failure", "excellent", "arrived", "vlm_agree")
-MEANS = ("progress", "execution_time_s", "execution_speed", "smoothness_sparc", "avg_jerk", "max_contact_force_n",
-         "path_length_m", "spl", "soft_spl", "collisions", "time_to_target_s", "path_ratio", "excess_turning_rad_per_m",
-         "cost_usd", "prompt_tokens", "completion_tokens", "wall_time_s")
+MEANS = (
+    "progress",
+    "execution_time_s",
+    "execution_speed",
+    "smoothness_sparc",
+    "avg_jerk",
+    "max_contact_force_n",
+    "path_length_m",
+    "spl",
+    "soft_spl",
+    "collisions",
+    "time_to_target_s",
+    "path_ratio",
+    "excess_turning_rad_per_m",
+    "cost_usd",
+    "prompt_tokens",
+    "completion_tokens",
+    "wall_time_s",
+)
 SUCCESS_ONLY = ("execution_time_s", "execution_speed")  # PAW: averaged over successful episodes
 
 
@@ -195,7 +253,11 @@ def aggregate(rows: list[dict]) -> dict:
         vals = [r[key] for r in src if r.get(key) is not None]
         if vals:
             ci = bootstrap_mean(vals)
-            out[key] = {"value": round(float(np.mean(vals)), 4), "ci95": [round(ci[0], 4), round(ci[1], 4)], "n": len(vals)}
+            out[key] = {
+                "value": round(float(np.mean(vals)), 4),
+                "ci95": [round(ci[0], 4), round(ci[1], 4)],
+                "n": len(vals),
+            }
     if "safe_failure" in out:
         out["safe_failure"]["note"] = "share of failed episodes with no safety event"
     if "excellent" in out:

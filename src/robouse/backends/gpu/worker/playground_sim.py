@@ -16,6 +16,7 @@ Every `act` and every skill call is one step of the budget.
 Obstacles are visual boxes checked geometrically: the robot's footprint (a circle around its base) must not
 overlap any obstacle, wall or moving block; touching one ends in failure (it is recorded, the episode continues).
 """
+
 from __future__ import annotations
 
 import json
@@ -26,7 +27,6 @@ import re
 import tempfile
 
 import numpy as np
-
 from common import jpeg, r3
 
 IMG_W, IMG_H = 640, 480
@@ -35,10 +35,28 @@ ACT_S = 0.5
 FRAME_EVERY = 5  # control steps between recorded video frames during an act/skill
 
 ROBOTS = {
-    "go1": dict(env="Go1JoystickFlatTerrain", policy="go1_flat", radius=0.32, vmax=(1.5, 0.8, 1.2), height=0.27,
-                root="trunk", pert="pert_config", xml_dir="go1", base_xml="scene_mjx_feetonly_flat_terrain.xml"),
-    "g1": dict(env="G1JoystickFlatTerrain", policy="g1_flat", radius=0.28, vmax=(1.0, 0.8, 1.0), height=0.75,
-               root="torso_link", pert="push_config", xml_dir="g1", base_xml="scene_mjx_feetonly_flat_terrain.xml"),
+    "go1": dict(
+        env="Go1JoystickFlatTerrain",
+        policy="go1_flat",
+        radius=0.32,
+        vmax=(1.5, 0.8, 1.2),
+        height=0.27,
+        root="trunk",
+        pert="pert_config",
+        xml_dir="go1",
+        base_xml="scene_mjx_feetonly_flat_terrain.xml",
+    ),
+    "g1": dict(
+        env="G1JoystickFlatTerrain",
+        policy="g1_flat",
+        radius=0.28,
+        vmax=(1.0, 0.8, 1.0),
+        height=0.75,
+        root="torso_link",
+        pert="push_config",
+        xml_dir="g1",
+        base_xml="scene_mjx_feetonly_flat_terrain.xml",
+    ),
 }
 
 TASKS: dict[str, dict] = {}
@@ -72,7 +90,10 @@ def _layout(kind: str, rng: np.random.Generator) -> dict:
                 break
             cx, cy = rng.uniform(1.2, 5.0), rng.uniform(-2.0, 2.0)
             hx, hy = rng.uniform(0.2, 0.45), rng.uniform(0.2, 0.6)
-            if any(abs(cx - o[0]) < o[2] + hx + 0.75 and abs(cy - o[1]) < o[3] + hy + 0.75 for o in obs) or abs(cx - 3.0) < hx + 0.9:
+            if (
+                any(abs(cx - o[0]) < o[2] + hx + 0.75 and abs(cy - o[1]) < o[3] + hy + 0.75 for o in obs)
+                or abs(cx - 3.0) < hx + 0.9
+            ):
                 continue
             if math.hypot(cx - goal[0], cy - goal[1]) < 1.0:
                 continue
@@ -100,7 +121,9 @@ def _layout(kind: str, rng: np.random.Generator) -> dict:
         goal = (9.0, 0.0)
         movers = []
         for i, x in enumerate((2.0, 4.5, 7.0)):
-            movers.append(dict(cx=x, hx=0.35, hy=0.5, amp=1.8, period=rng.uniform(8.0, 12.0), phase=rng.uniform(0, 2 * math.pi)))
+            movers.append(
+                dict(cx=x, hx=0.35, hy=0.5, amp=1.8, period=rng.uniform(8.0, 12.0), phase=rng.uniform(0, 2 * math.pi))
+            )
         side = [(5.0, 2.6, 5.0, 0.05, 0.6), (5.0, -2.6, 5.0, 0.05, 0.6)]
         out.update(goal=goal, obstacles=side, movers=movers, bounds=(-1.0, 10.0, -2.7, 2.7))
     elif kind == "tour":
@@ -116,14 +139,27 @@ def _layout(kind: str, rng: np.random.Generator) -> dict:
             if len(obs) >= 5:
                 break
             cx, cy = rng.uniform(-2.5, 2.5), rng.uniform(-2.5, 2.5)
-            if all(math.hypot(cx - q[0], cy - q[1]) > 1.0 for q in wps) and math.hypot(cx, cy) > 1.0 and \
-                    all(math.hypot(cx - o[0], cy - o[1]) > 1.2 for o in obs):
+            if (
+                all(math.hypot(cx - q[0], cy - q[1]) > 1.0 for q in wps)
+                and math.hypot(cx, cy) > 1.0
+                and all(math.hypot(cx - o[0], cy - o[1]) > 1.2 for o in obs)
+            ):
                 obs.append((cx, cy, 0.3, 0.3, 0.4))
         out.update(goal=wps[-1], waypoints=wps, obstacles=obs, bounds=(-3.5, 3.5, -3.5, 3.5))
     elif kind == "ball":
         # a room with low interior walls; the ball is behind one of them
-        room = [(0.0, 4.0, 4.0, 0.05, 0.6), (0.0, -4.0, 4.0, 0.05, 0.6), (4.0, 0.0, 0.05, 4.0, 0.6), (-4.0, 0.0, 0.05, 4.0, 0.6)]
-        inner = [(1.5, 1.5, 0.8, 0.08, 0.6), (-1.5, 1.8, 0.08, 1.0, 0.6), (1.8, -1.8, 0.08, 1.0, 0.6), (-1.5, -1.5, 1.0, 0.08, 0.6)]
+        room = [
+            (0.0, 4.0, 4.0, 0.05, 0.6),
+            (0.0, -4.0, 4.0, 0.05, 0.6),
+            (4.0, 0.0, 0.05, 4.0, 0.6),
+            (-4.0, 0.0, 0.05, 4.0, 0.6),
+        ]
+        inner = [
+            (1.5, 1.5, 0.8, 0.08, 0.6),
+            (-1.5, 1.8, 0.08, 1.0, 0.6),
+            (1.8, -1.8, 0.08, 1.0, 0.6),
+            (-1.5, -1.5, 1.0, 0.08, 0.6),
+        ]
         spots = [(1.5, 2.6), (-2.6, 1.8), (2.8, -1.8), (-1.5, -2.6)]
         ball = spots[int(rng.integers(len(spots)))]
         out.update(goal=ball, ball=ball, obstacles=room + inner, bounds=(-4.0, 4.0, -4.0, 4.0))
@@ -141,9 +177,13 @@ def _layout(kind: str, rng: np.random.Generator) -> dict:
 
 def _carve(walls, pts, w):
     """Remove the wall pieces that block the corridor's own turns (keep only wall parts outside every leg)."""
+
     def inside_leg(x, y):
         for (x0, y0), (x1, y1) in zip(pts[:-1], pts[1:]):
-            if min(x0, x1) - w - 1e-6 <= x <= max(x0, x1) + w + 1e-6 and min(y0, y1) - w - 1e-6 <= y <= max(y0, y1) + w + 1e-6:
+            if (
+                min(x0, x1) - w - 1e-6 <= x <= max(x0, x1) + w + 1e-6
+                and min(y0, y1) - w - 1e-6 <= y <= max(y0, y1) + w + 1e-6
+            ):
                 return True
         return False
 
@@ -215,8 +255,9 @@ class PGTask:
         params = pickle.load(open(os.path.join(pdir, "params.pkl"), "rb"))
         net = pcfg.get("network") or {}
         obs_size = self.env.observation_size
-        nets = ppo_networks.make_ppo_networks(obs_size, self.env.action_size,
-                                              preprocess_observations_fn=running_statistics.normalize, **net)
+        nets = ppo_networks.make_ppo_networks(
+            obs_size, self.env.action_size, preprocess_observations_fn=running_statistics.normalize, **net
+        )
         self.policy = jax.jit(ppo_networks.make_inference_fn(nets)(params, deterministic=True))
         self.jstep = jax.jit(self.env.step)
         self.jreset = jax.jit(self.env.reset)
@@ -236,29 +277,41 @@ class PGTask:
         src = open(os.path.join(base, self.rb["base_xml"])).read()
         geoms = []
         for i, (cx, cy, hx, hy, h) in enumerate(self.lay["obstacles"]):
-            geoms.append(f'<geom name="obst{i}" type="box" size="{hx} {hy} {h / 2}" pos="{cx} {cy} {h / 2}" rgba="0.55 0.5 0.45 1" contype="0" conaffinity="0"/>')
+            geoms.append(
+                f'<geom name="obst{i}" type="box" size="{hx} {hy} {h / 2}" pos="{cx} {cy} {h / 2}" rgba="0.55 0.5 0.45 1" contype="0" conaffinity="0"/>'
+            )
         bodies = []
         for i, m in enumerate(self.lay["movers"]):
-            bodies.append(f'<body name="mover{i}" mocap="true" pos="{m["cx"]} 0 0.3"><geom type="box" size="{m["hx"]} {m["hy"]} 0.3" rgba="0.9 0.3 0.1 1" contype="0" conaffinity="0"/></body>')
+            bodies.append(
+                f'<body name="mover{i}" mocap="true" pos="{m["cx"]} 0 0.3"><geom type="box" size="{m["hx"]} {m["hy"]} 0.3" rgba="0.9 0.3 0.1 1" contype="0" conaffinity="0"/></body>'
+            )
         g = self.lay["goal"]
         if self.lay["ball"] is not None:
-            geoms.append(f'<geom name="ball" type="sphere" size="0.15" pos="{g[0]} {g[1]} 0.15" rgba="0.95 0.1 0.1 1" contype="0" conaffinity="0"/>')
+            geoms.append(
+                f'<geom name="ball" type="sphere" size="0.15" pos="{g[0]} {g[1]} 0.15" rgba="0.95 0.1 0.1 1" contype="0" conaffinity="0"/>'
+            )
         else:
-            geoms.append(f'<geom name="goal" type="cylinder" size="{self.cfg["goal_tol"]} 0.005" pos="{g[0]} {g[1]} 0.005" rgba="0.1 0.8 0.2 0.6" contype="0" conaffinity="0"/>')
+            geoms.append(
+                f'<geom name="goal" type="cylinder" size="{self.cfg["goal_tol"]} 0.005" pos="{g[0]} {g[1]} 0.005" rgba="0.1 0.8 0.2 0.6" contype="0" conaffinity="0"/>'
+            )
         for i, (x, y) in enumerate(self.lay["waypoints"]):
-            geoms.append(f'<geom name="wp{i}" type="cylinder" size="0.2 0.006" pos="{x} {y} 0.006" rgba="0.2 0.4 0.95 0.7" contype="0" conaffinity="0"/>')
+            geoms.append(
+                f'<geom name="wp{i}" type="cylinder" size="0.2 0.006" pos="{x} {y} 0.006" rgba="0.2 0.4 0.95 0.7" contype="0" conaffinity="0"/>'
+            )
         extra = "\n".join(geoms + bodies)
         m = re.search(r"<worldbody>", src)
         if m:
-            out = src[:m.end()] + "\n" + extra + "\n" + src[m.end():]
+            out = src[: m.end()] + "\n" + extra + "\n" + src[m.end() :]
         else:
             out = src.replace("</mujoco>", f"<worldbody>{extra}</worldbody></mujoco>")
         f = tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, dir=base, prefix="robouse_")
         f.write(out)
         f.close()
         self.scene_xml = f.name
-        mod = __import__(f"mujoco_playground._src.locomotion.{self.rb['xml_dir']}.{self.rb['xml_dir']}_constants",
-                         fromlist=["task_to_xml"])
+        mod = __import__(
+            f"mujoco_playground._src.locomotion.{self.rb['xml_dir']}.{self.rb['xml_dir']}_constants",
+            fromlist=["task_to_xml"],
+        )
         from etils import epath
 
         mod.task_to_xml = lambda task_name, _p=f.name: epath.Path(_p)
@@ -312,7 +365,7 @@ class PGTask:
             info = dict(self.state.info)
             info["command"] = self.jp.asarray(cmd)
             if "steps_until_next_cmd" in info:
-                info["steps_until_next_cmd"] = self.jp.asarray(10 ** 6, dtype=self.jp.int32)
+                info["steps_until_next_cmd"] = self.jp.asarray(10**6, dtype=self.jp.int32)
             if "step" in info:
                 info["step"] = self.jp.asarray(0, dtype=self.jp.int32)
             self.state = self.state.replace(info=info)
@@ -334,28 +387,61 @@ class PGTask:
     def info(self) -> dict:
         v = self.rb["vmax"]
         cams = ["chase", "overview"] + (["head"] if self.cfg.get("vision") else ["head"])
-        return {"action": {"names": ["vx", "vy", "wz"], "low": [-v[0], -v[1], -v[2]], "high": list(v),
-                           "doc": f"body-frame velocity command held for {ACT_S} s: forward m/s, left m/s, yaw rate rad/s"},
-                "skills": ["walk VX VY WZ SECONDS - hold a velocity command for up to 5 s (stops if the robot touches something or falls)",
-                           "stand [SECONDS] - zero command (default 1 s)"],
-                "camera": "chase", "cameras": cams, "hold_last": 0.0, "max_steps": self.cfg["max_steps"],
-                "embodiment": self.embodiment()}
+        return {
+            "action": {
+                "names": ["vx", "vy", "wz"],
+                "low": [-v[0], -v[1], -v[2]],
+                "high": list(v),
+                "doc": f"body-frame velocity command held for {ACT_S} s: forward m/s, left m/s, yaw rate rad/s",
+            },
+            "skills": [
+                "walk VX VY WZ SECONDS - hold a velocity command for up to 5 s (stops if the robot touches something or falls)",
+                "stand [SECONDS] - zero command (default 1 s)",
+            ],
+            "camera": "chase",
+            "cameras": cams,
+            "hold_last": 0.0,
+            "max_steps": self.cfg["max_steps"],
+            "embodiment": self.embodiment(),
+        }
 
     def embodiment(self) -> dict:
         v = self.rb["vmax"]
         kind = "quadruped" if self.cfg["robot"] == "go1" else "humanoid"
-        return {"spec_version": "1", "name": f"unitree-{self.cfg['robot']}-playground-policy", "kind": kind, "step_s": ACT_S,
-                "action_groups": [{"name": "base.twist", "components": ["vx", "vy", "wz"], "low": [-v[0], -v[1], -v[2]],
-                                   "high": list(v), "units": "m/s, m/s, rad/s (body frame)", "mode": "base_twist",
-                                   "frame": "body", "hold": "zero",
-                                   "doc": "velocity command to a learned joystick policy (Brax PPO, MuJoCo Playground)"}],
-                "sensors": {"cameras": [{"name": "chase", "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": False},
-                                        {"name": "overview", "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": False},
-                                        {"name": "head", "mount": "head", "width": IMG_W, "height": IMG_H, "calibrated": False}],
-                            "proprioception": [{"name": "base", "shape": [4], "units": "m, m, m, deg"},
-                                               {"name": "velocity", "shape": [3]}, {"name": "fallen", "shape": []}]},
-                "skills": [{"name": "walk", "impl": "backend"}, {"name": "stand", "impl": "backend"}],
-                "budgets": {"max_steps": self.cfg["max_steps"]}, "reward": {"dense": "sparse", "success_mode": "final"}}
+        return {
+            "spec_version": "1",
+            "name": f"unitree-{self.cfg['robot']}-playground-policy",
+            "kind": kind,
+            "step_s": ACT_S,
+            "action_groups": [
+                {
+                    "name": "base.twist",
+                    "components": ["vx", "vy", "wz"],
+                    "low": [-v[0], -v[1], -v[2]],
+                    "high": list(v),
+                    "units": "m/s, m/s, rad/s (body frame)",
+                    "mode": "base_twist",
+                    "frame": "body",
+                    "hold": "zero",
+                    "doc": "velocity command to a learned joystick policy (Brax PPO, MuJoCo Playground)",
+                }
+            ],
+            "sensors": {
+                "cameras": [
+                    {"name": "chase", "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": False},
+                    {"name": "overview", "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": False},
+                    {"name": "head", "mount": "head", "width": IMG_W, "height": IMG_H, "calibrated": False},
+                ],
+                "proprioception": [
+                    {"name": "base", "shape": [4], "units": "m, m, m, deg"},
+                    {"name": "velocity", "shape": [3]},
+                    {"name": "fallen", "shape": []},
+                ],
+            },
+            "skills": [{"name": "walk", "impl": "backend"}, {"name": "stand", "impl": "backend"}],
+            "budgets": {"max_steps": self.cfg["max_steps"]},
+            "reward": {"dense": "sparse", "success_mode": "final"},
+        }
 
     def reset(self, seed: int | None = None) -> dict:
         jp = self.jp
@@ -393,7 +479,11 @@ class PGTask:
                 if len(v) != 4:
                     raise ValueError("walk VX VY WZ SECONDS")
                 n = self._run(v[:3], min(5.0, max(0.02, v[3])), stop_on_event=True)
-                msg = f"walked {n * self.dt:.2f} s" + ("; stopped: touched an obstacle" if self.touched else "") + ("; the robot has fallen" if self.fallen else "")
+                msg = (
+                    f"walked {n * self.dt:.2f} s"
+                    + ("; stopped: touched an obstacle" if self.touched else "")
+                    + ("; the robot has fallen" if self.fallen else "")
+                )
             elif name == "stand":
                 s = float(args[0]) if args else 1.0
                 self._run([0, 0, 0], min(5.0, max(0.02, s)))
@@ -411,16 +501,29 @@ class PGTask:
     def observe(self, privileged: bool = False) -> dict:
         x, y, z, yaw, up = self._base()
         lv = np.asarray(self.env.get_local_linvel(self.state.data))
-        st = {"base": {"x": round(float(x), 3), "y": round(float(y), 3), "z": round(float(z), 3), "yaw_deg": round(math.degrees(yaw), 1)},
-              "velocity": {"vx": round(float(lv[0]), 3), "vy": round(float(lv[1]), 3)},
-              "fallen": bool(self.fallen), "time_s": round(self.t, 2), "obstacle_contacts": int(self.touched)}
+        st = {
+            "base": {
+                "x": round(float(x), 3),
+                "y": round(float(y), 3),
+                "z": round(float(z), 3),
+                "yaw_deg": round(math.degrees(yaw), 1),
+            },
+            "velocity": {"vx": round(float(lv[0]), 3), "vy": round(float(lv[1]), 3)},
+            "fallen": bool(self.fallen),
+            "time_s": round(self.t, 2),
+            "obstacle_contacts": int(self.touched),
+        }
         if not self.cfg.get("vision"):
             st["goal"] = r3(self.lay["goal"], 3)
-            st["obstacles"] = [{"center": [round(o[0], 3), round(o[1], 3)], "half_size": [round(o[2], 3), round(o[3], 3)]}
-                               for o in self.lay["obstacles"]]
+            st["obstacles"] = [
+                {"center": [round(o[0], 3), round(o[1], 3)], "half_size": [round(o[2], 3), round(o[3], 3)]}
+                for o in self.lay["obstacles"]
+            ]
             if self.lay["movers"]:
-                st["moving_blocks"] = [{"x": m["cx"], "half_size": [m["hx"], m["hy"]], "y_now": round(self._mover_pos(i, self.t)[1], 3)}
-                                       for i, m in enumerate(self.lay["movers"])]
+                st["moving_blocks"] = [
+                    {"x": m["cx"], "half_size": [m["hx"], m["hy"]], "y_now": round(self._mover_pos(i, self.t)[1], 3)}
+                    for i, m in enumerate(self.lay["movers"])
+                ]
             if self.lay["waypoints"]:
                 st["waypoints"] = [r3(w, 3) for w in self.lay["waypoints"]]
                 st["next_waypoint"] = int(self.next_wp)
@@ -572,8 +675,10 @@ class PGTask:
                 yield ["skill", "stand", [0.5]]
                 for _ in range(60):
                     t0 = self.t
-                    clear = all(abs(self._mover_pos(i, t0 + k * 0.25)[1]) > m["hy"] + self.rb["radius"] + 0.12
-                                for k in range(1, 12))
+                    clear = all(
+                        abs(self._mover_pos(i, t0 + k * 0.25)[1]) > m["hy"] + self.rb["radius"] + 0.12
+                        for k in range(1, 12)
+                    )
                     if clear:
                         break
                     yield ["act", [0.0, 0.0, 0.0]]

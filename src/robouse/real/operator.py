@@ -19,6 +19,7 @@ Live feedback: `robouse operator say "text"` appends a remark that the next `rob
 Nothing here is reachable from the agent: the operator folder is outside the agent's workspace and is denied by the
 runner's sandbox profile.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,7 +42,9 @@ class Operator:
             raise ValueError(f"unknown operator channel {channel!r} (tty, file or script)")
         self.channel, self.timeout_s = channel, float(timeout_s)
         self.log = log or (lambda _kind, **kw: None)
-        self._script = dict(p.split("=", 1) for p in os.environ.get("ROBOUSE_OPERATOR_SCRIPT", "").split(",") if "=" in p)
+        self._script = dict(
+            p.split("=", 1) for p in os.environ.get("ROBOUSE_OPERATOR_SCRIPT", "").split(",") if "=" in p
+        )
         self._feedback_seen = 0
         self.feedback_file = OPERATOR_DIR / "feedback.jsonl"
         if self.feedback_file.exists():  # remarks written before this episode are not delivered
@@ -59,7 +62,9 @@ class Operator:
                     tty.flush()
                     line = tty.readline().strip()
             except OSError as e:
-                raise SafetyStop(f"no operator terminal ({e}); use ROBOUSE_OPERATOR=file and `robouse operator answer`") from e
+                raise SafetyStop(
+                    f"no operator terminal ({e}); use ROBOUSE_OPERATOR=file and `robouse operator answer`"
+                ) from e
             ans, _, note = line.partition(" ")
             return (ans.lower() if ans.lower() in choices else "", note.strip())
         # file channel
@@ -67,8 +72,18 @@ class Operator:
         rid = uuid.uuid4().hex[:8]
         pending = OPERATOR_DIR / "pending.json"
         answer = OPERATOR_DIR / f"answer-{rid}.json"
-        pending.write_text(json.dumps({"id": rid, "key": key, "prompt": prompt, "choices": list(choices),
-                                       "asked_at": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=2))
+        pending.write_text(
+            json.dumps(
+                {
+                    "id": rid,
+                    "key": key,
+                    "prompt": prompt,
+                    "choices": list(choices),
+                    "asked_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                },
+                indent=2,
+            )
+        )
         deadline = time.time() + self.timeout_s
         try:
             while time.time() < deadline:
@@ -104,7 +119,7 @@ class Operator:
         if not self.feedback_file.exists():
             return []
         lines = self.feedback_file.read_text().splitlines()
-        new = lines[self._feedback_seen:]
+        new = lines[self._feedback_seen :]
         self._feedback_seen = len(lines)
         out = []
         for l in new:

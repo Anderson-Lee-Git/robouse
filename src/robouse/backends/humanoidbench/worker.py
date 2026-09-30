@@ -19,18 +19,16 @@ Low-level controller (the layer under `robo act`, all on the trusted side):
   above the floor), with gravity feed-forward on the position targets. Wrists, fingers and the torso joint hold their
   start positions.
 """
+
 from __future__ import annotations
 
-import json
 import math
-import os
 import pickle
 import sys
 import types
 import zipfile
 
-
-import numpy as np  # noqa: E402
+import numpy as np
 
 
 def _stub_modules() -> None:
@@ -56,6 +54,7 @@ def _stub_modules() -> None:
 # Unitree H1 locomotion policy (unitree_rl_gym deploy/pre_train/h1/motion.pt), numpy inference
 # ------------------------------------------------------------------------------------------------------------------
 
+
 def load_torchscript_weights(path: str) -> dict[str, np.ndarray]:
     """Tensors of a TorchScript archive by state-dict name, without torch: data.pkl is unpickled with stand-ins for the
     torch classes and each tensor is rebuilt from its raw storage file (little-endian)."""
@@ -72,7 +71,9 @@ def load_torchscript_weights(path: str) -> dict[str, np.ndarray]:
     def rebuild(storage, offset, size, stride, *_):
         key, dtype = storage
         buf = np.frombuffer(z.read(f"{root}/data/{key}"), dtype=dtype)
-        return np.lib.stride_tricks.as_strided(buf[offset:], shape=size, strides=[s * buf.itemsize for s in stride]).copy()
+        return np.lib.stride_tricks.as_strided(
+            buf[offset:], shape=size, strides=[s * buf.itemsize for s in stride]
+        ).copy()
 
     class U(pickle.Unpickler):
         def find_class(self, mod, name):
@@ -107,8 +108,18 @@ def load_torchscript_weights(path: str) -> dict[str, np.ndarray]:
 class H1WalkPolicy:
     """unitree_rl_gym's H1 policy (LSTM 41 -> 64, MLP 64 -> 32 -> 10 with ELU), as in its deploy_mujoco.py."""
 
-    LEGS = ["left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle",
-            "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle"]
+    LEGS = [
+        "left_hip_yaw",
+        "left_hip_roll",
+        "left_hip_pitch",
+        "left_knee",
+        "left_ankle",
+        "right_hip_yaw",
+        "right_hip_roll",
+        "right_hip_pitch",
+        "right_knee",
+        "right_ankle",
+    ]
     DEFAULT = np.array([0, 0, -0.1, 0.3, -0.2] * 2)
     CMD_SCALE = np.array([2.0, 2.0, 0.25])
     ACTION_SCALE = 0.25
@@ -132,11 +143,24 @@ class H1WalkPolicy:
         qw, qx, qy, qz = quat
         grav = np.array([2 * (-qz * qx + qw * qy), -2 * (qz * qy + qw * qx), 1 - 2 * (qw * qw + qz * qz)])
         ph = (self.k * 0.02) % self.PERIOD / self.PERIOD
-        obs = np.concatenate([omega_body * 0.25, grav, np.asarray(cmd) * self.CMD_SCALE, q - self.DEFAULT, dq * 0.05, self.action,
-                              [math.sin(2 * math.pi * ph), math.cos(2 * math.pi * ph)]]).astype(np.float32).astype(np.float64)
+        obs = (
+            np.concatenate(
+                [
+                    omega_body * 0.25,
+                    grav,
+                    np.asarray(cmd) * self.CMD_SCALE,
+                    q - self.DEFAULT,
+                    dq * 0.05,
+                    self.action,
+                    [math.sin(2 * math.pi * ph), math.cos(2 * math.pi * ph)],
+                ]
+            )
+            .astype(np.float32)
+            .astype(np.float64)
+        )
         g = self.Wih @ obs + self.Whh @ self.h + self.b
         i, f, gg, o = np.split(g, 4)
-        sig = lambda x: 1 / (1 + np.exp(-x))  # noqa: E731
+        sig = lambda x: 1 / (1 + np.exp(-x))
         self.c = sig(f) * self.c + sig(i) * np.tanh(gg)
         self.h = sig(o) * np.tanh(self.c)
         x = self.W0 @ self.h + self.b0
@@ -162,13 +186,15 @@ TASKS = {
     "push": dict(env="h1hand-push-v0", success="flag"),
 }
 
-ARM = {"left": ["left_shoulder_pitch", "left_shoulder_roll", "left_shoulder_yaw", "left_elbow"],
-       "right": ["right_shoulder_pitch", "right_shoulder_roll", "right_shoulder_yaw", "right_elbow"]}
+ARM = {
+    "left": ["left_shoulder_pitch", "left_shoulder_roll", "left_shoulder_yaw", "left_elbow"],
+    "right": ["right_shoulder_pitch", "right_shoulder_roll", "right_shoulder_yaw", "right_elbow"],
+}
 SIDES = ("left", "right")
 SIT_POSE = np.array([0, 0, -1.3, 1.6, 0.15] * 2)  # sit-down target: hip yaw, roll, pitch, knee, ankle (both legs)
-SIT_HOLD, SIT_STEPS = 2, 30                       # steps in the standing stance, then steps to the seated pose
-MAX_CMD = np.array([1.0, 0.5, 1.0])   # forward m/s, left m/s, turn rad/s (inside the policy's training ranges)
-HAND_STEP = 0.02                      # m per step per unit of the hand action
+SIT_HOLD, SIT_STEPS = 2, 30  # steps in the standing stance, then steps to the seated pose
+MAX_CMD = np.array([1.0, 0.5, 1.0])  # forward m/s, left m/s, turn rad/s (inside the policy's training ranges)
+HAND_STEP = 0.02  # m per step per unit of the hand action
 ARM_KP = {"left_shoulder_pitch": 100, "left_shoulder_roll": 100, "left_shoulder_yaw": 100, "left_elbow": 100}
 
 
@@ -194,9 +220,8 @@ class Worker:
     def make(self, task: str, seed: int, policy: str, noise_seed: int | None = None):
         _stub_modules()
         import gymnasium as gym
-        import mujoco
-
         import humanoid_bench  # noqa: F401  (registers the h1hand-*-v0 environments)
+        import mujoco
 
         self.mj = mujoco
         if self.env is not None:
@@ -213,8 +238,8 @@ class Worker:
         self.max_episode_steps = int(self.env.spec.max_episode_steps)
         self.bar = float(getattr(self.hb_task, "success_bar", 0.0))
         self.policy = H1WalkPolicy(policy)
-        jq = lambda n: int(m.jnt_qposadr[m.joint(n).id])  # noqa: E731
-        jv = lambda n: int(m.jnt_dofadr[m.joint(n).id])  # noqa: E731
+        jq = lambda n: int(m.jnt_qposadr[m.joint(n).id])
+        jv = lambda n: int(m.jnt_dofadr[m.joint(n).id])
         self.leg_q = [jq(n) for n in H1WalkPolicy.LEGS]
         self.leg_v = [jv(n) for n in H1WalkPolicy.LEGS]
         self.act_of = {m.actuator(i).name: i for i in range(m.nu)}
@@ -260,9 +285,15 @@ class Worker:
         self.success_step = None
         self.terminated = False
         self.best = {}
-        return {"max_episode_steps": self.max_episode_steps, "success_bar": self.bar, "success": self.cfg["success"],
-                "env": self.cfg["env"], "camera": self.hb_task.camera_name,
-                "hand_home_body": {sd: _r3(self.hand_home[sd]) for sd in SIDES}, "cameras": [m.camera(i).name for i in range(m.ncam)]}
+        return {
+            "max_episode_steps": self.max_episode_steps,
+            "success_bar": self.bar,
+            "success": self.cfg["success"],
+            "env": self.cfg["env"],
+            "camera": self.hb_task.camera_name,
+            "hand_home_body": {sd: _r3(self.hand_home[sd]) for sd in SIDES},
+            "cameras": [m.camera(i).name for i in range(m.ncam)],
+        }
 
     # ---- frames --------------------------------------------------------------------------------------------------
     def base(self):
@@ -356,7 +387,7 @@ class Worker:
         else:
             self.hold = None
         for i, side in enumerate(SIDES):
-            delta = np.clip(a[3 + 3 * i:6 + 3 * i], -1, 1) * HAND_STEP
+            delta = np.clip(a[3 + 3 * i : 6 + 3 * i], -1, 1) * HAND_STEP
             if np.any(delta):
                 self.anchor[side] = None
             if self.anchor[side] is not None:  # hold a world point while the body sways
@@ -374,7 +405,9 @@ class Worker:
                 self.ibias[side] = np.clip(self.ibias[side] + 0.1 * err, -0.04, 0.04)
             gw = self.to_world(g + self.ibias[side])
             q, res = self.arm_ik(side, gw, self.q_arm[side])
-            if res > 0.03:  # stuck (joint limit or local minimum): solve again from the neutral arm and keep the better one
+            if (
+                res > 0.03
+            ):  # stuck (joint limit or local minimum): solve again from the neutral arm and keep the better one
                 q2, res2 = self.arm_ik(side, gw, np.clip(np.zeros(4), self.arm_lo[side], self.arm_hi[side]), iters=30)
                 if res2 < res - 0.01:
                     q = q2
@@ -420,38 +453,60 @@ class Worker:
         vb = [c * v[0] + s * v[1], -s * v[0] + c * v[1]]
         hands = {}
         for side in SIDES:
-            hands[side] = {"pos": _r3(self.hand_world(side)), "pos_body": _r3(self.hand_body(side)),
-                           "goal_body": _r3(self.hand_goal[side]),
-                           "anchored_at": None if self.anchor[side] is None else _r3(self.anchor[side])}
-        robot = {"pelvis": _r3(b), "heading_deg": _r(math.degrees(yaw), 1), "head_height": _r(rob.head_height()),
-                 "torso_upright": _r(rob.torso_upright()), "com_velocity": _r3(v[:2]), "com_velocity_body": _r3(vb),
-                 "command": {"forward": _r(self.cmd[0], 2), "left": _r(self.cmd[1], 2), "turn": _r(self.cmd[2], 2)},
-                 "holding_spot": None if self.hold is None else _r3(self.hold[0], 2),
-                 "hands": hands, "fallen": self.terminated, "seated_mode": self.sit_k is not None}
+            hands[side] = {
+                "pos": _r3(self.hand_world(side)),
+                "pos_body": _r3(self.hand_body(side)),
+                "goal_body": _r3(self.hand_goal[side]),
+                "anchored_at": None if self.anchor[side] is None else _r3(self.anchor[side]),
+            }
+        robot = {
+            "pelvis": _r3(b),
+            "heading_deg": _r(math.degrees(yaw), 1),
+            "head_height": _r(rob.head_height()),
+            "torso_upright": _r(rob.torso_upright()),
+            "com_velocity": _r3(v[:2]),
+            "com_velocity_body": _r3(vb),
+            "command": {"forward": _r(self.cmd[0], 2), "left": _r(self.cmd[1], 2), "turn": _r(self.cmd[2], 2)},
+            "holding_spot": None if self.hold is None else _r3(self.hold[0], 2),
+            "hands": hands,
+            "fallen": self.terminated,
+            "seated_mode": self.sit_k is not None,
+        }
         st = {"robot": robot, "scene": self.scene(), "time_s": _r(d.time, 2)}
-        st["progress"] = {"steps": self.steps, "episode_steps": self.max_episode_steps, "return": _r(self.ret, 2),
-                          "last_reward": _r(self.last_reward, 4),
-                          **({"success_bar": self.bar} if self.cfg["success"] == "return" else {}),
-                          "reward_terms": {k: _r(v, 3) for k, v in self.info.items()
-                                           if k not in ("per_timestep_reward",) and isinstance(v, float)},
-                          "solved": self.success}
+        st["progress"] = {
+            "steps": self.steps,
+            "episode_steps": self.max_episode_steps,
+            "return": _r(self.ret, 2),
+            "last_reward": _r(self.last_reward, 4),
+            **({"success_bar": self.bar} if self.cfg["success"] == "return" else {}),
+            "reward_terms": {
+                k: _r(v, 3) for k, v in self.info.items() if k not in ("per_timestep_reward",) and isinstance(v, float)
+            },
+            "solved": self.success,
+        }
         return st
 
     def scene(self) -> dict:
         m, d, t = self.model, self.data, self.task_id
         if t == "push":
             box = d.qpos[-7:-4]
-            return {"table": {"top_height": 0.95, "x_range": [0.4, 1.4], "y_range": [-1.0, 1.0]},
-                    "box": {"pos": _r3(box), "size_m": 0.2}, "goal": _r3(self.hb_task.goal),
-                    "box_to_goal_m": _r(np.linalg.norm(box - self.hb_task.goal))}
+            return {
+                "table": {"top_height": 0.95, "x_range": [0.4, 1.4], "y_range": [-1.0, 1.0]},
+                "box": {"pos": _r3(box), "size_m": 0.2},
+                "goal": _r3(self.hb_task.goal),
+                "box_to_goal_m": _r(np.linalg.norm(box - self.hb_task.goal)),
+            }
         if t == "reach":
             g = self.hb_task.goal
             return {"target": _r3(g), "left_hand_to_target_m": _r(np.linalg.norm(self.hand_world("left") - g))}
         if t == "maze":
             cps = [c[:2].tolist() for c in self.hb_task.checkpoints[1:4]]
-            return {"checkpoints": cps, "checkpoints_reached": int(self.hb_task.maze_stage),
-                    "next_checkpoint": (cps[self.hb_task.maze_stage] if self.hb_task.maze_stage < 3 else None),
-                    "walls": self._walls()}
+            return {
+                "checkpoints": cps,
+                "checkpoints_reached": int(self.hb_task.maze_stage),
+                "next_checkpoint": (cps[self.hb_task.maze_stage] if self.hb_task.maze_stage < 3 else None),
+                "walls": self._walls(),
+            }
         if t == "pole":
             return {"poles": self._poles(), "corridor_y": [-3.0, 3.0]}
         if t == "sit_simple":
@@ -464,9 +519,13 @@ class Worker:
         out = []
         for g in range(m.ngeom):
             n = m.geom(g).name
-            if n.startswith("block_collision") or (m.geom_bodyid[g] and m.body(m.geom_bodyid[g]).name.startswith("wall")):
+            if n.startswith("block_collision") or (
+                m.geom_bodyid[g] and m.body(m.geom_bodyid[g]).name.startswith("wall")
+            ):
                 p, sz = d.geom_xpos[g], m.geom_size[g]
-                out.append({"x": [_r(p[0] - sz[0], 2), _r(p[0] + sz[0], 2)], "y": [_r(p[1] - sz[1], 2), _r(p[1] + sz[1], 2)]})
+                out.append(
+                    {"x": [_r(p[0] - sz[0], 2), _r(p[0] + sz[0], 2)], "y": [_r(p[1] - sz[1], 2), _r(p[1] + sz[1], 2)]}
+                )
         return out
 
     def _poles(self):
@@ -474,9 +533,16 @@ class Worker:
         return [_r3(d.geom_xpos[g][:2], 2) for g in range(m.ngeom) if m.geom(g).name.startswith("pole_r")]
 
     def judge(self):
-        return {"success": self.success, "success_step": self.success_step, "return": _r(self.ret, 2),
-                "success_rule": self.cfg["success"], "success_bar": self.bar, "steps": self.steps, "terminated": self.terminated,
-                "last_info": {k: _r(v, 4) for k, v in self.info.items() if isinstance(v, float)}}
+        return {
+            "success": self.success,
+            "success_step": self.success_step,
+            "return": _r(self.ret, 2),
+            "success_rule": self.cfg["success"],
+            "success_bar": self.bar,
+            "steps": self.steps,
+            "terminated": self.terminated,
+            "last_info": {k: _r(v, 4) for k, v in self.info.items() if isinstance(v, float)},
+        }
 
     # ---- rendering -------------------------------------------------------------------------------------------------
     def render(self, width, height, camera):
@@ -484,7 +550,10 @@ class Worker:
         r = self.renderers.get(key)
         if r is None:
             m = self.model
-            m.vis.global_.offwidth, m.vis.global_.offheight = max(m.vis.global_.offwidth, width), max(m.vis.global_.offheight, height)
+            m.vis.global_.offwidth, m.vis.global_.offheight = (
+                max(m.vis.global_.offwidth, width),
+                max(m.vis.global_.offheight, height),
+            )
             r = self.renderers[key] = self.mj.Renderer(self.model, height=height, width=width)
         cam = self.model.camera(camera).id if camera else -1
         r.update_scene(self.data, camera=cam)
@@ -496,8 +565,14 @@ class Worker:
             marks.append((self.hb_task.goal, 0.05, (0.8, 0.28, 0.28, 0.8)))
         for pos, size, rgba in marks:
             if r.scene.ngeom < r.scene.maxgeom:
-                self.mj.mjv_initGeom(r.scene.geoms[r.scene.ngeom], self.mj.mjtGeom.mjGEOM_SPHERE, np.array([size, size, size]),
-                                     np.asarray(pos, float), np.eye(3).ravel(), np.asarray(rgba, np.float32))
+                self.mj.mjv_initGeom(
+                    r.scene.geoms[r.scene.ngeom],
+                    self.mj.mjtGeom.mjGEOM_SPHERE,
+                    np.array([size, size, size]),
+                    np.asarray(pos, float),
+                    np.eye(3).ravel(),
+                    np.asarray(rgba, np.float32),
+                )
                 r.scene.ngeom += 1
         return r.render().copy()
 

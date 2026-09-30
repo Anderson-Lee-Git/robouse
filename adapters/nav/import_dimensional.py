@@ -11,6 +11,7 @@ mesh, so geodesics can differ from the study's; the study's geodesic is kept in 
 
 Usage: python adapters/nav/import_dimensional.py [--out tasks-local/dimensional-nav] [--limit N] [--sample N --seed S]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -65,8 +66,12 @@ def main() -> int:
         target = {"id": f"target_{tid}", "label": meta["label"], "box": [tb[0], tb[1], tb[3], tb[4]]}
         walls = [list(map(float, w[:4])) for w in _j(p["walls"])]
         x0, y0, x1, y1 = _j(p["bounds"])
-        home = {"bounds": [x0 - 0.5, y0 - 0.5, x1 + 0.5, y1 + 0.5], "walls": walls,
-                "objects": [dict(target, passable=True)], "source": f"dimensional {meta['scene']}"}
+        home = {
+            "bounds": [x0 - 0.5, y0 - 0.5, x1 + 0.5, y1 + 0.5],
+            "walls": walls,
+            "objects": [dict(target, passable=True)],
+            "source": f"dimensional {meta['scene']}",
+        }
         spawn = _j(p["spawn"])[:2]
         spec = {"id": "probe", "max_steps": 3000, "nav": {"scene": home, "target": target, "spawn": spawn}}
         try:
@@ -76,11 +81,28 @@ def main() -> int:
         if not g < 1e9:
             print(f"skip {tid}: spawn cannot reach the target in the box geometry")
             continue
-        t = {"id": f"dimnav-{tid.replace('_', '-').replace(' ', '-')}", "source_task": tid, "target": target, "spawn": spawn,
-             "spawn_yaw_deg": 0, "geodesic_m": round(g, 2), "detour": _j(meta.get("cov") or "{}").get("detour") if isinstance(_j(meta.get("cov") or "{}"), dict) else None,
-             "difficulty": meta.get("difficulty", "medium"), "reference": _j(p["reference"])}
-        write(out, [t], home, "dimensional-nav", f"Dimensional Can Jev Nav? task {tid} (HSSD scene {meta['scene']}; study geodesic {meta.get('geodesic')} m)",
-              "HSSD-derived geometry (CC-BY-NC-4.0); converted locally, not redistributed", budget=3000)
+        t = {
+            "id": f"dimnav-{tid.replace('_', '-').replace(' ', '-')}",
+            "source_task": tid,
+            "target": target,
+            "spawn": spawn,
+            "spawn_yaw_deg": 0,
+            "geodesic_m": round(g, 2),
+            "detour": _j(meta.get("cov") or "{}").get("detour")
+            if isinstance(_j(meta.get("cov") or "{}"), dict)
+            else None,
+            "difficulty": meta.get("difficulty", "medium"),
+            "reference": _j(p["reference"]),
+        }
+        write(
+            out,
+            [t],
+            home,
+            "dimensional-nav",
+            f"Dimensional Can Jev Nav? task {tid} (HSSD scene {meta['scene']}; study geodesic {meta.get('geodesic')} m)",
+            "HSSD-derived geometry (CC-BY-NC-4.0); converted locally, not redistributed",
+            budget=3000,
+        )
         n += 1
     print(f"{n} tasks -> {out}")
     return 0

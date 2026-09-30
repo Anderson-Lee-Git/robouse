@@ -1,6 +1,7 @@
 """Reference solutions: `python -m robouse.oracle --backend KIND --env ENV [--steps N]` runs the `oracle_main` of the
 backend's package (`robouse.backends.<package>`). A reference solution drives the robot only through the episode socket,
 like an agent would, which proves each task is solvable with the public interface."""
+
 from __future__ import annotations
 
 import argparse

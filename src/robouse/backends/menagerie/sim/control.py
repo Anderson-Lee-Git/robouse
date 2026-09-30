@@ -5,13 +5,14 @@ nothing here assigns object state. Position targets are slew limited at
 1.2 rad/s and ideal model-based bias compensation is applied to arm degrees of
 freedom only. This is a declared simulation controller, not a calibrated driver.
 """
+
 import mujoco
 import numpy as np
 
 from .layout import BOWL_X, BOWL_Y, READY_Z
 
-CONTROL_DT = .05
-PHYSICS_DT = .002
+CONTROL_DT = 0.05
+PHYSICS_DT = 0.002
 MAX_JOINT_SPEED = 1.2
 
 
@@ -19,8 +20,9 @@ class IKError(RuntimeError):
     pass
 
 
-def solve_ik(model, data, arm, target, quat=None, *, iterations=2000,
-             position_tolerance=.0005, rotation_tolerance=.008):
+def solve_ik(
+    model, data, arm, target, quat=None, *, iterations=2000, position_tolerance=0.0005, rotation_tolerance=0.008
+):
     """Damped least-squares IK on a scratch copy of the current state."""
     scratch = mujoco.MjData(model)
     scratch.qpos[:] = data.qpos
@@ -40,20 +42,20 @@ def solve_ik(model, data, arm, target, quat=None, *, iterations=2000,
         mujoco.mju_mat2Quat(current_q, scratch.site_xmat[site])
         mujoco.mju_negQuat(conjugate_q, current_q)
         mujoco.mju_mulQuat(difference, quat, conjugate_q)
-        mujoco.mju_quat2Vel(rot_err, difference, 1.)
-        if (np.linalg.norm(position_error) < position_tolerance
-                and np.linalg.norm(rot_err) < rotation_tolerance):
+        mujoco.mju_quat2Vel(rot_err, difference, 1.0)
+        if np.linalg.norm(position_error) < position_tolerance and np.linalg.norm(rot_err) < rotation_tolerance:
             return scratch.qpos[qids].copy()
         mujoco.mj_jacSite(model, scratch, jacp, jacr, site)
-        jac = np.vstack([jacp[:, vids], .3 * jacr[:, vids]])
-        error = np.r_[position_error, .3 * rot_err]
+        jac = np.vstack([jacp[:, vids], 0.3 * jacr[:, vids]])
+        error = np.r_[position_error, 0.3 * rot_err]
         dq = jac.T @ np.linalg.solve(jac @ jac.T + np.eye(6) * 1e-4, error)
-        dq *= min(1., .12 / (np.max(np.abs(dq)) + 1e-9))
-        scratch.qpos[qids] = np.clip(scratch.qpos[qids] + dq,
-                                     model.jnt_range[joints, 0] + .001,
-                                     model.jnt_range[joints, 1] - .001)
-    raise IKError(f"{arm.name}: IK did not converge for {target.tolist()}: "
-                  f"position error {np.linalg.norm(position_error):.4f} m")
+        dq *= min(1.0, 0.12 / (np.max(np.abs(dq)) + 1e-9))
+        scratch.qpos[qids] = np.clip(
+            scratch.qpos[qids] + dq, model.jnt_range[joints, 0] + 0.001, model.jnt_range[joints, 1] - 0.001
+        )
+    raise IKError(
+        f"{arm.name}: IK did not converge for {target.tolist()}: position error {np.linalg.norm(position_error):.4f} m"
+    )
 
 
 class Simulation:

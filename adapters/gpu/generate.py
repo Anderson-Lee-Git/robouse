@@ -7,21 +7,26 @@ state and sends its actions through the robo socket (robouse.backends.gpu.oracle
 
 Usage: python adapters/gpu/generate.py --out tasks
 """
+
 from __future__ import annotations
 
 import argparse
 import shutil
 from pathlib import Path
 
+from tasks_genesis import GENESIS, GS_USAGE
+from tasks_isaaclab import IL_USAGE, ISAACLAB
+from tasks_maniskill import MANISKILL, MS_USAGE
+from tasks_playground import PG_USAGE, PLAYGROUND
+
 from robouse.tasks import write_task
 
-from tasks_maniskill import MANISKILL, MS_USAGE  # noqa: E402  (same folder)
-from tasks_genesis import GENESIS, GS_USAGE  # noqa: E402
-from tasks_playground import PLAYGROUND, PG_USAGE  # noqa: E402
-from tasks_isaaclab import ISAACLAB, IL_USAGE  # noqa: E402
-
-SUITES = {"maniskill": (MANISKILL, MS_USAGE), "genesis": (GENESIS, GS_USAGE), "playground": (PLAYGROUND, PG_USAGE),
-          "isaaclab": (ISAACLAB, IL_USAGE)}
+SUITES = {
+    "maniskill": (MANISKILL, MS_USAGE),
+    "genesis": (GENESIS, GS_USAGE),
+    "playground": (PLAYGROUND, PG_USAGE),
+    "isaaclab": (ISAACLAB, IL_USAGE),
+}
 
 ORACLE = """#!/bin/bash
 # Reference solution: the task's {kind} policy runs next to the simulator on the privileged state (oracle token) and
@@ -46,9 +51,21 @@ EOF
 
 
 def build(t: dict, sim: str, usage: str) -> tuple[dict, str]:
-    spec = {"id": t["id"], "backend": "gpu", "sim": sim, "env": t["env"], "seed": t.get("seed", 0),
-            "max_steps": t["max_steps"], "skills": True, "success_mode": "final", "obs_mode": t.get("obs_mode", "state"),
-            "frame_every": 1, "linger_s": 5, "ready_timeout_s": t.get("ready_timeout_s", 900), "rpc_timeout_s": 900}
+    spec = {
+        "id": t["id"],
+        "backend": "gpu",
+        "sim": sim,
+        "env": t["env"],
+        "seed": t.get("seed", 0),
+        "max_steps": t["max_steps"],
+        "skills": True,
+        "success_mode": "final",
+        "obs_mode": t.get("obs_mode", "state"),
+        "frame_every": 1,
+        "linger_s": 5,
+        "ready_timeout_s": t.get("ready_timeout_s", 900),
+        "rpc_timeout_s": 900,
+    }
     if t.get("obs_mode") == "vision":
         spec["visible_fields"] = t["visible_fields"]
         spec["cameras"] = t["cameras"]
@@ -56,10 +73,18 @@ def build(t: dict, sim: str, usage: str) -> tuple[dict, str]:
         spec["opts"] = t["opts"]
     meta = {
         "task": {"name": f"robouse/{t['id']}", "description": t["summary"]},
-        "metadata": {"source_benchmark": t["source"], "source_task": t.get("source_task", ""), "suite": f"gpu-{sim}",
-                     "category": t["category"], "difficulty": "hard", "hard_because": t["hard"],
-                     "language_instruction": t["summary"], "tags": ["gpu-required", sim] + t.get("tags", []),
-                     "reference_solution": t["oracle"], "gpu": "required (NVIDIA RTX, remote worker)"},
+        "metadata": {
+            "source_benchmark": t["source"],
+            "source_task": t.get("source_task", ""),
+            "suite": f"gpu-{sim}",
+            "category": t["category"],
+            "difficulty": "hard",
+            "hard_because": t["hard"],
+            "language_instruction": t["summary"],
+            "tags": ["gpu-required", sim] + t.get("tags", []),
+            "reference_solution": t["oracle"],
+            "gpu": "required (NVIDIA RTX, remote worker)",
+        },
         "agent": {"timeout_sec": t.get("timeout_sec", 2400)},
         "verifier": {"timeout_sec": 120},
         "robouse": spec,
@@ -81,7 +106,9 @@ def main() -> None:
             shutil.rmtree(root)
         for t in tasks:
             meta, body = build(t, sim, usage)
-            write_task(root / t["id"], meta, body, ORACLE.format(kind=t.get("oracle_kind", "scripted"), env=t["env"]), VERIFIER)
+            write_task(
+                root / t["id"], meta, body, ORACLE.format(kind=t.get("oracle_kind", "scripted"), env=t["env"]), VERIFIER
+            )
         print(f"gpu-{sim}: {len(tasks)} tasks -> {root}")
 
 

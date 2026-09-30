@@ -16,22 +16,26 @@ The worker also offers the controllers under the skills (`follow`): a pure-pursu
 navigation route and a PI speed controller. They read only what `observe` publishes plus the road map (lane centre lines,
 like a navigation map), never traffic intentions.
 """
+
 from __future__ import annotations
 
-import json
 import math
-import os
-import sys
 
+import numpy as np
 
-import numpy as np  # noqa: E402
-
-DT = 0.1                 # s per MetaDrive step (decision_repeat 5 x physics 0.02 s)
-CUT_OFF_S = 1.0          # time gap (s) under which a closing vehicle behind counts as cut off
-NEAR_M = 60.0            # vehicles and obstacles within this distance are reported
-REST_KMH = 2.0           # "at rest" for the destination check (a braked MetaDrive car jitters by up to ~1 km/h at standstill)
-KIND = {"XLVehicle": "truck", "LVehicle": "van", "MVehicle": "car", "SVehicle": "small car", "DefaultVehicle": "car",
-        "TrafficDefaultVehicle": "car", "StaticDefaultVehicle": "car"}
+DT = 0.1  # s per MetaDrive step (decision_repeat 5 x physics 0.02 s)
+CUT_OFF_S = 1.0  # time gap (s) under which a closing vehicle behind counts as cut off
+NEAR_M = 60.0  # vehicles and obstacles within this distance are reported
+REST_KMH = 2.0  # "at rest" for the destination check (a braked MetaDrive car jitters by up to ~1 km/h at standstill)
+KIND = {
+    "XLVehicle": "truck",
+    "LVehicle": "van",
+    "MVehicle": "car",
+    "SVehicle": "small car",
+    "DefaultVehicle": "car",
+    "TrafficDefaultVehicle": "car",
+    "StaticDefaultVehicle": "car",
+}
 OBJ_KIND = {"TrafficCone": "cone", "TrafficWarning": "warning_triangle", "TrafficBarrier": "barrier"}
 
 
@@ -66,7 +70,7 @@ def make_env_class():
             self.enable_lane_change = False
             self.cruise = float(speed_kmh)
             self.target_speed = self.cruise
-            if gap_m is not None:        # denser traffic than MetaDrive's defaults (10 m + 1.5 s)
+            if gap_m is not None:  # denser traffic than MetaDrive's defaults (10 m + 1.5 s)
                 self.DISTANCE_WANTED = float(gap_m)
             if headway_s is not None:
                 self.TIME_WANTED = float(headway_s)
@@ -81,12 +85,13 @@ def make_env_class():
 
     class SceneManager(BaseManager):
         """Spawns the task's fixed scene after the map: obstacles, broken-down vehicles and scripted traffic."""
+
         PRIORITY = 9
 
         def __init__(self):
             super().__init__()
-            self.scripted = []   # (vehicle, policy)
-            self.parked = []     # broken-down vehicles: held with the brakes on
+            self.scripted = []  # (vehicle, policy)
+            self.parked = []  # broken-down vehicles: held with the brakes on
 
         def before_reset(self):
             super().before_reset()
@@ -103,8 +108,9 @@ def make_env_class():
                 lane = self._lane(o)
                 s, lat = float(o["s"]), float(o.get("lat", 0.0))
                 cls = {"cone": TrafficCone, "warning_triangle": TrafficWarning, "barrier": TrafficBarrier}[o["kind"]]
-                self.spawn_object(cls, lane=lane, position=lane.position(s, lat), heading_theta=lane.heading_theta_at(s),
-                                  static=True)
+                self.spawn_object(
+                    cls, lane=lane, position=lane.position(s, lat), heading_theta=lane.heading_theta_at(s), static=True
+                )
             self.pending = sorted((dict(v) for v in scene.get("vehicles", [])), key=lambda v: float(v.get("t", 0.0)))
             self._spawn_due()
 
@@ -115,13 +121,20 @@ def make_env_class():
                 if self.t > 0:  # a timetabled car waits until its spawn point is clear (no vehicle within 9 m)
                     lane = self._lane(v)
                     p0 = np.asarray(lane.position(float(v["s"]), float(v.get("lat", 0.0))))
-                    if any(np.linalg.norm(np.asarray(o.position) - p0) < 9.0 for o in self.engine.get_objects().values()
-                           if hasattr(o, "speed_km_h")):
+                    if any(
+                        np.linalg.norm(np.asarray(o.position) - p0) < 9.0
+                        for o in self.engine.get_objects().values()
+                        if hasattr(o, "speed_km_h")
+                    ):
                         break
                 self.pending.pop(0)
                 cls = vehicle_type[v.get("type", "m")]
-                cfg = {"spawn_lane_index": tuple(v["lane"][:2]) + (int(v["lane"][2]),), "spawn_longitude": float(v["s"]),
-                       "spawn_lateral": float(v.get("lat", 0.0)), "spawn_velocity": None}
+                cfg = {
+                    "spawn_lane_index": tuple(v["lane"][:2]) + (int(v["lane"][2]),),
+                    "spawn_longitude": float(v["s"]),
+                    "spawn_lateral": float(v.get("lat", 0.0)),
+                    "spawn_velocity": None,
+                }
                 if v.get("dest"):
                     cfg["destination"] = v["dest"]
                 veh = self.spawn_object(cls, vehicle_config=cfg)
@@ -130,7 +143,9 @@ def make_env_class():
                     self.parked.append(veh)
                     continue
                 speed = float(v.get("speed_kmh", 30.0))
-                pol = self.add_policy(veh.id, CruiseIDM, veh, self.generate_seed(), speed, v.get("gap_m"), v.get("headway_s"))
+                pol = self.add_policy(
+                    veh.id, CruiseIDM, veh, self.generate_seed(), speed, v.get("gap_m"), v.get("headway_s")
+                )
                 heading = veh.heading
                 veh.set_velocity([heading[0], heading[1]], speed / 3.6)
                 self.scripted.append((veh, pol))
@@ -182,18 +197,42 @@ class Worker:
             self.env.close()
             self.env = None
         DrivingEnv = make_env_class()
-        cfg = dict(use_render=False, start_seed=int(task.get("seed", 0)), num_scenarios=1, log_level=50,
-                   traffic_density=float(task.get("traffic_density", 0.0)), traffic_mode=task.get("traffic_mode", "trigger"),
-                   random_traffic=False, random_spawn_lane_index=False, accident_prob=0.0,
-                   # the episode goes on after a crash or leaving the road; the monitor records it and the task fails
-                   out_of_road_done=False, crash_vehicle_done=False, crash_object_done=False, crash_human_done=False,
-                   on_continuous_line_done=True, horizon=None, show_interface=False, interface_panel=[],
-                   robouse_scene={"objects": task.get("objects", []), "vehicles": task.get("vehicles", [])},
-                   map_config={"type": "block_sequence", "config": task["map"], "lane_num": int(task.get("lanes", 3)),
-                               "lane_width": float(task.get("lane_width", 3.5)), "exit_length": 50, "start_position": [0, 0]},
-                   agent_configs={"default_agent": {"use_special_color": True,
-                                                    "spawn_lane_index": tuple(task["spawn"][:2]) + (int(task["spawn"][2]),),
-                                                    "spawn_longitude": float(task.get("spawn_s", 5.0))}})
+        cfg = dict(
+            use_render=False,
+            start_seed=int(task.get("seed", 0)),
+            num_scenarios=1,
+            log_level=50,
+            traffic_density=float(task.get("traffic_density", 0.0)),
+            traffic_mode=task.get("traffic_mode", "trigger"),
+            random_traffic=False,
+            random_spawn_lane_index=False,
+            accident_prob=0.0,
+            # the episode goes on after a crash or leaving the road; the monitor records it and the task fails
+            out_of_road_done=False,
+            crash_vehicle_done=False,
+            crash_object_done=False,
+            crash_human_done=False,
+            on_continuous_line_done=True,
+            horizon=None,
+            show_interface=False,
+            interface_panel=[],
+            robouse_scene={"objects": task.get("objects", []), "vehicles": task.get("vehicles", [])},
+            map_config={
+                "type": "block_sequence",
+                "config": task["map"],
+                "lane_num": int(task.get("lanes", 3)),
+                "lane_width": float(task.get("lane_width", 3.5)),
+                "exit_length": 50,
+                "start_position": [0, 0],
+            },
+            agent_configs={
+                "default_agent": {
+                    "use_special_color": True,
+                    "spawn_lane_index": tuple(task["spawn"][:2]) + (int(task["spawn"][2]),),
+                    "spawn_longitude": float(task.get("spawn_s", 5.0)),
+                }
+            },
+        )
         if task.get("map_config"):
             cfg["map_config"].update(task["map_config"])
         self.env = DrivingEnv(cfg)
@@ -266,9 +305,15 @@ class Worker:
         fl = self.nav.final_lane
         fr = self.nav.final_road.get_lanes(self.rn)
         mid = np.mean([np.asarray(l.position(l.length, 0)) for l in fr], axis=0)
-        return {"roads": [f"{a}->{b}" for a, b in self._route_roads()], "total_m": _r(self.nav.total_length, 1),
-                "destination": {"pos": [_r(mid[0]), _r(mid[1])], "road": f"{fl.index[0]}->{fl.index[1]}",
-                                "zone": "the last 5 m of the final road and 5 m beyond its end, any lane"}}
+        return {
+            "roads": [f"{a}->{b}" for a, b in self._route_roads()],
+            "total_m": _r(self.nav.total_length, 1),
+            "destination": {
+                "pos": [_r(mid[0]), _r(mid[1])],
+                "road": f"{fl.index[0]}->{fl.index[1]}",
+                "zone": "the last 5 m of the final road and 5 m beyond its end, any lane",
+            },
+        }
 
     def _ego_frame(self, p):
         d = np.asarray(p) - np.asarray(self.v.position)
@@ -319,11 +364,13 @@ class Worker:
 
     def _monitor(self) -> list:
         v, new = self.v, []
-        checks = [("crash_vehicle", v.crash_vehicle, "crash", "collided with another vehicle"),
-                  ("crash_object", v.crash_object, "crash", "hit a road object (cone, warning triangle or barrier)"),
-                  ("crash_building", v.crash_building, "crash", "hit a building"),
-                  ("crash_sidewalk", v.crash_sidewalk, "crash", "drove onto the sidewalk / road edge"),
-                  ("crash_human", v.crash_human, "crash", "hit a pedestrian")]
+        checks = [
+            ("crash_vehicle", v.crash_vehicle, "crash", "collided with another vehicle"),
+            ("crash_object", v.crash_object, "crash", "hit a road object (cone, warning triangle or barrier)"),
+            ("crash_building", v.crash_building, "crash", "hit a building"),
+            ("crash_sidewalk", v.crash_sidewalk, "crash", "drove onto the sidewalk / road edge"),
+            ("crash_human", v.crash_human, "crash", "hit a pedestrian"),
+        ]
         for key, flag, kind, detail in checks:
             if flag:
                 e = self._event(key, kind, detail)
@@ -344,8 +391,12 @@ class Worker:
             vf = obj.speed_km_h / 3.6
             gap = -fx - (float(getattr(obj, "LENGTH", 4.5)) + v.LENGTH) / 2
             if vf * math.cos(hr) - ve > 0.3 and vf > 3.0 and gap < CUT_OFF_S * vf:
-                e = self._event("cut_off", "unsafe", f"a vehicle behind in your lane closed in at {vf * 3.6:.0f} km/h with a "
-                                f"{gap:.1f} m gap (under {CUT_OFF_S} s): you cut in front of it or braked hard in front of it")
+                e = self._event(
+                    "cut_off",
+                    "unsafe",
+                    f"a vehicle behind in your lane closed in at {vf * 3.6:.0f} km/h with a "
+                    f"{gap:.1f} m gap (under {CUT_OFF_S} s): you cut in front of it or braked hard in front of it",
+                )
                 if e:
                     new.append(e)
         # give way: entering the task's yield road while another vehicle will reach the conflict point within the window
@@ -362,15 +413,22 @@ class Worker:
                     dist = float(np.linalg.norm(d))
                     closing = -float(np.dot(d, np.asarray(obj.velocity))) / max(dist, 1e-6)
                     if dist < 6.0 or (closing > 0.3 and (dist < 15.0 or dist / closing < float(rule["window_s"]))):
-                        e = self._event("failed_to_yield", "rule", f"was on {rule['road']} while a vehicle was "
-                                        f"{dist:.0f} m from the conflict point {list(rule['point'])} and "
-                                        f"approaching (closer than 15 m or under {rule['window_s']} s away): you must give way")
+                        e = self._event(
+                            "failed_to_yield",
+                            "rule",
+                            f"was on {rule['road']} while a vehicle was "
+                            f"{dist:.0f} m from the conflict point {list(rule['point'])} and "
+                            f"approaching (closer than 15 m or under {rule['window_s']} s away): you must give way",
+                        )
                         if e:
                             new.append(e)
                         break
         if self.env._is_out_of_road(v):
-            why = ("crossed a solid (continuous) lane line" if (v.on_yellow_continuous_line or v.on_white_continuous_line)
-                   else "left the drivable road")
+            why = (
+                "crossed a solid (continuous) lane line"
+                if (v.on_yellow_continuous_line or v.on_white_continuous_line)
+                else "left the drivable road"
+            )
             e = self._event("out_of_road", "out_of_road", why)
             if e:
                 new.append(e)
@@ -388,8 +446,15 @@ class Worker:
         for jj in range(j + 1, min(j + 4, len(roads))):
             ls = self._lanes(jj)
             a, b = roads[jj]
-            nxt.append({"road": f"{a}->{b}", "starts_in_m": _r(acc, 1), "lanes": len(ls), "shape": _shape(ls[min(len(ls) - 1, k)]),
-                        "start_pos": [_r(x) for x in ls[0].position(0, 0)]})
+            nxt.append(
+                {
+                    "road": f"{a}->{b}",
+                    "starts_in_m": _r(acc, 1),
+                    "lanes": len(ls),
+                    "shape": _shape(ls[min(len(ls) - 1, k)]),
+                    "start_pos": [_r(x) for x in ls[0].position(0, 0)],
+                }
+            )
             acc += ls[min(len(ls) - 1, k)].length
         vehicles, obstacles = [], []
         pos = np.asarray(v.position)
@@ -419,9 +484,14 @@ class Worker:
                 ent.setdefault("lane", int(li[2]))
             if cls in KIND:
                 length = float(getattr(obj, "LENGTH", 4.5))
-                ent = {"id": self._sid(name, "v"), "kind": KIND[cls], "length_m": _r(length, 1),
-                       "speed_kmh": _r(obj.speed_km_h, 1),
-                       "heading_rel_deg": _r(math.degrees(_wrap(obj.heading_theta - v.heading_theta)), 0), **ent}
+                ent = {
+                    "id": self._sid(name, "v"),
+                    "kind": KIND[cls],
+                    "length_m": _r(length, 1),
+                    "speed_kmh": _r(obj.speed_km_h, 1),
+                    "heading_rel_deg": _r(math.degrees(_wrap(obj.heading_theta - v.heading_theta)), 0),
+                    **ent,
+                }
                 if getattr(obj, "break_down", False):
                     ent["broken_down"] = True
                 if "route_ahead_m" in ent:
@@ -434,20 +504,40 @@ class Worker:
         info = self._route_info()
         return {
             "t_s": _r(self.step_i * DT, 1),
-            "ego": {"pos": [_r(pos[0]), _r(pos[1])], "heading_deg": _r(math.degrees(v.heading_theta), 1),
-                    "speed_kmh": _r(v.speed_km_h, 1), "steering": _r(self.last_action[0]), "throttle": _r(self.last_action[1]),
-                    "length_m": _r(v.LENGTH, 2), "width_m": _r(v.WIDTH, 2)},
-            "lane": {"road": f"{roads[j][0]}->{roads[j][1]}", "index": k, "count": len(lanes),
-                     "lateral_offset_m": _r(lat), "width_m": _r(lane.width, 2), "station_m": _r(s, 1),
-                     "road_length_m": _r(lane.length, 1), "shape": _shape(lane),
-                     "left_line": str(lane.line_types[0]).split(".")[-1].lower(),
-                     "right_line": str(lane.line_types[1]).split(".")[-1].lower(),
-                     "heading_error_deg": _r(math.degrees(_wrap(v.heading_theta - lane.heading_theta_at(max(0.0, min(s, lane.length))))), 1)},
-            "route": {"travelled_m": _r(self.odometer, 1), "remaining_m": _r(rem, 1), "total_m": info["total_m"],
-                      "route_completion": _r(min(1.0, max(0.0, self.nav.route_completion)), 3),
-                      "next_roads": nxt, "destination": info["destination"],
-                      "in_destination_zone": bool(self.env._is_arrive_destination(v)),
-                      **({"give_way": dict(self.task["yield_rule"])} if self.task.get("yield_rule") else {})},
+            "ego": {
+                "pos": [_r(pos[0]), _r(pos[1])],
+                "heading_deg": _r(math.degrees(v.heading_theta), 1),
+                "speed_kmh": _r(v.speed_km_h, 1),
+                "steering": _r(self.last_action[0]),
+                "throttle": _r(self.last_action[1]),
+                "length_m": _r(v.LENGTH, 2),
+                "width_m": _r(v.WIDTH, 2),
+            },
+            "lane": {
+                "road": f"{roads[j][0]}->{roads[j][1]}",
+                "index": k,
+                "count": len(lanes),
+                "lateral_offset_m": _r(lat),
+                "width_m": _r(lane.width, 2),
+                "station_m": _r(s, 1),
+                "road_length_m": _r(lane.length, 1),
+                "shape": _shape(lane),
+                "left_line": str(lane.line_types[0]).split(".")[-1].lower(),
+                "right_line": str(lane.line_types[1]).split(".")[-1].lower(),
+                "heading_error_deg": _r(
+                    math.degrees(_wrap(v.heading_theta - lane.heading_theta_at(max(0.0, min(s, lane.length))))), 1
+                ),
+            },
+            "route": {
+                "travelled_m": _r(self.odometer, 1),
+                "remaining_m": _r(rem, 1),
+                "total_m": info["total_m"],
+                "route_completion": _r(min(1.0, max(0.0, self.nav.route_completion)), 3),
+                "next_roads": nxt,
+                "destination": info["destination"],
+                "in_destination_zone": bool(self.env._is_arrive_destination(v)),
+                **({"give_way": dict(self.task["yield_rule"])} if self.task.get("yield_rule") else {}),
+            },
             "vehicles": vehicles,
             "obstacles": obstacles,
             "events": [{k2: e[k2] for k2 in ("key", "kind", "detail", "t")} for e in self.events],
@@ -476,7 +566,9 @@ class Worker:
             return lane.heading_theta_at(lane.length)
         return p[1].heading_theta_at(max(0.0, p[2]))
 
-    def follow(self, speed_kmh: float, lane: int | None = None, reset: bool = False, brake: float | None = None) -> dict:
+    def follow(
+        self, speed_kmh: float, lane: int | None = None, reset: bool = False, brake: float | None = None
+    ) -> dict:
         """One control action: Stanley lane-centre tracking (heading error + cross-track error at the front axle + road
         curvature feed-forward) on `lane` (default: the lane the car is in) along the route, and PI speed control to
         speed_kmh (or a fixed brake value)."""
@@ -497,7 +589,7 @@ class Worker:
             fj, fl, fss = j, tl, fs
         else:
             fj, fl, fss = loc
-        flat = fl.local_coordinates(fa)[1]           # + = the front axle is right of the lane centre
+        flat = fl.local_coordinates(fa)[1]  # + = the front axle is right of the lane centre
         hp = fl.heading_theta_at(max(0.0, min(fss, fl.length)))
         vm = max(0.0, v.speed_km_h / 3.6)
         ahead = 1.0 + 0.1 * vm
@@ -513,16 +605,30 @@ class Worker:
             if speed_kmh <= 0.5 and vm < 1.0:
                 thr = -1.0
         tlat = -tl.local_coordinates(np.asarray(v.position))[1]
-        return {"action": [steer, thr], "lane": k, "target_lane": tk, "target_lateral_m": _r(tlat),
-                "lane_count": len(lanes), "heading_error_deg": _r(math.degrees(_wrap(h - hp)), 1),
-                "speed_kmh": _r(v.speed_km_h, 1), "odometer_m": _r(self.odometer, 2), "remaining_m": _r(self._remaining(j, cur, s), 1)}
+        return {
+            "action": [steer, thr],
+            "lane": k,
+            "target_lane": tk,
+            "target_lateral_m": _r(tlat),
+            "lane_count": len(lanes),
+            "heading_error_deg": _r(math.degrees(_wrap(h - hp)), 1),
+            "speed_kmh": _r(v.speed_km_h, 1),
+            "odometer_m": _r(self.odometer, 2),
+            "remaining_m": _r(self._remaining(j, cur, s), 1),
+        }
 
     def judge(self) -> dict:
         v = self.v
         in_zone = bool(self.env._is_arrive_destination(v))
         at_rest = v.speed_km_h < REST_KMH
-        return {"success": bool(in_zone and at_rest and not self.events), "in_destination_zone": in_zone,
-                "speed_kmh": _r(v.speed_km_h, 2), "at_rest": at_rest, "events": self.events, "arrived_ever": self.arrived_ever}
+        return {
+            "success": bool(in_zone and at_rest and not self.events),
+            "in_destination_zone": in_zone,
+            "speed_kmh": _r(v.speed_km_h, 2),
+            "at_rest": at_rest,
+            "events": self.events,
+            "arrived_ever": self.arrived_ever,
+        }
 
     def snapshot(self) -> dict:
         """Positions of every vehicle (for determinism checks; not used by the backend's public interface)."""
@@ -547,11 +653,22 @@ class Worker:
                 pts = np.asarray(pts)
                 lo, hi = pts.min(0) - 15, pts.max(0) + 15
                 sc = float(min(width / (hi[0] - lo[0]), height / (hi[1] - lo[1]), 5.0))
-                r = TopDownRenderer(film_size=(int(max(hi - lo) * sc) + 400,) * 2, scaling=sc, screen_size=(int(width), int(height)),
-                                    camera_position=tuple((lo + hi) / 2), num_stack=1, window=False)
+                r = TopDownRenderer(
+                    film_size=(int(max(hi - lo) * sc) + 400,) * 2,
+                    scaling=sc,
+                    screen_size=(int(width), int(height)),
+                    camera_position=tuple((lo + hi) / 2),
+                    num_stack=1,
+                    window=False,
+                )
             else:
-                r = TopDownRenderer(film_size=(int(640 * scale),) * 2, scaling=float(scale), screen_size=(int(width), int(height)), num_stack=1,
-                                    window=False)
+                r = TopDownRenderer(
+                    film_size=(int(640 * scale),) * 2,
+                    scaling=float(scale),
+                    screen_size=(int(width), int(height)),
+                    num_stack=1,
+                    window=False,
+                )
             self._renderers[key] = r
         text = {"t": f"{self.step_i * DT:5.1f} s", "speed": f"{self.v.speed_km_h:5.1f} km/h"}
         img = r.render(text=text, to_image=True)

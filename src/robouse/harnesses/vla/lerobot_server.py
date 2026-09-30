@@ -19,6 +19,7 @@ Usage (arguments after `--` are lerobot-eval's):
       --env.type=libero --env.task=libero_10 \
       --env.camera_name_mapping='{"agentview_image":"image","robot0_eye_in_hand_image":"image2"}'
 """
+
 # no `from __future__ import annotations`: LeRobot's config parser reads main()'s real type annotation
 import base64
 import io
@@ -37,7 +38,7 @@ PORT, JOINT = 8000, False
 if "--port" in sys.argv:
     i = sys.argv.index("--port")
     PORT = int(sys.argv[i + 1])
-    del sys.argv[i:i + 2]
+    del sys.argv[i : i + 2]
 if "--joint-state" in sys.argv:
     JOINT = True
     sys.argv.remove("--joint-state")
@@ -60,20 +61,28 @@ def _img(b64: str) -> np.ndarray:
 
 def _quat2mat(q) -> np.ndarray:
     x, y, z, w = [float(v) for v in q]
-    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def _libero_obs(req: dict) -> dict:
     from lerobot.envs.utils import preprocess_observation
 
     s = req["state"]
-    b = lambda v: np.asarray(v, dtype=np.float64)[None]  # noqa: E731
-    raw = {"pixels": {k: np.ascontiguousarray(_img(v)[::-1])[None] for k, v in req["images"].items()},  # upright -> raw
-           "robot_state": {"eef": {"pos": b(s["eef_pos"]), "quat": b(s["eef_quat"]), "mat": b(_quat2mat(s["eef_quat"]))},
-                           "gripper": {"qpos": b(s["gripper_qpos"]), "qvel": np.zeros((1, 2))},
-                           "joints": {"pos": np.zeros((1, 7)), "vel": np.zeros((1, 7))}}}
+    b = lambda v: np.asarray(v, dtype=np.float64)[None]
+    raw = {
+        "pixels": {k: np.ascontiguousarray(_img(v)[::-1])[None] for k, v in req["images"].items()},  # upright -> raw
+        "robot_state": {
+            "eef": {"pos": b(s["eef_pos"]), "quat": b(s["eef_quat"]), "mat": b(_quat2mat(s["eef_quat"]))},
+            "gripper": {"qpos": b(s["gripper_qpos"]), "qvel": np.zeros((1, 2))},
+            "joints": {"pos": np.zeros((1, 7)), "vel": np.zeros((1, 7))},
+        },
+    }
     obs = preprocess_observation(raw)
     obs["task"] = [str(req["task"])]
     return STATE["env_pre"](obs)
@@ -124,7 +133,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/health"):
-            return self._send(200, {"ok": True, "model": STATE.get("model"), "n_action_steps": STATE.get("n"), "mode": "joint" if JOINT else "libero"})
+            return self._send(
+                200,
+                {
+                    "ok": True,
+                    "model": STATE.get("model"),
+                    "n_action_steps": STATE.get("n"),
+                    "mode": "joint" if JOINT else "libero",
+                },
+            )
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -140,7 +157,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path.startswith("/act"):
                 return self._send(200, act(req))
             self._send(404, {"error": "not found"})
-        except Exception as e:  # noqa: BLE001 - reported to the client
+        except Exception as e:
             logging.exception("request failed")
             self._send(500, {"error": f"{type(e).__name__}: {e}"[:500]})
 
@@ -154,16 +171,28 @@ def main(cfg: EvalPipelineConfig) -> None:
     policy = make_policy(cfg=cfg.policy, env_cfg=cfg.env, rename_map=cfg.rename_map)
     policy.eval()
     pre, post = make_pre_post_processors(
-        policy_cfg=cfg.policy, pretrained_path=cfg.policy.pretrained_path,
-        preprocessor_overrides={"device_processor": {"device": str(policy.config.device)},
-                                "rename_observations_processor": {"rename_map": cfg.rename_map}})
+        policy_cfg=cfg.policy,
+        pretrained_path=cfg.policy.pretrained_path,
+        preprocessor_overrides={
+            "device_processor": {"device": str(policy.config.device)},
+            "rename_observations_processor": {"rename_map": cfg.rename_map},
+        },
+    )
     env_pre = env_post = None
     if not JOINT:
         from lerobot.envs.factory import make_env_pre_post_processors
 
         env_pre, env_post = make_env_pre_post_processors(env_cfg=cfg.env, policy_cfg=cfg.policy)
-    STATE.update(policy=policy, pre=pre, post=post, env_pre=env_pre, env_post=env_post, episodes={},
-                 model=str(cfg.policy.pretrained_path), n=int(policy.config.n_action_steps))
+    STATE.update(
+        policy=policy,
+        pre=pre,
+        post=post,
+        env_pre=env_pre,
+        env_post=env_post,
+        episodes={},
+        model=str(cfg.policy.pretrained_path),
+        n=int(policy.config.n_action_steps),
+    )
     logging.info("LeRobot policy server ready on port %d (%s, n_action_steps=%d)", PORT, STATE["model"], STATE["n"])
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 

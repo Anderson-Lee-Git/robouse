@@ -10,6 +10,7 @@ Used two ways:
 
 Any OpenAI-compatible chat endpoint with image input works; the default is Kimi K3 on Baseten (BASETEN_API_KEY).
 """
+
 from __future__ import annotations
 
 import base64
@@ -58,18 +59,28 @@ def _key() -> str:
     return k
 
 
-def vlm_verdict(frames: list[np.ndarray], task: str, rubric: list[str] | None = None, model: str = DEFAULT_MODEL) -> dict:
-    rub = ("Rubric (report the highest stage reached):\n" + "\n".join(f"{i}: {d}" for i, d in enumerate(rubric)) + "\n\n") if rubric else ""
+def vlm_verdict(
+    frames: list[np.ndarray], task: str, rubric: list[str] | None = None, model: str = DEFAULT_MODEL
+) -> dict:
+    rub = (
+        ("Rubric (report the highest stage reached):\n" + "\n".join(f"{i}: {d}" for i, d in enumerate(rubric)) + "\n\n")
+        if rubric
+        else ""
+    )
     text = PROMPT.format(task=task.strip(), rubric=rub, stage='"stage": integer, ' if rubric else "")
-    content = [{"type": "text", "text": text}] + [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + _png_b64(f)}}
-                                                  for f in frames]
+    content = [{"type": "text", "text": text}] + [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64," + _png_b64(f)}} for f in frames
+    ]
     body = {"model": model, "max_tokens": 8000, "messages": [{"role": "user", "content": content}]}
     url = config.env("ROBOUSE_GRADER_URL", DEFAULT_URL).rstrip("/") + "/chat/completions"
     last = None
     for attempt in range(3):
         try:
-            req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json",
-                                                                                         "Authorization": f"Api-Key {_key()}"})
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json", "Authorization": f"Api-Key {_key()}"},
+            )
             with urllib.request.urlopen(req, timeout=300) as r:
                 resp = json.loads(r.read())
             break
@@ -86,14 +97,23 @@ def vlm_verdict(frames: list[np.ndarray], task: str, rubric: list[str] | None = 
         out = {}
     verdict = str(out.get("verdict", "")).lower()
     usage = resp.get("usage") or {}
-    res = {"model": model, "verdict": verdict if verdict in ("yes", "no") else "unparsed", "reason": out.get("reason", msg[:300]),
-           "prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens")}
+    res = {
+        "model": model,
+        "verdict": verdict if verdict in ("yes", "no") else "unparsed",
+        "reason": out.get("reason", msg[:300]),
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+    }
     if rubric:
         res["stage"] = out.get("stage")
     try:
         price = json.loads(Path(__file__).with_name("pricing.json").read_text()).get(model)
         if price and usage:
-            res["cost_usd"] = round((usage.get("prompt_tokens", 0) * price["input"] + usage.get("completion_tokens", 0) * price["output"]) / 1e6, 5)
+            res["cost_usd"] = round(
+                (usage.get("prompt_tokens", 0) * price["input"] + usage.get("completion_tokens", 0) * price["output"])
+                / 1e6,
+                5,
+            )
     except (OSError, ValueError):
         pass
     return res
@@ -142,7 +162,11 @@ def main(trials: list[str], model: str, rubric: str | None) -> int:
     paths = []
     for t in trials:
         p = Path(t)
-        paths += [d for d in sorted(p.iterdir()) if (d / "result.json").exists() and (d / "config.json").exists()] if not (p / "config.json").exists() else [p]
+        paths += (
+            [d for d in sorted(p.iterdir()) if (d / "result.json").exists() and (d / "config.json").exists()]
+            if not (p / "config.json").exists()
+            else [p]
+        )
     agree = n = 0
     for p in paths:
         try:
@@ -152,8 +176,10 @@ def main(trials: list[str], model: str, rubric: str | None) -> int:
             continue
         n += 1
         agree += int(r["agrees"])
-        print(f"{p.name}: vlm={r['verdict']} trusted={'yes' if r['trusted_success'] else 'no'} {'agree' if r['agrees'] else 'DISAGREE'}"
-              f" ({r.get('reason', '')[:120]})")
+        print(
+            f"{p.name}: vlm={r['verdict']} trusted={'yes' if r['trusted_success'] else 'no'} {'agree' if r['agrees'] else 'DISAGREE'}"
+            f" ({r.get('reason', '')[:120]})"
+        )
     if n:
         print(f"agreement {agree}/{n}")
     return 0

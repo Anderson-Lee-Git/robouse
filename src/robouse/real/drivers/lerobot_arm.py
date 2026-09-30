@@ -11,10 +11,12 @@ Status: the Metal factory mirrors the configuration used by inspect-robots-metal
 SO-101 factory mirrors ~/benchflow/robot/so101_sort_control.py. Neither live path has run through Robo Use yet (the
 hardware was not connected while this was built); both are covered by the mock.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
@@ -27,22 +29,31 @@ def _metal_factory(cfg: dict, prof: Profile):  # pragma: no cover - real hardwar
     from lerobot.robots.metal_follower import MetalFollower, MetalFollowerConfig
 
     per_step = {n: float(cfg.get("driver_max_step_deg", 12.0)) for n in prof.joints}
-    rc = MetalFollowerConfig(id=cfg.get("robot_id", "metal"), port=cfg.get("port", "/dev/ttyACM0"),
-                             can_interface=cfg.get("can_interface", "slcan"),
-                             calibration_dir=Path(cfg["calibration_dir"]) if cfg.get("calibration_dir") else None,
-                             max_relative_target=per_step, startup_sync_speed_deg=1.0,
-                             disable_torque_on_disconnect=bool(cfg.get("disable_torque_on_close", False)), cameras={})
+    rc = MetalFollowerConfig(
+        id=cfg.get("robot_id", "metal"),
+        port=cfg.get("port", "/dev/ttyACM0"),
+        can_interface=cfg.get("can_interface", "slcan"),
+        calibration_dir=Path(cfg["calibration_dir"]) if cfg.get("calibration_dir") else None,
+        max_relative_target=per_step,
+        startup_sync_speed_deg=1.0,
+        disable_torque_on_disconnect=bool(cfg.get("disable_torque_on_close", False)),
+        cameras={},
+    )
     return MetalFollower(rc)
 
 
 def _so101_factory(cfg: dict, prof: Profile):  # pragma: no cover - real hardware
     from lerobot.robots.so_follower import SOFollower, SOFollowerRobotConfig
 
-    rc = SOFollowerRobotConfig(id=cfg.get("robot_id", "so101"), port=cfg["port"],
-                               calibration_dir=Path(cfg["calibration_dir"]) if cfg.get("calibration_dir") else None,
-                               max_relative_target=float(cfg.get("driver_max_step_deg", 12.0)),
-                               disable_torque_on_disconnect=bool(cfg.get("disable_torque_on_close", False)), cameras={},
-                               use_degrees=True)
+    rc = SOFollowerRobotConfig(
+        id=cfg.get("robot_id", "so101"),
+        port=cfg["port"],
+        calibration_dir=Path(cfg["calibration_dir"]) if cfg.get("calibration_dir") else None,
+        max_relative_target=float(cfg.get("driver_max_step_deg", 12.0)),
+        disable_torque_on_disconnect=bool(cfg.get("disable_torque_on_close", False)),
+        cameras={},
+        use_degrees=True,
+    )
     return SOFollower(rc)
 
 
@@ -51,19 +62,34 @@ def _so101_bimanual_factory(cfg: dict, prof: Profile):  # pragma: no cover - rea
     from lerobot.robots.so_follower import SOFollowerConfig
 
     def arm(side):
-        return SOFollowerConfig(port=cfg[f"{side}_port"], max_relative_target=float(cfg.get("driver_max_step_deg", 12.0)),
-                                disable_torque_on_disconnect=bool(cfg.get("disable_torque_on_close", False)), use_degrees=True)
-    rc = BiSOFollowerConfig(id=cfg.get("robot_id", "so101_bimanual"), left_arm_config=arm("left"), right_arm_config=arm("right"),
-                            calibration_dir=Path(cfg["calibration_dir"]) if cfg.get("calibration_dir") else None)
+        return SOFollowerConfig(
+            port=cfg[f"{side}_port"],
+            max_relative_target=float(cfg.get("driver_max_step_deg", 12.0)),
+            disable_torque_on_disconnect=bool(cfg.get("disable_torque_on_close", False)),
+            use_degrees=True,
+        )
+
+    rc = BiSOFollowerConfig(
+        id=cfg.get("robot_id", "so101_bimanual"),
+        left_arm_config=arm("left"),
+        right_arm_config=arm("right"),
+        calibration_dir=Path(cfg["calibration_dir"]) if cfg.get("calibration_dir") else None,
+    )
     return BiSOFollower(rc)
 
 
-FACTORIES: dict[str, Callable[[dict, Profile], Any]] = {"metal": _metal_factory, "so101": _so101_factory, "so100": _so101_factory,
-                                                        "so101-bimanual": _so101_bimanual_factory}
+FACTORIES: dict[str, Callable[[dict, Profile], Any]] = {
+    "metal": _metal_factory,
+    "so101": _so101_factory,
+    "so100": _so101_factory,
+    "so101-bimanual": _so101_bimanual_factory,
+}
 
 
 class LeRobotArmDriver(ArmDriver):
-    def __init__(self, prof: Profile, cfg: dict, robot_factory: Callable[[dict, Profile], Any] | None = None, mock: bool = False):
+    def __init__(
+        self, prof: Profile, cfg: dict, robot_factory: Callable[[dict, Profile], Any] | None = None, mock: bool = False
+    ):
         self.profile, self.cfg, self.mock = prof, dict(cfg), mock
         self._factory = robot_factory or FACTORIES.get(prof.name)
         if self._factory is None:
@@ -71,7 +97,9 @@ class LeRobotArmDriver(ArmDriver):
         self.robot = None
         self._cams = {}
         cams = cfg.get("cameras") or {}
-        self.cam_specs = cams if isinstance(cams, dict) else {}  # {name: OpenCV index / path / MJPEG URL} from the rig file
+        self.cam_specs = (
+            cams if isinstance(cams, dict) else {}
+        )  # {name: OpenCV index / path / MJPEG URL} from the rig file
         self.cameras = list(cams.keys() if isinstance(cams, dict) else cams)
         self.description = f"LeRobot {prof.display}" + (" (hardware-in-the-loop mock)" if mock else "")
         self._n = 0
@@ -117,11 +145,15 @@ class LeRobotArmDriver(ArmDriver):
                 vals = [states.get(n, {}).get(fld) for n in self.profile.joints]
                 if all(v is not None for v in vals):
                     out[key] = [float(v) for v in vals]
-        if not out and isinstance(raw.get("_telemetry"), dict):  # the hardware-in-the-loop mock replays recorded telemetry
+        if not out and isinstance(
+            raw.get("_telemetry"), dict
+        ):  # the hardware-in-the-loop mock replays recorded telemetry
             out.update(raw["_telemetry"])
         self._n += 1
         bus = getattr(self.robot, "bus", None)
-        if not out and bus is not None and hasattr(bus, "sync_read") and self._n % 10 == 1:  # Feetech: temperature at 1 Hz
+        if (
+            not out and bus is not None and hasattr(bus, "sync_read") and self._n % 10 == 1
+        ):  # Feetech: temperature at 1 Hz
             try:
                 t = bus.sync_read("Present_Temperature")
                 out["temp_c"] = [float(t[n]) for n in self.profile.joints if n in t]

@@ -22,6 +22,7 @@ Config: ROBOUSE_VLA_CONFIG (JSON written by the harness from a preset in presets
 (server address), ROBOUSE_VLA_TOKEN (optional auth), ROBOUSE_TASK_LANGUAGE (the instruction given to the policy).
 Output: one JSON line per inference on stdout (agent/stdout.jsonl), converted to the trial's ATIF trajectory.
 """
+
 from __future__ import annotations
 
 import base64
@@ -88,19 +89,19 @@ def mp_pack(obj, default=None) -> bytes:
                 out.append(o)
             elif -32 <= o < 0:
                 out.append(o & 0xFF)
-            elif 0 <= o < 2 ** 8:
+            elif 0 <= o < 2**8:
                 out.extend(b"\xcc" + struct.pack(">B", o))
-            elif 0 <= o < 2 ** 16:
+            elif 0 <= o < 2**16:
                 out.extend(b"\xcd" + struct.pack(">H", o))
-            elif 0 <= o < 2 ** 32:
+            elif 0 <= o < 2**32:
                 out.extend(b"\xce" + struct.pack(">I", o))
             elif o >= 0:
                 out.extend(b"\xcf" + struct.pack(">Q", o))
-            elif o >= -2 ** 7:
+            elif o >= -(2**7):
                 out.extend(b"\xd0" + struct.pack(">b", o))
-            elif o >= -2 ** 15:
+            elif o >= -(2**15):
                 out.extend(b"\xd1" + struct.pack(">h", o))
-            elif o >= -2 ** 31:
+            elif o >= -(2**31):
                 out.extend(b"\xd2" + struct.pack(">i", o))
             else:
                 out.extend(b"\xd3" + struct.pack(">q", o))
@@ -111,9 +112,9 @@ def mp_pack(obj, default=None) -> bytes:
             n = len(b)
             if n < 32:
                 out.append(0xA0 | n)
-            elif n < 2 ** 8:
+            elif n < 2**8:
                 out.extend(b"\xd9" + struct.pack(">B", n))
-            elif n < 2 ** 16:
+            elif n < 2**16:
                 out.extend(b"\xda" + struct.pack(">H", n))
             else:
                 out.extend(b"\xdb" + struct.pack(">I", n))
@@ -121,9 +122,9 @@ def mp_pack(obj, default=None) -> bytes:
         elif isinstance(o, (bytes, bytearray, memoryview)):
             b = bytes(o)
             n = len(b)
-            if n < 2 ** 8:
+            if n < 2**8:
                 out.extend(b"\xc4" + struct.pack(">B", n))
-            elif n < 2 ** 16:
+            elif n < 2**16:
                 out.extend(b"\xc5" + struct.pack(">H", n))
             else:
                 out.extend(b"\xc6" + struct.pack(">I", n))
@@ -132,7 +133,7 @@ def mp_pack(obj, default=None) -> bytes:
             n = len(o)
             if n < 16:
                 out.append(0x90 | n)
-            elif n < 2 ** 16:
+            elif n < 2**16:
                 out.extend(b"\xdc" + struct.pack(">H", n))
             else:
                 out.extend(b"\xdd" + struct.pack(">I", n))
@@ -142,7 +143,7 @@ def mp_pack(obj, default=None) -> bytes:
             n = len(o)
             if n < 16:
                 out.append(0x80 | n)
-            elif n < 2 ** 16:
+            elif n < 2**16:
                 out.extend(b"\xde" + struct.pack(">H", n))
             else:
                 out.extend(b"\xdf" + struct.pack(">I", n))
@@ -167,7 +168,7 @@ def mp_unpack(data: bytes, object_hook=None):
 
     def take(n):
         nonlocal pos
-        b = mv[pos:pos + n]
+        b = mv[pos : pos + n]
         pos += n
         return bytes(b)
 
@@ -199,8 +200,18 @@ def mp_unpack(data: bytes, object_hook=None):
             n = {0xD4: 1, 0xD5: 2, 0xD6: 4, 0xD7: 8, 0xD8: 16}[t]
             et = struct.unpack(">b", take(1))[0]
             return ("ext", et, take(n))
-        fmt = {0xCA: (">f", 4), 0xCB: (">d", 8), 0xCC: (">B", 1), 0xCD: (">H", 2), 0xCE: (">I", 4), 0xCF: (">Q", 8),
-               0xD0: (">b", 1), 0xD1: (">h", 2), 0xD2: (">i", 4), 0xD3: (">q", 8)}
+        fmt = {
+            0xCA: (">f", 4),
+            0xCB: (">d", 8),
+            0xCC: (">B", 1),
+            0xCD: (">H", 2),
+            0xCE: (">I", 4),
+            0xCF: (">Q", 8),
+            0xD0: (">b", 1),
+            0xD1: (">h", 2),
+            0xD2: (">i", 4),
+            0xD3: (">q", 8),
+        }
         if t in fmt:
             f, n = fmt[t]
             return struct.unpack(f, take(n))[0]
@@ -252,7 +263,9 @@ def np_hook(d: dict):
     """Decode arrays in any of the three numpy-in-msgpack conventions."""
     if _k(d, "__ndarray__"):
         dt = _k(d, "dtype")
-        return np.frombuffer(_k(d, "data"), dtype=np.dtype(dt.decode() if isinstance(dt, bytes) else dt)).reshape(_k(d, "shape"))
+        return np.frombuffer(_k(d, "data"), dtype=np.dtype(dt.decode() if isinstance(dt, bytes) else dt)).reshape(
+            _k(d, "shape")
+        )
     if _k(d, "__npgeneric__"):
         dt = _k(d, "dtype")
         return np.dtype(dt.decode() if isinstance(dt, bytes) else dt).type(_k(d, "data"))
@@ -271,7 +284,11 @@ def np_hook(d: dict):
 
 def json_numpy_default(o):
     if isinstance(o, np.ndarray):
-        return {"__numpy__": base64.b64encode(np.ascontiguousarray(o).tobytes()).decode(), "dtype": o.dtype.str, "shape": list(o.shape)}
+        return {
+            "__numpy__": base64.b64encode(np.ascontiguousarray(o).tobytes()).decode(),
+            "dtype": o.dtype.str,
+            "shape": list(o.shape),
+        }
     if isinstance(o, np.generic):
         return o.item()
     raise TypeError(type(o).__name__)
@@ -294,12 +311,18 @@ class WebSocket:
         u = urllib.parse.urlparse(url)
         port = u.port or (443 if u.scheme == "wss" else 80)
         raw = socket.create_connection((u.hostname, port), timeout=timeout)
-        self.sock = ssl.create_default_context().wrap_socket(raw, server_hostname=u.hostname) if u.scheme == "wss" else raw
+        self.sock = (
+            ssl.create_default_context().wrap_socket(raw, server_hostname=u.hostname) if u.scheme == "wss" else raw
+        )
         key = base64.b64encode(os.urandom(16)).decode()
         path = (u.path or "/") + (f"?{u.query}" if u.query else "")
         hdr = "".join(f"{k}: {v}\r\n" for k, v in (headers or {}).items())
-        self.sock.sendall((f"GET {path} HTTP/1.1\r\nHost: {u.hostname}:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-                           f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n{hdr}\r\n").encode())
+        self.sock.sendall(
+            (
+                f"GET {path} HTTP/1.1\r\nHost: {u.hostname}:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n{hdr}\r\n"
+            ).encode()
+        )
         resp = b""
         while b"\r\n\r\n" not in resp:
             c = self.sock.recv(4096)
@@ -310,7 +333,9 @@ class WebSocket:
         status = head.split(b"\r\n")[0]
         if b" 101 " not in status:
             raise ConnectionError("websocket handshake failed: " + status.decode(errors="replace"))
-        accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        accept = base64.b64encode(
+            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()
+        ).decode()
         if accept.encode() not in head:
             raise ConnectionError("websocket handshake: bad Sec-WebSocket-Accept")
 
@@ -328,7 +353,7 @@ class WebSocket:
         head = bytes([0x80 | opcode])
         if n < 126:
             head += bytes([0x80 | n])
-        elif n < 2 ** 16:
+        elif n < 2**16:
             head += bytes([0x80 | 126]) + struct.pack(">H", n)
         else:
             head += bytes([0x80 | 127]) + struct.pack(">Q", n)
@@ -353,7 +378,9 @@ class WebSocket:
             mask = self._read(4) if b1 & 0x80 else None
             payload = self._read(n)
             if mask:
-                payload = (np.frombuffer(payload, np.uint8) ^ np.frombuffer((mask * (n // 4 + 1))[:n], np.uint8)).tobytes()
+                payload = (
+                    np.frombuffer(payload, np.uint8) ^ np.frombuffer((mask * (n // 4 + 1))[:n], np.uint8)
+                ).tobytes()
             if op == 0x9:  # ping
                 self._frame(0xA, payload)
                 continue
@@ -453,9 +480,9 @@ def decode_png(path: str) -> np.ndarray:
     assert data[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
     pos, idat, w, h, ctype = 8, b"", 0, 0, 2
     while pos < len(data):
-        n = struct.unpack(">I", data[pos:pos + 4])[0]
-        typ = data[pos + 4:pos + 8]
-        body = data[pos + 8:pos + 8 + n]
+        n = struct.unpack(">I", data[pos : pos + 4])[0]
+        typ = data[pos + 4 : pos + 8]
+        body = data[pos + 8 : pos + 8 + n]
         pos += 12 + n
         if typ == b"IHDR":
             w, h, depth, ctype, _, _, interlace = struct.unpack(">IIBBBBB", body)
@@ -512,16 +539,22 @@ def resize_with_pad(img: np.ndarray, size) -> np.ndarray:
     r = resize(img, (nw, nh))
     out = np.zeros((h, w, 3), dtype=np.uint8)
     oy, ox = (h - nh) // 2, (w - nw) // 2
-    out[oy:oy + nh, ox:ox + nw] = r
+    out[oy : oy + nh, ox : ox + nw] = r
     return out
 
 
 def png_b64(img: np.ndarray) -> str:
     def chunk(t, b):
         return struct.pack(">I", len(b)) + t + b + struct.pack(">I", zlib.crc32(t + b) & 0xFFFFFFFF)
+
     h, w = img.shape[:2]
     raw = b"".join(b"\x00" + img[y].astype(np.uint8).tobytes() for y in range(h))
-    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b"")
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 6))
+        + chunk(b"IEND", b"")
+    )
     return base64.b64encode(png).decode()
 
 
@@ -582,7 +615,9 @@ class Observer:
 
     def __init__(self, cfg: dict, info: dict, language: str):
         self.cfg, self.info, self.language = cfg, info, language
-        self.cams = sorted({s.get("camera") or "" for s in cfg["obs"].values() if isinstance(s, dict) and "camera" in s})
+        self.cams = sorted(
+            {s.get("camera") or "" for s in cfg["obs"].values() if isinstance(s, dict) and "camera" in s}
+        )
         self.encoding = cfg.get("image_encoding", "array")
 
     def observe(self):
@@ -612,7 +647,9 @@ class Observer:
                     val = [[val]] if src["batch"] == 2 else [val]
             elif "camera" in src:
                 img = images[src.get("camera") or ""]
-                flip = src.get("flip")  # "h" mirror left-right, "v" upside down, "hv" rotate 180 (robouse images are upright)
+                flip = src.get(
+                    "flip"
+                )  # "h" mirror left-right, "v" upside down, "hv" rotate 180 (robouse images are upright)
                 if flip in ("h", "hv"):
                     img = img[:, ::-1]
                 if flip in ("v", "hv"):
@@ -629,11 +666,15 @@ class Observer:
                 if src.get("fn"):
                     v = STATE_FNS[src["fn"]](v)
                 if src.get("slice"):
-                    v = v[int(src["slice"][0]):int(src["slice"][1])]
+                    v = v[int(src["slice"][0]) : int(src["slice"][1])]
                 if src.get("scale") is not None:
                     v = v * np.asarray(src["scale"], dtype=np.float64)
                 v = v.astype(src.get("dtype", "float32"))
-                val = v.reshape((1,) * int(src.get("batch", 0)) + v.shape) if src.get("encoding") != "list" else v.tolist()
+                val = (
+                    v.reshape((1,) * int(src.get("batch", 0)) + v.shape)
+                    if src.get("encoding") != "list"
+                    else v.tolist()
+                )
             else:
                 raise ValueError(f"obs source for {key!r} needs one of camera/state/text/const")
             _set(out, key, val, nested)
@@ -650,7 +691,9 @@ class ActionMap:
         self.dim = len(info["action"]["names"])
         self.low = np.asarray(info["action"]["low"], dtype=float)
         self.high = np.asarray(info["action"]["high"], dtype=float)
-        self.relative_to = a.get("relative_to")  # e.g. "joint_pos": policy outputs deltas, the task takes absolute targets
+        self.relative_to = a.get(
+            "relative_to"
+        )  # e.g. "joint_pos": policy outputs deltas, the task takes absolute targets
 
     def expected_policy_dim(self):
         return self.a.get("policy_dim")
@@ -744,11 +787,21 @@ class XPolicyLab(Wire):
 
     def _req(self, mtype: str, payload: dict, trial=None, step=0) -> dict:
         rid = uuid.uuid4().hex
-        frame = {"message_type": mtype, "message_id": rid, "evaluation_id": self.eval_id, "action_case_id": None,
-                 "trial_id": trial, "repeat_index": None, "step": step,
-                 "sent_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()), "payload": payload}
+        frame = {
+            "message_type": mtype,
+            "message_id": rid,
+            "evaluation_id": self.eval_id,
+            "action_case_id": None,
+            "trial_id": trial,
+            "repeat_index": None,
+            "step": step,
+            "sent_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
+            "payload": payload,
+        }
         self.ws.send(mp_pack(frame, np_default_mnp))
-        want = {"hello": "hello_ack", "reset": "reset_result", "infer": "infer_result", "trial_end": "trial_end_ack"}[mtype]
+        want = {"hello": "hello_ack", "reset": "reset_result", "infer": "infer_result", "trial_end": "trial_end_ack"}[
+            mtype
+        ]
         while True:
             raw = self.ws.recv()
             if not isinstance(raw, bytes):
@@ -793,8 +846,12 @@ class OpenVLA(Wire):
 
     def infer(self, obs):
         body = json.dumps(obs, default=json_numpy_default).encode()
-        req = urllib.request.Request(self.url.rstrip("/") + self.cfg.get("path", "/act"), data=body,
-                                     headers={"Content-Type": "application/json", **self.headers}, method="POST")
+        req = urllib.request.Request(
+            self.url.rstrip("/") + self.cfg.get("path", "/act"),
+            data=body,
+            headers={"Content-Type": "application/json", **self.headers},
+            method="POST",
+        )
         with urllib.request.urlopen(req, timeout=float(self.cfg.get("timeout_s", 120))) as r:
             txt = r.read().decode()
         out = json.loads(txt, object_hook=json_numpy_hook)
@@ -849,8 +906,12 @@ class HttpJson(Wire):
         last = None
         for attempt in range(int(self.cfg.get("retries", 4))):
             try:
-                req = urllib.request.Request(self.url.rstrip("/") + path, data=json.dumps(body, default=json_numpy_default).encode(),
-                                             headers={"Content-Type": "application/json", **self.headers}, method="POST")
+                req = urllib.request.Request(
+                    self.url.rstrip("/") + path,
+                    data=json.dumps(body, default=json_numpy_default).encode(),
+                    headers={"Content-Type": "application/json", **self.headers},
+                    method="POST",
+                )
                 with urllib.request.urlopen(req, timeout=float(self.cfg.get("timeout_s", 120))) as r:
                     return json.loads(r.read().decode())
             except Exception as e:  # noqa: BLE001
@@ -919,7 +980,9 @@ class Controller:
         if self.alpha is not None:
             out = []
             for a in acts:
-                self.prev = a if self.prev is None else float(self.alpha) * np.asarray(a) + (1 - float(self.alpha)) * self.prev
+                self.prev = (
+                    a if self.prev is None else float(self.alpha) * np.asarray(a) + (1 - float(self.alpha)) * self.prev
+                )
                 out.append(self.prev)
             acts = out
         return acts
@@ -942,8 +1005,10 @@ def check_compat(cfg: dict, info: dict, amap: ActionMap, chunk: np.ndarray) -> s
         return f"policy action dimension {chunk.shape[1]} != preset's {want}"
     a = cfg.get("action", {})
     if a.get("index") is None and "pad" not in a and chunk.shape[1] != amap.dim:
-        return (f"policy actions have {chunk.shape[1]} values but the task takes {amap.dim} "
-                f"({', '.join(info['action']['names'])}); map them with action.index / action.pad")
+        return (
+            f"policy actions have {chunk.shape[1]} values but the task takes {amap.dim} "
+            f"({', '.join(info['action']['names'])}); map them with action.index / action.pad"
+        )
     need = a.get("mode")
     modes = [g.get("mode") for g in (info.get("embodiment") or {}).get("action_groups", [])]
     if need and modes and need not in modes:
@@ -962,8 +1027,17 @@ def main() -> int:
     # per_backend: {backend: {top-level keys}} merged over the preset for that simulator (one job across suites)
     cfg = {**cfg, **(cfg.get("per_backend") or {}).get(str(info.get("backend")), {})}
     language = os.environ.get("ROBOUSE_TASK_LANGUAGE", "").strip()
-    emit(type="start", task=info.get("task"), backend=info.get("backend"), action_dim=len(info["action"]["names"]),
-         max_steps=info["max_steps"], language=language, wire=cfg.get("wire"), preset=cfg.get("preset"), server=url)
+    emit(
+        type="start",
+        task=info.get("task"),
+        backend=info.get("backend"),
+        action_dim=len(info["action"]["names"]),
+        max_steps=info["max_steps"],
+        language=language,
+        wire=cfg.get("wire"),
+        preset=cfg.get("preset"),
+        server=url,
+    )
     if not url or cfg.get("wire") not in WIRES:
         emit(type="error", error=f"need ROBOUSE_VLA_URL and a wire in {sorted(WIRES)}")
         robo({"op": "give_up", "text": "vla harness misconfigured"})
@@ -996,9 +1070,16 @@ def main() -> int:
                     return 2
                 checked = True
             acts = ctl.plan(t, chunk)
-            emit(type="chunk", inference=n_inf, steps_used=steps, chunk_shape=list(chunk.shape), executed=len(acts),
-                 roundtrip_s=round(time.time() - t0, 3), server_timing=getattr(wire, "last_timing", None),
-                 actions=[[round(float(x), 5) for x in a] for a in acts])
+            emit(
+                type="chunk",
+                inference=n_inf,
+                steps_used=steps,
+                chunk_shape=list(chunk.shape),
+                executed=len(acts),
+                roundtrip_s=round(time.time() - t0, 3),
+                server_timing=getattr(wire, "last_timing", None),
+                actions=[[round(float(x), 5) for x in a] for a in acts],
+            )
             for a in acts:
                 cmd = amap(a, state if amap.relative_to else None)
                 if last_cmd is not None and max(abs(x - y) for x, y in zip(cmd, last_cmd)) < still_tol:
@@ -1009,8 +1090,20 @@ def main() -> int:
                 if (still_n and still >= still_n) or (steps is not None and steps >= max_steps - 1):
                     # a VLA never says "done": the run ends when the policy has settled or the budget is about to run
                     # out, and the episode server judges the state it left
-                    r = robo({"op": "done", "text": "vla: policy settled" if still_n and still >= still_n else "vla: step budget reached"})
-                    emit(type="end", reason="done", steps_used=steps, why="settled" if still_n and still >= still_n else "budget")
+                    r = robo(
+                        {
+                            "op": "done",
+                            "text": "vla: policy settled"
+                            if still_n and still >= still_n
+                            else "vla: step budget reached",
+                        }
+                    )
+                    emit(
+                        type="end",
+                        reason="done",
+                        steps_used=steps,
+                        why="settled" if still_n and still >= still_n else "budget",
+                    )
                     return 0
                 res = robo({"op": "act", "action": cmd, "repeat": 1})
                 t += 1

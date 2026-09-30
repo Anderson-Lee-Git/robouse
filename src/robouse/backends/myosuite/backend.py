@@ -21,11 +21,10 @@ Success (every task): MyoSuite's own `solved` term for the env, evaluated from t
 and the 10-step settle (pose: joint-angle error norm below the env's pose_thd; reach: stacked fingertip error norm below
 12.5 mm per fingertip; key turn: key angle above the env's goal_th; object hold: object within 10 mm of the goal).
 """
+
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -33,7 +32,7 @@ import numpy as np
 from ... import config
 from ...workers.client import StdioWorker
 from ..base import StepInfo
-from ..embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg
+from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Oracle, Sensor, Skill, SkillArg
 
 WORKER = Path(__file__).with_name("worker.py")
 CONTROL_DT = 0.02
@@ -45,29 +44,54 @@ FINGER_CAM = {"lookat": [0.12, 0.0, 0.24], "distance": 0.42, "azimuth": 90.0, "e
 
 # task id -> MyoSuite env id, reset seed, step budget, reference solution kind, render camera (free camera around a body)
 TASKS: dict[str, dict] = {
-    "myosuite-elbow-pose": dict(env="myoElbowPose1D6MRandom-v0", seed=8, max_steps=300, oracle="pose",
-                                camera=ELBOW_CAM),
-    "myosuite-finger-pose-fixed": dict(env="myoFingerPoseFixed-v0", seed=0, max_steps=300, oracle="pose",
-                                       camera=FINGER_CAM),
-    "myosuite-finger-pose-random": dict(env="myoFingerPoseRandom-v0", seed=3, max_steps=300, oracle="pose",
-                                        camera=FINGER_CAM),
-    "myosuite-finger-reach-fixed": dict(env="myoFingerReachFixed-v0", seed=0, max_steps=300, oracle="reach",
-                                        camera=FINGER_CAM),
-    "myosuite-finger-reach-random": dict(env="myoFingerReachRandom-v0", seed=6, max_steps=300, oracle="reach",
-                                         camera=FINGER_CAM),
+    "myosuite-elbow-pose": dict(
+        env="myoElbowPose1D6MRandom-v0", seed=8, max_steps=300, oracle="pose", camera=ELBOW_CAM
+    ),
+    "myosuite-finger-pose-fixed": dict(
+        env="myoFingerPoseFixed-v0", seed=0, max_steps=300, oracle="pose", camera=FINGER_CAM
+    ),
+    "myosuite-finger-pose-random": dict(
+        env="myoFingerPoseRandom-v0", seed=3, max_steps=300, oracle="pose", camera=FINGER_CAM
+    ),
+    "myosuite-finger-reach-fixed": dict(
+        env="myoFingerReachFixed-v0", seed=0, max_steps=300, oracle="reach", camera=FINGER_CAM
+    ),
+    "myosuite-finger-reach-random": dict(
+        env="myoFingerReachRandom-v0", seed=6, max_steps=300, oracle="reach", camera=FINGER_CAM
+    ),
     "myosuite-hand-pose-4": dict(env="myoHandPose4Fixed-v0", seed=0, max_steps=500, oracle="pose", camera=HAND_CAM),
     "myosuite-hand-pose-5": dict(env="myoHandPose5Fixed-v0", seed=0, max_steps=500, oracle="pose", camera=HAND_CAM),
     "myosuite-hand-pose-7": dict(env="myoHandPose7Fixed-v0", seed=0, max_steps=500, oracle="pose", camera=HAND_CAM),
     "myosuite-hand-pose-8": dict(env="myoHandPose8Fixed-v0", seed=0, max_steps=500, oracle="pose", camera=HAND_CAM),
     "myosuite-hand-pose-9": dict(env="myoHandPose9Fixed-v0", seed=0, max_steps=500, oracle="pose", camera=HAND_CAM),
-    "myosuite-hand-reach-fixed": dict(env="myoHandReachFixed-v0", seed=0, max_steps=500, oracle="reach", camera=HAND_CAM),
-    "myosuite-hand-reach-random": dict(env="myoHandReachRandom-v0", seed=0, max_steps=500, oracle="reach", camera=HAND_CAM),
+    "myosuite-hand-reach-fixed": dict(
+        env="myoHandReachFixed-v0", seed=0, max_steps=500, oracle="reach", camera=HAND_CAM
+    ),
+    "myosuite-hand-reach-random": dict(
+        env="myoHandReachRandom-v0", seed=0, max_steps=500, oracle="reach", camera=HAND_CAM
+    ),
     # muscles only (skills disabled): the agent sends raw excitations; the reference solution runs MyoSuite's NPG baseline
-    "myosuite-elbow-pose-muscles": dict(env="myoElbowPose1D6MRandom-v0", seed=9, max_steps=300, oracle="policy", policy_steps=100,
-                                        skills=False, camera=ELBOW_CAM),
-    "myosuite-finger-pose-muscles": dict(env="myoFingerPoseFixed-v0", seed=0, max_steps=300, oracle="policy", policy_steps=100,
-                                         skills=False, camera=FINGER_CAM),
-    "myosuite-hand-key-turn": dict(env="myoHandKeyTurnFixed-v0", seed=0, max_steps=500, oracle="policy", policy_steps=200, camera=HAND_CAM),
+    "myosuite-elbow-pose-muscles": dict(
+        env="myoElbowPose1D6MRandom-v0",
+        seed=9,
+        max_steps=300,
+        oracle="policy",
+        policy_steps=100,
+        skills=False,
+        camera=ELBOW_CAM,
+    ),
+    "myosuite-finger-pose-muscles": dict(
+        env="myoFingerPoseFixed-v0",
+        seed=0,
+        max_steps=300,
+        oracle="policy",
+        policy_steps=100,
+        skills=False,
+        camera=FINGER_CAM,
+    ),
+    "myosuite-hand-key-turn": dict(
+        env="myoHandKeyTurnFixed-v0", seed=0, max_steps=500, oracle="policy", policy_steps=200, camera=HAND_CAM
+    ),
 }
 
 
@@ -113,11 +137,17 @@ class MyoSuiteBackend(EmbodiedBackend):
             raise KeyError(f"unknown MyoSuite task {env!r}")
         self.task_id, self.task = env, TASKS[env]
         self.render_size = tuple(spec.get("render_size", (480, 480)))
-        self.worker = StdioWorker("myosuite", config.sim_python("myosuite", "myosuite"), WORKER, setup="docs/suites/myosuite.md")
+        self.worker = StdioWorker(
+            "myosuite", config.sim_python("myosuite", "myosuite"), WORKER, setup="docs/suites/myosuite.md"
+        )
         self._state = None
         self.last_judge: dict = {}
-        self.meta = self._call("make", env_id=self.task["env"], seed=int(spec.get("seed", self.task["seed"])),
-                               camera=self.task.get("camera"))
+        self.meta = self._call(
+            "make",
+            env_id=self.task["env"],
+            seed=int(spec.get("seed", self.task["seed"])),
+            camera=self.task.get("camera"),
+        )
         self.decl = self._declare()
         self._last = [0.0] * len(self.meta["muscles"])
 
@@ -125,61 +155,148 @@ class MyoSuiteBackend(EmbodiedBackend):
         meta = self.meta
         kind = meta["kind"]
         sensors = [
-            Sensor("joints", "proprio", ["joint_angles_rad", "joint_velocities_rad_s"] + ([] if self.spec.get("skills") is False else ["joint_targets_rad"]),
-                   "angle (rad) and velocity (rad/s) of each muscle-driven joint" + ("" if self.spec.get("skills") is False else ", and the controller's current joint targets")),
-            Sensor("muscles", "proprio", ["muscle_activations"], "activation of each muscle in [0, 1], in the action's muscle order"),
+            Sensor(
+                "joints",
+                "proprio",
+                ["joint_angles_rad", "joint_velocities_rad_s"]
+                + ([] if self.spec.get("skills") is False else ["joint_targets_rad"]),
+                "angle (rad) and velocity (rad/s) of each muscle-driven joint"
+                + ("" if self.spec.get("skills") is False else ", and the controller's current joint targets"),
+            ),
+            Sensor(
+                "muscles",
+                "proprio",
+                ["muscle_activations"],
+                "activation of each muscle in [0, 1], in the action's muscle order",
+            ),
         ]
         if kind == "pose":
-            sensors.append(Sensor("task", "world", ["target_pose_rad", "pose_error_norm", "threshold"],
-                                  "the target joint angles, the joint-angle error norm and the success threshold"))
+            sensors.append(
+                Sensor(
+                    "task",
+                    "world",
+                    ["target_pose_rad", "pose_error_norm", "threshold"],
+                    "the target joint angles, the joint-angle error norm and the success threshold",
+                )
+            )
         elif kind == "reach":
-            sensors.append(Sensor("task", "world", ["fingertips", "fingertip_targets", "reach_error_norm", "threshold"],
-                                  "fingertip and target positions (m, world frame), the stacked error norm and the success threshold", frame="world"))
+            sensors.append(
+                Sensor(
+                    "task",
+                    "world",
+                    ["fingertips", "fingertip_targets", "reach_error_norm", "threshold"],
+                    "fingertip and target positions (m, world frame), the stacked error norm and the success threshold",
+                    frame="world",
+                )
+            )
         elif kind == "keyturn":
-            sensors.append(Sensor("task", "world", ["key_angle_rad", "key_goal_angle_rad", "key_head", "index_tip", "thumb_tip"],
-                                  "key rotation and goal angle, key head and fingertip positions (m, world frame)", frame="world"))
+            sensors.append(
+                Sensor(
+                    "task",
+                    "world",
+                    ["key_angle_rad", "key_goal_angle_rad", "key_head", "index_tip", "thumb_tip"],
+                    "key rotation and goal angle, key head and fingertip positions (m, world frame)",
+                    frame="world",
+                )
+            )
         elif kind == "objhold":
-            sensors.append(Sensor("task", "world", ["object_pos", "goal_pos", "object_error_m", "threshold_m"],
-                                  "object and goal positions (m, world frame) and their distance", frame="world"))
-        sensors += [Sensor("contacts", "world", ["contacts"], "pairs of bodies in contact"),
-                    Sensor("upstream", "world", ["obs_vector"], "MyoSuite's own observation vector for this env (its obs_keys in order)"),
-                    Sensor("camera:view", "camera", mount="world", doc="view of the arm or hand")]
+            sensors.append(
+                Sensor(
+                    "task",
+                    "world",
+                    ["object_pos", "goal_pos", "object_error_m", "threshold_m"],
+                    "object and goal positions (m, world frame) and their distance",
+                    frame="world",
+                )
+            )
+        sensors += [
+            Sensor("contacts", "world", ["contacts"], "pairs of bodies in contact"),
+            Sensor(
+                "upstream",
+                "world",
+                ["obs_vector"],
+                "MyoSuite's own observation vector for this env (its obs_keys in order)",
+            ),
+            Sensor("camera:view", "camera", mount="world", doc="view of the arm or hand"),
+        ]
         n = len(meta["muscles"])
-        groups = [ActionGroup("muscles", "muscle_excitation", list(meta["muscles"]), [0.0] * n, [1.0] * n,
-                              "0..1 per muscle",
-                              "excitation (neural drive) of each muscle; the activation follows it within about 10 ms "
-                              "(rising) or 40 ms (falling), and a muscle can only pull")]
+        groups = [
+            ActionGroup(
+                "muscles",
+                "muscle_excitation",
+                list(meta["muscles"]),
+                [0.0] * n,
+                [1.0] * n,
+                "0..1 per muscle",
+                "excitation (neural drive) of each muscle; the activation follows it within about 10 ms "
+                "(rising) or 40 ms (falling), and a muscle can only pull",
+            )
+        ]
         joints = meta["joints"]
         skills = [
-            _FreeSkill("set_joint_targets", [SkillArg("joint", "str", doc=f"joint name, one of {joints}"),
-                                             SkillArg("steps", "int", default=60), SkillArg("ramp", "int", default=20)],
-                       "drive the joints to target angles (rad) with a muscle-space controller: each step it solves for "
-                       "the muscle activations that produce the joint torques of a PD law (inverse dynamics plus bounded least squares) "
-                       "and sends the matching excitations. Joints not named keep their previous targets (initially the start pose). "
-                       "The targets move linearly from the current pose over RAMP steps; the skill runs STEPS steps or until the "
-                       "joints are still", SKILL_MAX, "JOINT=RAD [JOINT=RAD ...] [steps=60] [ramp=20]"),
-            _FreeSkill("hold", [SkillArg("steps", "int", default=20)],
-                       "set every joint target to the joint's current angle and run the muscle-space controller there for STEPS steps "
-                       "(keeps the hand still where it is)", SKILL_MAX, "[steps=20]"),
+            _FreeSkill(
+                "set_joint_targets",
+                [
+                    SkillArg("joint", "str", doc=f"joint name, one of {joints}"),
+                    SkillArg("steps", "int", default=60),
+                    SkillArg("ramp", "int", default=20),
+                ],
+                "drive the joints to target angles (rad) with a muscle-space controller: each step it solves for "
+                "the muscle activations that produce the joint torques of a PD law (inverse dynamics plus bounded least squares) "
+                "and sends the matching excitations. Joints not named keep their previous targets (initially the start pose). "
+                "The targets move linearly from the current pose over RAMP steps; the skill runs STEPS steps or until the "
+                "joints are still",
+                SKILL_MAX,
+                "JOINT=RAD [JOINT=RAD ...] [steps=60] [ramp=20]",
+            ),
+            _FreeSkill(
+                "hold",
+                [SkillArg("steps", "int", default=20)],
+                "set every joint target to the joint's current angle and run the muscle-space controller there for STEPS steps "
+                "(keeps the hand still where it is)",
+                SKILL_MAX,
+                "[steps=20]",
+            ),
         ]
         if kind == "reach":
-            skills.insert(1, _FreeSkill("reach_tips", [SkillArg("tip", "str", doc=f"fingertip site, one of {meta['tips']}"),
-                                                       SkillArg("steps", "int", default=60), SkillArg("ramp", "int", default=20)],
-                                        "solve inverse kinematics for fingertip positions (world frame, m), within the joint ranges and starting "
-                                        "from the current pose, then run set_joint_targets with the resulting joint angles; reports the "
-                                        "kinematic residual per fingertip", SKILL_MAX, "TIP=X,Y,Z [TIP=X,Y,Z ...] [steps=60] [ramp=20]"))
-        return Embodiment(robot=f"MyoSuite {self._robot_name()} ({n} muscles)", family="musculoskeletal", assets=[],
-                          sensors=sensors, action_groups=groups, skills=skills,
-                          budget=Budget(int(self.task["max_steps"]), CONTROL_DT), cameras=["view"])
+            skills.insert(
+                1,
+                _FreeSkill(
+                    "reach_tips",
+                    [
+                        SkillArg("tip", "str", doc=f"fingertip site, one of {meta['tips']}"),
+                        SkillArg("steps", "int", default=60),
+                        SkillArg("ramp", "int", default=20),
+                    ],
+                    "solve inverse kinematics for fingertip positions (world frame, m), within the joint ranges and starting "
+                    "from the current pose, then run set_joint_targets with the resulting joint angles; reports the "
+                    "kinematic residual per fingertip",
+                    SKILL_MAX,
+                    "TIP=X,Y,Z [TIP=X,Y,Z ...] [steps=60] [ramp=20]",
+                ),
+            )
+        return Embodiment(
+            robot=f"MyoSuite {self._robot_name()} ({n} muscles)",
+            family="musculoskeletal",
+            assets=[],
+            sensors=sensors,
+            action_groups=groups,
+            skills=skills,
+            budget=Budget(int(self.task["max_steps"]), CONTROL_DT),
+            cameras=["view"],
+        )
 
     def _robot_name(self) -> str:
         e = self.task["env"]
-        return "elbow (MyoElbow)" if "Elbow" in e else ("index finger (MyoFinger)" if "Finger" in e else "hand and forearm (MyoHand)")
+        return (
+            "elbow (MyoElbow)"
+            if "Elbow" in e
+            else ("index finger (MyoFinger)" if "Finger" in e else "hand and forearm (MyoHand)")
+        )
 
     # ---- worker ------------------------------------------------------------------------------------------------
     def _call(self, cmd: str, **kw):
         return self.worker.call(cmd, **kw)
-
 
     # ---- episode -----------------------------------------------------------------------------------------------
     def reset(self, seed: int) -> None:
@@ -223,8 +340,11 @@ class MyoSuiteBackend(EmbodiedBackend):
         return outcome == "done" and ok
 
     def info_extra(self) -> dict:
-        return {"embodiment": self.embodiment(), "joint_ranges_rad": self.meta["joint_ranges"],
-                "myosuite_env": self.task["env"]}
+        return {
+            "embodiment": self.embodiment(),
+            "joint_ranges_rad": self.meta["joint_ranges"],
+            "myosuite_env": self.task["env"],
+        }
 
     def mj_model_data(self):
         return None
@@ -280,7 +400,11 @@ class MyoSuiteBackend(EmbodiedBackend):
     def _run_controller(self, targets: dict, steps: int, ramp: int, extra: dict | None = None, hold_here: bool = False):
         steps = max(1, min(SKILL_MAX, int(steps)))
         ramp = max(1, min(steps, int(ramp)))
-        res = self._call("set_targets", targets=targets, ramp=ramp, from_current=hold_here) if (targets or hold_here) else None
+        res = (
+            self._call("set_targets", targets=targets, ramp=ramp, from_current=hold_here)
+            if (targets or hold_here)
+            else None
+        )
         still = 0
         c = {}
         for k in range(steps):
@@ -310,6 +434,7 @@ class MyoSuiteBackend(EmbodiedBackend):
 
 # ---- reference solutions (socket only) ------------------------------------------------------------------------------
 
+
 def _policy_act(z: dict, obs: np.ndarray) -> np.ndarray:
     """MyoSuite's NPG baseline policy (an mjrl Gaussian MLP, mean action): normalised input, tanh hidden layers."""
     x = (obs - z["in_shift"]) / (z["in_scale"] + 1e-8)
@@ -333,6 +458,7 @@ def solution(env: str):
                 a = _policy_act(z, obs)
                 exc = 1.0 / (1.0 + np.exp(-5.0 * (a - 0.5)))  # MyoSuite's action -> muscle excitation mapping
                 o.act([float(np.clip(x, 0.0, 1.0)) for x in exc])
+
         return run_policy
 
     kind = TASKS[env]["oracle"]
@@ -344,8 +470,11 @@ def solution(env: str):
             o.skill("set_joint_targets", *[f"{k}={v}" for k, v in tg.items()], "steps=120", "ramp=40")
         elif kind == "reach":
             tg = st["fingertip_targets"]
-            o.skill("reach_tips", *[f"{k}={','.join(str(x) for x in v)}" for k, v in tg.items()], "steps=120", "ramp=40")
+            o.skill(
+                "reach_tips", *[f"{k}={','.join(str(x) for x in v)}" for k, v in tg.items()], "steps=120", "ramp=40"
+            )
         o.skill("hold", "steps=20")
+
     return run
 
 

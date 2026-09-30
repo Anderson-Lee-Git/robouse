@@ -23,12 +23,11 @@ give-way rule (`yield_rule`, published in the observation as `route.give_way`).
 
 Each task's scene is fixed (map blocks, map seed, scripted traffic timetable); the episode seed (`--seed`) is ignored.
 """
+
 from __future__ import annotations
 
 import json
 import math
-import os
-import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -36,15 +35,20 @@ import numpy as np
 from ... import config
 from ...workers.client import StdioWorker
 from ..base import StepInfo
-from ..embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg
+from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Oracle, Sensor, Skill, SkillArg
 
 WORKER = Path(__file__).with_name("worker.py")
 CONTROL_DT = 0.1
-MAX_KMH = 80.0          # MetaDrive's default car: no engine force above 80 km/h
+MAX_KMH = 80.0  # MetaDrive's default car: no engine force above 80 km/h
 
 # Road names are MetaDrive node pairs: ">", ">>", ">>>" are the start block; "<i><B><socket>_<road>_" belongs to block i of
 # type B (S straight, C curve, O roundabout, X intersection, r on-ramp). Lane 0 is the leftmost lane (next to the centre line).
-_MAIN = [((">", ">>"), 0.0, 10.0), ((">>", ">>>"), 10.0, 50.0), ((">>>", "1S0_0_"), 50.0, 121.3), (("1S0_0_", "2r0_0_"), 121.3, 179.9)]
+_MAIN = [
+    ((">", ">>"), 0.0, 10.0),
+    ((">>", ">>>"), 10.0, 50.0),
+    ((">>>", "1S0_0_"), 50.0, 121.3),
+    (("1S0_0_", "2r0_0_"), 121.3, 179.9),
+]
 
 
 def _main_road(x: float) -> list:
@@ -56,57 +60,137 @@ def _main_road_s(x: float) -> float:
     return x - next(a for r, a, b in _MAIN if a <= x < b)
 
 
-DENSE = dict(gap_m=5.0, headway_s=1.0)  # scripted streams: IDM with a 5 m + 1 s desired gap (MetaDrive's default: 10 m + 1.5 s)
+DENSE = dict(
+    gap_m=5.0, headway_s=1.0
+)  # scripted streams: IDM with a 5 m + 1 s desired gap (MetaDrive's default: 10 m + 1.5 s)
 
 TASKS: dict[str, dict] = {
     # lane keeping on a winding two-lane road (tight S-bends), no traffic
-    "driving-winding-road": dict(
-        map="CSCC", seed=0, lanes=2, spawn=[">", ">>", 1], max_steps=1000),
+    "driving-winding-road": dict(map="CSCC", seed=0, lanes=2, spawn=[">", ">>", 1], max_steps=1000),
     # three-lane highway: a slow truck and a slow car ahead, faster cars coming from behind in the left lane; the budget
     # is too short to stay behind the truck
     "driving-highway-overtake": dict(
-        map="SSSSSSSS", seed=1, lanes=3, spawn=[">", ">>", 2], max_steps=500,
-        vehicles=[dict(type="xl", lane=[">>>", "1S0_0_", 2], s=0, speed_kmh=30),
-                  dict(type="m", lane=[">>>", "1S0_0_", 1], s=30, speed_kmh=34),
-                  dict(type="l", lane=["2S0_0_", "3S0_0_", 2], s=20, speed_kmh=32),
-                  dict(type="m", lane=["3S0_0_", "4S0_0_", 1], s=10, speed_kmh=36),
-                  dict(type="m", lane=[">", ">>", 0], s=0, speed_kmh=70),
-                  dict(type="s", lane=[">", ">>", 0], s=0, speed_kmh=72, t=4.0)]),
+        map="SSSSSSSS",
+        seed=1,
+        lanes=3,
+        spawn=[">", ">>", 2],
+        max_steps=500,
+        vehicles=[
+            dict(type="xl", lane=[">>>", "1S0_0_", 2], s=0, speed_kmh=30),
+            dict(type="m", lane=[">>>", "1S0_0_", 1], s=30, speed_kmh=34),
+            dict(type="l", lane=["2S0_0_", "3S0_0_", 2], s=20, speed_kmh=32),
+            dict(type="m", lane=["3S0_0_", "4S0_0_", 1], s=10, speed_kmh=36),
+            dict(type="m", lane=[">", ">>", 0], s=0, speed_kmh=70),
+            dict(type="s", lane=[">", ">>", 0], s=0, speed_kmh=72, t=4.0),
+        ],
+    ),
     # a broken-down car with a warning triangle blocks the right lane; cars pass in the left lane
     "driving-broken-down-car": dict(
-        map="SCS", seed=2, lanes=2, spawn=[">", ">>", 1], max_steps=800,
-        vehicles=[dict(type="m", lane=[">>>", "1S0_0_", 1], s=45, broken_down=True),
-                  dict(type="s", lane=[">", ">>", 0], s=0, speed_kmh=50, t=2.0),
-                  dict(type="m", lane=[">", ">>", 0], s=0, speed_kmh=50, t=5.0),
-                  dict(type="l", lane=[">", ">>", 0], s=0, speed_kmh=48, t=8.0)],
-        objects=[dict(kind="warning_triangle", lane=[">>>", "1S0_0_", 1], s=33)]),
+        map="SCS",
+        seed=2,
+        lanes=2,
+        spawn=[">", ">>", 1],
+        max_steps=800,
+        vehicles=[
+            dict(type="m", lane=[">>>", "1S0_0_", 1], s=45, broken_down=True),
+            dict(type="s", lane=[">", ">>", 0], s=0, speed_kmh=50, t=2.0),
+            dict(type="m", lane=[">", ">>", 0], s=0, speed_kmh=50, t=5.0),
+            dict(type="l", lane=[">", ">>", 0], s=0, speed_kmh=48, t=8.0),
+        ],
+        objects=[dict(kind="warning_triangle", lane=[">>>", "1S0_0_", 1], s=33)],
+    ),
     # a construction zone on a curve closes the two right lanes of three; a slower car drives in the open lane
     "driving-cone-zone": dict(
-        map="SCS", seed=4, lanes=3, spawn=[">", ">>", 2], max_steps=900, cones=dict(road=["1S0_0_", "2C0_0_"], s=30.0, length=45.0),
-        vehicles=[dict(type="m", lane=[">>>", "1S0_0_", 0], s=20, speed_kmh=35)]),
+        map="SCS",
+        seed=4,
+        lanes=3,
+        spawn=[">", ">>", 2],
+        max_steps=900,
+        cones=dict(road=["1S0_0_", "2C0_0_"], s=30.0, length=45.0),
+        vehicles=[dict(type="m", lane=[">>>", "1S0_0_", 0], s=20, speed_kmh=35)],
+    ),
     # a two-lane roundabout; circulating cars (they do not yield) pass the entry in a steady stream, then a gap
     "driving-roundabout": dict(
-        map="SOS", seed=0, lanes=2, spawn=[">", ">>", 1], max_steps=1200,
+        map="SOS",
+        seed=0,
+        lanes=2,
+        spawn=[">", ">>", 1],
+        max_steps=1200,
         yield_rule=dict(road="1S0_0_->2O0_0_", point=[136.3, -5.1], window_s=4.0),
-        vehicles=[dict(type=("m", "s", "l", "m", "s")[i], lane=road + [1], s=st, speed_kmh=30, dest="2O0_3_", **DENSE)   # circulating
-                  for i, (road, st) in enumerate(((["2O3_1_", "2O0_0_"], 8.0), (["2O3_0_", "2O3_1_"], 18.0),
-                                                  (["2O3_0_", "2O3_1_"], 0.5), (["2O2_1_", "2O3_0_"], 10.0),
-                                                  (["2O2_0_", "2O2_1_"], 20.0)))]
-        + [dict(type=("m", "s", "l", "m")[i % 4], lane=["-2O2_3_", "-2O2_2_", 1], s=0, speed_kmh=30, t=2.1 * i,
-                dest="2O0_3_", **DENSE) for i in range(10)]),                                          # entering from the north
+        vehicles=[
+            dict(
+                type=("m", "s", "l", "m", "s")[i], lane=road + [1], s=st, speed_kmh=30, dest="2O0_3_", **DENSE
+            )  # circulating
+            for i, (road, st) in enumerate(
+                (
+                    (["2O3_1_", "2O0_0_"], 8.0),
+                    (["2O3_0_", "2O3_1_"], 18.0),
+                    (["2O3_0_", "2O3_1_"], 0.5),
+                    (["2O2_1_", "2O3_0_"], 10.0),
+                    (["2O2_0_", "2O2_1_"], 20.0),
+                )
+            )
+        ]
+        + [
+            dict(
+                type=("m", "s", "l", "m")[i % 4],
+                lane=["-2O2_3_", "-2O2_2_", 1],
+                s=0,
+                speed_kmh=30,
+                t=2.1 * i,
+                dest="2O0_3_",
+                **DENSE,
+            )
+            for i in range(10)
+        ],
+    ),  # entering from the north
     # unprotected left turn at a four-way intersection (no traffic lights) across a stream of oncoming cars
     "driving-intersection-left-turn": dict(
-        map="SXS", seed=0, lanes=2, spawn=[">", ">>", 0], max_steps=900,
-        vehicles=[dict(type=("m", "s", "l", "m")[i % 4], lane=["-2X1_1_", "-2X1_0_", i % 2], s=0, speed_kmh=40,
-                       t=3.0 + 1.0 * i, dest="->", **DENSE) for i in range(24)]
-        + [dict(type=ty, lane=["-2X1_1_", "-2X1_0_", ln], s=0, speed_kmh=40, t=t, dest="->") for ty, ln, t in (("s", 0, 48.0), ("m", 1, 51.0))]),
+        map="SXS",
+        seed=0,
+        lanes=2,
+        spawn=[">", ">>", 0],
+        max_steps=900,
+        vehicles=[
+            dict(
+                type=("m", "s", "l", "m")[i % 4],
+                lane=["-2X1_1_", "-2X1_0_", i % 2],
+                s=0,
+                speed_kmh=40,
+                t=3.0 + 1.0 * i,
+                dest="->",
+                **DENSE,
+            )
+            for i in range(24)
+        ]
+        + [
+            dict(type=ty, lane=["-2X1_1_", "-2X1_0_", ln], s=0, speed_kmh=40, t=t, dest="->")
+            for ty, ln, t in (("s", 0, 48.0), ("m", 1, 51.0))
+        ],
+    ),
     # join a highway from an on-ramp: a short acceleration lane and a long platoon in the right lane
     "driving-ramp-merge": dict(
-        map="SrS", seed=0, lanes=3, spawn=["2r1_0_", "2r1_1_", 0], spawn_s=2.0, max_steps=800,
-        vehicles=[dict(type=("m", "l", "m", "s", "xl", "m")[k % 6], lane=_main_road(175.0 - 20.0 * k) + [2],
-                       s=_main_road_s(175.0 - 20.0 * k), speed_kmh=50) for k in range(9)]
-        + [dict(type=("s", "m", "l", "m", "m")[k], lane=[">", ">>", 2], s=0.0, speed_kmh=50, t=0.35 + 1.44 * k) for k in range(5)]
-        + [dict(type="m", lane=[">>>", "1S0_0_", 1], s=30, speed_kmh=62)]),
+        map="SrS",
+        seed=0,
+        lanes=3,
+        spawn=["2r1_0_", "2r1_1_", 0],
+        spawn_s=2.0,
+        max_steps=800,
+        vehicles=[
+            dict(
+                type=("m", "l", "m", "s", "xl", "m")[k % 6],
+                lane=_main_road(175.0 - 20.0 * k) + [2],
+                s=_main_road_s(175.0 - 20.0 * k),
+                speed_kmh=50,
+            )
+            for k in range(9)
+        ]
+        + [
+            dict(type=("s", "m", "l", "m", "m")[k], lane=[">", ">>", 2], s=0.0, speed_kmh=50, t=0.35 + 1.44 * k)
+            for k in range(5)
+        ]
+        + [dict(type="m", lane=[">>>", "1S0_0_", 1], s=30, speed_kmh=62)],
+    ),
 }
 
 
@@ -119,7 +203,9 @@ def _cone_taper(road, s0, length, lanes, width=3.5, closed=2):
     n = 7
     for i in range(n):  # taper: from the right edge to the left line of the leftmost closed lane
         frac = i / (n - 1)
-        off = (0.5 * width + 0.1) - frac * (closed * width - 0.2)  # offset from the centre of the rightmost lane (+ = right)
+        off = (0.5 * width + 0.1) - frac * (
+            closed * width - 0.2
+        )  # offset from the centre of the rightmost lane (+ = right)
         out.append(dict(kind="cone", lane=[*road, last], s=s0 + frac * taper, lat=off))
     k = 0
     s = s0 + taper + 3.0
@@ -153,47 +239,121 @@ class DrivingBackend(EmbodiedBackend):
         self.render_size = tuple(spec.get("render_size", (480, 480)))
         self.decl = self._declare()
         # run from the worker's own folder so no stray module (e.g. a profile.py in the cwd) shadows the stdlib
-        self.worker = StdioWorker("metadrive", config.sim_python("metadrive", "metadrive"), WORKER, setup="docs/suites/driving.md", env={
-                                          "PYGAME_HIDE_SUPPORT_PROMPT": "1", "SDL_VIDEODRIVER": "dummy",
-                                          "SDL_AUDIODRIVER": "dummy", "AUDIODEV": "null"})
+        self.worker = StdioWorker(
+            "metadrive",
+            config.sim_python("metadrive", "metadrive"),
+            WORKER,
+            setup="docs/suites/driving.md",
+            env={
+                "PYGAME_HIDE_SUPPORT_PROMPT": "1",
+                "SDL_VIDEODRIVER": "dummy",
+                "SDL_AUDIODRIVER": "dummy",
+                "AUDIODEV": "null",
+            },
+        )
         self._state = None
         self._new_events: list[dict] = []
         self.last_judge: dict = {}
 
     def _declare(self) -> Embodiment:
         sensors = [
-            Sensor("ego", "proprio", ["ego"], "position (m, map frame), heading_deg (0 = +x, counter-clockwise), speed_kmh, last steering and throttle", frame="world"),
-            Sensor("lane", "world", ["lane"], "current road, lane index (0 = leftmost) and count, lateral offset from the lane centre (m, + = left), lane line types, road shape"),
-            Sensor("route", "world", ["route"], "navigation: distance travelled and remaining, route_completion, next roads (distance, lanes, shape), destination"),
-            Sensor("vehicles", "world", ["vehicles"], "vehicles within 60 m: position in the car's frame (ahead, left), distance along the route, road, lane, speed, heading", frame="body"),
-            Sensor("obstacles", "world", ["obstacles"], "cones, warning triangles and barriers within 60 m: position in the car's frame, distance along the route, lane", frame="body"),
+            Sensor(
+                "ego",
+                "proprio",
+                ["ego"],
+                "position (m, map frame), heading_deg (0 = +x, counter-clockwise), speed_kmh, last steering and throttle",
+                frame="world",
+            ),
+            Sensor(
+                "lane",
+                "world",
+                ["lane"],
+                "current road, lane index (0 = leftmost) and count, lateral offset from the lane centre (m, + = left), lane line types, road shape",
+            ),
+            Sensor(
+                "route",
+                "world",
+                ["route"],
+                "navigation: distance travelled and remaining, route_completion, next roads (distance, lanes, shape), destination",
+            ),
+            Sensor(
+                "vehicles",
+                "world",
+                ["vehicles"],
+                "vehicles within 60 m: position in the car's frame (ahead, left), distance along the route, road, lane, speed, heading",
+                frame="body",
+            ),
+            Sensor(
+                "obstacles",
+                "world",
+                ["obstacles"],
+                "cones, warning triangles and barriers within 60 m: position in the car's frame, distance along the route, lane",
+                frame="body",
+            ),
             Sensor("events", "events", ["events"], "collisions, leaving the road, crossing a solid line"),
-            Sensor("camera:topdown", "camera", mount="world", doc="top-down view following the car, map +y up, 5 px per metre"),
+            Sensor(
+                "camera:topdown",
+                "camera",
+                mount="world",
+                doc="top-down view following the car, map +y up, 5 px per metre",
+            ),
             Sensor("camera:route_map", "camera", mount="world", doc="top-down view of the whole route"),
         ]
-        groups = [ActionGroup("vehicle.controls", "vehicle_controls", ["STEER", "THROTTLE"], [-1.0, -1.0], [1.0, 1.0],
-                              "STEER x 40 deg front-wheel angle (+ = left); THROTTLE > 0 engine, < 0 brake",
-                              "MetaDrive's own car action; zero throttle coasts, so the hold value brakes", hold=[0.0, -1.0], frame="body")]
+        groups = [
+            ActionGroup(
+                "vehicle.controls",
+                "vehicle_controls",
+                ["STEER", "THROTTLE"],
+                [-1.0, -1.0],
+                [1.0, 1.0],
+                "STEER x 40 deg front-wheel angle (+ = left); THROTTLE > 0 engine, < 0 brake",
+                "MetaDrive's own car action; zero throttle coasts, so the hold value brakes",
+                hold=[0.0, -1.0],
+                frame="body",
+            )
+        ]
         speed = SkillArg("speed_kmh", "float", "km/h", doc=f"cruise speed, 0 to {MAX_KMH:.0f}")
         skills = [
-            Skill("follow_route", [speed, SkillArg("meters", "float", "m", doc="distance to drive before the skill returns")],
-                  "keep the current lane along the navigation route at a set speed (lane-centred steering plus cruise control). "
-                  "It does NOT brake for vehicles or obstacles; it reports the distance driven, the speed and the nearest vehicle or object ahead in the lane", 400),
-            Skill("change_lane", [SkillArg("direction", "enum", choices=["left", "right"]),
-                                  SkillArg("speed_kmh", "float", "km/h", -1.0, doc="speed during the change; -1 keeps the current speed")],
-                  "steer into the adjacent lane and centre in it; it does not check for traffic or solid lines", 80),
-            Skill("stop", [SkillArg("meters", "float", "m", 0.0, doc="come to rest after about this distance; 0 = brake hard")],
-                  "brake to a standstill while keeping the lane; reports where the car stopped", 200),
+            Skill(
+                "follow_route",
+                [speed, SkillArg("meters", "float", "m", doc="distance to drive before the skill returns")],
+                "keep the current lane along the navigation route at a set speed (lane-centred steering plus cruise control). "
+                "It does NOT brake for vehicles or obstacles; it reports the distance driven, the speed and the nearest vehicle or object ahead in the lane",
+                400,
+            ),
+            Skill(
+                "change_lane",
+                [
+                    SkillArg("direction", "enum", choices=["left", "right"]),
+                    SkillArg(
+                        "speed_kmh", "float", "km/h", -1.0, doc="speed during the change; -1 keeps the current speed"
+                    ),
+                ],
+                "steer into the adjacent lane and centre in it; it does not check for traffic or solid lines",
+                80,
+            ),
+            Skill(
+                "stop",
+                [SkillArg("meters", "float", "m", 0.0, doc="come to rest after about this distance; 0 = brake hard")],
+                "brake to a standstill while keeping the lane; reports where the car stopped",
+                200,
+            ),
             Skill("wait", [SkillArg("seconds", "float", "s", 1.0)], "stay stopped (brakes on) for SECONDS", 100),
         ]
-        return Embodiment(robot="MetaDrive sedan (Bullet vehicle dynamics)", family="wheeled", assets=[], sensors=sensors,
-                          action_groups=groups, skills=skills, budget=Budget(int(self.task["max_steps"]), CONTROL_DT),
-                          cameras=["topdown", "route_map"])
+        return Embodiment(
+            robot="MetaDrive sedan (Bullet vehicle dynamics)",
+            family="wheeled",
+            assets=[],
+            sensors=sensors,
+            action_groups=groups,
+            skills=skills,
+            budget=Budget(int(self.task["max_steps"]), CONTROL_DT),
+            cameras=["topdown", "route_map"],
+        )
 
     # ---- worker ------------------------------------------------------------------------------------------------
     def _call(self, cmd: str, **kw):
         return self.worker.call(cmd, **kw)
-
 
     # ---- episode -----------------------------------------------------------------------------------------------
     def reset(self, seed: int) -> None:
@@ -262,7 +422,14 @@ class DrivingBackend(EmbodiedBackend):
             for o in items:
                 if o.get("in_my_lane") and o.get("route_ahead_m", -1) > 0:
                     if best is None or o["route_ahead_m"] < best["route_ahead_m"]:
-                        best = {"what": kind, **{k: o[k] for k in ("id", "kind", "route_ahead_m", "speed_kmh", "gap_m", "broken_down") if k in o}}
+                        best = {
+                            "what": kind,
+                            **{
+                                k: o[k]
+                                for k in ("id", "kind", "route_ahead_m", "speed_kmh", "gap_m", "broken_down")
+                                if k in o
+                            },
+                        }
         return best
 
     def _events_since(self, n0: int) -> list[str]:
@@ -286,8 +453,13 @@ class DrivingBackend(EmbodiedBackend):
                 note = "stopped early: " + "; ".join(self._events_since(n0))
                 break
             f = self._call("follow", speed_kmh=v)
-        out = {"driven_m": round(f["odometer_m"] - odo0, 1), "speed_kmh": f["speed_kmh"], "lane": f["lane"],
-               "remaining_m": f["remaining_m"], "ahead_in_lane": self._ahead()}
+        out = {
+            "driven_m": round(f["odometer_m"] - odo0, 1),
+            "speed_kmh": f["speed_kmh"],
+            "lane": f["lane"],
+            "remaining_m": f["remaining_m"],
+            "ahead_in_lane": self._ahead(),
+        }
         if note:
             out["note"] = note
         return out
@@ -311,8 +483,14 @@ class DrivingBackend(EmbodiedBackend):
             if len(self.events) > n0:
                 break
             f = self._call("follow", speed_kmh=v, lane=tk)
-        out = {"completed": done, "lane": f["lane"], "lane_count": f["lane_count"], "speed_kmh": f["speed_kmh"],
-               "offset_from_target_lane_m": f["target_lateral_m"], "ahead_in_lane": self._ahead()}
+        out = {
+            "completed": done,
+            "lane": f["lane"],
+            "lane_count": f["lane_count"],
+            "speed_kmh": f["speed_kmh"],
+            "offset_from_target_lane_m": f["target_lateral_m"],
+            "ahead_in_lane": self._ahead(),
+        }
         if len(self.events) > n0:
             out["events"] = self._events_since(n0)
         return out
@@ -336,8 +514,12 @@ class DrivingBackend(EmbodiedBackend):
                     thr = -1.0
             yield [f["action"][0], thr]
             f = self._call("follow", speed_kmh=0.0, brake=thr)
-        out = {"stopped": f["speed_kmh"] < 1.0, "stopping_distance_m": round(f["odometer_m"] - odo0, 1),
-               "remaining_m": f["remaining_m"], "in_destination_zone": self.observe()["route"]["in_destination_zone"]}
+        out = {
+            "stopped": f["speed_kmh"] < 1.0,
+            "stopping_distance_m": round(f["odometer_m"] - odo0, 1),
+            "remaining_m": f["remaining_m"],
+            "in_destination_zone": self.observe()["route"]["in_destination_zone"],
+        }
         if len(self.events) > n0:
             out["events"] = self._events_since(n0)
         return out
@@ -353,6 +535,7 @@ class DrivingBackend(EmbodiedBackend):
 # A scripted driver made of the public skills: it reads `robo observe`, drives in short follow_route chunks and decides
 # speed, lane changes and waiting itself, like an agent would.
 
+
 def _curve_limit(st: dict, lookahead: float = 45.0, a_lat: float = 2.2) -> float:
     """Speed (km/h) for the tightest curve on the current road or starting within `lookahead` metres."""
     shapes = [(0.0, st["lane"]["shape"])] + [(r["starts_in_m"], r["shape"]) for r in st["route"]["next_roads"]]
@@ -367,7 +550,11 @@ def _curve_limit(st: dict, lookahead: float = 45.0, a_lat: float = 2.2) -> float
 
 def _in_lane(st: dict, lane: int, lo: float, hi: float) -> list[dict]:
     """Vehicles and objects on the route in `lane`, between lo and hi metres ahead along the route."""
-    return [o for o in st["vehicles"] + st["obstacles"] if o.get("on_route") and o.get("lane") == lane and lo < o["route_ahead_m"] < hi]
+    return [
+        o
+        for o in st["vehicles"] + st["obstacles"]
+        if o.get("on_route") and o.get("lane") == lane and lo < o["route_ahead_m"] < hi
+    ]
 
 
 def _lead(st: dict, lane: int | None = None, rng: float = 70.0) -> dict | None:
@@ -410,7 +597,7 @@ def _step_drive(o: Oracle, st: dict, cruise: float, chunk: float = 5.0) -> dict:
     if v < 3.0:
         if st["ego"]["speed_kmh"] > 3.0:
             lead = _lead(st)
-            gap = (lead.get("gap_m", lead["route_ahead_m"] - 3.0) if lead else 10.0)
+            gap = lead.get("gap_m", lead["route_ahead_m"] - 3.0) if lead else 10.0
             o.skill("stop", max(1.0, gap - 5.0))
         else:
             o.skill("wait", 0.5)
@@ -501,7 +688,12 @@ def solution(env: str):
         while st["route"]["remaining_m"] > 60.0:
             lead = _lead(st, rng=45.0)
             k = st["lane"]["index"]
-            if lead is not None and lead.get("speed_kmh", 0) < cruise - 15 and k > 0 and _gap_ok(st, k - 1, st["ego"]["speed_kmh"]):
+            if (
+                lead is not None
+                and lead.get("speed_kmh", 0) < cruise - 15
+                and k > 0
+                and _gap_ok(st, k - 1, st["ego"]["speed_kmh"])
+            ):
                 o.skill("change_lane", "left", max(35.0, st["ego"]["speed_kmh"]))
                 st = o.state()
                 continue
@@ -518,6 +710,7 @@ def solution(env: str):
                     continue
                 st = _step_drive(o, st, cruise)
             _arrive(o, st, cruise)
+
         return solve
 
     def roundabout(o: Oracle) -> None:
@@ -540,8 +733,14 @@ def solution(env: str):
         # stop near the end of the ramp and wait until the right lane is clear from 80 m back to 10 m ahead
         st = _stop_before(o, o.state(), "2r1_3_->2r0_0_", 25.0)
         while True:
-            busy = [v for v in st["vehicles"] if v.get("lane") == 2 and str(v.get("road", "")).split("->")[0] in (">>", ">>>", "1S0_0_", "2r0_0_")
-                    and -80.0 < v["rel_ahead_m"] < 12.0 and v.get("speed_kmh", 0) > 5]
+            busy = [
+                v
+                for v in st["vehicles"]
+                if v.get("lane") == 2
+                and str(v.get("road", "")).split("->")[0] in (">>", ">>>", "1S0_0_", "2r0_0_")
+                and -80.0 < v["rel_ahead_m"] < 12.0
+                and v.get("speed_kmh", 0) > 5
+            ]
             if not busy:
                 break
             o.skill("wait", 0.5)
@@ -558,9 +757,15 @@ def solution(env: str):
             st = o.state()
         _arrive(o, st, 55.0)
 
-    table = {"driving-winding-road": winding, "driving-highway-overtake": highway,
-             "driving-broken-down-car": blocked_lane(45.0), "driving-cone-zone": blocked_lane(45.0),
-             "driving-roundabout": roundabout, "driving-intersection-left-turn": intersection, "driving-ramp-merge": ramp}
+    table = {
+        "driving-winding-road": winding,
+        "driving-highway-overtake": highway,
+        "driving-broken-down-car": blocked_lane(45.0),
+        "driving-cone-zone": blocked_lane(45.0),
+        "driving-roundabout": roundabout,
+        "driving-intersection-left-turn": intersection,
+        "driving-ramp-merge": ramp,
+    }
     return table[env]
 
 

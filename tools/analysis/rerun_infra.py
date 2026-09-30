@@ -5,6 +5,7 @@ evidence), and runs the same task, harness and model again into the same job.
 
   .venv/bin/python tools/analysis/rerun_infra.py [--jobs mw-codex-astra,...] [--concurrency 3] [--dry-run]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,9 +29,14 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     jobs = set(filter(None, a.jobs.split(",")))
-    recs = [r for r in json.load(open(a.audit))["trials"]
-            if r.get("infra_failure") and not r.get("running") and r.get("harness") not in MOLMO
-            and (not jobs or r["job"] in jobs)]
+    recs = [
+        r
+        for r in json.load(open(a.audit))["trials"]
+        if r.get("infra_failure")
+        and not r.get("running")
+        and r.get("harness") not in MOLMO
+        and (not jobs or r["job"] in jobs)
+    ]
     print(f"{len(recs)} infra-failed trials to rerun")
     todo = []
     for r in recs:

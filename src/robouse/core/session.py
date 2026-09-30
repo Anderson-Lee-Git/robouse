@@ -15,6 +15,7 @@ The video is rendered at the backend's native size unless ROBOUSE_RECORD_SIZE=WI
 on `serve`, `run` and `run-many`); then each frame comes from a separate renderer at that size, with the same camera.
 Agent observation images are never affected.
 """
+
 from __future__ import annotations
 
 import json
@@ -73,7 +74,9 @@ class Episode:
         self.visible_fields = list(spec.get("visible_fields", ["hand_pos", "gripper_open"]))
         self.cameras = list(spec.get("cameras", [getattr(self.backend, "camera", "")]))
         self._oracle_token = config.env("ROBOUSE_ORACLE_TOKEN")
-        self.max_repeat = max(1, min(MAX_REPEAT, int(spec.get("max_repeat", MAX_REPEAT))))  # `act --repeat`, `grip --steps`
+        self.max_repeat = max(
+            1, min(MAX_REPEAT, int(spec.get("max_repeat", MAX_REPEAT)))
+        )  # `act --repeat`, `grip --steps`
         # cameras whose projection matrix is not given to the agent (e.g. a camera that moves with the gripper)
         self.uncalibrated = set(spec.get("uncalibrated_cameras", []))
         self.backend.reset(self.seed)
@@ -117,8 +120,12 @@ class Episode:
             try:
                 img = self.backend.render_record(*self.record_size)
             except Exception as e:  # noqa: BLE001 - a backend that cannot: keep recording at its native size
-                log.warning("record size %s not available (%s: %s); recording at the native size", self.record_size,
-                            type(e).__name__, e)
+                log.warning(
+                    "record size %s not available (%s: %s); recording at the native size",
+                    self.record_size,
+                    type(e).__name__,
+                    e,
+                )
             if img is not None:
                 return img
             self.record_size = None
@@ -148,16 +155,24 @@ class Episode:
     def camera_info(self) -> list[dict]:
         """Per camera: a 3x4 projection matrix P with [u*w, v*w, w] = P @ [x, y, z, 1] in the saved image's pixels."""
         if hook := _hook(self.backend, "camera_info"):  # backends that are not MuJoCo compute their own calibration
-            return [c if c.get("name") not in self.uncalibrated else {**c, "projection": None, "position": None}
-                    for c in hook(self.cameras)]
+            return [
+                c if c.get("name") not in self.uncalibrated else {**c, "projection": None, "position": None}
+                for c in hook(self.cameras)
+            ]
         m_d = getattr(self.backend, "mj_model_data", lambda: None)()
         if not m_d:
             return []
         out = []
         for name in self.cameras:
             h, w = self._render(name).shape[:2]
-            cam = mujoco_camera(*m_d, name, w, h, image_flipped=bool(getattr(self.backend, "image_flipped", False)),
-                                calibrated=name not in self.uncalibrated)
+            cam = mujoco_camera(
+                *m_d,
+                name,
+                w,
+                h,
+                image_flipped=bool(getattr(self.backend, "image_flipped", False)),
+                calibrated=name not in self.uncalibrated,
+            )
             if cam is not None:
                 out.append(cam)
         return out
@@ -205,13 +220,18 @@ class Episode:
         if op == "act":
             return self.act(req.get("action"), int(req.get("repeat", 1)))
         if op == "move_to":
-            return self.move_to(req.get("pos"), req.get("grip"), int(req.get("max_steps", 100)), float(req.get("tol", 0.01)))
+            return self.move_to(
+                req.get("pos"), req.get("grip"), int(req.get("max_steps", 100)), float(req.get("tol", 0.01))
+            )
         if op == "grip":
             return self.grip(float(req.get("value", 1.0)), int(req.get("steps", 15)))
         if op == "skill":
             return self.skill(req.get("name"), req.get("args") or [])
         if op in ("done", "give_up"):
-            return {"ok": True, "result": self.finish("done" if op == "done" else "gave_up", str(req.get("text", ""))[:4000])}
+            return {
+                "ok": True,
+                "result": self.finish("done" if op == "done" else "gave_up", str(req.get("text", ""))[:4000]),
+            }
         return {"ok": False, "error": f"unknown op {op!r}"}
 
     def _check_halt(self) -> None:
@@ -224,14 +244,21 @@ class Episode:
         s = self.backend.action_spec
         extra = _hook(self.backend, "info_extra")
         return {
-            "task": self.spec.get("id"), "backend": self.backend.name, "mode": self.mode,
+            "task": self.spec.get("id"),
+            "backend": self.backend.name,
+            "mode": self.mode,
             "action": {"names": s.names, "low": s.low, "high": s.high, "doc": s.doc},
             "skills": self.backend.skills() if self.skills_enabled else [],
-            "steps_used": self.steps, "max_steps": self.max_steps,
+            "steps_used": self.steps,
+            "max_steps": self.max_steps,
             "observation_mode": self.obs_mode,
             **({"max_repeat": self.max_repeat} if "max_repeat" in self.spec else {}),
             **(extra() if extra else {}),
-            **({"visible_fields": self.visible_fields, "cameras": self.camera_info()} if self.obs_mode == "vision" else {}),
+            **(
+                {"visible_fields": self.visible_fields, "cameras": self.camera_info()}
+                if self.obs_mode == "vision"
+                else {}
+            ),
             **self._embodiment_info(),
         }
 
@@ -269,7 +296,11 @@ class Episode:
 
     def act(self, action: Any, repeat: int) -> dict:
         spec = self.backend.action_spec
-        if not isinstance(action, list) or len(action) != spec.dim or not all(isinstance(x, (int, float)) for x in action):
+        if (
+            not isinstance(action, list)
+            or len(action) != spec.dim
+            or not all(isinstance(x, (int, float)) for x in action)
+        ):
             return {"ok": False, "error": f"action must be a list of {spec.dim} numbers {spec.names}"}
         if not all(np.isfinite(x) for x in action):
             return {"ok": False, "error": "action values must be finite numbers (no nan or inf)"}
@@ -304,8 +335,13 @@ class Episode:
             self._env_step(list(np.clip(d * 10.0, -1, 1)) + [g])
             n += 1
         dist = float(np.linalg.norm(target - self.backend.hand_pos()))
-        res = {"reached": dist < tol * 1.5, "distance": round(dist, 4), "executed_steps": n,
-               "state": self._state(), "steps_used": self.steps}
+        res = {
+            "reached": dist < tol * 1.5,
+            "distance": round(dist, 4),
+            "executed_steps": n,
+            "state": self._state(),
+            "steps_used": self.steps,
+        }
         if stalled:
             res["stalled"] = "the hand stopped moving before reaching the target (out of reach or blocked)"
         return {"ok": True, "result": res}
@@ -339,7 +375,7 @@ class Episode:
         out = run(name, [str(a) for a in args])
         self.steps += 1
         pop = _hook(self.backend, "pop_frames")
-        for fr in (pop() if pop else []):
+        for fr in pop() if pop else []:
             self.video.add(fr, self.steps)
         self._record_frame(force=True)
         return {"ok": True, "result": {**out, "steps_used": self.steps, "max_steps": self.max_steps}}
@@ -368,8 +404,17 @@ class Episode:
                 break
             self._env_step(action)
             n += 1
-        return {"ok": True, "result": {"skill": name, **out, "executed_steps": n, "state": self._state(),
-                                       "steps_used": self.steps, "max_steps": self.max_steps}}
+        return {
+            "ok": True,
+            "result": {
+                "skill": name,
+                **out,
+                "executed_steps": n,
+                "state": self._state(),
+                "steps_used": self.steps,
+                "max_steps": self.max_steps,
+            },
+        }
 
     # ---- judging -----------------------------------------------------------------------------------------------------
     def _hold(self) -> list[float]:
@@ -407,10 +452,18 @@ class Episode:
         b = self.backend
         summary = _hook(b, "session_summary")
         self.result = {
-            "task": self.spec.get("id"), "seed": self.seed, "success": success, "success_ever": self.success_ever,
+            "task": self.spec.get("id"),
+            "seed": self.seed,
+            "success": success,
+            "success_ever": self.success_ever,
             "success_mode": self.success_mode,
-            "outcome": outcome, "steps_used": self.steps, "max_steps": self.max_steps, "requests": self.requests,
-            "agent_text": text, "wall_time_s": round(time.time() - self.t0, 2), "embodiment_mode": self.mode,
+            "outcome": outcome,
+            "steps_used": self.steps,
+            "max_steps": self.max_steps,
+            "requests": self.requests,
+            "agent_text": text,
+            "wall_time_s": round(time.time() - self.t0, 2),
+            "embodiment_mode": self.mode,
             **({"safety_events": list(b.events)} if getattr(b, "events", None) else {}),
             **({"session": summary()} if summary else {}),
             **({"judge_error": judge_error} if judge_error else {}),
@@ -432,8 +485,9 @@ class Episode:
             prog = b.progress() if _hook(b, "progress") else None
             stages = len(getattr(b, "stages", None) or []) or None
             extra = b.episode_metrics() if _hook(b, "episode_metrics") else None
-            self.result["metrics"] = episode_metrics(self.result, self.probe.samples, self.probe.control_dt(), prog,
-                                                     stages, extra)
+            self.result["metrics"] = episode_metrics(
+                self.result, self.probe.samples, self.probe.control_dt(), prog, stages, extra
+            )
             self.probe.write(self.run_dir / "physics.jsonl")
         except Exception as e:  # noqa: BLE001 - metrics never change the verdict
             self.result["metrics_error"] = f"{type(e).__name__}: {e}"[:300]
@@ -454,8 +508,14 @@ def _strip(resp: dict) -> dict:
     return r
 
 
-def serve(spec: dict, run_dir: Path, sock_path: str, workspace: Path | None = None, max_wall_s: float = 1800,
-          ready_file: Path | None = None) -> dict:
+def serve(
+    spec: dict,
+    run_dir: Path,
+    sock_path: str,
+    workspace: Path | None = None,
+    max_wall_s: float = 1800,
+    ready_file: Path | None = None,
+) -> dict:
     """Run one episode on a Unix socket until it finishes (plus `linger_s`) or the runner sends `shutdown`."""
     ep = Episode(spec, run_dir, workspace)
     if os.path.exists(sock_path):

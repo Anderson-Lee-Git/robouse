@@ -18,14 +18,14 @@ Every `act` step and every skill call is one step of the budget.
 The TCP frame: +z points out between the fingers (the approach direction), +y is the axis along which the fingers
 close. Pointing straight down with the fingers closing along world y is roll=180, pitch=0, yaw=0 (quat [0, 1, 0, 0]).
 """
+
 from __future__ import annotations
 
 import math
 import os
 
 import numpy as np
-
-from common import jpeg, pose_dict, projection, quat_to_rpy_deg, r3, rpy_deg_to_quat
+from common import jpeg, pose_dict, projection, r3, rpy_deg_to_quat
 
 IMG_W, IMG_H = 640, 480
 FRAME_EVERY = 3
@@ -43,7 +43,14 @@ def task(key: str, **kw):
 
 
 task("peg-insertion-side", env="PegInsertionSide-v1", oracle="plan_peg", max_steps=100)
-task("peg-insertion-side-1mm", env="PegInsertionSide-v1", clearance=0.001, oracle="plan_peg", max_steps=100, fine_step=0.002)
+task(
+    "peg-insertion-side-1mm",
+    env="PegInsertionSide-v1",
+    clearance=0.001,
+    oracle="plan_peg",
+    max_steps=100,
+    fine_step=0.002,
+)
 task("peg-insertion-moving-box", env="PegInsertionSide-v1", oracle="plan_peg", max_steps=120, perturb="move_box")
 task("peg-insertion-side-vision", env="PegInsertionSide-v1", oracle="plan_peg", max_steps=150, vision=True)
 task("plug-charger", env="PlugCharger-v1", oracle="plan_charger", max_steps=40)
@@ -52,7 +59,14 @@ task("stack-pyramid", env="StackPyramid-v1", oracle="plan_pyramid", max_steps=40
 task("pull-cube-tool", env="PullCubeTool-v1", oracle="plan_pull_tool", max_steps=40)
 task("pick-moving-cube", env="PickCube-v1", oracle="plan_moving_cube", max_steps=150, perturb="conveyor")
 task("stack-pyramid-vision", env="StackPyramid-v1", oracle="plan_pyramid", max_steps=60, vision=True)
-task("pick-moving-cube-vision", env="PickCube-v1", oracle="plan_moving_cube", max_steps=150, perturb="conveyor", vision=True)
+task(
+    "pick-moving-cube-vision",
+    env="PickCube-v1",
+    oracle="plan_moving_cube",
+    max_steps=150,
+    perturb="conveyor",
+    vision=True,
+)
 task("lift-peg-upright", env="LiftPegUpright-v1", oracle="plan_peg_upright", max_steps=40)
 
 
@@ -78,13 +92,26 @@ def _env_class(cfg: dict):
         eye, tgt = cfg.get("scene_cam", ([0.55, -0.55, 0.65], [0.0, 0.05, 0.1]))
         front = cfg.get("front_cam", ([0.9, 0.0, 0.45], [0.0, 0.0, 0.05]))
         top = cfg.get("top_cam", ([-0.3, 0.0, 1.0], [0.05, 0.0, 0.0]))
-        out = [CameraConfig("scene", sapien_utils.look_at(eye, tgt), IMG_W, IMG_H, 1.0, 0.01, 100, shader_pack="rt"),
-               CameraConfig("front", sapien_utils.look_at(*front), IMG_W, IMG_H, 1.0, 0.01, 100, shader_pack="rt"),
-               CameraConfig("top", sapien_utils.look_at(*top), IMG_W, IMG_H, 1.0, 0.01, 100, shader_pack="rt")]
+        out = [
+            CameraConfig("scene", sapien_utils.look_at(eye, tgt), IMG_W, IMG_H, 1.0, 0.01, 100, shader_pack="rt"),
+            CameraConfig("front", sapien_utils.look_at(*front), IMG_W, IMG_H, 1.0, 0.01, 100, shader_pack="rt"),
+            CameraConfig("top", sapien_utils.look_at(*top), IMG_W, IMG_H, 1.0, 0.01, 100, shader_pack="rt"),
+        ]
         links = getattr(getattr(self, "agent", None), "robot", None)
         if links is not None and "camera_link" in self.agent.robot.links_map:
-            out.append(CameraConfig("wrist", sapien.Pose(), IMG_W, IMG_H, math.pi / 2, 0.01, 100, shader_pack="rt",
-                                    mount=self.agent.robot.links_map["camera_link"]))
+            out.append(
+                CameraConfig(
+                    "wrist",
+                    sapien.Pose(),
+                    IMG_W,
+                    IMG_H,
+                    math.pi / 2,
+                    0.01,
+                    100,
+                    shader_pack="rt",
+                    mount=self.agent.robot.links_map["camera_link"],
+                )
+            )
         return out
 
     attrs["_default_human_render_camera_configs"] = property(cams)
@@ -112,10 +139,15 @@ class MSTask:
         torch.set_num_threads(4)
         self.key, self.cfg, self.seed = key, TASKS[key], seed
         cls = _env_class(self.cfg)
-        self.env = cls(obs_mode="state_dict", control_mode="pd_joint_pos", render_mode="rgb_array",
-                       sim_backend=self.cfg.get("sim_backend", os.environ.get("ROBOUSE_MS_SIM", "physx_cpu")),
-                       reward_mode="sparse", num_envs=1,
-                       sensor_configs=dict(width=128, height=128))
+        self.env = cls(
+            obs_mode="state_dict",
+            control_mode="pd_joint_pos",
+            render_mode="rgb_array",
+            sim_backend=self.cfg.get("sim_backend", os.environ.get("ROBOUSE_MS_SIM", "physx_cpu")),
+            reward_mode="sparse",
+            num_envs=1,
+            sensor_configs=dict(width=128, height=128),
+        )
         self.rec = _Rec(self.env, self)
         self.vision = bool(self.cfg.get("vision"))
         self.cameras = [c for c in ("scene", "front", "top", "wrist") if c in self.env.scene.human_render_cameras]
@@ -158,50 +190,127 @@ class MSTask:
     # ---- server methods ----------------------------------------------------------------------------------------------
     def info(self) -> dict:
         names = ["dx", "dy", "dz", "drx", "dry", "drz", "grip"]
-        skills = ["move X Y Z [ROLL PITCH YAW | QW QX QY QZ] [speed=S] - motion-planned TCP move (degrees / quaternion; no orientation = keep; S in 0.05-1 slows it down)",
-                  "gripper open|close|VALUE - open or close the fingers (VALUE in [-1, 1]: finger target; a partly closed grip lets a held object pivot)",
-                  "wait [N] - hold still for N control steps (default 10)"]
+        skills = [
+            "move X Y Z [ROLL PITCH YAW | QW QX QY QZ] [speed=S] - motion-planned TCP move (degrees / quaternion; no orientation = keep; S in 0.05-1 slows it down)",
+            "gripper open|close|VALUE - open or close the fingers (VALUE in [-1, 1]: finger target; a partly closed grip lets a held object pivot)",
+            "wait [N] - hold still for N control steps (default 10)",
+        ]
         if self.vision:
             skills.append("depth CAMERA U V - 3D world point seen at pixel (U, V) of CAMERA (RGB-D camera)")
         return {
-            "action": {"names": names, "low": [-1.0] * 7, "high": [1.0] * 7,
-                       "doc": "ManiSkill pd_ee_delta_pose: TCP translation 0.1 m and rotation 0.1 rad per unit per step "
-                              "(world-aligned axes); grip +1 open ... -1 closed (absolute finger target)"},
-            "skills": skills, "camera": "scene", "cameras": self.cameras, "hold_last": 1.0,
-            "max_steps": self.cfg.get("max_steps", 40), "embodiment": self.embodiment(),
+            "action": {
+                "names": names,
+                "low": [-1.0] * 7,
+                "high": [1.0] * 7,
+                "doc": "ManiSkill pd_ee_delta_pose: TCP translation 0.1 m and rotation 0.1 rad per unit per step "
+                "(world-aligned axes); grip +1 open ... -1 closed (absolute finger target)",
+            },
+            "skills": skills,
+            "camera": "scene",
+            "cameras": self.cameras,
+            "hold_last": 1.0,
+            "max_steps": self.cfg.get("max_steps", 40),
+            "embodiment": self.embodiment(),
         }
 
     def embodiment(self) -> dict:
-        cams = [{"name": "scene", "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": True},
-                {"name": "front", "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": True},
-                {"name": "top", "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": True},
-                {"name": "wrist", "mount": "wrist", "width": IMG_W, "height": IMG_H, "calibrated": True}]
+        cams = [
+            {"name": "scene", "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": True},
+            {"name": "front", "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": True},
+            {"name": "top", "mount": "world", "width": IMG_W, "height": IMG_H, "calibrated": True},
+            {"name": "wrist", "mount": "wrist", "width": IMG_W, "height": IMG_H, "calibrated": True},
+        ]
         return {
-            "spec_version": "1", "name": "panda-wristcam", "kind": "arm", "step_s": 0.05,
+            "spec_version": "1",
+            "name": "panda-wristcam",
+            "kind": "arm",
+            "step_s": 0.05,
             "action_groups": [
-                {"name": "arm.ee_delta", "components": ["dx", "dy", "dz"], "low": [-1] * 3, "high": [1] * 3,
-                 "units": "x 0.1 m per step", "mode": "ee_delta_pos", "frame": "world", "hold": "zero"},
-                {"name": "arm.ee_rot_delta", "components": ["drx", "dry", "drz"], "low": [-1] * 3, "high": [1] * 3,
-                 "units": "x 0.1 rad per step (axis-angle)", "mode": "ee_delta_rot", "frame": "world", "hold": "zero"},
-                {"name": "gripper", "components": ["grip"], "low": [-1], "high": [1], "units": "normalized",
-                 "mode": "gripper", "hold": "last", "initial": [1], "doc": "+1 open, -1 closed"}],
-            "sensors": {"cameras": cams,
-                        "proprioception": [{"name": "tcp", "shape": [7], "units": "m, quaternion wxyz", "frame": "world"},
-                                           {"name": "qpos", "shape": [7], "units": "rad"},
-                                           {"name": "gripper", "shape": [], "units": "open/closed + width m"}],
-                        "state": [{"name": k, "shape": [], "privileged": True} for k in self._object_fields()]},
+                {
+                    "name": "arm.ee_delta",
+                    "components": ["dx", "dy", "dz"],
+                    "low": [-1] * 3,
+                    "high": [1] * 3,
+                    "units": "x 0.1 m per step",
+                    "mode": "ee_delta_pos",
+                    "frame": "world",
+                    "hold": "zero",
+                },
+                {
+                    "name": "arm.ee_rot_delta",
+                    "components": ["drx", "dry", "drz"],
+                    "low": [-1] * 3,
+                    "high": [1] * 3,
+                    "units": "x 0.1 rad per step (axis-angle)",
+                    "mode": "ee_delta_rot",
+                    "frame": "world",
+                    "hold": "zero",
+                },
+                {
+                    "name": "gripper",
+                    "components": ["grip"],
+                    "low": [-1],
+                    "high": [1],
+                    "units": "normalized",
+                    "mode": "gripper",
+                    "hold": "last",
+                    "initial": [1],
+                    "doc": "+1 open, -1 closed",
+                },
+            ],
+            "sensors": {
+                "cameras": cams,
+                "proprioception": [
+                    {"name": "tcp", "shape": [7], "units": "m, quaternion wxyz", "frame": "world"},
+                    {"name": "qpos", "shape": [7], "units": "rad"},
+                    {"name": "gripper", "shape": [], "units": "open/closed + width m"},
+                ],
+                "state": [{"name": k, "shape": [], "privileged": True} for k in self._object_fields()],
+            },
             "skills": [
-                {"name": "move", "impl": "backend", "args": [{"name": "x", "type": "float", "units": "m"},
-                                                              {"name": "y", "type": "float", "units": "m"},
-                                                              {"name": "z", "type": "float", "units": "m"},
-                                                              {"name": "orientation", "type": "float", "optional": True,
-                                                               "doc": "roll pitch yaw (deg) or qw qx qy qz"}],
-                 "doc": "motion-planned TCP move (mplib screw motion, RRT-Connect fallback)"},
-                {"name": "gripper", "impl": "backend", "args": [{"name": "state", "type": "enum", "choices": ["open", "close"]}]},
-                {"name": "wait", "impl": "backend", "args": [{"name": "n", "type": "int", "optional": True, "default": 10}]}]
-            + ([{"name": "depth", "impl": "backend", "args": [{"name": "camera", "type": "str"}, {"name": "u", "type": "int"},
-                                                              {"name": "v", "type": "int"}],
-                 "doc": "RGB-D deprojection of one pixel to a world point"}] if self.vision else []),
+                {
+                    "name": "move",
+                    "impl": "backend",
+                    "args": [
+                        {"name": "x", "type": "float", "units": "m"},
+                        {"name": "y", "type": "float", "units": "m"},
+                        {"name": "z", "type": "float", "units": "m"},
+                        {
+                            "name": "orientation",
+                            "type": "float",
+                            "optional": True,
+                            "doc": "roll pitch yaw (deg) or qw qx qy qz",
+                        },
+                    ],
+                    "doc": "motion-planned TCP move (mplib screw motion, RRT-Connect fallback)",
+                },
+                {
+                    "name": "gripper",
+                    "impl": "backend",
+                    "args": [{"name": "state", "type": "enum", "choices": ["open", "close"]}],
+                },
+                {
+                    "name": "wait",
+                    "impl": "backend",
+                    "args": [{"name": "n", "type": "int", "optional": True, "default": 10}],
+                },
+            ]
+            + (
+                [
+                    {
+                        "name": "depth",
+                        "impl": "backend",
+                        "args": [
+                            {"name": "camera", "type": "str"},
+                            {"name": "u", "type": "int"},
+                            {"name": "v", "type": "int"},
+                        ],
+                        "doc": "RGB-D deprojection of one pixel to a world point",
+                    }
+                ]
+                if self.vision
+                else []
+            ),
             "budgets": {"max_steps": self.cfg.get("max_steps", 40)},
             "reward": {"dense": "sparse", "success_mode": "final"},
         }
@@ -212,9 +321,16 @@ class MSTask:
         self.seed = self.seed if seed is None else int(seed)
         self.u.reset(seed=self.seed, options=dict(reconfigure=True))
         self._set_mode("pd_joint_pos")
-        self.planner = PandaArmMotionPlanningSolver(self.rec, debug=False, vis=False, base_pose=self.u.agent.robot.pose,
-                                                    visualize_target_grasp_pose=False, print_env_info=False,
-                                                    joint_vel_limits=0.75, joint_acc_limits=0.75)
+        self.planner = PandaArmMotionPlanningSolver(
+            self.rec,
+            debug=False,
+            vis=False,
+            base_pose=self.u.agent.robot.pose,
+            visualize_target_grasp_pose=False,
+            print_env_info=False,
+            joint_vel_limits=0.75,
+            joint_acc_limits=0.75,
+        )
         self.grip = 1.0
         self.n_sim = 0
         self._recording = False
@@ -244,8 +360,14 @@ class MSTask:
             ok, msg = False, str(e)
         finally:
             self._recording = False
-        out = {"ok": ok, "message": msg, "tcp": pose_dict(*self._pose(self.u.agent.tcp)), "frames": self.frames,
-               "frame": jpeg(self._render("scene")), "hold_last": self.grip}
+        out = {
+            "ok": ok,
+            "message": msg,
+            "tcp": pose_dict(*self._pose(self.u.agent.tcp)),
+            "frames": self.frames,
+            "frame": jpeg(self._render("scene")),
+            "hold_last": self.grip,
+        }
         self.frames = []
         return out
 
@@ -287,7 +409,9 @@ class MSTask:
             p, q2 = self._pose(self.u.agent.tcp)
             err = float(np.linalg.norm(p - np.asarray(v[:3])))
             ang = math.degrees(2 * math.acos(min(1.0, abs(float(np.dot(q2, q))))))
-            return f"moved ({how}); TCP now {r3(p)}; position error {err * 1000:.1f} mm, orientation error {ang:.1f} deg"
+            return (
+                f"moved ({how}); TCP now {r3(p)}; position error {err * 1000:.1f} mm, orientation error {ang:.1f} deg"
+            )
         if name == "gripper":
             if not args:
                 raise ValueError("gripper open|close|VALUE")
@@ -348,8 +472,11 @@ class MSTask:
 
     def observe(self, privileged: bool = False) -> dict:
         tp, tq = self._pose(self.u.agent.tcp)
-        st = {"tcp": pose_dict(tp, tq), "qpos": r3(self.u.agent.robot.get_qpos()[0, :7].cpu().numpy()),
-              "gripper": {"command": "open" if self.grip > 0 else "closed", "finger_gap_m": round(self._finger_gap(), 4)}}
+        st = {
+            "tcp": pose_dict(tp, tq),
+            "qpos": r3(self.u.agent.robot.get_qpos()[0, :7].cpu().numpy()),
+            "gripper": {"command": "open" if self.grip > 0 else "closed", "finger_gap_m": round(self._finger_gap(), 4)},
+        }
         st.update(self._object_state())
         if privileged:
             if self.plan is None:
@@ -392,8 +519,16 @@ class MSTask:
             K = prm["intrinsic_cv"][0].cpu().numpy()
             E = prm["extrinsic_cv"][0].cpu().numpy()
             c2w = prm["cam2world_gl"][0].cpu().numpy()
-            out.append({"name": name, "width": IMG_W, "height": IMG_H, "fovy_deg": round(math.degrees(2 * math.atan(IMG_H / 2 / K[1, 1])), 2),
-                        "position": r3(c2w[:3, 3]), "projection": projection(K, E)})
+            out.append(
+                {
+                    "name": name,
+                    "width": IMG_W,
+                    "height": IMG_H,
+                    "fovy_deg": round(math.degrees(2 * math.atan(IMG_H / 2 / K[1, 1])), 2),
+                    "position": r3(c2w[:3, 3]),
+                    "projection": projection(K, E),
+                }
+            )
         return out
 
     def _deproject(self, cam: str, u: int, v: int) -> list[float]:
@@ -438,13 +573,14 @@ class MSTask:
         self.cdir = float(rng.choice([-1.0, 1.0]))
         p, q = self._pose(self.u.cube)
         p2 = np.array([rng.uniform(-0.05, 0.08), -0.2 * self.cdir, p[2]])
-        self.u.cube.set_pose(Pose.create_from_pq(torch.tensor(p2[None], dtype=torch.float32), torch.tensor(q[None], dtype=torch.float32)))
+        self.u.cube.set_pose(
+            Pose.create_from_pq(torch.tensor(p2[None], dtype=torch.float32), torch.tensor(q[None], dtype=torch.float32))
+        )
         self.cvel = np.array([0.0, 0.05 * self.cdir, 0.0])
         self._gone = False
 
     def _conveyor(self) -> None:
         import torch
-
         from mani_skill.utils.structs import Pose
 
         p, _ = self._pose(self.u.cube)
@@ -480,9 +616,8 @@ class MSTask:
         hole), the box slides 6-10 cm and turns 12-20 degrees (as if bumped), staying inside the region the task
         samples boxes from (within reach)."""
         import torch
-        from mani_skill.utils.structs import Pose
-
         from common import quat_mul
+        from mani_skill.utils.structs import Pose
 
         rng = np.random.default_rng(self.seed + 7)
         p, q = self._pose(self.u.box)
@@ -496,7 +631,11 @@ class MSTask:
                 break
         yaw_q = np.array([math.cos(dyaw / 2), 0, 0, math.sin(dyaw / 2)])
         q2 = quat_mul(yaw_q, q)
-        self.u.box.set_pose(Pose.create_from_pq(torch.tensor(p2[None], dtype=torch.float32), torch.tensor(q2[None], dtype=torch.float32)))
+        self.u.box.set_pose(
+            Pose.create_from_pq(
+                torch.tensor(p2[None], dtype=torch.float32), torch.tensor(q2[None], dtype=torch.float32)
+            )
+        )
         self._perturbed = True
 
     # ---- reference policies (privileged; yield one action at a time) -------------------------------------------------
@@ -528,7 +667,9 @@ class MSTask:
         off = sapien.Pose([-0.01 - L, 0, 0])
         peg_in_tcp = env.agent.tcp.pose.sp.inv() * env.peg.pose.sp
         pre = env.goal_pose.sp * off * peg_in_tcp.inv()
-        yield self._mv(pre * sapien.Pose([0, 0, 0]) if False else sapien.Pose(pre.p - self._axis(env.goal_pose.sp) * 0.05, pre.q))
+        yield self._mv(
+            pre * sapien.Pose([0, 0, 0]) if False else sapien.Pose(pre.p - self._axis(env.goal_pose.sp) * 0.05, pre.q)
+        )
         yield self._mv(pre)
         for _ in range(10):  # close the loop on the peg itself: shift the commanded pose by the peg's remaining error
             err = (env.goal_pose.sp * off).inv() * env.peg.pose.sp
@@ -568,14 +709,18 @@ class MSTask:
     def plan_charger(self):
         import sapien
         import trimesh
-        from transforms3d.euler import euler2quat
         from mani_skill.examples.motionplanning.base_motionplanner.utils import compute_grasp_info_by_obb
+        from transforms3d.euler import euler2quat
 
         env = self.u
-        obb = trimesh.primitives.Box(extents=np.array(env._base_size) * 2, transform=env.charger_base_pose.sp.to_transformation_matrix())
+        obb = trimesh.primitives.Box(
+            extents=np.array(env._base_size) * 2, transform=env.charger_base_pose.sp.to_transformation_matrix()
+        )
         closing0 = env.agent.tcp.pose.sp.to_transformation_matrix()[:3, 1]
         gi = compute_grasp_info_by_obb(obb, approaching=np.array([0, 0, -1]), target_closing=closing0, depth=0.025)
-        grasp = env.agent.build_grasp_pose(np.array([0, 0, -1]), gi["closing"], gi["center"]) * sapien.Pose(q=euler2quat(0, np.deg2rad(15), 0))
+        grasp = env.agent.build_grasp_pose(np.array([0, 0, -1]), gi["closing"], gi["center"]) * sapien.Pose(
+            q=euler2quat(0, np.deg2rad(15), 0)
+        )
         yield self._mv(grasp * sapien.Pose([0, 0, -0.05]))
         yield self._mv(grasp)
         yield ["skill", "gripper", ["close"]]
@@ -583,11 +728,20 @@ class MSTask:
         off = sapien.Pose([-0.05, 0, 0])
         cmd = env.goal_pose.sp * off * env.charger.pose.sp.inv() * env.agent.tcp.pose.sp
         yield self._mv(cmd)
-        yield from self._align_insert(lambda: env.charger.pose.sp, lambda: env.goal_pose.sp, cmd, 0.05, 0.05,
-                                      fine=0.002, fine_until=0.012, coarse=0.01)
+        yield from self._align_insert(
+            lambda: env.charger.pose.sp,
+            lambda: env.goal_pose.sp,
+            cmd,
+            0.05,
+            0.05,
+            fine=0.002,
+            fine_until=0.012,
+            coarse=0.01,
+        )
 
-    def _align_insert(self, obj_fn, goal_fn, cmd, standoff: float, travel: float, fine: float, fine_until: float,
-                      coarse: float):
+    def _align_insert(
+        self, obj_fn, goal_fn, cmd, standoff: float, travel: float, fine: float, fine_until: float, coarse: float
+    ):
         """Closed-loop alignment and insertion along the goal frame's +x axis. `cmd` is the TCP pose last commanded;
         every correction is applied to it (an integrator), so the arm's steady-state sag is cancelled."""
         import sapien
@@ -609,10 +763,13 @@ class MSTask:
 
     def plan_pyramid(self):
         import sapien
-        from transforms3d.euler import euler2quat
 
         env = self.u
-        h = float(env.cube_half_size[2]) if not hasattr(env.cube_half_size, "cpu") else float(env.cube_half_size.flatten()[-1])
+        h = (
+            float(env.cube_half_size[2])
+            if not hasattr(env.cube_half_size, "cpu")
+            else float(env.cube_half_size.flatten()[-1])
+        )
         # A next to B, then C on top of both (the pyramid): pick A, place beside B; pick C, place on the pair
         grasp = self._grasp_pose(env.cubeA, center=env.cubeA.pose.sp.p)
         b = env.cubeB.pose.sp.p
@@ -688,7 +845,9 @@ class MSTask:
         import sapien
 
         env = self.u
-        grasp = self._grasp_pose(env.l_shape_tool, depth=0.03, center=env.l_shape_tool.pose.sp.p) * sapien.Pose([0.02, 0, 0])
+        grasp = self._grasp_pose(env.l_shape_tool, depth=0.03, center=env.l_shape_tool.pose.sp.p) * sapien.Pose(
+            [0.02, 0, 0]
+        )
         yield self._mv(grasp * sapien.Pose([0, 0, -0.05]))
         yield self._mv(grasp)
         yield ["skill", "gripper", ["close"]]

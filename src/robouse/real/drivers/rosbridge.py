@@ -17,6 +17,7 @@ Rig keys (`real:` block or the rig file, robot `ros`):
 Protocol used: {"op": "subscribe", "topic", "type"}, {"op": "advertise", "topic", "type"}, {"op": "publish", "topic",
 "msg"}, {"op": "unsubscribe" / "unadvertise"}. Messages arrive as {"op": "publish", "topic", "msg"}.
 """
+
 from __future__ import annotations
 
 import base64
@@ -42,16 +43,29 @@ def ros_profile(cfg: dict) -> Profile:
     high = [float(x) for x in cfg.get("high", [lim] * n)]
     g = cfg.get("gripper")
     speed = float(cfg.get("max_joint_speed", 20.0 if units == "deg" else 0.35))
-    return Profile(name="ros", display=cfg.get("display", "ROS arm (rosbridge)"), joints=joints, low=low, high=high, units=[units] * n,
-                   gripper=None if g is None else int(g), gripper_open=float(cfg.get("gripper_open", high[g] if g is not None else 0)),
-                   gripper_closed=float(cfg.get("gripper_closed", low[g] if g is not None else 0)), control_hz=float(cfg.get("control_hz", 10.0)),
-                   home=[float(x) for x in cfg.get("home", [0.0] * n)], park=[float(x) for x in cfg.get("park", [0.0] * n)],
-                   envelope=EnvelopeDefaults(joint_speed_deg_s=speed, slow_joint_speed_deg_s=speed / 2,
-                                             windup_deg=float(cfg.get("windup", 10.0 if units == "deg" else 0.2)),
-                                             windup_gripper=float(cfg.get("windup", 10.0 if units == "deg" else 0.2)),
-                                             gripper_speed=float(cfg.get("gripper_speed", speed))),
-                   notes=cfg.get("notes", "Joint names and limits come from the rig file; positions in " + units + "."),
-                   tested_on_hardware=False)
+    return Profile(
+        name="ros",
+        display=cfg.get("display", "ROS arm (rosbridge)"),
+        joints=joints,
+        low=low,
+        high=high,
+        units=[units] * n,
+        gripper=None if g is None else int(g),
+        gripper_open=float(cfg.get("gripper_open", high[g] if g is not None else 0)),
+        gripper_closed=float(cfg.get("gripper_closed", low[g] if g is not None else 0)),
+        control_hz=float(cfg.get("control_hz", 10.0)),
+        home=[float(x) for x in cfg.get("home", [0.0] * n)],
+        park=[float(x) for x in cfg.get("park", [0.0] * n)],
+        envelope=EnvelopeDefaults(
+            joint_speed_deg_s=speed,
+            slow_joint_speed_deg_s=speed / 2,
+            windup_deg=float(cfg.get("windup", 10.0 if units == "deg" else 0.2)),
+            windup_gripper=float(cfg.get("windup", 10.0 if units == "deg" else 0.2)),
+            gripper_speed=float(cfg.get("gripper_speed", speed)),
+        ),
+        notes=cfg.get("notes", "Joint names and limits come from the rig file; positions in " + units + "."),
+        tested_on_hardware=False,
+    )
 
 
 class RosbridgeDriver(ArmDriver):
@@ -68,7 +82,9 @@ class RosbridgeDriver(ArmDriver):
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._err = ""
-        self.description = f"ROS arm via rosbridge at {cfg.get('url')}" + (" (mock rosbridge)" if mock else " (untested on hardware)")
+        self.description = f"ROS arm via rosbridge at {cfg.get('url')}" + (
+            " (mock rosbridge)" if mock else " (untested on hardware)"
+        )
 
     def _send(self, msg: dict) -> None:
         self.ws.send(json.dumps(msg))
@@ -78,7 +94,9 @@ class RosbridgeDriver(ArmDriver):
 
         self.ws = WebSocket(self.cfg["url"], timeout=float(self.cfg.get("timeout_s", 10)))
         self.ws.sock.settimeout(None)  # the reader blocks; staleness is detected from the joint-state timestamps
-        self._send({"op": "subscribe", "topic": self.cfg.get("state_topic", "/joint_states"), "type": "sensor_msgs/JointState"})
+        self._send(
+            {"op": "subscribe", "topic": self.cfg.get("state_topic", "/joint_states"), "type": "sensor_msgs/JointState"}
+        )
         for topic in self.cam_topics.values():
             self._send({"op": "subscribe", "topic": topic, "type": "sensor_msgs/CompressedImage", "throttle_rate": 100})
         self._send({"op": "advertise", "topic": self._cmd_topic(), "type": self._cmd_type()})
@@ -148,8 +166,10 @@ class RosbridgeDriver(ArmDriver):
             msg = {"data": pos}
         else:
             dt = 1.0 / float(self.cfg.get("control_hz", self.profile.control_hz))
-            msg = {"joint_names": self.profile.joints,
-                   "points": [{"positions": pos, "time_from_start": {"sec": int(dt), "nanosec": int((dt % 1) * 1e9)}}]}
+            msg = {
+                "joint_names": self.profile.joints,
+                "points": [{"positions": pos, "time_from_start": {"sec": int(dt), "nanosec": int((dt % 1) * 1e9)}}],
+            }
         self._send({"op": "publish", "topic": self._cmd_topic(), "msg": msg})
 
     def disconnect(self, release_torque: bool) -> None:

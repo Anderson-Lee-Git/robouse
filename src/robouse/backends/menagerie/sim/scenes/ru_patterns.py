@@ -3,6 +3,7 @@
 Grid coordinates are public symbolic task data, not simulator object state.
 The physical D04 scene/agent evaluation is not implemented by this module.
 """
+
 import random
 from dataclasses import asdict, dataclass
 from itertools import product
@@ -19,9 +20,12 @@ class Rule:
     dy: int
 
     def __post_init__(self):
-        if (type(self.quarter_turns) is not int or self.quarter_turns not in range(4)
-                or type(self.reflect_x) is not bool
-                or any(type(v) is not int or v not in (-1, 0, 1) for v in (self.dx, self.dy))):
+        if (
+            type(self.quarter_turns) is not int
+            or self.quarter_turns not in range(4)
+            or type(self.reflect_x) is not bool
+            or any(type(v) is not int or v not in (-1, 0, 1) for v in (self.dx, self.dy))
+        ):
             raise ValueError("Rule outside the declared finite grammar")
 
     def apply(self, pattern):
@@ -29,20 +33,22 @@ class Rule:
         result = {}
         for label, (x, y) in pattern.items():
             if self.reflect_x:
-                x = GRID_SIZE-1-x
+                x = GRID_SIZE - 1 - x
             for _ in range(self.quarter_turns):
-                x, y = GRID_SIZE-1-y, x
-            x, y = x+self.dx, y+self.dy
+                x, y = GRID_SIZE - 1 - y, x
+            x, y = x + self.dx, y + self.dy
             if not 0 <= x < GRID_SIZE or not 0 <= y < GRID_SIZE:
                 return None
             result[label] = [x, y]
         return result
 
 
-GRAMMAR = tuple(Rule(turns, reflect, dx, dy)
-                for turns, reflect, dx, dy in product(range(4), (False, True), range(-1, 2), range(-1, 2)))
+GRAMMAR = tuple(
+    Rule(turns, reflect, dx, dy)
+    for turns, reflect, dx, dy in product(range(4), (False, True), range(-1, 2), range(-1, 2))
+)
 # Development exposes single operations; test holds out geometric compositions.
-DEVELOPMENT_RULES = tuple(r for r in GRAMMAR if (r.quarter_turns != 0)+(r.reflect_x)+(r.dx != 0 or r.dy != 0) <= 1)
+DEVELOPMENT_RULES = tuple(r for r in GRAMMAR if (r.quarter_turns != 0) + (r.reflect_x) + (r.dx != 0 or r.dy != 0) <= 1)
 HELDOUT_RULES = tuple(r for r in GRAMMAR if r not in DEVELOPMENT_RULES)
 
 
@@ -68,9 +74,14 @@ def consistent_rules(examples):
             raise ValueError("Unexpected demonstration fields")
         validate_pattern(example["input"])
         validate_pattern(example["output"])
-    return tuple(rule for rule in GRAMMAR
-                 if all((output := rule.apply(example["input"])) is not None
-                        and _signature(output) == _signature(example["output"]) for example in examples))
+    return tuple(
+        rule
+        for rule in GRAMMAR
+        if all(
+            (output := rule.apply(example["input"])) is not None and _signature(output) == _signature(example["output"])
+            for example in examples
+        )
+    )
 
 
 def _signature(pattern):
@@ -120,11 +131,20 @@ def generate_instance(seed, split="development"):
         examples.append({"input": pattern, "output": rule.apply(pattern)})
         answers = consistent_answers(examples, query)
         if len(answers) == 1:
-            return {"schema_version": "D04-symbolic-0.1-dev", "seed": seed, "split": split,
-                    "public": {"grid_size": GRID_SIZE, "labels": list(LABELS),
-                               "examples": examples, "query": query,
-                               "rule_grammar": "reflect-x optionally, then0..3 quarter-turns, then translation by -1..1 cells per axis"},
-                    "private": {"author_rule": asdict(rule), "consistent_answers": answers},
-                    "artifact_kind": "symbolic_companion_only", "physical_evidence_included": False,
-                    "release_ready": False}
+            return {
+                "schema_version": "D04-symbolic-0.1-dev",
+                "seed": seed,
+                "split": split,
+                "public": {
+                    "grid_size": GRID_SIZE,
+                    "labels": list(LABELS),
+                    "examples": examples,
+                    "query": query,
+                    "rule_grammar": "reflect-x optionally, then0..3 quarter-turns, then translation by -1..1 cells per axis",
+                },
+                "private": {"author_rule": asdict(rule), "consistent_answers": answers},
+                "artifact_kind": "symbolic_companion_only",
+                "physical_evidence_included": False,
+                "release_ready": False,
+            }
     raise RuntimeError("Could not generate an identifiable query answer")

@@ -7,12 +7,12 @@ Observation (fully observable, as in Meta-World's MT benchmarks with the goal sh
 gripper opening, the first object's position and quaternion, the second object's pose, and the goal.
 The raw 39-float vector is also returned as `obs_vector`, which is what Meta-World's scripted experts read.
 """
+
 from __future__ import annotations
 
 import numpy as np
 
-from ..base import ActionSpec, Backend, StepInfo, G, arm_layout
-
+from ..base import ActionSpec, Backend, G, StepInfo, arm_layout
 
 
 def _env_class(env_name: str):
@@ -43,7 +43,9 @@ class MetaWorldBackend(Backend):
         self.env = _env_class(env_name)()
         self._renderer = None
         self.action_spec = ActionSpec(
-            names=["dx", "dy", "dz", "grip"], low=[-1, -1, -1, -1], high=[1, 1, 1, 1],
+            names=["dx", "dy", "dz", "grip"],
+            low=[-1, -1, -1, -1],
+            high=[1, 1, 1, 1],
             doc="dx/dy/dz: end-effector velocity, about 1 cm per unit per step; grip: +1 close, -1 open",
         )
         self._obs = None
@@ -68,8 +70,11 @@ class MetaWorldBackend(Backend):
         self._grip = float(a[3])
         self._obs, r, _term, _trunc, info = self.env.step(a.astype(np.float32))
         self._info = info
-        return StepInfo(success=bool(info.get("success", 0.0) >= 1.0), reward=float(r),
-                        extra={k: float(v) for k, v in info.items() if isinstance(v, (int, float, np.floating))})
+        return StepInfo(
+            success=bool(info.get("success", 0.0) >= 1.0),
+            reward=float(r),
+            extra={k: float(v) for k, v in info.items() if isinstance(v, (int, float, np.floating))},
+        )
 
     def observe(self) -> dict:
         o = np.asarray(self._obs, dtype=float)

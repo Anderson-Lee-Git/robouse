@@ -17,13 +17,14 @@ PointMaze (PointMaze_UMaze/Medium/Large-v3): a force-controlled ball in a walled
 
 Rendering uses mujoco.Renderer on the env's model/data (no gymnasium GL setup needed on macOS).
 """
+
 from __future__ import annotations
 
 from collections import deque
 
 import numpy as np
 
-from ..base import ActionSpec, Backend, StepInfo, G, arm_layout
+from ..base import ActionSpec, Backend, G, StepInfo, arm_layout
 
 # task id -> (env id, seed). Maze seeds were picked for long start->goal paths (BFS cells: UMaze 5/6,
 # Medium 9/9, Large 16/13). FetchSlide is not included: no scripted solution through the public
@@ -86,14 +87,18 @@ class GymRoboticsBackend(Backend):
             # episodic: reaching the goal terminates (no new goal is sampled), as in D4RL/Minari
             self.env = _make(self.env_id, continuing_task=False, reset_target=False)
             self.action_spec = ActionSpec(
-                names=["fx", "fy"], low=[-1, -1], high=[1, 1],
+                names=["fx", "fy"],
+                low=[-1, -1],
+                high=[1, 1],
                 doc="fx/fy: force on the ball along world x/y (one step = 10 ms; speed capped at 5 m/s)",
             )
             self._grip = 0.0  # the settle period after `done` applies zero force
         else:
             self.env = _make(self.env_id)
             self.action_spec = ActionSpec(
-                names=["dx", "dy", "dz", "grip"], low=[-1, -1, -1, -1], high=[1, 1, 1, 1],
+                names=["dx", "dy", "dz", "grip"],
+                low=[-1, -1, -1, -1],
+                high=[1, 1, 1, 1],
                 doc="dx/dy/dz: move the gripper 5 cm per unit per step; grip: +1 close, -1 open",
             )
             self._grip = -1.0
@@ -121,8 +126,11 @@ class GymRoboticsBackend(Backend):
             a[3] = -a[3]  # robouse: +1 close; native Fetch: +1 open
         self._obs, r, _term, _trunc, info = self.env.step(a.astype(np.float32))
         self._info = dict(info)
-        return StepInfo(success=self.success(), reward=float(r),
-                        extra={k: float(v) for k, v in info.items() if isinstance(v, (int, float, bool, np.floating, np.bool_))})
+        return StepInfo(
+            success=self.success(),
+            reward=float(r),
+            extra={k: float(v) for k, v in info.items() if isinstance(v, (int, float, bool, np.floating, np.bool_))},
+        )
 
     def success(self) -> bool:
         if self.is_maze:
@@ -165,7 +173,7 @@ class GymRoboticsBackend(Backend):
             "maze_rows": self.grid(),
             "cell_size": float(m.maze_size_scaling),
             "cell_center": f"x = (col + 0.5) * {m.maze_size_scaling:g} - {m.x_map_center:g}, "
-                           f"y = {m.y_map_center:g} - (row + 0.5) * {m.maze_size_scaling:g}",
+            f"y = {m.y_map_center:g} - (row + 0.5) * {m.maze_size_scaling:g}",
         }
 
     # ---- maze helpers (public information: the layout is part of the task) -----------------------
@@ -237,6 +245,7 @@ class GymRoboticsBackend(Backend):
 
 
 # ---- reference solutions (socket client only; public observation fields only) -------------------
+
 
 def _call(req: dict) -> dict:
     from robouse.agent_cli import _send
