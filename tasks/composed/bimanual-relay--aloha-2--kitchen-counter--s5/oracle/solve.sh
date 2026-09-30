@@ -1,0 +1,4 @@
+#!/bin/bash
+# Reference solution: the embodiment-agnostic bimanual-relay strategy (components_sim/strategies.py) with the declared skills. It drives the robot only through the episode socket, like an agent.
+set -euo pipefail
+python -m robouse.oracle --backend components --env bimanual-relay--aloha-2--kitchen-counter--s5

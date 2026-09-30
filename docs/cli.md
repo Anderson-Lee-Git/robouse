@@ -4,19 +4,25 @@
 
 ```console
 $ robouse --help
-usage: robouse [-h] [--version] {serve,run,run-many,tasks,fetch-assets} ...
+usage: robouse [-h] [--version]
+               {serve,run,run-many,export,tasks,components,fetch-assets} ...
 
 Robo Use: agent as a policy for embodied agents. Runs robot tasks with an
 agent harness as the policy. https://robouse.ai
 
 positional arguments:
-  {serve,run,run-many,tasks,fetch-assets}
+  {serve,run,run-many,export,tasks,components,fetch-assets}
     serve               run one trusted episode server (used by `run`)
     run                 run one trial end to end
     run-many            run a set of trials
-    tasks               list tasks (default: the bundled tasks)
-    fetch-assets        download the MuJoCo Menagerie meshes used by the
-                        menagerie, RoboHarm and drone suites
+    export              write robouse tasks as native BenchFlow task packages
+                        (a movable bundle)
+    tasks               list, compose (init), scaffold and check tasks;
+                        `robouse tasks --help`
+    fetch-assets        download the MuJoCo Menagerie robot models (Menagerie-
+                        based suites and composed tasks)
+    components          list, show and check components; `robouse components
+                        --help`
 
 options:
   -h, --help            show this help message and exit
@@ -27,21 +33,39 @@ options:
 
 ```console
 $ robouse run --help
-usage: robouse run [-h] --task TASK --harness HARNESS [--model MODEL] --out
-                   OUT [--timeout TIMEOUT] [--seed SEED]
+usage: robouse run [-h] --task TASK --agent AGENT [--model MODEL] --out OUT
+                   [--timeout TIMEOUT] [--seed SEED] [--seeds SEEDS]
+                   [--engine {benchflow,local}] [--sandbox SANDBOX]
+                   [--reasoning-effort REASONING_EFFORT] [--job-name JOB_NAME]
 
 options:
-  -h, --help         show this help message and exit
-  --task TASK        task folder or bundled task id
-  --harness HARNESS  oracle, noop, claude-code, codex, claude-code-glm, codex-
-                     glm, mini-swe-agent-glm or molmoact2 (see
-                     https://robouse.ai/docs/harnesses/)
-  --model MODEL      model for the harness (default: the harness's default)
-  --out OUT          job folder; the trial is written to
-                     OUT/<task>__<harness>__<id>/
-  --timeout TIMEOUT  agent wall-clock limit in seconds (default: the task's
-                     agent.timeout_sec)
-  --seed SEED        override the task's seed
+  -h, --help            show this help message and exit
+  --task TASK           task folder or bundled task id
+  --agent AGENT, --harness AGENT
+                        BenchFlow agent (oracle, noop, claude, codex, ... see
+                        `bench agent list`; claude-code is an alias for
+                        claude); with --engine local, a robouse harness:
+                        oracle, noop, claude-code, codex, claude-code-glm,
+                        codex-glm, mini-swe-agent-glm or molmoact2 (see
+                        https://robouse.ai/docs/harnesses/)
+  --model MODEL         model for the agent (default: the agent's default)
+  --out OUT             jobs folder; the BenchFlow job is written to
+                        OUT/<job>/<task>__<id>/ (--engine local:
+                        OUT/<task>__<harness>__<id>/)
+  --timeout TIMEOUT     agent wall-clock limit in seconds (default: the task's
+                        agent.timeout_sec)
+  --seed SEED           override the task's seed
+  --seeds SEEDS         seeded rollouts (BenchFlow engine): one trial per task
+                        and seed, e.g. 0-4 or 0,3,7; summary.json gets pass@k,
+                        mean and std per task
+  --engine {benchflow,local}
+                        benchflow (default): BenchFlow with Docker; local:
+                        host processes, macOS Seatbelt sandbox, no Docker
+  --sandbox SANDBOX     BenchFlow sandbox (default docker)
+  --reasoning-effort REASONING_EFFORT
+                        agent reasoning effort (BenchFlow agents that expose
+                        one)
+  --job-name JOB_NAME   BenchFlow job name (default: a timestamp)
 ```
 
 `--model` matters only for `claude-code` and `codex`; the other harnesses ignore it. The command prints a JSON summary (`trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`). A non-null `exception` means the trial could not start; it is not a score.
@@ -50,29 +74,51 @@ options:
 
 ```console
 $ robouse run-many --help
-usage: robouse run-many [-h] [--tasks TASKS] --harness HARNESS [--model MODEL]
-                        --out OUT [--filter FILTER] [--limit LIMIT]
-                        [--concurrency CONCURRENCY] [--timeout TIMEOUT]
+usage: robouse run-many [-h] [--tasks TASKS] --agent AGENT [--model MODEL]
+                        --out OUT [--timeout TIMEOUT] [--seed SEED]
+                        [--seeds SEEDS] [--engine {benchflow,local}]
+                        [--sandbox SANDBOX]
+                        [--reasoning-effort REASONING_EFFORT]
+                        [--job-name JOB_NAME] [--filter FILTER]
+                        [--limit LIMIT] [--concurrency CONCURRENCY]
                         [--task-list TASK_LIST] [--resume]
 
 options:
   -h, --help            show this help message and exit
   --tasks TASKS         task root (default: the bundled tasks)
-  --harness HARNESS     oracle, noop, claude-code, codex, claude-code-glm,
+  --agent AGENT, --harness AGENT
+                        BenchFlow agent (oracle, noop, claude, codex, ... see
+                        `bench agent list`; claude-code is an alias for
+                        claude); with --engine local, a robouse harness:
+                        oracle, noop, claude-code, codex, claude-code-glm,
                         codex-glm, mini-swe-agent-glm or molmoact2 (see
                         https://robouse.ai/docs/harnesses/)
-  --model MODEL         model for the harness (default: the harness's default)
-  --out OUT             job folder; one trial folder per task
+  --model MODEL         model for the agent (default: the agent's default)
+  --out OUT             jobs folder; the BenchFlow job is written to
+                        OUT/<job>/<task>__<id>/ (--engine local:
+                        OUT/<task>__<harness>__<id>/)
+  --timeout TIMEOUT     agent wall-clock limit in seconds (default: each
+                        task's)
+  --seed SEED           override the task's seed
+  --seeds SEEDS         seeded rollouts (BenchFlow engine): one trial per task
+                        and seed, e.g. 0-4 or 0,3,7; summary.json gets pass@k,
+                        mean and std per task
+  --engine {benchflow,local}
+                        benchflow (default): BenchFlow with Docker; local:
+                        host processes, macOS Seatbelt sandbox, no Docker
+  --sandbox SANDBOX     BenchFlow sandbox (default docker)
+  --reasoning-effort REASONING_EFFORT
+                        agent reasoning effort (BenchFlow agents that expose
+                        one)
+  --job-name JOB_NAME   BenchFlow job name (default: a timestamp)
   --filter FILTER       only task ids containing this substring
   --limit LIMIT         run at most this many tasks (0: all)
   --concurrency CONCURRENCY
                         trials run in parallel (default 1)
-  --timeout TIMEOUT     agent wall-clock limit per trial in seconds (default:
-                        each task's)
   --task-list TASK_LIST
                         file with one task id per line (subset of --tasks)
-  --resume              skip tasks that already have a finished, non-infra-
-                        failed trial in --out
+  --resume              (--engine local) skip tasks that already have a
+                        finished, non-infra-failed trial in --out
 ```
 
 `--tasks` is searched recursively. The command prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved.
@@ -81,31 +127,170 @@ options:
 
 ```console
 $ robouse tasks --help
-usage: robouse tasks [-h] [--path] [root]
+usage: robouse tasks [-h] {list,init,check} ...
+
+list, compose, scaffold and check tasks
 
 positional arguments:
-  root        task root (default: the bundled tasks)
+  {list,init,check}
+    list             list tasks (default: the bundled tasks)
+    init             compose a task from components, regenerate one, or
+                     scaffold a blank task
+    check            validate a task: schema, `bench tasks check`, reference
+                     solution 1, no-op control 0
 
 options:
-  -h, --help  show this help message and exit
-  --path      print the bundled task directory and exit
+  -h, --help         show this help message and exit
 ```
 
-Prints one line per task: id, backend, simulator env id (empty for tabletop tasks).
+`robouse tasks` alone is `robouse tasks list`: one line per task (id, backend, simulator env id, empty for tabletop tasks).
+
+## robouse tasks init
+
+```console
+$ robouse tasks init --help
+usage: robouse tasks init [-h] [--embodiment ID] [--scene ID] [--task ID]
+                          [--obs MODE] [--budget BUDGET] [--perturb KIND]
+                          [--safety LEVEL] [--roles ROLES] [--seed N]
+                          [--out DIR] [--grid] [--from DIR] [--upgrade]
+                          [--no-validate] [--keep-runs DIR]
+                          [DIR]
+
+compose a task from components and validate it (--embodiment, --scene,
+--task), regenerate a composed task from its recorded instance (--from), or
+scaffold a blank task (DIR)
+
+positional arguments:
+  DIR              blank task folder to create (scaffold mode)
+
+options:
+  -h, --help       show this help message and exit
+  --embodiment ID  embodiment component id (robouse components list)
+  --scene ID       scene component id
+  --task ID        task component id
+  --obs MODE       observation mode: state (default), vision or noisy
+  --budget BUDGET  step budget: normal (default), loose or tight
+  --perturb KIND   perturbation: none (default), push, dynamics or clutter
+  --safety LEVEL   safety overlay: none (default), direct, indirect or privacy
+  --roles ROLES    roles: single (default) or planner-operator
+  --seed N         instance seed (default 0)
+  --out DIR        folder to write the composed task folder(s) into
+  --grid           comma-separated values in any flag: compose every
+                   compatible combination
+  --from DIR       regenerate the composed task in this folder from its
+                   recorded instance
+  --upgrade        with --from: use the installed component versions if they
+                   differ
+  --no-validate    write without running the reference solution and the no-op
+                   control
+  --keep-runs DIR  keep the validation trials in this folder
+```
+
+With `--embodiment`, `--scene` and `--task`, composes a task from components and keeps it only if the reference solution scores 1 and the no-op control 0 ([Components](components.md)). `--grid` takes comma-separated values in any of those flags and composes every compatible combination. `--from DIR` regenerates a composed task from its recorded instance. With only `DIR`, it scaffolds a blank task folder (`task.md`, `oracle/solve.sh`, `verifier/test.sh`) for a backend of your own.
+
+## robouse tasks check
+
+```console
+$ robouse tasks check --help
+usage: robouse tasks check [-h] [--level LEVEL] [--no-run] [--keep-runs DIR]
+                           DIR
+
+positional arguments:
+  DIR              task folder
+
+options:
+  -h, --help       show this help message and exit
+  --level LEVEL    `bench tasks check` level (default structural)
+  --no-run         skip the reference solution and no-op control trials
+  --keep-runs DIR  keep the trials in this folder
+```
+
+Checks the task.md schema, runs `bench tasks check` on the task, then runs the reference solution (must score 1) and the no-op control (must score 0) with the local engine. Exits 1 on any problem.
+
+## robouse components
+
+```console
+$ robouse components --help
+usage: robouse components [-h] {list,show,check} ...
+
+the embodiments, scenes, task templates and modifiers composed tasks are built
+from
+
+positional arguments:
+  {list,show,check}
+    list             list components
+    show             print one component's manifest
+    check            whether an embodiment, a scene and a task template fit
+                     together, and why not
+
+options:
+  -h, --help         show this help message and exit
+```
+
+`robouse components list [KIND] [--all]` lists the components (`--all` adds the fixed ones that describe existing suites); `robouse components show ID [--compatible]` prints one manifest.
+
+## robouse components check
+
+```console
+$ robouse components check --help
+usage: robouse components check [-h] [--obs MODE] [--budget BUDGET]
+                                [--perturb KIND] [--safety LEVEL]
+                                [--roles ROLES] [--seed N] [--json]
+                                EMBODIMENT SCENE TASK
+
+positional arguments:
+  EMBODIMENT       embodiment component id
+  SCENE            scene component id
+  TASK             task component id
+
+options:
+  -h, --help       show this help message and exit
+  --obs MODE       observation mode: state (default), vision or noisy
+  --budget BUDGET  step budget: normal (default), loose or tight
+  --perturb KIND   perturbation: none (default), push, dynamics or clutter
+  --safety LEVEL   safety overlay: none (default), direct, indirect or privacy
+  --roles ROLES    roles: single (default) or planner-operator
+  --seed N         instance seed to lay out (default 0)
+  --json           print the report as JSON
+```
+
+Says whether the embodiment, scene and task template fit together with these modifiers, and lays the task out for the seed; exits 1 with the reasons if not.
+
+## robouse export
+
+```console
+$ robouse export --help
+usage: robouse export [-h] --tasks TASKS [TASKS ...] --out OUT
+                      [--filter FILTER] [--noop]
+
+options:
+  -h, --help            show this help message and exit
+  --tasks TASKS [TASKS ...]
+                        task folders, suite folders or a task root
+  --out OUT             bundle directory: <out>/tasks/<id>/ and
+                        <out>/runtime-<hash>/
+  --filter FILTER       comma-separated substrings; keep tasks whose id
+                        matches one
+  --noop                noop oracle (negative control: must score 0)
+```
+
+Writes each task as a native BenchFlow task package under `OUT/tasks/`, plus the simulator runtime they build from, so `bench eval run --tasks-dir OUT/tasks` runs them.
 
 ## robouse fetch-assets
 
 ```console
 $ robouse fetch-assets --help
-usage: robouse fetch-assets [-h] [--dest DEST]
+usage: robouse fetch-assets [-h] [--dest DEST] [--robot ROBOT]
 
 options:
-  -h, --help   show this help message and exit
-  --dest DEST  target directory (default: ~/.cache/robouse/menagerie or
-               $ROBOUSE_MENAGERIE_ASSETS)
+  -h, --help     show this help message and exit
+  --dest DEST    target directory (default: ~/.cache/robouse/menagerie or
+                 $ROBOUSE_MENAGERIE_ASSETS)
+  --robot ROBOT  only this Menagerie robot folder (repeatable), e.g.
+                 unitree_go2
 ```
 
-Downloads the MuJoCo Menagerie robot models (about 42 MB) that the `menagerie`, `roboharm` and `drone` suites need, each checked by SHA-256. Files already present are skipped. The episode server looks in `$ROBOUSE_MENAGERIE_ASSETS`, else `~/.cache/robouse/menagerie`.
+Downloads the MuJoCo Menagerie robot models that the Menagerie-based suites and composed tasks need, each checked by SHA-256 (`--robot` limits it to some robots). Files already present are skipped. The episode server looks in `$ROBOUSE_MENAGERIE_ASSETS`, else `~/.cache/robouse/menagerie`.
 
 ## robouse serve
 

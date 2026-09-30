@@ -1,5 +1,5 @@
 """Prose and metadata for components that the runtime code does not carry: titles, summaries, licences, tracks,
-versions, harm scenarios, and the fixed (non-remixable) components that describe the existing suites.
+versions, harm scenarios, and the fixed (non-composable) components that describe the existing suites.
 
 `registry.export()` merges this with what the runtime declares (capabilities, placements, requirements) into the
 component manifests under components/.
@@ -129,7 +129,7 @@ MODIFIERS = {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# fixed components: the robots, scenes and suites that exist as fixed task sets (tagged for browsing, not remixable)
+# fixed components: the robots, scenes and suites that exist as fixed task sets (tagged for browsing, not composable)
 # ---------------------------------------------------------------------------------------------------------------------
 
 FIXED_EMBODIMENTS = {
@@ -225,9 +225,12 @@ SUITES = {
                      track="mobile-manipulation", capabilities=["pick-and-place", "long-horizon"]),
     "behavior": dict(embodiments=["behavior-r1"], scene="upstream-scenes", scenario="household", track="mobile-manipulation",
                      capabilities=["long-horizon", "navigation"]),
+    "composed": dict(embodiments=["franka-panda", "aloha-2", "pal-tiago", "google-robot", "unitree-go2", "crazyflie-2"],
+                  scene="tabletop", scenario="tabletop", track="arm",
+                  capabilities=["pick-and-place"]),  # each composed task carries its own tags in its metadata
     "remix": dict(embodiments=["franka-panda", "aloha-2", "pal-tiago", "google-robot", "unitree-go2", "crazyflie-2"],
                   scene="tabletop", scenario="tabletop", track="arm",
-                  capabilities=["pick-and-place"]),  # each remixed task carries its own tags in its metadata
+                  capabilities=["pick-and-place"]),  # the pre-rename suite name of the published composed tasks
     "gymrobotics": dict(embodiments=["fetch", "shadow-hand"], scene="upstream-scenes", scenario="tabletop", track="arm",
                         capabilities=["pick-and-place", "dexterous"]),
 }

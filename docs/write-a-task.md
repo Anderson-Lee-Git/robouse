@@ -1,11 +1,11 @@
 # Write a task
 
-The quickest way to a new task is to remix existing components: pick a robot, a scene and a task, and `robouse remix` writes and validates the task folder (see [Components and remix](remix.md)). This page goes one step further: it writes a reference solution of your own for a remixed task, and then shows how to add a component (a task template, a scene or an embodiment).
+The quickest way to a new task is to compose it from components: pick an embodiment, a scene and a task template, and `robouse tasks init` writes and validates the task folder (see [Components](components.md)). Then write a reference solution of your own for it, or add a component (a task template, a scene or an embodiment). `robouse tasks init DIR` scaffolds a blank task folder instead, for a backend of your own.
 
-## Remix a task
+## Compose a task
 
 ```console
-$ robouse remix --embodiment franka-panda --scene tabletop --task put-in-container --out mytasks
+$ robouse tasks init --embodiment franka-panda --scene tabletop --task put-in-container --out mytasks
 wrote mytasks/put-in-container--franka-panda--tabletop--s0
 oracle reward 1.0 (done, 159 steps); noop reward 0.0 (done)
 accepted: oracle 1, noop 0
@@ -70,17 +70,17 @@ $ robouse run --task mytasks/put-in-container--franka-panda--tabletop--s0 --agen
   "reward": 0.0,
 ```
 
-The same script, copied into `robouse remix --embodiment aloha-2 --scene tabletop --task put-in-container --out mytasks`, scores 1 there too. A robot that grasps from the front (PAL TIAGo, the Google Robot) needs a different approach: drive the base in front of the surface with `go_to`, then move the gripper in level along the robot's heading; `robo observe` reports the robot's `grasp` and `workspace` so a solution (or an agent) can tell which it has. The bundled reference solution, `src/robouse/backends/remix_sim/strategies.py`, handles every embodiment that way.
+The same script, copied into the task that `robouse tasks init --embodiment aloha-2 --scene tabletop --task put-in-container --out mytasks` writes, scores 1 there too. A robot that grasps from the front (PAL TIAGo, the Google Robot) needs a different approach: drive the base in front of the surface with `go_to`, then move the gripper in level along the robot's heading; `robo observe` reports the robot's `grasp` and `workspace` so a solution (or an agent) can tell which it has. The bundled reference solution, `src/robouse/backends/components_sim/strategies.py`, handles every embodiment that way.
 
 Existing tasks on the tabletop, menagerie and RoboHarm suites also accept the arm shorthands `robo move-to X Y Z [--grip G]` and `robo grip G`; they map onto the arm's `move_to` and gripper skills.
 
 ## Write a component
 
-Components live in the repository: the runtime code in `src/robouse/backends/remix_sim/`, and one generated manifest per component in `components/`. After changing the code, rewrite the manifests and check the combinations you care about:
+Components live in the repository: the runtime code in `src/robouse/backends/components_sim/`, and one generated manifest per component in `components/`. After changing the code, rewrite the manifests and check the combinations you care about:
 
 ```sh
 robouse components export
-robouse remix --embodiment franka-panda --scene tabletop --task put-in-container --check
+robouse components check franka-panda tabletop put-in-container
 ```
 
 `tests/test_components.py` fails if a checked-in manifest differs from a fresh export.

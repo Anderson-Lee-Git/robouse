@@ -4,7 +4,7 @@ version: 0.1.0
 title: Upstream benchmark scenes
 scenario: tabletop
 summary: Meta-World, robosuite, LIBERO, RoboCasa, BEHAVIOR and Gymnasium-Robotics scenes, as the benchmarks define them.
-remixable: false
+composable: false
 suites:
 - behavior
 - dexhand

@@ -4,10 +4,12 @@
   robouse run-many [--tasks ROOT] --agent NAME ... --out JOBS         run a set of trials (one BenchFlow job)
   robouse export --tasks ROOT... --out DIR [--noop]                   write native BenchFlow task packages
   robouse serve --task TASK --run-dir DIR --socket PATH               run one episode server (the simulator)
-  robouse tasks [ROOT] [--path]                                       list tasks
+  robouse tasks [list] [ROOT] [--path]                                list tasks
+  robouse tasks init --embodiment E --scene S --task T [...] --out DIR  compose a task from components (validated)
+  robouse tasks init DIR | --grid ... | --from DIR                    scaffold a blank task, compose a grid, regenerate
+  robouse tasks check DIR                                             schema, bench tasks check, reference 1, no-op 0
   robouse fetch-assets [--dest DIR] [--robot NAME]                    download robot meshes (MuJoCo Menagerie)
-  robouse remix --embodiment E --scene S --task T [modifiers] --out DIR  compose a task from components (validated)
-  robouse components list|show|matrix                                 the component registry
+  robouse components list|show ID|check E S T                         the component registry
 
 `run` and `run-many` run on BenchFlow (`--engine benchflow`, the default): BenchFlow's agents, sandboxes, verifier
 and trial layout; the same as `bench eval run --tasks-dir <tasks> --agent NAME --sandbox docker`. `--engine local`
@@ -35,10 +37,16 @@ SIM_HINT = ("robouse: the simulator dependencies are not installed ({err}).\n"
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="robouse", description="robo-use: agent as a policy for embodied agents. "
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] in ("tasks", "components", "remix"):  # these parse their own arguments (subcommands and --help)
+        from . import tasks_cli
+
+        return {"tasks": tasks_cli.tasks_main, "components": tasks_cli.components_main,
+                "remix": tasks_cli.remix_alias}[args[0]](args[1:])
+    ap = argparse.ArgumentParser(prog="robouse", description="Robo Use: agent as a policy for embodied agents. "
                                  "Runs robot tasks with an agent harness as the policy. https://robouse.ai")
     ap.add_argument("--version", action="version", version=f"robouse {__version__}")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="{serve,run,run-many,export,tasks,components,fetch-assets}")
 
     s = sub.add_parser("serve", help="run one trusted episode server (used by `run`)")
     s.add_argument("--task", required=True, help="task folder or bundled task id")
@@ -88,48 +96,22 @@ def main(argv=None) -> int:
     e.add_argument("--filter", default="", help="comma-separated substrings; keep tasks whose id matches one")
     e.add_argument("--noop", action="store_true", help="noop oracle (negative control: must score 0)")
 
-    t = sub.add_parser("tasks", help="list tasks (default: the bundled tasks)")
-    t.add_argument("root", nargs="?", help="task root (default: the bundled tasks)")
-    t.add_argument("--path", action="store_true", help="print the bundled task directory and exit")
-
-    f = sub.add_parser("fetch-assets", help="download the MuJoCo Menagerie robot models (menagerie, RoboHarm, drone and embodiment suites)")
+    t = sub.add_parser("tasks", help="list, compose (init), scaffold and check tasks; `robouse tasks --help`", add_help=False)
+    t.add_argument("rest", nargs=argparse.REMAINDER)
+    f = sub.add_parser("fetch-assets", help="download the MuJoCo Menagerie robot models (Menagerie-based suites and composed tasks)")
     f.add_argument("--dest", help="target directory (default: ~/.cache/robouse/menagerie or $ROBOUSE_MENAGERIE_ASSETS)")
     f.add_argument("--robot", action="append", help="only this Menagerie robot folder (repeatable), e.g. unitree_go2")
 
-    x = sub.add_parser("remix", help="compose a task from an embodiment, a scene and a task component (+ modifiers)")
-    x.add_argument("--embodiment", required=True, help="embodiment component id (robouse components list)")
-    x.add_argument("--scene", required=True, help="scene component id")
-    x.add_argument("--task", required=True, help="task component id")
-    x.add_argument("--obs", default="state", help="observation mode: state (default), vision or noisy")
-    x.add_argument("--budget", default="normal", help="budget: normal (default), loose or tight")
-    x.add_argument("--perturbation", default="none", help="none (default), push, dynamics or clutter")
-    x.add_argument("--safety", default="none", help="safety overlay: none (default), direct, indirect or privacy")
-    x.add_argument("--roles", default="single", help="single (default) or planner-operator")
-    x.add_argument("--seed", type=int, default=0, help="instance seed (default 0)")
-    x.add_argument("--out", help="folder to write the task folder into (not needed with --check)")
-    x.add_argument("--check", action="store_true", help="only report whether the components fit together, and why not")
-    x.add_argument("--json", action="store_true", help="with --check: print the report as JSON")
-    x.add_argument("--no-validate", action="store_true", help="skip the oracle (must score 1) and no-op (must score 0) runs")
-    x.add_argument("--keep-runs", help="keep the validation trials in this folder")
-
-    c = sub.add_parser("components", help="list or show components (embodiments, scenes, tasks, modifiers)")
-    csub = c.add_subparsers(dest="ccmd", required=True)
-    cl = csub.add_parser("list", help="list components")
-    cl.add_argument("kind", nargs="?", choices=["embodiments", "scenes", "tasks", "modifiers"], help="only this kind")
-    cl.add_argument("--all", action="store_true", help="also list fixed components (the existing suites' robots and scenes)")
-    cs = csub.add_parser("show", help="print one component's manifest")
-    cs.add_argument("id", help="component id")
-    cs.add_argument("--compatible", action="store_true", help="also list what it can be remixed with")
-    ce = csub.add_parser("export", help="(maintainers) rewrite components/ from the runtime declarations")
-    ce.add_argument("--root", help="components folder (default: the repo's components/)")
-    cm = csub.add_parser("matrix", help="the compatibility matrix of every embodiment x scene x task, as JSON")
-    cm.add_argument("--out", help="write it here (default: stdout)")
+    c = sub.add_parser("components", help="list, show and check components; `robouse components --help`", add_help=False)
+    c.add_argument("rest", nargs=argparse.REMAINDER)
+    x = sub.add_parser("remix", add_help=False)  # renamed to `tasks init`; hidden alias for one release
+    x.add_argument("rest", nargs=argparse.REMAINDER)
 
     a = ap.parse_args(argv)
-    if a.cmd == "remix":
-        return _remix(a)
-    if a.cmd == "components":
-        return _components(a)
+    if a.cmd in ("tasks", "components", "remix"):
+        from . import tasks_cli
+
+        return {"tasks": tasks_cli.tasks_main, "components": tasks_cli.components_main, "remix": tasks_cli.remix_alias}[a.cmd](a.rest)
     if a.cmd == "fetch-assets":
         from .assets import fetch
 
@@ -200,131 +182,6 @@ def main(argv=None) -> int:
         ids = [l.strip() for l in open(a.task_list) if l.strip() and not l.startswith("#")] if a.task_list else None
         run_many(Path(a.tasks) if a.tasks else bundled_tasks_root(), a.agent, a.model, Path(a.out), filt=a.filter, limit=a.limit,
                  concurrency=a.concurrency, timeout=a.timeout, ids=ids, resume=a.resume, seed=a.seed)
-        return 0
-    if a.cmd == "tasks":
-        if a.path:
-            print(bundled_tasks_root())
-            return 0
-        try:
-            for task in find_tasks(a.root or bundled_tasks_root()):
-                print(task.id, task.spec.get("backend"), task.spec.get("env", ""))
-            sys.stdout.flush()
-        except BrokenPipeError:  # e.g. `robouse tasks | head`
-            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
-        return 0
-    return 2
-
-
-def _remix(a) -> int:
-    from .components.registry import load
-    from .components.remix import RemixError, instantiate, record_validation, validate, write
-    from .components.resolve import check, modifiers
-
-    reg = load()
-    mods = modifiers({"obs": a.obs, "budget": a.budget, "perturbation": a.perturbation, "safety": a.safety, "roles": a.roles})
-    try:
-        rep = check(reg, a.embodiment, a.scene, a.task, mods)
-    except KeyError as e:
-        print(f"robouse remix: {e.args[0]}", file=sys.stderr)
-        return 2
-    if a.check:
-        if rep.ok:
-            try:
-                instantiate(a.embodiment, a.scene, a.task, mods, a.seed)
-            except RemixError as e:
-                rep.ok, rep.reasons = False, [str(e)]
-        if a.json:
-            print(json.dumps({"embodiment": a.embodiment, "scene": a.scene, "task": a.task, "modifiers": mods, "seed": a.seed,
-                              **rep.as_dict()}, indent=2))
-        elif rep.ok:
-            print(f"compatible: {a.embodiment} + {a.scene} + {a.task}")
-        else:
-            print(f"incompatible: {a.embodiment} + {a.scene} + {a.task}")
-            for r in rep.reasons:
-                print(f"  - {r}")
-        return 0 if rep.ok else 1
-    if not rep.ok:
-        print("robouse remix: incompatible: " + "; ".join(rep.reasons), file=sys.stderr)
-        return 1
-    if not a.out:
-        print("robouse remix: --out is required (or use --check)", file=sys.stderr)
-        return 2
-    try:
-        d = write(a.embodiment, a.scene, a.task, mods, a.seed, Path(a.out), reg)
-    except RemixError as e:
-        print(f"robouse remix: incompatible: {e}", file=sys.stderr)
-        return 1
-    print(f"wrote {d}")
-    if a.no_validate:
-        return 0
-    v = validate(d, Path(a.keep_runs) if a.keep_runs else None)
-    print(f"oracle reward {v['oracle']['reward']} ({v['oracle']['outcome']}, {v['oracle']['steps']} steps); "
-          f"noop reward {v['noop']['reward']} ({v['noop']['outcome']})")
-    if not v["accepted"]:
-        import shutil
-
-        shutil.rmtree(d, ignore_errors=True)
-        print("robouse remix: rejected (the oracle must score 1 and the no-op 0); the folder was removed", file=sys.stderr)
-        return 1
-    record_validation(d, v)
-    print("accepted: oracle 1, noop 0")
-    return 0
-
-
-def _components(a) -> int:
-    from .components.registry import dump, export, load
-    from .components.resolve import check
-
-    if a.ccmd == "export":
-        for f in export(a.root):
-            print(f)
-        return 0
-    reg = load()
-    if a.ccmd == "list":
-        for kind in ([a.kind] if a.kind else ["embodiments", "scenes", "tasks", "modifiers"]):
-            items = getattr(reg, kind)
-            print(f"{kind}:")
-            for cid, m in sorted(items.items()):
-                if not m.get("remixable") and not a.all:
-                    continue
-                extra = {"embodiments": lambda m: f"{m.get('track', '')}, {m.get('placement', 'fixed')}",
-                         "scenes": lambda m: m.get("scenario", ""),
-                         "tasks": lambda m: ", ".join(m.get("capabilities", [])),
-                         "modifiers": lambda m: ", ".join(m.get("values", {}))}[kind](m)
-                print(f"  {cid:<24} {m['version']:<7} {m['title']}  ({extra})" + ("" if m.get("remixable") else "  [fixed]"))
-        return 0
-    if a.ccmd == "show":
-        for kind in ("embodiments", "scenes", "tasks", "modifiers"):
-            m = getattr(reg, kind).get(a.id)
-            if m:
-                print(dump(m), end="")
-                if a.compatible and kind != "modifiers" and m.get("remixable"):
-                    from .components.remix import RemixError, instantiate
-                    from .components.resolve import modifiers
-
-                    print("compatible:")
-                    for e in reg.remixable("embodiments"):
-                        for s in reg.remixable("scenes"):
-                            for t in reg.remixable("tasks"):
-                                if a.id not in (e, s, t) or not check(reg, e, s, t).ok:
-                                    continue
-                                try:
-                                    instantiate(e, s, t, modifiers({}), 0)
-                                except RemixError:
-                                    continue
-                                print(f"  {e} + {s} + {t}")
-                return 0
-        print(f"robouse components: no component {a.id!r}", file=sys.stderr)
-        return 1
-    if a.ccmd == "matrix":
-        from .components.matrix import build
-
-        out = json.dumps(build(reg), indent=1)
-        if a.out:
-            Path(a.out).write_text(out)
-            print(f"wrote {a.out}")
-        else:
-            print(out)
         return 0
     return 2
 

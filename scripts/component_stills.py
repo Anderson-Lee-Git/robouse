@@ -1,8 +1,8 @@
-"""Stills of the remixable components for the hub: one image per embodiment, scene and task (at reset).
+"""Stills of the composable components for the hub: one image per embodiment, scene and task (at reset).
 
     .venv/bin/python scripts/component_stills.py OUT_DIR
 
-Writes OUT_DIR/{embodiment,scene,task}-<id>.webp (640 x 400). Each still is a real remix at seed 0, rendered from a
+Writes OUT_DIR/{embodiment,scene,task}-<id>.webp (640 x 400). Each still is a real composed task at seed 0, rendered from a
 scene camera right after the reset (nothing is drawn by hand).
 """
 from __future__ import annotations
@@ -13,9 +13,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from robouse.backends.remix import RemixBackend
+from robouse.backends.components import ComposedBackend
 from robouse.components.registry import load
-from robouse.components.remix import RemixError, instantiate
+from robouse.components.compose import ComposeError, instantiate
 from robouse.components.resolve import check, modifiers
 
 # the combination shown for each component: (embodiment, scene, task, camera)
@@ -31,8 +31,8 @@ def render(emb: str, scene: str, task: str, camera: str, w: int = 640, h: int = 
     import mujoco
 
     inst = instantiate(emb, scene, task, modifiers({}), 0)
-    b = RemixBackend({"id": "still", "remix": {"embodiment": emb, "scene": scene, "task": task, "seed": 0, "modifiers": {},
-                                               "instance": inst}})
+    b = ComposedBackend({"id": "still", "instance": {"embodiment": {"id": emb}, "scene": {"id": scene}, "task": {"id": task},
+                                                      "modifiers": {}, "seed": 0, "layout": inst}})
     b.reset(0)
     cams = [c for c in (camera, "overview", "top") if c]
     cam = next(c for c in cams if mujoco.mj_name2id(b.model, mujoco.mjtObj.mjOBJ_CAMERA, c) >= 0)
@@ -50,14 +50,14 @@ CLOSE_CAM = {"tabletop": "front", "workshop-bench": "bench_cam", "lab-bench": "b
 
 
 def first_ok(reg, emb=None, scene=None, task=None):
-    for e in [emb] if emb else reg.remixable("embodiments"):
-        for s in [scene] if scene else [x for x in SCENE_ORDER if x in reg.remixable("scenes")]:
-            for t in [task] if task else reg.remixable("tasks"):
+    for e in [emb] if emb else reg.composable("embodiments"):
+        for s in [scene] if scene else [x for x in SCENE_ORDER if x in reg.composable("scenes")]:
+            for t in [task] if task else reg.composable("tasks"):
                 if check(reg, e, s, t).ok:
                     try:
                         instantiate(e, s, t, modifiers({}), 0)
                         return e, s, t
-                    except RemixError:
+                    except ComposeError:
                         continue
     return None
 
@@ -72,7 +72,7 @@ def main() -> int:
     for s, e in SCENE.items():
         c = first_ok(reg, emb=e, scene=s)
         jobs.append((f"scene-{s}", *c, "overview"))
-    for t in reg.remixable("tasks"):
+    for t in reg.composable("tasks"):
         c = first_ok(reg, task=t, emb="franka-panda") or first_ok(reg, task=t, emb="aloha-2") or first_ok(reg, task=t)
         jobs.append((f"task-{t}", *c, TASK_CAM.get(t) or CLOSE_CAM[c[1]]))
     for name, e, s, t, cam in jobs:
