@@ -38,22 +38,23 @@ def select_tasks(root: Path, filt: str = "", ids: list[str] | None = None, limit
 def _agent_env(agent: str) -> dict[str, str]:
     """Credentials for BenchFlow agents from the maintainers' pools (never printed or written to the trial).
 
-    Claude agents: the OAuth token pool. Codex agents: the Codex account pool (~/.config/bf-agents/codex-auth), passed
+    Claude agents: the OAuth token pool. Codex agents: the maintainers' Codex account pool (robouse._maintainer), passed
     as CODEX_AUTH_JSON from that account's robo-use home, so the user's own ~/.codex login is never used."""
     if agent in ("claude", "claude-agent-acp"):
         if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
             return {}
         try:
-            from ..harnesses import _claude_auth
+            from ..harnesses.credentials import claude_auth
 
-            return _claude_auth()
+            return claude_auth()
         except RuntimeError:
             return {}
     if agent.startswith("codex") and not (os.environ.get("OPENAI_API_KEY") or os.environ.get("CODEX_AUTH_JSON")):
-        from ..harnesses import CODEX_POOL, _clean_codex_home
+        from .. import _maintainer
+        from ..harnesses.credentials import clean_codex_home
 
-        if CODEX_POOL.is_dir() and any(CODEX_POOL.glob("*.json")):
-            home = Path(_clean_codex_home())  # the pool account's persistent home (single refresh owner)
+        if _maintainer.codex_accounts():
+            home = Path(clean_codex_home())  # the pool account's persistent home (single refresh owner)
             return {"CODEX_AUTH_JSON": (home / "auth.json").read_text()}
     return {}
 

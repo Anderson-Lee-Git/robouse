@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """One page to see every robouse trial: runs/_gallery/index.html. See docs/viewer.md.
 
-  .venv/bin/python scripts/build_gallery.py [--runs runs] [--viewer http://127.0.0.1:8768]
+  .venv/bin/python tools/site/build_gallery.py [--runs runs] [--viewer http://127.0.0.1:8768]
 
 A self-contained HTML file (no network, no build step) with a filterable table of all trials under runs/
 (task, suite, source benchmark, harness, model, reward, outcome, env steps, wall time, audit flags) and a
 card per trial with its video (relative link to <job>/<trial>/artifacts/recording.mp4), the agent's final
-message and a link to the trial in the full viewer (scripts/view.sh). Reads runs/_audit/audit.json when
-present (run scripts/audit.py first to get the audit column). Open it straight from disk or serve runs/.
+message and a link to the trial in the full viewer (tools/ops/view.sh). Reads runs/_audit/audit.json when
+present (run tools/analysis/audit.py first to get the audit column). Open it straight from disk or serve runs/.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 DEFAULT_MODELS = {"claude-code": "claude-opus-5-5", "codex": "gpt-6-astra", "claude-code-glm": "zai-org/GLM-5.3",
                   "codex-glm": "zai-org/GLM-5.3", "mini-swe-agent-glm": "zai-org/GLM-5.3", "oracle": "scripted", "noop": "none"}
 PROVIDER_PREFIXES = (("claude-", "anthropic"), ("gpt-", "openai"), ("gemini-", "google"))
@@ -144,7 +144,7 @@ footer{color:var(--mut);font-size:12px;margin-top:48px}
 <h2>Trials</h2>
 <div class="cards" id="cards"></div>
 <div class="more"><button id="more" hidden>show more</button></div>
-<footer>Built by scripts/build_gallery.py. Videos are linked relatively (<code>../&lt;job&gt;/&lt;trial&gt;/artifacts/recording.mp4</code>); "viewer" links need <code>scripts/view.sh</code> running at __VIEWER__. Audit column from runs/_audit/audit.json (scripts/audit.py).</footer>
+<footer>Built by tools/site/build_gallery.py. Videos are linked relatively (<code>../&lt;job&gt;/&lt;trial&gt;/artifacts/recording.mp4</code>); "viewer" links need <code>tools/ops/view.sh</code> running at __VIEWER__. Audit column from runs/_audit/audit.json (tools/analysis/audit.py).</footer>
 </main>
 <script>
 const DATA = __DATA__;
@@ -202,7 +202,7 @@ draw();
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--runs", type=Path, default=REPO / "runs")
-    ap.add_argument("--viewer", default="http://127.0.0.1:8768", help="base URL of scripts/view.sh")
+    ap.add_argument("--viewer", default="http://127.0.0.1:8768", help="base URL of tools/ops/view.sh")
     a = ap.parse_args(argv)
     rows = collect(a.runs, a.viewer.rstrip("/"))
     out = a.runs / "_gallery"

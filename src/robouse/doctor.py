@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import os
 import shutil
-from pathlib import Path
+
+from . import config
+from .harnesses import credentials
 
 WORKER_VENVS = {"dexjoco": "dexjoco", "driving": "metadrive", "dmcontrol": "dmcontrol", "myosuite": "myosuite",
                 "humanoidbench": "humanoidbench", "maniskill": "maniskill", "robocasa": "robocasa"}
@@ -35,25 +36,24 @@ def run() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"  -- {b} ({type(e).__name__}: {str(e)[:80]})")
     for b, v in WORKER_VENVS.items():
-        py = Path(os.environ.get(f"ROBOUSE_{b.upper()}_PYTHON", Path.home() / f".cache/robouse/{v}-venv/bin/python"))
+        py = config.sim_python("metadrive" if b == "driving" else b, v)
         print(f"  {_ok(py.exists())}{b} (worker virtualenv {py})")
     print("Harnesses")
     for h, exe in (("claude-code, claude-code-glm", "claude"), ("codex, codex-glm", "codex"), ("mini-swe-agent-glm", "mini")):
         print(f"  {_ok(shutil.which(exe) is not None)}{h} (`{exe}` on PATH)")
-    maint = Path.home() / ".config/bf-agents"
-    creds = {"ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN (or the maintainers' oauth.env)": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or (maint / "oauth.env").exists()),
-             "OPENAI_API_KEY or ~/.codex/auth.json": bool(os.environ.get("OPENAI_API_KEY") or (Path.home() / ".codex/auth.json").exists()),
-             "BASETEN_API_KEY (or the maintainers' baseten.env)": bool(os.environ.get("BASETEN_API_KEY") or (maint / "baseten.env").exists())}
+    creds = {"ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN": credentials.have_claude(),
+             "OPENAI_API_KEY or ~/.codex/auth.json": credentials.have_codex(),
+             "BASETEN_API_KEY": credentials.have_baseten()}
     for k, v in creds.items():
         print(f"  {_ok(v)}{k}")
-    print(f"  {_ok(bool(os.environ.get('ROBOUSE_VLA_URL')))}vla (ROBOUSE_VLA_URL {os.environ.get('ROBOUSE_VLA_URL', 'not set')})")
+    print(f"  {_ok(bool(config.env('ROBOUSE_VLA_URL')))}vla (ROBOUSE_VLA_URL {config.env('ROBOUSE_VLA_URL', 'not set')})")
     print("Real robots")
     for name, pkg in (("lerobot (Metal, SO-100/101)", "lerobot"), ("piper_sdk (Piper)", "piper_sdk"), ("OpenCV (cameras)", "cv2")):
         print(f"  {_ok(importlib.util.find_spec(pkg) is not None)}{name}")
     from .real.safety import estop_engaged
 
     print(f"  {'!! ' if estop_engaged() else 'ok '}e-stop {'ENGAGED: ' + str(estop_engaged()) if estop_engaged() else 'clear'}")
-    print(f"  {_ok(bool(os.environ.get('ROBOUSE_RIG')))}rig file {os.environ.get('ROBOUSE_RIG', '(none: real tasks use the hardware-in-the-loop mock)')}")
+    print(f"  {_ok(bool(config.env('ROBOUSE_RIG')))}rig file {config.env('ROBOUSE_RIG', '(none: real tasks use the hardware-in-the-loop mock)')}")
     from importlib.metadata import entry_points
 
     plugins = {g: [e.name for e in entry_points(group=g)] for g in ("robouse.backends", "robouse.harnesses", "robouse.drivers")}

@@ -71,7 +71,7 @@ Verdicts: tasks with a measurable goal are judged from the measured joints (`ver
 
 ## Hardware-in-the-loop mock
 
-`driver: mock` replays a fixture recorded on the real robot (`assets/hil/`, built with `scripts/make_hil_fixture.py` from `recorder.py` sessions): a `ReplayRobot` with LeRobot's `Robot` shape plugs in where the SDK would, so the real driver, the safety layer and the episode server run unchanged. The arm follows commands with a per-joint tracking model fitted to the recording (lag and gravity sag), reports the recorded torques and temperatures, and shows the recorded camera frames closest to its current pose. It models no contact with objects, so manipulation outcomes on the mock come from the scripted stand-in operator (staged checkpoints on the measured pose), never from physics.
+`driver: mock` replays a fixture recorded on the real robot (`assets/hil/`, built with `tools/assets/make_hil_fixture.py` from `recorder.py` sessions): a `ReplayRobot` with LeRobot's `Robot` shape plugs in where the SDK would, so the real driver, the safety layer and the episode server run unchanged. The arm follows commands with a per-joint tracking model fitted to the recording (lag and gravity sag), reports the recorded torques and temperatures, and shows the recorded camera frames closest to its current pose. It models no contact with objects, so manipulation outcomes on the mock come from the scripted stand-in operator (staged checkpoints on the measured pose), never from physics.
 
 | Fixture | Recorded on | Content |
 |---|---|---|

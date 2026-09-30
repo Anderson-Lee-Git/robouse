@@ -1,6 +1,6 @@
 """Forward and inverse kinematics for real arms, from a serial chain extracted from the vendor URDF (numpy only).
 
-A chain file (`data/<robot>_chain.json`, written by `scripts/urdf_to_chain.py`) lists the URDF joints in order: name, type
+A chain file (`data/<robot>_chain.json`, written by `tools/assets/urdf_to_chain.py`) lists the URDF joints in order: name, type
 (fixed / revolute / prismatic), parent and child link, origin (xyz, rpy) and axis. A `Profile` (in `real/robots.py`) says how
 the driver's joint values map onto the URDF joints (degrees -> radians, identity for the Metal arm and the SO-101 with
 LeRobot's calibration) and where the tool point is (a link plus an offset in that link's frame).

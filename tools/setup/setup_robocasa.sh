@@ -5,7 +5,7 @@
 # assets/robocasa/provenance.json; every zip is checked against its SHA-256 (the same files RoboCasa's own
 # download_kitchen_assets.py fetches as tex, fixtures_lw and objs_lw).
 set -euo pipefail
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 D="${ROBOUSE_ROBOCASA_HOME:-$HOME/.cache/robouse}"
 mkdir -p "$D" && cd "$D"
 [ -d robocasa-src ] || { git clone https://github.com/robocasa/robocasa.git robocasa-src && git -C robocasa-src checkout 456174f62b89b8fca99eaaf33949c29fec9cfc2a; }

@@ -1,10 +1,10 @@
 """Results tables from all trials under runs/ -> docs/results.md.
 
-Uses runs/_audit/audit.json (run scripts/audit.py first). One row per harness + model, one column per suite:
+Uses runs/_audit/audit.json (run tools/analysis/audit.py first). One row per harness + model, one column per suite:
 solved / scored trials, where scored excludes infrastructure failures and still-running trials. If a task was run
 more than once by the same harness + model, the latest trial counts.
 
-  .venv/bin/python scripts/results.py
+  .venv/bin/python tools/analysis/results.py
 
 It takes no arguments: any argument, including --help, is ignored and docs/results.md is rewritten.
 """
@@ -15,7 +15,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SUITES = ["metaworld", "gymrobotics", "libero", "libero-style", "arc-style", "robo-use-families", "safety", "vision", "hard", "robosuite"]
 LABEL = {
     "claude-code/claude-opus-5-5": "Claude Code + Opus 5.5",
@@ -61,7 +61,7 @@ def main() -> None:
         cell[0] += 1 if r.get("solved") else 0
     rows = sorted(table, key=lambda k: ORDER.index(k) if k in ORDER else 99)
     out = ["# Results", "",
-           f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} by `scripts/results.py` from `runs/_audit/audit.json`. "
+           f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} by `tools/analysis/results.py` from `runs/_audit/audit.json`. "
            "Each cell is solved / scored trials (one trial per task; infrastructure failures excluded and counted separately). "
            "Tasks per suite: see docs/suites/.", "",
            "| Harness + model | " + " | ".join(SUITES) + " | All | Infra failures |",

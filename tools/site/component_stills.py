@@ -1,6 +1,6 @@
 """Stills of the composable components for the hub: one image per embodiment, scene and task (at reset).
 
-    .venv/bin/python scripts/component_stills.py OUT_DIR
+    .venv/bin/python tools/site/component_stills.py OUT_DIR
 
 Writes OUT_DIR/{embodiment,scene,task}-<id>.webp (640 x 400). Each still is a real composed task at seed 0, rendered from a
 scene camera right after the reset (nothing is drawn by hand).
