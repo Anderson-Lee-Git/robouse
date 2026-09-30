@@ -22,3 +22,8 @@ EOF
   DOCKER_BUILDKIT=1 docker build -q -t "robouse-gate-$rt" "$ctx" > "/tmp/robouse-gate-$rt.build.log" 2>&1 || { tail -30 "/tmp/robouse-gate-$rt.build.log"; exit 1; }
   rm -rf "$ctx"
 done
+# the dev image: the base runtime plus the lint, type-check and packaging tools (tests, ruff, mypy, the wheel build)
+if [[ " ${RUNTIMES[*]} " == *" base "* ]]; then
+  printf 'FROM robouse-gate-base\nRUN pip install --no-cache-dir ruff==0.14.3 mypy==1.18.2 types-PyYAML build && rm -rf /root/.cache\n' \
+    | docker build -q -t robouse-gate-dev - > /tmp/robouse-gate-dev.build.log 2>&1 || { tail -30 /tmp/robouse-gate-dev.build.log; exit 1; }
+fi

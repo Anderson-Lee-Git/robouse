@@ -122,3 +122,58 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 [tool.hatch.build.targets.sdist]
 include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/assets/humanoidbench/provenance.json", "/assets/robocasa/provenance.json", "/README.md", "/LICENSE", "/pyproject.toml"]
 exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["tasks", "components", "assets"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE", "SIM", "PLE", "RUF100"]
+ignore = [
+    "E501",    # long lines: the formatter wraps code; long strings and tables stay whole
+    "E731",    # small named lambdas in tables
+    "SIM108",  # ternaries are not always clearer
+]
+
+[tool.ruff.lint.per-file-ignores]
+# simulator workers and standalone clients run outside the package, with setup before their imports
+"src/robouse/backends/*/worker.py" = ["E402"]
+"src/robouse/backends/gpu/worker/*.py" = ["E402"]
+"src/robouse/harnesses/*/client.py" = ["E402"]
+"tests/*" = ["B011"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+follow_imports = "silent"
+check_untyped_defs = true
+warn_unused_ignores = true
+files = [
+    "src/robouse/config.py",
+    "src/robouse/_maintainer.py",
+    "src/robouse/core",
+    "src/robouse/workers",
+    "src/robouse/lib",
+    "src/robouse/cli",
+    "src/robouse/runner",
+    "src/robouse/harnesses/__init__.py",
+    "src/robouse/harnesses/credentials.py",
+    "src/robouse/tasks.py",
+    "src/robouse/oracle.py",
+    "src/robouse/session.py",
+    "src/robouse/assets.py",
+    "src/robouse/backends/__init__.py",
+    "src/robouse/backends/base.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.coverage.run]
+source = ["robouse"]
+omit = ["*/worker.py", "*/gpu/worker/*"]
