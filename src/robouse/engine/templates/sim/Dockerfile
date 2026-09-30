@@ -17,12 +17,12 @@ COPY requirements.txt /tmp/requirements-sim.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-sim.txt && rm -rf /root/.cache
 
 # Robot meshes for the menagerie and drone suites (MuJoCo Menagerie, pinned commit, SHA-256 checked). Downloaded at
-# build time; the simulator runs with network_mode: none. Only the provenance manifests enter this layer's context.
-COPY robouse/src/robouse/assets_provenance/ /opt/robouse-assets-provenance/
-COPY robouse/src/robouse/assets.py /tmp/robouse_assets.py
-RUN python -c "import sys, pathlib; sys.path.insert(0, '/tmp'); import robouse_assets as a; \
-a.manifests = lambda: sorted(pathlib.Path('/opt/robouse-assets-provenance').glob('*.json')); \
-a.fetch(pathlib.Path('/opt/robouse-assets'), log=lambda *_: None)"
+# build time; the simulator runs with network_mode: none. Only the fetch code and the manifests enter this layer.
+COPY robouse/src/robouse/__init__.py robouse/src/robouse/assets.py robouse/src/robouse/config.py robouse/src/robouse/_maintainer.py /tmp/ra/robouse/
+COPY robouse/src/robouse/lib/ /tmp/ra/robouse/lib/
+COPY robouse/src/robouse/assets_provenance/ /tmp/ra/robouse/assets_provenance/
+RUN PYTHONPATH=/tmp/ra python -c "from pathlib import Path; from robouse.assets import fetch; \
+fetch(Path('/opt/robouse-assets'), log=lambda *_: None, everything=True)" && rm -rf /tmp/ra
 ENV ROBOUSE_MENAGERIE_ASSETS=/opt/robouse-assets
 
 # BenchFlow's embodied layer (vendored; BenchFlow itself is not installed here) and its entry point.
