@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import math
-from typing import Any
-
-import numpy as np
+from .scene import DR_TRAVEL, FLOOR_Z
 
 # --------------------------------------------------------------------------------------------------
 

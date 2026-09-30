@@ -26,7 +26,27 @@ import numpy as np
 
 from ...core.protocol import agent_refused
 from ..base import ActionSpec, Backend, G, StepInfo, arm_layout
-from .scene import *  # noqa: F403 - resolved below by ruff
+from .scene import (
+    DR_FLOOR,
+    DR_HANDLE,
+    DR_IN,
+    DR_TRAVEL,
+    DR_WALL_TOP,
+    FINGER_OPEN,
+    HAND_HI,
+    HAND_HOME,
+    HAND_LO,
+    SETTLE_SUBSTEPS,
+    STEP_M,
+    SUBSTEPS,
+    TABLE_HX,
+    TABLE_HY,
+    _cell_xy,
+    _fixture_xy,
+    _obj_rest_half,
+    _resolved_obj,
+    build_xml,
+)
 from .scenarios import SCENARIOS
 
 # --------------------------------------------------------------------------------------------------

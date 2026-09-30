@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import math
-from typing import Any
-
 import numpy as np
 
 from .scenarios import SCENARIOS
+from .scene import DR_TRAVEL, HAND_HI, HAND_LO
 
 # --------------------------------------------------------------------------------------------------
 
