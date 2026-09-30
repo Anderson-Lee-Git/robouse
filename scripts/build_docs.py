@@ -756,7 +756,12 @@ document.querySelectorAll(".code").forEach(function (box) {
     links.forEach(function (a, i) { a.classList.toggle("on", i === cur); });
   }
   var picked = -1, release = function () { if (picked >= 0) { picked = -1; update(); } };
-  links.forEach(function (a, i) { a.addEventListener("click", function () { picked = i; update(); }); });
+  // any in-page link to a section (a contents entry or a heading's own # permalink) makes that section current
+  var ids = links.map(function (a) { return a.getAttribute("href").slice(1); });
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#"]'); if (!a) return;
+    var i = ids.indexOf(decodeURIComponent(a.getAttribute("href").slice(1))); if (i >= 0) { picked = i; update(); }
+  });
   ["wheel", "touchstart", "keydown"].forEach(function (t) { window.addEventListener(t, release, { passive: true }); });
   document.addEventListener("scroll", update, { passive: true });
   update();
