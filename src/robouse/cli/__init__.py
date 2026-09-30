@@ -128,7 +128,9 @@ def main(argv: list[str] | None = None) -> int:
         from . import tasks
 
         commands: dict[str, Callable[[list[str]], int]] = {
-            "tasks": tasks.tasks_main, "components": tasks.components_main, "remix": tasks.remix_alias,
+            "tasks": tasks.tasks_main,
+            "components": tasks.components_main,
+            "remix": tasks.remix_alias,
         }
         return commands[args[0]](args[1:])
     a = parser().parse_args(args)

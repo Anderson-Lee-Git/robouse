@@ -167,7 +167,12 @@ class Episode:
         for name in self.cameras:
             h, w = self._render(name).shape[:2]
             cam = mujoco_camera(
-                model, data, name, w, h, image_flipped=bool(getattr(self.backend, "image_flipped", False)),
+                model,
+                data,
+                name,
+                w,
+                h,
+                image_flipped=bool(getattr(self.backend, "image_flipped", False)),
                 calibrated=name not in self.uncalibrated,
             )
             if cam is not None:
