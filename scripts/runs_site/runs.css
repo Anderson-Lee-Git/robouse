@@ -496,3 +496,7 @@ table.list th:last-child .sb{margin-right:0}  /* the sort button's bleed must no
 @media (max-width:560px){table.list.runs th:nth-child(3),table.list.runs td:nth-child(3),table.list.runs th:nth-child(4),table.list.runs td:nth-child(4){display:none}}
 @media (max-width:560px){table.list.rt th:nth-child(3),table.list.rt td:nth-child(3),table.list.rt th:nth-child(5),table.list.rt td:nth-child(5){display:none}}
 @media (max-width:560px){.rtag{display:table;margin:var(--sp-2) 0 0}table.list.runs th,table.list.runs td{padding-right:var(--sp-10)}}
+/* a run's trials: task titles in the text face with room to breathe; the outcome column is narrow (exceptions only) */
+table.list.rt th[scope="row"]{white-space:normal;width:55%;min-width:220px}
+a.rtk{font:500 var(--fs-small)/1.4 var(--sans);color:var(--ink)}
+table.list.rt td.oc{max-width:160px;white-space:normal}
