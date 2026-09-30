@@ -33,7 +33,7 @@ class SandboxUnavailable(RuntimeError):
 def _denied(extra: list[Path]) -> list[str]:
     paths = [*config.sandbox_denied_paths(), *map(str, extra), str(PKG)]
     # resolved paths (Seatbelt and bind mounts match /private/tmp, not /tmp); order kept, duplicates dropped
-    return list(dict.fromkeys(os.path.realpath(os.path.expanduser(p)) for p in paths if Path(p).exists()))
+    return list(dict.fromkeys(os.path.realpath(os.path.expanduser(p)) for p in paths))
 
 
 def sandbox_profile(
