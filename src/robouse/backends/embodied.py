@@ -130,7 +130,7 @@ class Skill:
 
 
 # the embodiment family -> BenchFlow's embodiment kind
-SPEC_KIND = {"aerial": "drone", "dexterous_hand": "hand", "wheeled": "vehicle"}
+SPEC_KIND = {"aerial": "drone", "dexterous_hand": "hand", "wheeled": "vehicle", "mobile_base": "vehicle"}
 
 
 @dataclass
