@@ -341,7 +341,11 @@ def check_task(d: Path, level: str = "structural", run: bool = True, keep_runs: 
         from ..components.compose import validate
 
         v = validate(d, Path(keep_runs) if keep_runs else None)
-        print(_validation_message(v))
+        if v["oracle"].get("exception") or v["noop"].get("exception"):
+            print(_validation_message(v))
+        else:
+            print(f"reference solution: reward {v['oracle']['reward']} ({v['oracle']['outcome']}, {v['oracle']['steps']} steps)")
+            print(f"no-op control: reward {v['noop']['reward']} ({v['noop']['outcome']})")
         if v["oracle"]["reward"] != 1:
             problems.append("the reference solution does not score 1")
         if v["noop"]["reward"] != 0:
