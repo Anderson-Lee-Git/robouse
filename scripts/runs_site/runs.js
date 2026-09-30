@@ -7,7 +7,8 @@
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
   function h(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]; }); }
-  function t2(x) { x = +x || 0; var m = Math.floor(x / 60), s = x - m * 60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1); }
+  function t2(x) { x = Math.round((+x || 0) * 10) / 10; var m = Math.floor(x / 60), s = (x - m * 60).toFixed(1); return m + ":" + (+s < 10 ? "0" : "") + s; }  // round first, then pad: 9.96 -> 0:10.0
+  function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }  // a pause right after play rejects; that is not an error
   function dur(x) { if (x == null) return "–"; x = +x; return x < 120 ? x.toFixed(x < 10 ? 1 : 0) + " s" : (x / 60).toFixed(1) + " min"; }
   function rew(x) { return x == null || isNaN(+x) ? "–" : (+x).toFixed(1); }
   function mfirst(l) { var i = String(l).indexOf(" + "); return i < 0 ? l : l.slice(i + 3) + " · " + l.slice(0, i); }  // "Claude Code + Opus 5.5" -> "Opus 5.5 · Claude Code"
@@ -333,7 +334,7 @@
           if (b.hasAttribute("data-speed")) {
             speed = +b.getAttribute("data-speed"); v.playbackRate = speed; try { localStorage.setItem("runs-speed", speed); } catch (err) {}
             $$("[data-speed]", pctl).forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
-          } else if (b.getAttribute("data-k") === "play") { if (v.paused) v.play(); else v.pause(); }
+          } else if (b.getAttribute("data-k") === "play") { if (v.paused) play(v); else v.pause(); }
           else if (b.getAttribute("data-k") === "full") fullscreen();
           else step(b.getAttribute("data-k") === "next" ? 1 : -1);
         });
@@ -351,7 +352,7 @@
           var tag = (e.target || {}).tagName || "";
           if (e.key === "ArrowRight") { step(1); e.preventDefault(); }
           else if (e.key === "ArrowLeft") { step(-1); e.preventDefault(); }
-          else if (e.key === " " && !/^(BUTTON|A|SUMMARY|VIDEO)$/.test(tag)) { if (v.paused) v.play(); else v.pause(); e.preventDefault(); }
+          else if (e.key === " " && !/^(BUTTON|A|SUMMARY|VIDEO)$/.test(tag)) { if (v.paused) play(v); else v.pause(); e.preventDefault(); }
           else if (e.key === "f" || e.key === "F") { fullscreen(); e.preventDefault(); }
         });
       }
@@ -360,7 +361,7 @@
         if (document.fullscreenElement) { document.exitFullscreen(); return; }
         if (v.requestFullscreen) v.requestFullscreen(); else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
       }
-      if (v) v.addEventListener("click", function () { if (v.paused) v.play(); else v.pause(); });
+      if (v) v.addEventListener("click", function () { if (v.paused) play(v); else v.pause(); });
       function dur0() { return (v && v.duration && isFinite(v.duration)) ? v.duration : (d.duration || 1); }
       function pct(t) { return Math.max(0, Math.min(100, 100 * t / dur0())); }
       function hasImg(s) { return (s.c || []).some(function (c) { return c.img && c.img.length; }); }
@@ -383,6 +384,8 @@
         if (sync) sync.pin(pin);
         if (el.classList.contains("tile") && !(sync && sync.marks.length)) { $$(".tile.cur").forEach(function (t) { t.classList.remove("cur"); }); el.classList.add("cur"); }
         seekTo(v, el.getAttribute("data-seek") || el.getAttribute("data-t0"));
+        var vr = v.getBoundingClientRect();  /* phones: a seek from below brings the video back into view */
+        if (vr.bottom < 48 || vr.top > innerHeight - 48) v.scrollIntoView({block: "nearest", behavior: reduce ? "auto" : "smooth"});
       });
       keyActivate(panel);
 
@@ -673,7 +676,7 @@
       bindPick();
       [["a", a], ["b", b]].forEach(function (sd) { if (sd[1]) column(sd[0], sd[1], ids); });
       var both = $("[data-both]", root);
-      if (both) both.addEventListener("click", function () { $$("video", root).forEach(function (v) { v.currentTime = 0; v.playbackRate = 0.5; v.play(); }); });
+      if (both) both.addEventListener("click", function () { $$("video", root).forEach(function (v) { v.currentTime = 0; v.playbackRate = 0.5; play(v); }); });
       function bindPick() {
         var s = $("[data-task]", root);
         s.addEventListener("change", function () { if (!s.value) return; var l = sorted(byTask[s.value]); location.search = "?a=" + encodeURIComponent(l[0]) + (l[1] ? "&b=" + encodeURIComponent(l.find(function (x) { return x !== l[0] && T[x][1] !== T[l[0]][1]; }) || l[1]) : ""); });
@@ -689,7 +692,7 @@
           body.setAttribute("aria-busy", "false");
           body.innerHTML = '<div class="vbox">' + (d.video ? '<video src="' + h(d.video) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="auto"></video>' : '<div class="novideo empty-state"><b>No recording.</b>The episode ended before a frame was written.</div>') + "</div>" +
             '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + h(d.label || mfirst(idx.hm[d.hm][0])) + "</a></p>" +
-            '<dl class="facts"><div><dt>Reward</dt><dd>' + rew(d.reward) + '</dd></div><div><dt>Outcome</dt><dd class="mono">' + h(d.outcome || "–") + "</dd></div><div><dt>Env steps</dt><dd>" + num(d.steps_used) + " / " + num(d.max_steps) +
+            '<dl class="facts"><div><dt>Reward</dt><dd>' + rew(d.reward) + '</dd></div><div><dt>Outcome</dt><dd class="mono">' + h(d.outcome || "–").replace(/_/g, "_<wbr>") + "</dd></div><div><dt>Env steps</dt><dd>" + num(d.steps_used) + " / " + num(d.max_steps) +
             "</dd></div><div><dt>Requests</dt><dd>" + num(d.requests) + "</dd></div><div><dt>Wall</dt><dd>" + dur(d.wall) + "</dd></div></dl>" +
             (d.withheld ? '<div class="withheld" role="note"><b>Trajectory withheld</b><p>The agent looked at files outside its workspace.</p></div>' : (vd.claim_text ? '<p class="said"><span class="muted">' + ({done: "robo done", give_up: "robo give-up", runner: "closed by the runner"}[vd.claim] || "last message") + ": </span>" + h(vd.claim_text.replace(/^\[runner\]\s*/, "").slice(0, 400)) + "</p>" : "") +
               (d.steps.length ? '<ol class="slist">' + stepListHTML(d) + "</ol>" : '<p class="muted">No trajectory was recorded.</p>'));
