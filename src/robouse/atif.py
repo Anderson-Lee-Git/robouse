@@ -675,7 +675,7 @@ def _episode_epoch(trial: Path, episode: dict) -> float | None:
 
 
 # harnesses without an LLM transcript: their steps come from the episode server's trace
-TRACE_HARNESSES = ("oracle", "noop", "molmoact2")
+TRACE_HARNESSES = ("oracle", "noop", "molmoact2", "vla")
 
 
 def _prompt(trial: Path, cfg: dict, harness: str) -> str:

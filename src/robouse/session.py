@@ -37,6 +37,9 @@ class Episode:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.workspace = Path(workspace) if workspace else None
         self.backend = make_backend(spec)
+        if callable(getattr(self.backend, "attach_run_dir", None)):  # real robots: session log next to the episode record
+            self.backend.attach_run_dir(self.run_dir)
+        self.mode = str(getattr(self.backend, "mode", "sim"))  # sim | real | hil-mock (the sim/real axis)
         self.seed = int(spec.get("seed", 0) if seed is None else seed)
         self.max_steps = int(spec.get("max_steps", getattr(self.backend, "max_steps", 500)))
         self.frame_every = int(spec.get("frame_every", 2))
@@ -70,6 +73,13 @@ class Episode:
         self._frame_meta: list[dict] = []
         self._trace = open(self.run_dir / "trace.jsonl", "w")
         self._obs_count = 0
+        self._phys: list[dict] = []  # per env step: end-effector point, sim time, max contact force on the robot
+        self._phys_geoms = None
+        md = getattr(self.backend, "mj_model_data", None)
+        try:
+            self._phys_mj = callable(md) and md() is not None
+        except Exception:  # noqa: BLE001 - some worker backends cannot answer before their first step
+            self._phys_mj = False
         self._record_frame(force=True)
 
     def _save_workspace_images(self) -> None:
@@ -88,13 +98,53 @@ class Episode:
     # ---- recording -------------------------------------------------------------------------
     def _record_frame(self, force: bool = False) -> None:
         if force or self.steps % self.frame_every == 0:
-            img = self.backend.render()
+            rv = getattr(self.backend, "render_video", None)  # a backend may record a different view than agents see
+            img = rv() if callable(rv) else self.backend.render()
             self._frames.append(np.asarray(img, dtype=np.uint8))
             self._frame_meta.append({"i": len(self._frames) - 1, "t": round(time.time() - self.t0, 3), "step": self.steps})
+
+    def _probe(self) -> None:
+        """One physics sample for the episode metrics (metrics.py); never fails the step."""
+        b, rec = self.backend, {"i": self.steps}
+        try:
+            if callable(getattr(b, "metrics_point", None)):
+                pt = b.metrics_point()
+            elif self._phys_mj and callable(getattr(b, "hand_pos", None)):
+                pt = b.hand_pos()
+            else:
+                pt = None
+            if pt is not None:
+                rec["ee"] = [round(float(x), 5) for x in pt]
+            if self._phys_mj:
+                from .metrics import max_robot_contact_force, robot_geoms
+
+                m, d = b.mj_model_data()
+                if self._phys_geoms is None:
+                    self._phys_geoms = robot_geoms(m)
+                rec["t"] = round(float(d.time), 5)
+                rec["f"] = round(max_robot_contact_force(m, d, self._phys_geoms), 3)
+        except Exception:  # noqa: BLE001
+            pass
+        self._phys.append(rec)
+
+    def _control_dt(self) -> float | None:
+        ts = [r["t"] for r in self._phys if "t" in r]
+        if len(ts) >= 3:
+            d = np.diff(ts)
+            d = d[d > 0]
+            if len(d):
+                return float(np.median(d))
+        decl = getattr(self.backend, "decl", None)
+        if decl is not None and getattr(getattr(decl, "budget", None), "control_dt", None):
+            return float(decl.budget.control_dt)
+        if getattr(self.backend, "hz", None):
+            return 1.0 / float(self.backend.hz)
+        return float(self.spec["control_dt"]) if self.spec.get("control_dt") else None
 
     def _env_step(self, action) -> Any:
         info = self.backend.step(action)
         self.steps += 1
+        self._probe()
         self.success_ever = self.success_ever or info.success
         self._record_frame()
         if info.success and self.success_mode == "first" and not self.finished:
@@ -156,6 +206,7 @@ class Episode:
         req = {k: v for k, v in req.items() if k != "token"}  # never write the token to the trace
         op = req.get("op")
         t = round(time.time() - self.t0, 3)
+        self._check_halt()
         try:
             if self.finished and op not in ("info", "status"):
                 resp = {"ok": False, "error": f"episode finished ({self.outcome})"}
@@ -179,25 +230,34 @@ class Episode:
                 resp = {"ok": False, "error": f"unknown op {op!r}"}
         except Exception as e:  # bounded error back to the agent
             resp = {"ok": False, "error": f"{type(e).__name__}: {e}"[:500]}
+        self._check_halt()
         if not self.finished and self.steps >= self.max_steps:
             self.finish("budget_exhausted", "")
         if self.finished and op in ("act", "move_to", "grip", "skill") and resp.get("ok") and isinstance(resp.get("result"), dict):
             msg = {"budget_exhausted": "step budget exhausted", "success_reached": "goal reached, episode scored as solved",
-                   "wall_time_exhausted": "wall-clock budget exhausted"}.get(self.outcome, self.outcome)
+                   "wall_time_exhausted": "wall-clock budget exhausted",
+                   "safety_stop": "stopped by the safety layer (the robot holds; a human must check it)"}.get(self.outcome, self.outcome)
             resp["result"]["episode"] = f"finished: {msg}"
         self._trace.write(json.dumps({"t": t, "steps": self.steps, "req": req, "resp": _strip(resp)}) + "\n")
         self._trace.flush()
         return resp
 
+    def _check_halt(self) -> None:
+        """Real robots: an e-stop, over-temperature or hardware fault ends the episode at once (no settle steps)."""
+        halted = getattr(self.backend, "halted", None)
+        if halted and not self.finished:
+            self.finish("safety_stop", str(halted)[:500], settle=False)
+
     def info(self) -> dict:
         s = self.backend.action_spec
         return {
-            "task": self.spec.get("id"), "backend": self.backend.name,
+            "task": self.spec.get("id"), "backend": self.backend.name, "mode": self.mode,
             "action": {"names": s.names, "low": s.low, "high": s.high, "doc": s.doc},
             "skills": self.backend.skills() if self.skills_enabled else [],
             "steps_used": self.steps, "max_steps": self.max_steps,
             "observation_mode": self.obs_mode,
             **({"max_repeat": self.max_repeat} if "max_repeat" in self.spec else {}),
+            **(self.backend.info_extra() if callable(getattr(self.backend, "info_extra", None)) else {}),
             **({"visible_fields": self.visible_fields, "cameras": self.camera_info()} if self.obs_mode == "vision" else {}),
         }
 
@@ -227,6 +287,8 @@ class Episode:
         spec = self.backend.action_spec
         if not isinstance(action, list) or len(action) != spec.dim or not all(isinstance(x, (int, float)) for x in action):
             return {"ok": False, "error": f"action must be a list of {spec.dim} numbers {spec.names}"}
+        if not all(np.isfinite(x) for x in action):
+            return {"ok": False, "error": "action values must be finite numbers (no nan or inf)"}
         repeat = max(1, min(self.max_repeat, repeat))
         n = 0
         for _ in range(repeat):
@@ -281,6 +343,9 @@ class Episode:
         """Named high-level skill implemented by the backend (optional `run_skill(name, args)` hook, e.g. BEHAVIOR's
         symbolic primitives). One skill call counts as one step of the budget. Backends may also provide
         `pop_frames()` with the video frames rendered while the skill ran."""
+        start = getattr(self.backend, "start_skill", None)
+        if self.skills_enabled and callable(start):
+            return self._closed_loop_skill(start, name, args)
         run = getattr(self.backend, "run_skill", None)
         if not self.skills_enabled or not callable(run):
             return {"ok": False, "error": "no named skills in this task; see `robo info`"}
@@ -297,12 +362,45 @@ class Episode:
         self._record_frame(force=True)
         return {"ok": True, "result": {**out, "steps_used": self.steps, "max_steps": self.max_steps}}
 
+    def _closed_loop_skill(self, start, name, args) -> dict:
+        """Embodiment backends (backends/embodied.py): a skill is a generator that yields one action per control step;
+        each action runs as an ordinary step (budget, video frames, success checks), until the skill returns."""
+        if not isinstance(name, str) or not isinstance(args, list):
+            return {"ok": False, "error": "skill needs a name and a list of arguments"}
+        try:
+            gen = start(name, [str(a) for a in args])
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        n, out = 0, {}
+        while True:
+            if self.steps >= self.max_steps or self.finished:
+                gen.close()
+                out = {"stopped": "step budget exhausted" if self.steps >= self.max_steps else "episode finished"}
+                break
+            try:
+                action = next(gen)
+            except StopIteration as e:
+                out = e.value or {}
+                break
+            except Exception as e:  # a skill that fails part-way reports it; the steps it ran still count
+                gen.close()
+                out = {"error": f"{type(e).__name__}: {e}"[:300]}
+                break
+            self._env_step(action)
+            n += 1
+        return {"ok": True, "result": {"skill": name, **out, "executed_steps": n, "state": self._state(), "steps_used": self.steps,
+                                       "max_steps": self.max_steps}}
+
     def finish(self, outcome: str, text: str, settle: bool = True) -> dict:
         if self.finished:
             return {"outcome": self.outcome}
+        if getattr(self.backend, "halted", None):
+            settle = False
         g = float(getattr(self.backend, "_grip", 0.0))
         dim = self.backend.action_spec.dim
         hold = [0.0] * (dim - 1) + [g] if dim >= 1 else []
+        if callable(getattr(self.backend, "hold_action", None)):  # embodiment backends say what "hold still" is
+            hold = list(self.backend.hold_action())
         for _ in range(SETTLE_STEPS if settle else 0):  # settle; success must still hold afterwards
             try:
                 self.backend.step(hold)
@@ -310,19 +408,40 @@ class Episode:
                 break
             self._record_frame(force=True)
         judge = getattr(self.backend, "judge", None)  # optional: verdict that depends on how the episode ended
-        if callable(judge):  # e.g. safety tasks, where refusing (give_up) is the rewarded behaviour
-            success = bool(judge(outcome, text))
-        elif self.success_mode == "first":
-            success = bool(self.success_ever)
-        else:  # only an explicit `robo done` is judged; give-up, timeouts and budget endings score 0
-            success = outcome == "done" and bool(self.backend.success())
+        judge_error = None
+        try:
+            if callable(judge):  # e.g. safety tasks, where refusing (give_up) is the rewarded behaviour
+                success = bool(judge(outcome, text))
+            elif self.success_mode == "first":
+                success = bool(self.success_ever)
+            else:  # only an explicit `robo done` is judged; give-up, timeouts and budget endings score 0
+                success = outcome == "done" and bool(self.backend.success())
+        except Exception as e:  # a simulator that died cannot be judged: score 0 and record why
+            success, judge_error = False, f"{type(e).__name__}: {e}"[:300]
         self.finished, self.outcome, self.agent_text = True, outcome, text
         self.result = {
             "task": self.spec.get("id"), "seed": self.seed, "success": success, "success_ever": self.success_ever,
             "success_mode": self.success_mode,
             "outcome": outcome, "steps_used": self.steps, "max_steps": self.max_steps, "requests": self.requests,
-            "agent_text": text, "wall_time_s": round(time.time() - self.t0, 2),
+            "agent_text": text, "wall_time_s": round(time.time() - self.t0, 2), "embodiment_mode": self.mode,
+            **({"safety_events": list(self.backend.events)} if getattr(self.backend, "events", None) else {}),
+            **({"session": self.backend.session_summary()} if callable(getattr(self.backend, "session_summary", None)) else {}),
+            **({"judge_error": judge_error} if judge_error else {}),
+            **({"placement": self.backend.placement_record} if getattr(self.backend, "placement_record", None) else {}),
+            **({"judge_detail": getattr(self.backend, "last_judge")} if getattr(self.backend, "last_judge", None) else {}),
         }
+        try:
+            from .metrics import episode_metrics
+
+            prog = self.backend.progress() if callable(getattr(self.backend, "progress", None)) else None
+            stages = len(getattr(self.backend, "stages", None) or []) or None
+            extra = self.backend.episode_metrics() if callable(getattr(self.backend, "episode_metrics", None)) else None
+            self.result["metrics"] = episode_metrics(self.result, self._phys, self._control_dt(), prog, stages, extra)
+            with open(self.run_dir / "physics.jsonl", "w") as f:
+                for r in self._phys:
+                    f.write(json.dumps(r) + "\n")
+        except Exception as e:  # noqa: BLE001 - metrics never change the verdict
+            self.result["metrics_error"] = f"{type(e).__name__}: {e}"[:300]
         (self.run_dir / "result.json").write_text(json.dumps(self.result, indent=2))
         self._write_video()
         return {"outcome": outcome, "episode": "finished"}
@@ -335,6 +454,14 @@ class Episode:
             return
         import imageio.v2 as imageio
 
+        shapes = [f.shape for f in self._frames]
+        if len(set(shapes)) > 1:  # e.g. a placeholder before a real camera's first image: match the most common size
+            from collections import Counter
+
+            from PIL import Image
+
+            h, w = Counter(shapes).most_common(1)[0][0][:2]
+            self._frames = [f if f.shape[:2] == (h, w) else np.asarray(Image.fromarray(f).resize((w, h))) for f in self._frames]
         with imageio.get_writer(self.run_dir / "recording.mp4", fps=FPS, codec="libx264", quality=7,
                                 macro_block_size=16, ffmpeg_log_level="error") as w:
             for fr in self._frames:

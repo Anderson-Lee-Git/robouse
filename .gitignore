@@ -8,3 +8,5 @@ runs/
 .env.*
 node_modules/
 .cache/
+MUJOCO_LOG.TXT
+tasks-local/

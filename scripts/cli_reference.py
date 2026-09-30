@@ -17,10 +17,16 @@ import sys
 from pathlib import Path
 
 DOC = Path(__file__).resolve().parent.parent / "docs" / "cli.md"
-COMMANDS = ["run", "run-many", "tasks", "fetch-assets", "serve"]
+COMMANDS = ["run", "run-many", "report", "summarize", "tasks", "robots", "estop", "operator", "hil-check", "fetch-assets", "serve"]
 NOTES = {
-    "run": """`--model` matters only for `claude-code` and `codex`; the other harnesses ignore it. The command prints a JSON summary (`trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`). A non-null `exception` means the trial could not start; it is not a score.""",
-    "run-many": """`--tasks` is searched recursively. The command prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved.""",
+    "run": """`--model` names the model for model harnesses and the preset for `vla` ([VLA policies](vla.md)). `--rig` runs a real-robot task on live hardware instead of the hardware-in-the-loop mock ([Real robots](real-robots.md)). The command prints a JSON summary (`trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`). A non-null `exception` means the trial could not start; it is not a score.""",
+    "run-many": """`--tasks` is searched recursively. The command prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved. Seeds, epochs, splits, sampling and retries: [Metrics, splits, repeats and reports](metrics.md).""",
+    "report": """Metrics with 95% intervals over job folders; see [Metrics](metrics.md).""",
+    "summarize": """A deterministic digest of one trial (outcome, judge detail, safety events, robot errors, last requests) as markdown, for `--prior-learnings`.""",
+    "robots": """Real-robot profiles, drivers and hardware-in-the-loop fixtures ([Real robots](real-robots.md)).""",
+    "estop": """Latches the e-stop: every real-robot episode stops at its next command and the arm holds. `--clear` releases it.""",
+    "operator": """The operator's side of an attended real-robot run: `status` (the pending gate or verdict), `answer` (yes / no / partial / skip or a rubric stage), `say` (a remark the policy sees in its next observation).""",
+    "hil-check": """Strict replay of recorded real sessions through the safety guard, and the fitted tracking model's error.""",
     "tasks": """Prints one line per task: id, backend, simulator env id (empty for tabletop tasks).""",
     "fetch-assets": """Downloads the MuJoCo Menagerie robot models (about 42 MB) that the `menagerie`, `roboharm` and `drone` suites need, each checked by SHA-256. Files already present are skipped. The episode server looks in `$ROBOUSE_MENAGERIE_ASSETS`, else `~/.cache/robouse/menagerie`.""",
     "serve": """Runs one episode server on a Unix socket until the episode ends, then prints the verdict as JSON. `run` starts it for you; use it directly to drive a robot by hand with `robo` (set `ROBOUSE_SOCKET` to the socket path).""",

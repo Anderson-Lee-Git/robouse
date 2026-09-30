@@ -9,7 +9,10 @@ cd "$(dirname "$0")/.."
 export MUJOCO_GL=cgl
 PAIRS=("codex:gpt-6-astra:4:astra" "claude-code-glm::3:cc-glm" "codex-glm::2:codex-glm" "mini-swe-agent-glm::2:mini-glm")
 if [ -n "${FINAL_PAIRS:-}" ]; then read -r -a PAIRS <<< "$FINAL_PAIRS"; fi
-SUITES=("$@"); [ ${#SUITES[@]} -gt 0 ] || SUITES=(metaworld gymrobotics libero libero-style arc-style robo-use-families safety vision hard)
+# Embodiment suites (not arms): quadruped humanoid mobile-manip dexhand crazyflie (robot models: `robouse fetch-assets`);
+# driving needs MetaDrive in its own venv (docs/suites/driving.md).
+SUITES=("$@"); [ ${#SUITES[@]} -gt 0 ] || SUITES=(metaworld gymrobotics libero libero-style arc-style robo-use-families safety vision hard
+  crazyflie quadruped humanoid mobile-manip dexhand driving)
 for spec in "${PAIRS[@]}"; do
   IFS=: read h m c tag <<< "$spec"
   (

@@ -1,0 +1,4 @@
+kitchen-microwave
+kitchen-top-burner
+kitchen-slide-cabinet
+kitchen-complete

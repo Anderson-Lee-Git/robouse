@@ -56,31 +56,48 @@ robo = "robouse.agent_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robouse"]
-# robocasa_episodes are recorded, machine-specific scene files for the RoboCasa suite (not yet bundled as tasks).
-exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes"]
+exclude = ["**/__pycache__", "**/*.pyc"]
 
 # The task folders ship inside the wheel as robouse/bundled_tasks, so `robouse tasks` and
 # `robouse run --task <id>` work without a checkout.
 [tool.hatch.build.targets.wheel.force-include]
-# One entry per suite that is self-contained. Left out: robocasa (its recorded episode layouts are machine-specific
-# and not distributed) and any suite still in development.
+# One entry per suite. Left out: behavior (its simulator runs on a remote GPU worker) and any suite still in development.
+# Suites whose simulator needs its own virtualenv (dexjoco, driving, dmcontrol, myosuite, humanoidbench, maniskill,
+# robocasa) still need that setup; docs/suites.md says how.
+"tasks/adroit" = "robouse/bundled_tasks/adroit"
 "tasks/arc-style" = "robouse/bundled_tasks/arc-style"
+"tasks/crazyflie" = "robouse/bundled_tasks/crazyflie"
+"tasks/dexhand" = "robouse/bundled_tasks/dexhand"
 "tasks/dexjoco" = "robouse/bundled_tasks/dexjoco"
+"tasks/dmcontrol" = "robouse/bundled_tasks/dmcontrol"
+"tasks/driving" = "robouse/bundled_tasks/driving"
 "tasks/drone" = "robouse/bundled_tasks/drone"
 "tasks/gymrobotics" = "robouse/bundled_tasks/gymrobotics"
 "tasks/hard" = "robouse/bundled_tasks/hard"
+"tasks/humanoid" = "robouse/bundled_tasks/humanoid"
+"tasks/humanoidbench" = "robouse/bundled_tasks/humanoidbench"
+"tasks/kitchen" = "robouse/bundled_tasks/kitchen"
 "tasks/libero" = "robouse/bundled_tasks/libero"
+"tasks/libero-90" = "robouse/bundled_tasks/libero-90"
 "tasks/libero-style" = "robouse/bundled_tasks/libero-style"
+"tasks/maniskill" = "robouse/bundled_tasks/maniskill"
 "tasks/menagerie" = "robouse/bundled_tasks/menagerie"
 "tasks/metaworld" = "robouse/bundled_tasks/metaworld"
+"tasks/mobile-manip" = "robouse/bundled_tasks/mobile-manip"
+"tasks/myosuite" = "robouse/bundled_tasks/myosuite"
+"tasks/quadruped" = "robouse/bundled_tasks/quadruped"
 "tasks/robo-use-families" = "robouse/bundled_tasks/robo-use-families"
+"tasks/robocasa" = "robouse/bundled_tasks/robocasa"
 "tasks/roboharm" = "robouse/bundled_tasks/roboharm"
 "tasks/robosuite" = "robouse/bundled_tasks/robosuite"
 "tasks/safety" = "robouse/bundled_tasks/safety"
 "tasks/vision" = "robouse/bundled_tasks/vision"
 "assets/menagerie/provenance.json" = "robouse/assets_provenance/menagerie.json"
 "assets/menagerie/skydio_x2/PROVENANCE.json" = "robouse/assets_provenance/skydio_x2.json"
+"assets/menagerie/embodiments.json" = "robouse/assets_provenance/embodiments.json"
+"assets/humanoidbench/provenance.json" = "robouse/assets_provenance/humanoidbench.json"
+"assets/robocasa/provenance.json" = "robouse/assets_provenance/robocasa.json"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/robouse", "/tasks", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/README.md", "/LICENSE", "/pyproject.toml"]
-exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/src/robouse/backends/robocasa_episodes", "/tasks/robocasa", "/tasks/behavior"]
+include = ["/src/robouse", "/tasks", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/assets/humanoidbench/provenance.json", "/assets/robocasa/provenance.json", "/README.md", "/LICENSE", "/pyproject.toml"]
+exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]
