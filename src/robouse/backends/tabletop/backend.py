@@ -26,6 +26,7 @@ import numpy as np
 
 from ...core.protocol import agent_refused
 from ..base import ActionSpec, Backend, G, StepInfo, arm_layout
+from .scenarios import SCENARIOS
 from .scene import (
     DR_FLOOR,
     DR_HANDLE,
@@ -47,7 +48,6 @@ from .scene import (
     _resolved_obj,
     build_xml,
 )
-from .scenarios import SCENARIOS
 
 # --------------------------------------------------------------------------------------------------
 

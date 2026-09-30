@@ -51,8 +51,12 @@ def main() -> int:
     for ds in json.loads(a.registry.read_text()):
         name = f"{ds['name']}@{ds['version']}"
         for t in ds["tasks"]:
-            r = subprocess.run(["git", "-C", str(a.hub), "show", f"{t['git_commit_id']}:{t['path']}/task.md"],
-                               capture_output=True, text=True, check=False)
+            r = subprocess.run(
+                ["git", "-C", str(a.hub), "show", f"{t['git_commit_id']}:{t['path']}/task.md"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
             if r.returncode != 0:
                 report[name]["unreadable"].append(t["name"])
                 continue
@@ -74,8 +78,10 @@ def main() -> int:
     for name, groups in sorted(report.items()):
         n_bad = sum(len(v) for k, v in groups.items() if k != "unchanged")
         bad += n_bad
-        print(f"{name:48} unchanged {len(groups['unchanged']):4}" + "".join(
-            f"  {k} {len(v)}" for k, v in sorted(groups.items()) if k != "unchanged" and v))
+        print(
+            f"{name:48} unchanged {len(groups['unchanged']):4}"
+            + "".join(f"  {k} {len(v)}" for k, v in sorted(groups.items()) if k != "unchanged" and v)
+        )
         for k, v in sorted(groups.items()):
             if k != "unchanged":
                 for x in v[:5]:

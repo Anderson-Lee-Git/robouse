@@ -1,4 +1,5 @@
 """Tabletop gripper scenes backend."""
+
 from .backend import TabletopBackend
 from .oracle import oracle_main
 
