@@ -50,7 +50,6 @@ CPU_SUITES = [
     "roboharm",
     "robosuite",
     "safety",
-    "stationerybench",
     "vision",
 ]
 
