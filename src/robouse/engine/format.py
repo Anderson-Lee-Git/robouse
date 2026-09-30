@@ -6,13 +6,14 @@ image, the compose topology (agent + trusted ``simulator`` sidecar), the physica
 from `benchflow.embodied.sidecar.EmbodiedTaskFormat` (BenchFlow's docs/embodied.md). robouse supplies:
 
   - the simulator image: templates/sim/Dockerfile + requirements.txt + this robouse package (the backends);
-  - the episode factory ``robouse.embodied:episode_from_task``;
+  - the episode factory ``robouse.engine.sim:episode_from_task``;
   - the reference solutions: oracle/solve.sh with the robouse oracle code vendored (and, for Meta-World, the
     scripted expert policies), driving the robot only through the socket.
 
 ``materialize_variant(noop=True)`` writes a negative-control oracle that only looks (`robo info`, `robo observe`)
 and exits without `robo done`; it must score 0. ``seed=N`` writes ``<task-id>--seed-N`` (``bench eval run --seeds``).
 """
+
 from __future__ import annotations
 
 import io
@@ -30,12 +31,14 @@ from ..tasks import load_task
 PKG = Path(__file__).resolve().parents[1]  # the robouse package
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 METAWORLD_VERSION = "3.1.1"  # the version pinned in templates/sim/requirements.txt
-_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "bundled_tasks", "robocasa_episodes", "engine")
+_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "bundled_tasks", "engine")
 
 
 def _module_file(mod: str) -> Path | None:
-    """robouse.backends.remix -> PKG/backends/remix.py (or the package's __init__.py)."""
+    """robouse.backends.tabletop -> PKG/backends/tabletop.py (or the package's __init__.py)."""
     rel = Path(*mod.split(".")[1:])
+    if not rel.parts:  # `import robouse` or `from robouse import x`
+        return PKG / "__init__.py"
     for cand in (PKG / rel.with_suffix(".py"), PKG / rel / "__init__.py"):
         if cand.is_file():
             return cand
@@ -47,9 +50,9 @@ def _oracle_closure(backend: str) -> list[Path]:
     functions), plus the package __init__ files on the way; the rest of the package stays out of the task."""
     import ast
 
-    from ..oracle import ORACLE_MODULES
+    from ..oracle import oracle_module
 
-    roots = ["robouse.oracle", "robouse.agent_cli", ORACLE_MODULES.get(backend, f"robouse.backends.{backend}")]
+    roots = ["robouse.oracle", "robouse.agent_cli", oracle_module(backend)]
     seen: set[Path] = set()
     todo = [m for m in roots]
     while todo:
@@ -83,13 +86,11 @@ def _oracle_closure(backend: str) -> list[Path]:
 
 
 def _asset_manifests() -> dict[str, Path]:
-    """Provenance manifests of the robot meshes (the image downloads the files at build time)."""
-    shipped = PKG / "assets_provenance"
-    if shipped.is_dir():
-        return {p.name: p for p in sorted(shipped.glob("*.json"))}
-    root = PKG.parents[1] / "assets" / "menagerie"
-    return {"menagerie.json": root / "provenance.json", "skydio_x2.json": root / "skydio_x2" / "PROVENANCE.json",
-            "embodiments.json": root / "embodiments.json"}  # the embodiment suites' and remix's robots
+    """Provenance manifests of the Menagerie robot meshes (the simulator image downloads the files at build time)."""
+    from ..assets import manifests
+
+    names = ("menagerie.json", "skydio_x2.json", "embodiments.json")
+    return dict(zip(names, manifests(), strict=True))
 
 
 def _metaworld_policies(dst: Path) -> None:
@@ -123,7 +124,8 @@ def _metaworld_policies(dst: Path) -> None:
                     out.parent.mkdir(parents=True, exist_ok=True)
                     out.write_bytes(z.read(name))
     (dst / "metaworld" / "__init__.py").write_text(
-        '"""Vendored subset of Meta-World (MIT): only the scripted expert policies (numpy only)."""\n')
+        '"""Vendored subset of Meta-World (MIT): only the scripted expert policies (numpy only)."""\n'
+    )
 
 
 class RobouseTaskFormat(EmbodiedTaskFormat):
@@ -131,7 +133,7 @@ class RobouseTaskFormat(EmbodiedTaskFormat):
 
     name = "robouse"
     block_key = "robouse"
-    episode_factory = "robouse.embodied:episode_from_task"
+    episode_factory = "robouse.engine.sim:episode_from_task"
     format_version = "3"
     task_name_prefix = "robouse/"
     sim_cpus = "2"
@@ -177,25 +179,39 @@ class RobouseTaskFormat(EmbodiedTaskFormat):
         for f in sorted(extra.iterdir()):  # data the oracle reads (e.g. DexJoCo demo.json, BEHAVIOR plan.json)
             if f.name != "solve.sh" and f.is_file():
                 shutil.copy2(f, dst / f.name)
-        body = [ln for ln in task.oracle_script.read_text().splitlines()
-                if ln.strip() and not ln.startswith("#") and not ln.startswith("set ")]
+        body = [
+            ln
+            for ln in task.oracle_script.read_text().splitlines()
+            if ln.strip() and not ln.startswith("#") and not ln.startswith("set ")
+        ]
         body = [re.sub(r"^python3? ", "python3 ", ln) for ln in body]
-        (dst / "solve.sh").write_text("\n".join([
-            "#!/bin/bash",
-            "# Reference solution. Runs in the agent container and drives the robot only through the robo socket",
-            "# ($ROBO_SOCKET), like an agent would. vendor/ holds the robouse oracle code and BenchFlow's embodied",
-            "# client (and, for Meta-World, the scripted expert policies). BenchFlow hides /oracle from agents.",
-            "set -euo pipefail",
-            'export PYTHONPATH="$(cd "$(dirname "$0")" && pwd)/vendor${PYTHONPATH:+:$PYTHONPATH}"',
-            f"export ROBO_ORACLE_TOKEN={token}",
-            *body,
-            "",
-        ]))
+        (dst / "solve.sh").write_text(
+            "\n".join(
+                [
+                    "#!/bin/bash",
+                    "# Reference solution. Runs in the agent container and drives the robot only through the robo socket",
+                    "# ($ROBO_SOCKET), like an agent would. vendor/ holds the robouse oracle code and BenchFlow's embodied",
+                    "# client (and, for Meta-World, the scripted expert policies). BenchFlow hides /oracle from agents.",
+                    "set -euo pipefail",
+                    'export PYTHONPATH="$(cd "$(dirname "$0")" && pwd)/vendor${PYTHONPATH:+:$PYTHONPATH}"',
+                    f"export ROBO_ORACLE_TOKEN={token}",
+                    *body,
+                    "",
+                ]
+            )
+        )
         (dst / "solve.sh").chmod(0o755)
 
 
-def materialize(task_dir: Path, out_root: Path, *, noop: bool = False, seed: int | None = None,
-                timeout: float | None = None, flat: bool = False) -> Path:
+def materialize(
+    task_dir: Path,
+    out_root: Path,
+    *,
+    noop: bool = False,
+    seed: int | None = None,
+    timeout: float | None = None,
+    flat: bool = False,
+) -> Path:
     """Write (or reuse) the native BenchFlow package for one robouse task and return its folder."""
     return RobouseTaskFormat().materialize_variant(task_dir, out_root, seed=seed, noop=noop, timeout=timeout, flat=flat)
 

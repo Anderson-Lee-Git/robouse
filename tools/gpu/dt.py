@@ -1,5 +1,6 @@
 """Daytona client for the GPU-track scripts. Needs DAYTONA_API_KEY (and optionally DAYTONA_API_URL/DAYTONA_TARGET) in the
 environment, or a KEY=VALUE env file named by $DAYTONA_ENV_FILE. Never prints the key."""
+
 import os
 
 f = os.environ.get("DAYTONA_ENV_FILE")

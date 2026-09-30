@@ -9,7 +9,7 @@ capabilities:
 - navigation
 difficulty: medium
 composable: true
-runtime: robouse.backends.components_sim.templates:InspectTag
+runtime: robouse.backends.components.sim.templates:InspectTag
 requires:
 - placements:
   - floor

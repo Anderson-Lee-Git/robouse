@@ -4,6 +4,7 @@ never stalls the control loop; `frame()` returns that frame (RGB, resized to the
 
 Spec strings (task `real.cameras`: {name: spec}): "0" / "1" (OpenCV index), "/dev/video2", "http://host:8000/cam/0.mjpg".
 """
+
 from __future__ import annotations
 
 import threading
@@ -62,7 +63,7 @@ class Camera(threading.Thread):
                 buf += r.read(65536)
                 a, b = buf.find(b"\xff\xd8"), buf.find(b"\xff\xd9")
                 if a != -1 and b != -1 and b > a:
-                    jpg, buf = buf[a:b + 2], buf[b + 2:]
+                    jpg, buf = buf[a : b + 2], buf[b + 2 :]
                     img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
                     if img is not None:
                         self._store(img, True)

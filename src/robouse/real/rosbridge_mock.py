@@ -6,6 +6,7 @@ sensor_msgs/JointState on /joint_states at 20 Hz and a sensor_msgs/CompressedIma
 angles) on each camera topic at 5 Hz, and moves the joints toward the last commanded positions (JointTrajectory's
 first point, or Float64MultiArray data) with a first-order lag and a speed limit. Every command is logged in `commands`.
 """
+
 from __future__ import annotations
 
 import base64
@@ -49,14 +50,28 @@ class _Conn:
     def send(self, text: str) -> None:
         p = text.encode()
         n = len(p)
-        head = bytes([0x81]) + (bytes([n]) if n < 126 else bytes([126]) + struct.pack(">H", n) if n < 65536 else bytes([127]) + struct.pack(">Q", n))
+        head = bytes([0x81]) + (
+            bytes([n])
+            if n < 126
+            else bytes([126]) + struct.pack(">H", n)
+            if n < 65536
+            else bytes([127]) + struct.pack(">Q", n)
+        )
         with self.lock:
             self.sock.sendall(head + p)
 
 
 class MockRosbridge:
-    def __init__(self, joints: list[str], start_rad: list[float] | None = None, port: int = 0, cameras: list[str] | None = None,
-                 state_topic: str = "/joint_states", gain: float = 0.5, max_rad_per_tick: float = 0.05):
+    def __init__(
+        self,
+        joints: list[str],
+        start_rad: list[float] | None = None,
+        port: int = 0,
+        cameras: list[str] | None = None,
+        state_topic: str = "/joint_states",
+        gain: float = 0.5,
+        max_rad_per_tick: float = 0.05,
+    ):
         self.joints = list(joints)
         self.q = list(start_rad or [0.0] * len(joints))
         self.target = list(self.q)
@@ -83,9 +98,15 @@ class MockRosbridge:
             req = b""
             while b"\r\n\r\n" not in req:
                 req += s.recv(4096)
-            key = [l.split(b":", 1)[1].strip() for l in req.split(b"\r\n") if l.lower().startswith(b"sec-websocket-key")][0]
+            key = [
+                l.split(b":", 1)[1].strip() for l in req.split(b"\r\n") if l.lower().startswith(b"sec-websocket-key")
+            ][0]
             acc = base64.b64encode(hashlib.sha1(key + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest())
-            s.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + acc + b"\r\n\r\n")
+            s.sendall(
+                b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "
+                + acc
+                + b"\r\n\r\n"
+            )
             c = _Conn(s)
             self.conns.append(c)
             threading.Thread(target=self._serve, args=(c,), daemon=True).start()
@@ -105,7 +126,7 @@ class MockRosbridge:
                     msg = m.get("msg") or {}
                     if "points" in msg:
                         names = msg.get("joint_names") or self.joints
-                        pos = dict(zip(names, msg["points"][0]["positions"]))
+                        pos = dict(zip(names, msg["points"][0]["positions"], strict=False))
                         tgt = [float(pos.get(j, self.target[i])) for i, j in enumerate(self.joints)]
                     else:
                         tgt = [float(x) for x in msg.get("data", self.target)]
@@ -133,11 +154,24 @@ class MockRosbridge:
     def _tick(self) -> None:
         k = 0
         while not self._stop.is_set():
-            self.q = [q + max(-self.vmax, min(self.vmax, self.gain * (t - q))) for q, t in zip(self.q, self.target)]
+            self.q = [
+                q + max(-self.vmax, min(self.vmax, self.gain * (t - q)))
+                for q, t in zip(self.q, self.target, strict=False)
+            ]
             now = time.time()
-            js = json.dumps({"op": "publish", "topic": self.state_topic,
-                             "msg": {"header": {"stamp": {"sec": int(now), "nanosec": int((now % 1) * 1e9)}}, "name": self.joints,
-                                     "position": self.q, "velocity": [0.0] * len(self.q), "effort": [0.0] * len(self.q)}})
+            js = json.dumps(
+                {
+                    "op": "publish",
+                    "topic": self.state_topic,
+                    "msg": {
+                        "header": {"stamp": {"sec": int(now), "nanosec": int((now % 1) * 1e9)}},
+                        "name": self.joints,
+                        "position": self.q,
+                        "velocity": [0.0] * len(self.q),
+                        "effort": [0.0] * len(self.q),
+                    },
+                }
+            )
             img = None
             if k % 4 == 0 and self.cameras:
                 img = self._image()

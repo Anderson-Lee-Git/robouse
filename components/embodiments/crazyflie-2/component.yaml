@@ -16,7 +16,7 @@ assets:
 - bitcraze_crazyflie_2
 licence: MIT (MuJoCo Menagerie)
 composable: true
-runtime: robouse.backends.components_sim.robots:Crazyflie
+runtime: robouse.backends.components.sim.robots:Crazyflie
 arms: []
 action_groups:
 - name: velocity_setpoint

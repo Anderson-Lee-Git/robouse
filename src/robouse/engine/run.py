@@ -14,6 +14,7 @@ Agents are BenchFlow's (`bench agent list`): e.g. `oracle`, `claude`, `codex`, `
 robouse names are accepted as aliases: `claude-code` -> `claude`, and `noop` = BenchFlow's `oracle` running the
 noop control (look, never move, never call `robo done`; must score 0).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -38,30 +39,41 @@ def select_tasks(root: Path, filt: str = "", ids: list[str] | None = None, limit
 def _agent_env(agent: str) -> dict[str, str]:
     """Credentials for BenchFlow agents from the maintainers' pools (never printed or written to the trial).
 
-    Claude agents: the OAuth token pool. Codex agents: the Codex account pool (~/.config/bf-agents/codex-auth), passed
+    Claude agents: the OAuth token pool. Codex agents: the maintainers' Codex account pool (robouse._maintainer), passed
     as CODEX_AUTH_JSON from that account's robo-use home, so the user's own ~/.codex login is never used."""
     if agent in ("claude", "claude-agent-acp"):
         if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
             return {}
         try:
-            from ..harnesses import _claude_auth
+            from ..harnesses.credentials import claude_auth
 
-            return _claude_auth()
+            return claude_auth()
         except RuntimeError:
             return {}
     if agent.startswith("codex") and not (os.environ.get("OPENAI_API_KEY") or os.environ.get("CODEX_AUTH_JSON")):
-        from ..harnesses import CODEX_POOL, _clean_codex_home
+        from .. import _maintainer
+        from ..harnesses.credentials import clean_codex_home
 
-        if CODEX_POOL.is_dir() and any(CODEX_POOL.glob("*.json")):
-            home = Path(_clean_codex_home())  # the pool account's persistent home (single refresh owner)
+        if _maintainer.codex_accounts():
+            home = Path(clean_codex_home())  # the pool account's persistent home (single refresh owner)
             return {"CODEX_AUTH_JSON": (home / "auth.json").read_text()}
     return {}
 
 
-def run_job(tasks: list[Task], agent: str, model: str = "", out: Path = Path("jobs"), *, sandbox: str = "docker",
-            concurrency: int = 1, timeout: float | None = None, seed: int | None = None,
-            job_name: str | None = None, reasoning_effort: str | None = None,
-            seeds: list[int] | None = None) -> dict:
+def run_job(
+    tasks: list[Task],
+    agent: str,
+    model: str = "",
+    out: Path = Path("jobs"),
+    *,
+    sandbox: str = "docker",
+    concurrency: int = 1,
+    timeout: float | None = None,
+    seed: int | None = None,
+    job_name: str | None = None,
+    reasoning_effort: str | None = None,
+    seeds: list[int] | None = None,
+) -> dict:
     """Run tasks x one agent as one BenchFlow job and return a short summary.
 
     seeds: one trial per task and seed (packages `<task>--seed-<n>`); the job's summary.json then carries
@@ -74,11 +86,17 @@ def run_job(tasks: list[Task], agent: str, model: str = "", out: Path = Path("jo
     staged = Path(tempfile.mkdtemp(prefix="robouse-job-"))
     try:
         for t in tasks:  # one folder per task (and seed), named by task id, pointing at its materialized package
-            for s in (seeds or [seed]):
+            for s in seeds or [seed]:
                 pkg = materialize(t.path, cache, noop=noop, seed=s, timeout=timeout)
                 (staged / pkg.name).symlink_to(pkg, target_is_directory=True)
-        cfg = EvaluationConfig(agent=bf_agent, model=model or None, environment=sandbox, concurrency=concurrency,
-                               agent_env=_agent_env(bf_agent), reasoning_effort=reasoning_effort)
+        cfg = EvaluationConfig(
+            agent=bf_agent,
+            model=model or None,
+            environment=sandbox,
+            concurrency=concurrency,
+            agent_env=_agent_env(bf_agent),
+            reasoning_effort=reasoning_effort,
+        )
         job_name = job_name or datetime.now().strftime("%Y-%m-%d__%H-%M-%S") + ("__noop" if noop else "")
         res = asyncio.run(Evaluation(tasks_dir=staged, jobs_dir=out, config=cfg, job_name=job_name).run())
     finally:
@@ -89,12 +107,22 @@ def run_job(tasks: list[Task], agent: str, model: str = "", out: Path = Path("jo
         r = json.loads(rj.read_text())
         det = rj.parent / "verifier" / "reward-details.json"
         ep = json.loads(det.read_text()) if det.exists() else {}
-        rows.append({"task": r.get("task_name"), "trial": rj.parent.name,
-                     "reward": (r.get("rewards") or {}).get("reward"), "outcome": ep.get("outcome"),
-                     "steps": ep.get("steps_used"), "error": r.get("error")})
+        rows.append(
+            {
+                "task": r.get("task_name"),
+                "trial": rj.parent.name,
+                "reward": (r.get("rewards") or {}).get("reward"),
+                "outcome": ep.get("outcome"),
+                "steps": ep.get("steps_used"),
+                "error": r.get("error"),
+            }
+        )
     for row in rows:
-        print(f"{row['task']:<40} reward={row['reward']} outcome={row['outcome']} steps={row['steps']}"
-              + (f" ERROR {row['error']}" if row["error"] else ""), flush=True)
+        print(
+            f"{row['task']:<40} reward={row['reward']} outcome={row['outcome']} steps={row['steps']}"
+            + (f" ERROR {row['error']}" if row["error"] else ""),
+            flush=True,
+        )
     if seeds:  # the staged folders are already the seeded packages; add BenchFlow's seeded-rollout report
         from benchflow.embodied.rollouts import format_report, seed_report
 
@@ -105,5 +133,11 @@ def run_job(tasks: list[Task], agent: str, model: str = "", out: Path = Path("jo
         summary_path.write_text(json.dumps(summary, indent=2))
         print(format_report(report))
     print(f"{agent}/{model or '-'}: {res.passed}/{res.total} solved, errors={res.errored} -> {job}")
-    return {"job_dir": str(job), "total": res.total, "passed": res.passed, "errored": res.errored,
-            "mean_reward": res.mean_reward, "trials": rows}
+    return {
+        "job_dir": str(job),
+        "total": res.total,
+        "passed": res.passed,
+        "errored": res.errored,
+        "mean_reward": res.mean_reward,
+        "trials": rows,
+    }

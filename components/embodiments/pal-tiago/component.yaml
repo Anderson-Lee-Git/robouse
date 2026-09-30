@@ -20,7 +20,7 @@ assets:
 - pal_tiago
 licence: Apache-2.0 (MuJoCo Menagerie)
 composable: true
-runtime: robouse.backends.components_sim.robots:Tiago
+runtime: robouse.backends.components.sim.robots:Tiago
 arms:
 - arm
 action_groups:

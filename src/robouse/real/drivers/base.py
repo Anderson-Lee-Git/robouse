@@ -5,6 +5,7 @@ targets in the profile's units. It applies no safety policy of its own beyond wh
 server's `Guard` (real/safety.py) decides every command. Drivers are selected by name in the task's `real:` block
 (`driver: lerobot | piper | mock`), and third-party drivers can register under the `robouse.drivers` entry point.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -16,9 +17,9 @@ from ..robots import Profile
 
 @dataclass
 class Reading:
-    q: np.ndarray                                    # measured joint positions, profile units
-    extra: dict = field(default_factory=dict)        # telemetry: temp_c / temp_mos_c / temp_rotor_c, joint_torque_nm, ...
-    images: dict = field(default_factory=dict)       # camera name -> HxWx3 uint8
+    q: np.ndarray  # measured joint positions, profile units
+    extra: dict = field(default_factory=dict)  # telemetry: temp_c / temp_mos_c / temp_rotor_c, joint_torque_nm, ...
+    images: dict = field(default_factory=dict)  # camera name -> HxWx3 uint8
 
 
 class ArmDriver:

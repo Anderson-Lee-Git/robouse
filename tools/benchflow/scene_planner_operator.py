@@ -12,6 +12,7 @@ a container, so a role could unset its own ROBO_ROLE.
 The task is copied with a `roles:` block added (the published task folder is not changed). Codex credentials come
 from the maintainers' account pool (CODEX_AUTH_JSON), as for `robouse run`; they are never printed.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,13 +24,17 @@ from pathlib import Path
 
 import yaml
 
-PLANNER = ("You are the PLANNER. You may only look at the robot: `robo info`, `robo observe`, `robo observe --image` "
-           "(open the saved image). Do not move the robot and do not call `robo done` (the episode server refuses "
-           "those requests from your role). Work out a complete step-by-step plan with concrete coordinates and robo "
-           "commands, and write it to /app/plan.md. Then stop.")
-OPERATOR = ("You are the OPERATOR. A planner inspected the scene and wrote a plan to /app/plan.md. Read it, re-check "
-            "the state with `robo observe`, carry the plan out with `robo`, fix it where reality differs, and call "
-            "`robo done` once the task is complete.")
+PLANNER = (
+    "You are the PLANNER. You may only look at the robot: `robo info`, `robo observe`, `robo observe --image` "
+    "(open the saved image). Do not move the robot and do not call `robo done` (the episode server refuses "
+    "those requests from your role). Work out a complete step-by-step plan with concrete coordinates and robo "
+    "commands, and write it to /app/plan.md. Then stop."
+)
+OPERATOR = (
+    "You are the OPERATOR. A planner inspected the scene and wrote a plan to /app/plan.md. Read it, re-check "
+    "the state with `robo observe`, carry the plan out with `robo`, fix it where reality differs, and call "
+    "`robo done` once the task is complete."
+)
 
 
 def with_roles(task_dir: Path, out: Path) -> Path:
@@ -62,14 +67,21 @@ def main() -> int:
         # provider-routed models (e.g. vllm/<model> with BENCHFLOW_PROVIDER_BASE_URL) take their key from the
         # environment; otherwise use the maintainers' pools like `robouse run`
         creds = {} if "/" in a.model else _agent_env(a.agent)
-        roles = [Role(name=n, agent=a.agent, model=a.model, env={**creds, "ROBO_ROLE": n}) for n in ("planner", "operator")]
+        roles = [
+            Role(name=n, agent=a.agent, model=a.model, env={**creds, "ROBO_ROLE": n}) for n in ("planner", "operator")
+        ]
         from robouse.harnesses import PROMPT_PREFIX
         from robouse.tasks import load_task
 
         goal = PROMPT_PREFIX + load_task(task).instruction.strip()  # explicit turn prompts replace the task prompt
-        scene = Scene(name="plan-then-act", roles=roles,
-                      turns=[Turn(role="planner", prompt=f"{PLANNER}\n\n{goal}"),
-                             Turn(role="operator", prompt=f"{OPERATOR}\n\n{goal}")])
+        scene = Scene(
+            name="plan-then-act",
+            roles=roles,
+            turns=[
+                Turn(role="planner", prompt=f"{PLANNER}\n\n{goal}"),
+                Turn(role="operator", prompt=f"{OPERATOR}\n\n{goal}"),
+            ],
+        )
         cfg = RolloutConfig(task_path=task, scenes=[scene], environment="docker", jobs_dir=Path(a.jobs).resolve())
         res = asyncio.run(bf.run(cfg))
     finally:

@@ -8,15 +8,27 @@ more than once by the same harness + model, the latest trial counts.
 
 It takes no arguments: any argument, including --help, is ignored and docs/results.md is rewritten.
 """
+
 from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SUITES = ["metaworld", "gymrobotics", "libero", "libero-style", "arc-style", "robo-use-families", "safety", "vision", "hard", "robosuite"]
+SUITES = [
+    "metaworld",
+    "gymrobotics",
+    "libero",
+    "libero-style",
+    "arc-style",
+    "robo-use-families",
+    "safety",
+    "vision",
+    "hard",
+    "robosuite",
+]
 LABEL = {
     "claude-code/claude-opus-5-5": "Claude Code + Opus 5.5",
     "codex/gpt-6-astra": "Codex + GPT-6 Astra",
@@ -49,7 +61,11 @@ def main() -> None:
             continue
         key = (f"{r['harness']}/{r['model']}", r["task"])
         prev = latest.get(key)
-        if prev is None or (r.get("path", "") > prev.get("path", "") and not r.get("infra_failure")) or prev.get("infra_failure"):
+        if (
+            prev is None
+            or (r.get("path", "") > prev.get("path", "") and not r.get("infra_failure"))
+            or prev.get("infra_failure")
+        ):
             latest[key] = r
     table: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))  # solved, scored, infra
     for (hm, _task), r in latest.items():
@@ -60,12 +76,16 @@ def main() -> None:
         cell[1] += 1
         cell[0] += 1 if r.get("solved") else 0
     rows = sorted(table, key=lambda k: ORDER.index(k) if k in ORDER else 99)
-    out = ["# Results", "",
-           f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} by `tools/analysis/results.py` from `runs/_audit/audit.json`. "
-           "Each cell is solved / scored trials (one trial per task; infrastructure failures excluded and counted separately). "
-           "Tasks per suite: see docs/suites/.", "",
-           "| Harness + model | " + " | ".join(SUITES) + " | All | Infra failures |",
-           "|---|" + "---|" * (len(SUITES) + 2)]
+    out = [
+        "# Results",
+        "",
+        f"Generated {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} by `tools/analysis/results.py` from `runs/_audit/audit.json`. "
+        "Each cell is solved / scored trials (one trial per task; infrastructure failures excluded and counted separately). "
+        "Tasks per suite: see docs/suites/.",
+        "",
+        "| Harness + model | " + " | ".join(SUITES) + " | All | Infra failures |",
+        "|---|" + "---|" * (len(SUITES) + 2),
+    ]
     for hm in rows:
         if "?" in hm or not any(sum(v) for v in table[hm].values()):
             continue
@@ -78,8 +98,13 @@ def main() -> None:
         out.append(f"| {LABEL.get(hm, hm)} | " + " | ".join(cells) + f" | {tot_s}/{tot_n}{pct} | {tot_i} |")
     molmo = [r for r in audit["trials"] if r.get("harness") in ("lerobot-eval", "molmoact2-sim-eval")]
     if molmo:
-        out += ["", "## MolmoAct2 (VLA, remote GPU)", "",
-                "| Harness | Model | Benchmark | Solved |", "|---|---|---|---|"]
+        out += [
+            "",
+            "## MolmoAct2 (VLA, remote GPU)",
+            "",
+            "| Harness | Model | Benchmark | Solved |",
+            "|---|---|---|---|",
+        ]
         by = defaultdict(lambda: [0, 0])
         for r in molmo:
             k = (r["harness"], r["model"], r.get("source_benchmark") or "")

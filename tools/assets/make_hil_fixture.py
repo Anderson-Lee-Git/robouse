@@ -1,4 +1,4 @@
-"""Build a hardware-in-the-loop fixture (assets/hil/<name>/) from a session recorded on the real bench.
+"""Build a hardware-in-the-loop fixture (src/robouse/real/fixtures/<name>/) from a session recorded on the real bench.
 
   # Metal arm session (recorder.py layout: log.jsonl, video_index.jsonl, <camera>.mp4)
   python tools/assets/make_hil_fixture.py metal ~/benchflow/robot/recordings/2026-09-05-metal-arm-bowl/sessions/20260905-121853-bowl-pick \

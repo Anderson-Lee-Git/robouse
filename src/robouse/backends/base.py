@@ -1,20 +1,22 @@
 """Backend interface: one simulator family (Meta-World, custom MuJoCo scenes, ...) behind a common API.
 
-The episode server (`robouse.session`, or BenchFlow's through `robouse.engine.sim.RobouseSim`) only talks to this
+The episode server (`robouse.core.session`, or BenchFlow's through `robouse.engine.sim.RobouseSim`) only talks to this
 interface. A backend exposes:
 - a low-level action: a fixed-length vector with documented bounds (`action_spec`), which the backend's
-  embodiment splits into named action groups (`embodiment()`, `robouse.embodiment_spec`),
+  embodiment splits into named action groups (`embodiment()`, `robouse.core.embodiment_spec`),
 - a public observation (named fields the agent may see, plus camera images),
 - a success predicate evaluated by the trusted server, never by the agent.
 Skills (move_to, grip) are built-in controllers on top of `hand_pos()` and the low-level action.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from ..embodiment_spec import (
+
+from ..core.embodiment_spec import (
     ActionGroup,
     Budgets,
     Camera,
@@ -69,21 +71,38 @@ def groups_from_layout(spec: ActionSpec, layout: list[G]) -> list[ActionGroup]:
     """Split the flat ActionSpec into named groups, in order. The layout must cover every entry exactly once."""
     out, i = [], 0
     for g in layout:
-        comps = spec.names[i:i + g.n]
+        comps = spec.names[i : i + g.n]
         if len(comps) != g.n:
             raise ValueError(f"layout {g.name} needs {g.n} entries, {spec.dim - i} left")
-        out.append(ActionGroup(
-            name=g.name, components=list(comps), low=[float(x) for x in spec.low[i:i + g.n]],
-            high=[float(x) for x in spec.high[i:i + g.n]], mode=g.mode, units=g.units, frame=g.frame, hold=g.hold,
-            initial=None if g.initial is None else [float(g.initial)] * g.n, doc=g.doc))
+        out.append(
+            ActionGroup(
+                name=g.name,
+                components=list(comps),
+                low=[float(x) for x in spec.low[i : i + g.n]],
+                high=[float(x) for x in spec.high[i : i + g.n]],
+                mode=g.mode,
+                units=g.units,
+                frame=g.frame,
+                hold=g.hold,
+                initial=None if g.initial is None else [float(g.initial)] * g.n,
+                doc=g.doc,
+            )
+        )
         i += g.n
     if i != spec.dim:
         raise ValueError(f"layout covers {i} of {spec.dim} action entries")
     return out
 
 
-def arm_layout(delta_units: str, grip_hold: str = "last", grip_initial: float | None = -1.0, prefix: str = "arm",
-               gripper: str = "gripper", rotation: str | None = None, grip_doc: str = "+1 close, -1 open") -> list[G]:
+def arm_layout(
+    delta_units: str,
+    grip_hold: str = "last",
+    grip_initial: float | None = -1.0,
+    prefix: str = "arm",
+    gripper: str = "gripper",
+    rotation: str | None = None,
+    grip_doc: str = "+1 close, -1 open",
+) -> list[G]:
     lay = [G(f"{prefix}.ee_delta", 3, "ee_delta_pos", delta_units, frame="world")]
     if rotation:
         lay.append(G(f"{prefix}.ee_rot_delta", 3, "ee_delta_rot", rotation, frame="world"))
@@ -109,10 +128,13 @@ class Backend:
     probe_success: bool = True  # the server may call success() after every step for the dense trace
     arm_prefix: str = "arm"
 
+    def __init__(self, spec: dict) -> None:
+        self.spec = spec
+
     def reset(self, seed: int) -> None:
         raise NotImplementedError
 
-    def step(self, action: np.ndarray) -> StepInfo:
+    def step(self, action: Any) -> StepInfo:
         raise NotImplementedError
 
     def observe(self) -> dict[str, Any]:
@@ -140,8 +162,15 @@ class Backend:
                 return self.render(width, height)
             return None
         model, data = md
-        return self._mj_record(model, data, self.record_camera(), width, height, self.record_scene_option(),
-                               bool(getattr(self, "image_flipped", False)))
+        return self._mj_record(
+            model,
+            data,
+            self.record_camera(),
+            width,
+            height,
+            self.record_scene_option(),
+            bool(getattr(self, "image_flipped", False)),
+        )
 
     def record_camera(self) -> Any:
         return getattr(self, "camera", None)
@@ -149,7 +178,9 @@ class Backend:
     def record_scene_option(self) -> Any:
         return None
 
-    def _mj_record(self, model, data, camera, width: int, height: int, scene_option=None, flip: bool = False) -> np.ndarray:
+    def _mj_record(
+        self, model, data, camera, width: int, height: int, scene_option=None, flip: bool = False
+    ) -> np.ndarray:
         import mujoco
 
         cache = self.__dict__.setdefault("_record_renderers", {})
@@ -224,8 +255,15 @@ class Backend:
 
 
 def behavior_skill_specs(names: list[str]) -> list[Skill]:
-    out = [Skill(n, [SkillArg("obj", "object", doc="BDDL object instance name from robo observe")], impl="backend",
-                 doc=f"BEHAVIOR symbolic primitive {n}; one skill call is one step of the budget") for n in names]
+    out = [
+        Skill(
+            n,
+            [SkillArg("obj", "object", doc="BDDL object instance name from robo observe")],
+            impl="backend",
+            doc=f"BEHAVIOR symbolic primitive {n}; one skill call is one step of the budget",
+        )
+        for n in names
+    ]
     out.append(Skill("release", impl="backend", doc="open the hand and drop what it holds"))
     return out
 

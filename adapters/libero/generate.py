@@ -21,6 +21,7 @@ resulting actions as demo_actions.json. The oracle then replays those open-loop 
 Usage: python adapters/libero/generate.py --root tasks [--suites libero_90] [--workers 3]
 Needs hf-libero + robosuite 1.4.0 (see docs/suites/libero.md) and network access to the HF Hub.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,7 +31,7 @@ import shutil
 import textwrap
 from pathlib import Path
 
-from robouse.prompts import ROBO_USAGE
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import write_task
 
 SUITES = {  # suite -> (short id, difficulty, agent timeout, task folder under tasks/)
@@ -79,7 +80,7 @@ def track_demo(suite: str, index: int, init_state: list, actions: list, ee_path:
     demonstration's own rotation and gripper commands. Returns the actions taken (up to first success or budget)."""
     import numpy as np
 
-    from robouse.backends.libero import LiberoBackend
+    from robouse.backends.libero.backend import LiberoBackend
 
     b = LiberoBackend({"suite": suite, "env": index, "init_state": init_state})
     ee = np.asarray(ee_path, dtype=float)
@@ -109,7 +110,7 @@ def track_demo(suite: str, index: int, init_state: list, actions: list, ee_path:
 
 def replay_ok(suite: str, index: int, init_state: list, actions: list, max_steps: int) -> int | None:
     """Replay in-process, exactly as the oracle will through the socket; steps to first success or None."""
-    from robouse.backends.libero import LiberoBackend
+    from robouse.backends.libero.backend import LiberoBackend
 
     b = LiberoBackend({"suite": suite, "env": index, "init_state": init_state})
     try:
@@ -124,13 +125,12 @@ def replay_ok(suite: str, index: int, init_state: list, actions: list, max_steps
 
 def scene_problem(task) -> str:
     """LIBERO scene class of a task, from its BDDL file."""
-    import os
     import re
 
-    from robouse.backends.libero import _quiet_imports
+    from robouse.backends.libero.backend import _quiet_imports
 
     _, get_libero_path, _ = _quiet_imports()
-    bddl = open(os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)).read()
+    bddl = Path(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file).read_text()
     return re.search(r"\(problem\s+([^\s)]+)\)", bddl).group(1)
 
 
@@ -149,7 +149,7 @@ def pick_demo(suite: str, index: int) -> dict | None:
 
 
 def _pick_demo(suite: str, index: int) -> dict | None:
-    from robouse.backends.libero import SUITE_MAX_STEPS, libero_task
+    from robouse.backends.libero.backend import SUITE_MAX_STEPS, libero_task
 
     i, task, _ = libero_task(suite, index)
     problem = scene_problem(task)
@@ -158,19 +158,43 @@ def _pick_demo(suite: str, index: int) -> dict | None:
         init_state, actions = fetch_demo(suite, task.name, k)
         n = replay_ok(suite, i, init_state, actions, max_steps)
         if n:
-            return {"suite": suite, "index": i, "name": task.name, "language": task.language, "demo": k,
-                    "problem": problem, "init_state": init_state, "actions": actions, "steps_to_success": n, "max_steps": max_steps,
-                    "file": f"{suite}/{task.name}_demo.hdf5"}
-    print(f"no replayable demonstration among demo_0..{MAX_DEMO_TRIES - 1} for {suite}/{task.name}; "
-          "tracking the recorded end-effector paths instead", flush=True)
+            return {
+                "suite": suite,
+                "index": i,
+                "name": task.name,
+                "language": task.language,
+                "demo": k,
+                "problem": problem,
+                "init_state": init_state,
+                "actions": actions,
+                "steps_to_success": n,
+                "max_steps": max_steps,
+                "file": f"{suite}/{task.name}_demo.hdf5",
+            }
+    print(
+        f"no replayable demonstration among demo_0..{MAX_DEMO_TRIES - 1} for {suite}/{task.name}; "
+        "tracking the recorded end-effector paths instead",
+        flush=True,
+    )
     for k in range(MAX_DEMO_TRIES):
         init_state, actions, ee_path = fetch_demo(suite, task.name, k, ee=True)
         tracked = track_demo(suite, i, init_state, actions, ee_path, max_steps)
         n = replay_ok(suite, i, init_state, tracked, max_steps)
         if n:
-            return {"suite": suite, "index": i, "name": task.name, "language": task.language, "demo": k,
-                    "problem": problem, "init_state": init_state, "actions": tracked[:n], "steps_to_success": n,
-                    "max_steps": max_steps, "file": f"{suite}/{task.name}_demo.hdf5", "tracked": True}
+            return {
+                "suite": suite,
+                "index": i,
+                "name": task.name,
+                "language": task.language,
+                "demo": k,
+                "problem": problem,
+                "init_state": init_state,
+                "actions": tracked[:n],
+                "steps_to_success": n,
+                "max_steps": max_steps,
+                "file": f"{suite}/{task.name}_demo.hdf5",
+                "tracked": True,
+            }
     print(f"no demonstration of {suite}/{task.name} works, replayed or tracked", flush=True)
     return None
 
@@ -178,7 +202,8 @@ def _pick_demo(suite: str, index: int) -> dict | None:
 def instruction(t: dict) -> str:
     lang = t["language"][0].upper() + t["language"][1:]
     where, surface = SURFACE[t["problem"]]
-    return textwrap.dedent(f"""\
+    return (
+        textwrap.dedent(f"""\
     # {lang}
 
     A Franka Panda arm with a parallel-jaw gripper {where} in a LIBERO scene (MuJoCo / robosuite; LIBERO suite `{t['suite']}`, task `{t['name']}`). {SUITE_NOTES[t['suite']]}
@@ -196,7 +221,9 @@ def instruction(t: dict) -> str:
     - `robo observe --image` saves the front camera (`agentview`); add `--camera robot0_eye_in_hand` for the wrist camera. Both are 256x256.
     - The step budget is {t['max_steps']} steps (LeRobot's LIBERO evaluation budget for this suite).
 
-    """) + ROBO_USAGE
+    """)
+        + ROBO_USAGE
+    )
 
 
 VERIFY = """\
@@ -238,33 +265,71 @@ def write(t: dict, out: Path) -> str:
     tid = f"libero-{short}-{t['index']}"
     meta = {
         "task": {"name": f"robouse/{tid}", "description": t["language"][0].upper() + t["language"][1:] + "."},
-        "metadata": {"source_benchmark": "LIBERO (Liu et al. 2023)", "source_task": t["name"], "suite": folder,
-                     "libero_suite": t["suite"], "libero_task_index": t["index"],
-                     "language_instruction": t["language"], "category": "manipulation",
-                     "difficulty": difficulty, "tags": ["franka", "mujoco", "robosuite", "single-arm", "language"],
-                     "reference_solution": (f"end-effector path of LIBERO demonstration demo_{t['demo']} of {DATASET}/{t['file']}, "
-                                            f"tracked closed-loop (the recorded actions do not replay in the released scene); "
-                                            f"success at step {t['steps_to_success']}") if t.get("tracked") else
-                                           (f"LIBERO demonstration demo_{t['demo']} of {DATASET}/{t['file']} "
-                                            f"(replay reaches success at step {t['steps_to_success']})")},
+        "metadata": {
+            "source_benchmark": "LIBERO (Liu et al. 2023)",
+            "source_task": t["name"],
+            "suite": folder,
+            "libero_suite": t["suite"],
+            "libero_task_index": t["index"],
+            "language_instruction": t["language"],
+            "category": "manipulation",
+            "difficulty": difficulty,
+            "tags": ["franka", "mujoco", "robosuite", "single-arm", "language"],
+            "reference_solution": (
+                f"end-effector path of LIBERO demonstration demo_{t['demo']} of {DATASET}/{t['file']}, "
+                f"tracked closed-loop (the recorded actions do not replay in the released scene); "
+                f"success at step {t['steps_to_success']}"
+            )
+            if t.get("tracked")
+            else (
+                f"LIBERO demonstration demo_{t['demo']} of {DATASET}/{t['file']} "
+                f"(replay reaches success at step {t['steps_to_success']})"
+            ),
+        },
         "agent": {"timeout_sec": timeout},
         "verifier": {"timeout_sec": 120},
-        "robouse": {"id": tid, "backend": "libero", "suite": t["suite"], "env": t["name"], "task_index": t["index"],
-                    "seed": 0, "max_steps": t["max_steps"], "camera": "agentview",
-                    "cameras": ["agentview", "robot0_eye_in_hand"], "image_size": 256, "settle_steps": 50,
-                    "skills": True, "success_mode": "first", "obs_mode": "state",
-                    "init_source": f"{DATASET}/{t['file']} demo_{t['demo']} states[0]",
-                    "init_state": [float(x) for x in t["init_state"]]},
+        "robouse": {
+            "id": tid,
+            "backend": "libero",
+            "suite": t["suite"],
+            "env": t["name"],
+            "task_index": t["index"],
+            "seed": 0,
+            "max_steps": t["max_steps"],
+            "camera": "agentview",
+            "cameras": ["agentview", "robot0_eye_in_hand"],
+            "image_size": 256,
+            "settle_steps": 50,
+            "skills": True,
+            "success_mode": "first",
+            "obs_mode": "state",
+            "init_source": f"{DATASET}/{t['file']} demo_{t['demo']} states[0]",
+            "init_state": [float(x) for x in t["init_state"]],
+        },
     }
     d = out / folder / tid
     if d.exists():
         shutil.rmtree(d)
-    write_task(d, meta, instruction(t), (ORACLE_TRACKED if t.get("tracked") else ORACLE).format(
-        demo=f"demo_{t['demo']}", file=t["file"], dataset=DATASET), VERIFY)
-    (d / "oracle" / "demo_actions.json").write_text(json.dumps(
-        {"source": f"{DATASET}/{t['file']}", "demo": f"demo_{t['demo']}", "steps_to_success": t["steps_to_success"],
-         **({"method": "tracked end-effector path"} if t.get("tracked") else {}),
-         "actions": [[round(float(x), 6) for x in a] for a in t["actions"]]}))
+    write_task(
+        d,
+        meta,
+        instruction(t),
+        (ORACLE_TRACKED if t.get("tracked") else ORACLE).format(
+            demo=f"demo_{t['demo']}", file=t["file"], dataset=DATASET
+        ),
+        VERIFY,
+    )
+    (d / "oracle" / "demo_actions.json").write_text(
+        json.dumps(
+            {
+                "source": f"{DATASET}/{t['file']}",
+                "demo": f"demo_{t['demo']}",
+                "steps_to_success": t["steps_to_success"],
+                **({"method": "tracked end-effector path"} if t.get("tracked") else {}),
+                "actions": [[round(float(x), 6) for x in a] for a in t["actions"]],
+            }
+        )
+    )
     return tid
 
 
@@ -274,7 +339,7 @@ def main() -> None:
     ap.add_argument("--suites", default=",".join(SUITES), help="comma-separated LIBERO suites to (re)generate")
     ap.add_argument("--workers", type=int, default=3)
     a = ap.parse_args()
-    from robouse.backends.libero import libero_task
+    from robouse.backends.libero.backend import libero_task
 
     out = Path(a.root)
     jobs = [(s, i) for s in a.suites.split(",") for i in range(libero_task(s, 0)[2].get_num_tasks())]
@@ -293,8 +358,10 @@ def main() -> None:
                 continue
             tid = write(t, out)
             written += 1
-            print(f"{tid:<20} demo_{t['demo']} success@{t['steps_to_success']:<4} budget {t['max_steps']}  {t['language']}",
-                  flush=True)
+            print(
+                f"{tid:<20} demo_{t['demo']} success@{t['steps_to_success']:<4} budget {t['max_steps']}  {t['language']}",
+                flush=True,
+            )
     print(f"wrote {written} of {len(jobs)} tasks under {out}")
 
 

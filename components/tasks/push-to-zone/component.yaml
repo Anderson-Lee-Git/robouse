@@ -7,7 +7,7 @@ capabilities:
 - contact-rich
 difficulty: medium
 composable: true
-runtime: robouse.backends.components_sim.templates:PushToZone
+runtime: robouse.backends.components.sim.templates:PushToZone
 requires:
 - placements:
   - arm

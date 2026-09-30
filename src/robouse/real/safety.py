@@ -17,6 +17,7 @@ After each step: thermal guard (warn, then stop and hold above `temp_stop_c`) an
 
 `HardwareLock` makes sure only one controller uses a robot at a time (flock on ~/.config/robouse-operator/<robot>.lock).
 """
+
 from __future__ import annotations
 
 import fcntl
@@ -27,9 +28,10 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import config
 from .robots import EnvelopeDefaults, Profile
 
-OPERATOR_DIR = Path(os.environ.get("ROBOUSE_OPERATOR_DIR", Path.home() / ".config" / "robouse-operator"))
+OPERATOR_DIR = config.operator_dir()
 
 
 class Veto(RuntimeError):
@@ -41,7 +43,7 @@ class SafetyStop(RuntimeError):
 
 
 def estop_path(robot: str = "") -> Path:
-    return Path(os.environ.get("ROBOUSE_ESTOP_FILE", OPERATOR_DIR / "ESTOP"))
+    return config.path("ROBOUSE_ESTOP_FILE", OPERATOR_DIR / "ESTOP")
 
 
 def estop_engaged(robot: str = "") -> str | None:
@@ -76,7 +78,7 @@ class HardwareLock:
         OPERATOR_DIR.mkdir(parents=True, exist_ok=True)
         tag = "".join(c if c.isalnum() else "_" for c in f"{robot}-{port}".strip("-"))
         self.path = OPERATOR_DIR / f"{tag}.lock"
-        self._fh = open(self.path, "a+")
+        self._fh = open(self.path, "a+")  # noqa: SIM115 - held (and locked) for the whole session
         try:
             fcntl.flock(self._fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
@@ -114,7 +116,9 @@ class Envelope:
             return {}
         out = {}
         for name, p in self.chain.monitored(q).items():
-            v = max(0.0, self.floor_of(name) - p[2], p[2] - self.e.z_max, abs(p[1]) - self.e.y_abs_max, p[0] - self.e.x_max)
+            v = max(
+                0.0, self.floor_of(name) - p[2], p[2] - self.e.z_max, abs(p[1]) - self.e.y_abs_max, p[0] - self.e.x_max
+            )
             if p[0] < self.e.x_min:
                 v = max(v, self.e.table_z + self.e.behind_min_z - p[2])
             out[name] = float(v)
@@ -124,8 +128,12 @@ class Envelope:
         if self.chain is None:
             return []
         pts = self.chain.monitored(q)
-        return [f"{n} at {np.round(pts[n], 3).tolist()} is {v * 1000:.0f} mm outside the workspace (table z={self.e.table_z:.3f}, "
-                f"box x<={self.e.x_max}, |y|<={self.e.y_abs_max}, z<={self.e.z_max})" for n, v in self.violation(q).items() if v > 1e-4]
+        return [
+            f"{n} at {np.round(pts[n], 3).tolist()} is {v * 1000:.0f} mm outside the workspace (table z={self.e.table_z:.3f}, "
+            f"box x<={self.e.x_max}, |y|<={self.e.y_abs_max}, z<={self.e.z_max})"
+            for n, v in self.violation(q).items()
+            if v > 1e-4
+        ]
 
     def check_path(self, q_from, q_to, samples: int = 20) -> None:
         """Raise Veto if the straight joint-space path leaves the envelope (points already outside may only recover)."""
@@ -138,8 +146,10 @@ class Envelope:
             v = self.violation(q)
             bad = [n for n, x in v.items() if x > 1e-4 and x > start.get(n, 0.0) + 1e-4]
             if bad:
-                raise Veto(f"path leaves the workspace at {s:.0%} of the move: " + "; ".join(
-                    d for d in self.describe(q) if d.split(" ")[0] in bad))
+                raise Veto(
+                    f"path leaves the workspace at {s:.0%} of the move: "
+                    + "; ".join(d for d in self.describe(q) if d.split(" ")[0] in bad)
+                )
 
     def in_slow_zone(self, q) -> bool:
         if self.chain is None:
@@ -241,8 +251,8 @@ class EventLog:
         self._log = self._ev = None
         if run_dir is not None:
             run_dir.mkdir(parents=True, exist_ok=True)
-            self._log = open(run_dir / "log.jsonl", "w")
-            self._ev = open(run_dir / "events.jsonl", "w")
+            self._log = open(run_dir / "log.jsonl", "w")  # noqa: SIM115 - open for the whole session
+            self._ev = open(run_dir / "events.jsonl", "w")  # noqa: SIM115
 
     def event(self, _kind: str, **kw) -> None:
         rec = {"t": round(time.time() - self.t0, 3), "event": _kind, **kw}

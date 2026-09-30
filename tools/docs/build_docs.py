@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import argparse
 import codecs
-import importlib.util
 import html
+import importlib.util
 import posixpath
 import re
 import shutil
@@ -122,6 +122,7 @@ EXCLUDED = {
     "docs/viewer.md": "the maintainers' viewer setup and viewer formats",
     "docs/benchflow.md": "maintainers' notes on the BenchFlow engine",
     "docs/molmoact2.md": "GPU server setup notes",
+    "docs/configuration.md": "every ROBOUSE_* variable, including maintainers' and remote-worker ones; the user-facing ones are on the pages that use them",
     "docs/vla.md": "maintainers' VLA notes and GPU results; the public part is in run-agents.md",
     "docs/suites/": "per-suite design notes; the public part is suites.md",
 }

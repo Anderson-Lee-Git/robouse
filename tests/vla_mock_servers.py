@@ -11,10 +11,10 @@ Policies (stand-ins for a model; no GPU):
   track:J1,J2,...    absolute joint targets moving from the observed joints toward the given pose at <= 3 units/step
 Every observation received is summarised (keys, array shapes and dtypes, the prompt) into --log (JSON lines).
 """
+
 from __future__ import annotations
 
 import argparse
-import functools
 import http.server
 import json
 import time
@@ -40,7 +40,7 @@ class Policy:
     def act(self, joints=None, n=None) -> np.ndarray:
         n = n or self.chunk
         if self.kind == "replay":
-            out = self.actions[self.i:self.i + n]
+            out = self.actions[self.i : self.i + n]
             self.i += min(len(out), self.advance or n)  # a client that replans after k actions only executed k of them
             if len(out) < n:  # past the end of the demonstration: hold still with the last gripper command
                 hold = np.zeros((n - len(out), 7))
@@ -66,7 +66,7 @@ def summarise(obj, prefix=""):
     elif isinstance(obj, (list, tuple)) and obj and isinstance(obj[0], (list, str)):
         out[prefix[:-1]] = json.dumps(obj)[:120]
     else:
-        out[prefix[:-1]] = (obj if isinstance(obj, (int, float, str, bool)) or obj is None else type(obj).__name__)
+        out[prefix[:-1]] = obj if isinstance(obj, (int, float, str, bool)) or obj is None else type(obj).__name__
         if isinstance(obj, str) and len(obj) > 120:
             out[prefix[:-1]] = f"str[{len(obj)}]"
     return out
@@ -120,8 +120,13 @@ def serve_xpolicylab(port, pol, log):
     import msgpack_numpy as mnp
     from websockets.sync.server import serve
 
-    pairs = {"hello": "hello_ack", "reset": "reset_result", "infer": "infer_result", "trial_end": "trial_end_ack",
-             "heartbeat": "heartbeat_ack"}
+    pairs = {
+        "hello": "hello_ack",
+        "reset": "reset_result",
+        "infer": "infer_result",
+        "trial_end": "trial_end_ack",
+        "heartbeat": "heartbeat_ack",
+    }
 
     def handler(ws):
         while True:
@@ -139,12 +144,24 @@ def serve_xpolicylab(port, pol, log):
                 obs = f["payload"]["observation"]
                 log_obs(log, "xpolicylab", obs)
                 st = obs.get("state", {})
-                q = np.concatenate([np.asarray(st["arm_joint_state"]).ravel(), np.asarray(st["ee_joint_state"]).ravel()])
+                q = np.concatenate(
+                    [np.asarray(st["arm_joint_state"]).ravel(), np.asarray(st["ee_joint_state"]).ravel()]
+                )
                 chunk = pol.act(q)
                 n_arm = len(np.asarray(st["arm_joint_state"]).ravel())
-                payload = {"actions": [{"arm_joint_state": a[:n_arm], "ee_joint_state": a[n_arm:]} for a in chunk], "latency_ms": 1.0}
-            reply = {**{k: f.get(k) for k in ("message_id", "evaluation_id", "action_case_id", "trial_id", "repeat_index", "step")},
-                     "message_type": pairs.get(mt, "error"), "sent_at": "now", "payload": payload}
+                payload = {
+                    "actions": [{"arm_joint_state": a[:n_arm], "ee_joint_state": a[n_arm:]} for a in chunk],
+                    "latency_ms": 1.0,
+                }
+            reply = {
+                **{
+                    k: f.get(k)
+                    for k in ("message_id", "evaluation_id", "action_case_id", "trial_id", "repeat_index", "step")
+                },
+                "message_type": pairs.get(mt, "error"),
+                "sent_at": "now",
+                "payload": payload,
+            }
             ws.send(msgpack.packb(reply, default=mnp.encode, use_bin_type=True))
 
     with serve(handler, "127.0.0.1", port, compression=None, max_size=None) as srv:
@@ -197,7 +214,13 @@ def serve_gr00t(port, pol, log):
             st = obs["state"]
             q = np.concatenate([np.asarray(st["single_arm"])[0, -1], np.asarray(st["gripper"])[0, -1]])
             chunk = pol.act(q)
-            out = [{"action.single_arm": chunk[None, :, :5].astype(np.float32), "action.gripper": chunk[None, :, 5:6].astype(np.float32)}, {}]
+            out = [
+                {
+                    "action.single_arm": chunk[None, :, :5].astype(np.float32),
+                    "action.gripper": chunk[None, :, 5:6].astype(np.float32),
+                },
+                {},
+            ]
         else:
             out = {"error": f"Unknown endpoint: {ep}"}
         sock.send(msgpack.packb(out, default=mnp.encode))
@@ -227,8 +250,13 @@ def serve_http_json(port, pol, log):
     http.server.ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
 
 
-SERVERS = {"openpi": serve_openpi, "xpolicylab": serve_xpolicylab, "openvla": serve_openvla, "gr00t": serve_gr00t,
-           "http-json": serve_http_json}
+SERVERS = {
+    "openpi": serve_openpi,
+    "xpolicylab": serve_xpolicylab,
+    "openvla": serve_openvla,
+    "gr00t": serve_gr00t,
+    "http-json": serve_http_json,
+}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -236,7 +264,9 @@ if __name__ == "__main__":
     ap.add_argument("--port", type=int, required=True)
     ap.add_argument("--policy", required=True)
     ap.add_argument("--chunk", type=int, default=10)
-    ap.add_argument("--advance", type=int, default=0, help="replay: actions consumed per request (the client's replan interval)")
+    ap.add_argument(
+        "--advance", type=int, default=0, help="replay: actions consumed per request (the client's replan interval)"
+    )
     ap.add_argument("--log", default="")
     a = ap.parse_args()
     SERVERS[a.wire](a.port, Policy(a.policy, a.chunk, a.advance), a.log)

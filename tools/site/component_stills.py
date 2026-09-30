@@ -5,6 +5,7 @@
 Writes OUT_DIR/{embodiment,scene,task}-<id>.webp (640 x 400). Each still is a real composed task at seed 0, rendered from a
 scene camera right after the reset (nothing is drawn by hand).
 """
+
 from __future__ import annotations
 
 import sys
@@ -13,17 +14,28 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from robouse.backends.components import ComposedBackend
-from robouse.components.registry import load
+from robouse.backends.components.backend import ComposedBackend
 from robouse.components.compose import ComposeError, instantiate
+from robouse.components.registry import load
 from robouse.components.resolve import check, modifiers
 
 # the combination shown for each component: (embodiment, scene, task, camera)
-EMB = {"franka-panda": ("tabletop", "stack-in-order", "front"), "aloha-2": ("tabletop", "bimanual-relay", "front"),
-       "pal-tiago": ("tabletop", "put-in-container", "chase"), "google-robot": ("kitchen-counter", "put-in-container", "chase"),
-       "unitree-go2": ("outdoor-field", "push-to-zone", "chase"), "crazyflie-2": ("warehouse", "inspect-tag", "overview")}
-SCENE = {"tabletop": "franka-panda", "kitchen-counter": "google-robot", "workshop-bench": "aloha-2", "warehouse": "unitree-go2",
-         "outdoor-field": "unitree-go2", "lab-bench": "franka-panda"}
+EMB = {
+    "franka-panda": ("tabletop", "stack-in-order", "front"),
+    "aloha-2": ("tabletop", "bimanual-relay", "front"),
+    "pal-tiago": ("tabletop", "put-in-container", "chase"),
+    "google-robot": ("kitchen-counter", "put-in-container", "chase"),
+    "unitree-go2": ("outdoor-field", "push-to-zone", "chase"),
+    "crazyflie-2": ("warehouse", "inspect-tag", "overview"),
+}
+SCENE = {
+    "tabletop": "franka-panda",
+    "kitchen-counter": "google-robot",
+    "workshop-bench": "aloha-2",
+    "warehouse": "unitree-go2",
+    "outdoor-field": "unitree-go2",
+    "lab-bench": "franka-panda",
+}
 TASK_CAM = {"go-to-landmark": "overview", "inspect-tag": "overview", "fetch-and-deliver": "overview"}
 
 
@@ -31,8 +43,19 @@ def render(emb: str, scene: str, task: str, camera: str, w: int = 640, h: int = 
     import mujoco
 
     inst = instantiate(emb, scene, task, modifiers({}), 0)
-    b = ComposedBackend({"id": "still", "instance": {"embodiment": {"id": emb}, "scene": {"id": scene}, "task": {"id": task},
-                                                      "modifiers": {}, "seed": 0, "layout": inst}})
+    b = ComposedBackend(
+        {
+            "id": "still",
+            "instance": {
+                "embodiment": {"id": emb},
+                "scene": {"id": scene},
+                "task": {"id": task},
+                "modifiers": {},
+                "seed": 0,
+                "layout": inst,
+            },
+        }
+    )
     b.reset(0)
     cams = [c for c in (camera, "overview", "top") if c]
     cam = next(c for c in cams if mujoco.mj_name2id(b.model, mujoco.mjtObj.mjOBJ_CAMERA, c) >= 0)
@@ -45,8 +68,14 @@ def render(emb: str, scene: str, task: str, camera: str, w: int = 640, h: int = 
 
 
 SCENE_ORDER = ["tabletop", "workshop-bench", "lab-bench", "kitchen-counter", "warehouse", "outdoor-field"]
-CLOSE_CAM = {"tabletop": "front", "workshop-bench": "bench_cam", "lab-bench": "bench_cam", "kitchen-counter": "counter_cam",
-             "warehouse": "station_cam", "outdoor-field": "overview"}
+CLOSE_CAM = {
+    "tabletop": "front",
+    "workshop-bench": "bench_cam",
+    "lab-bench": "bench_cam",
+    "kitchen-counter": "counter_cam",
+    "warehouse": "station_cam",
+    "outdoor-field": "overview",
+}
 
 
 def first_ok(reg, emb=None, scene=None, task=None):

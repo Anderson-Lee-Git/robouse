@@ -1,9 +1,9 @@
 """Real-robot backend on the hardware-in-the-loop mock: kinematics against hardware logs, safety guard, e-stop,
 operator gates and verdicts, rig switch. Run: PYTHONPATH=src python -m pytest tests/test_real.py -q"""
+
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import numpy as np
@@ -21,10 +21,13 @@ def _operator_dir(tmp_path, monkeypatch):
     import importlib
 
     import robouse.real.safety as s
+
     importlib.reload(s)
     import robouse.real.operator as o
+
     importlib.reload(o)
-    import robouse.backends.real as r
+    import robouse.backends.real.backend as r
+
     importlib.reload(r)
     yield
 
@@ -43,7 +46,11 @@ def test_metal_fk_matches_recorded_hardware_poses():
     from robouse.real.robots import METAL
 
     fx, ch = Fixture("metal-bowl-121853"), METAL.chain()
-    err = [np.linalg.norm(ch.frames(s["pos"][:6])["link6"][:3, 3] - np.asarray(s["link6"])) for s in fx.steps if "link6" in s]
+    err = [
+        np.linalg.norm(ch.frames(s["pos"][:6])["link6"][:3, 3] - np.asarray(s["link6"]))
+        for s in fx.steps
+        if "link6" in s
+    ]
     assert len(err) > 800 and max(err) < 0.0005
 
 
@@ -60,7 +67,7 @@ def test_oracle_style_move_and_pose_verdict(tmp_path):
     ep = _episode("real-metal-reach", tmp_path)
     r = ep.handle({"op": "skill", "name": "move_to", "args": ["0.30", "-0.10", "0.08"]})
     assert r["ok"] and r["result"]["reached"], r
-    res = ep.finish("done", "")
+    ep.finish("done", "")
     assert ep.result["success"] and ep.result["embodiment_mode"] == "hil-mock"
     ep.close()
 
@@ -96,7 +103,7 @@ def test_estop_ends_episode_with_safety_stop(tmp_path):
 def test_refused_arm_gate_stops_before_motion(tmp_path, monkeypatch):
     monkeypatch.setenv("ROBOUSE_OPERATOR_SCRIPT", "arm=no")
     ep = _episode("real-metal-reach", tmp_path)
-    r = ep.handle({"op": "observe"})
+    ep.handle({"op": "observe"})
     assert ep.finished and ep.outcome == "safety_stop" and ep.steps == 0
     ep.close()
 
@@ -142,6 +149,7 @@ def test_file_operator_channel(tmp_path):
                 operator.answer("yes", "looks good")
                 return
             time.sleep(0.05)
+
     threading.Thread(target=answer).start()
     assert op.verdict("ok?") == ("yes", "looks good")
 
@@ -171,7 +179,13 @@ def test_rosbridge_driver_against_mock_server():
     from robouse.real.drivers.rosbridge import RosbridgeDriver, ros_profile
     from robouse.real.rosbridge_mock import MockRosbridge
 
-    cfg = {"joints": ["j1", "j2", "j3"], "low": [-90, -90, -90], "high": [90, 90, 90], "units": "deg", "cameras": {"cam": "/cam/compressed"}}
+    cfg = {
+        "joints": ["j1", "j2", "j3"],
+        "low": [-90, -90, -90],
+        "high": [90, 90, 90],
+        "units": "deg",
+        "cameras": {"cam": "/cam/compressed"},
+    }
     prof = ros_profile(cfg)
     for ctype in ("trajectory_msgs/JointTrajectory", "std_msgs/Float64MultiArray"):
         srv = MockRosbridge(prof.joints, [0.1, -0.2, 0.3], cameras=["/cam/compressed"])

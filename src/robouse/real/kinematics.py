@@ -8,6 +8,7 @@ LeRobot's calibration) and where the tool point is (a link plus an offset in tha
 Used by the safety envelope (points on the arm checked against the table and the workspace box before any command) and
 by the backend's `move_to` skill (damped-least-squares IK on the tool point).
 """
+
 from __future__ import annotations
 
 import json
@@ -58,11 +59,25 @@ class Chain:
     """Serial kinematic chain. `joint_map` maps driver joint index -> (URDF joint name, scale, offset): URDF value =
     scale * driver value + offset (scale pi/180 for degrees). `tool` is (link name, xyz offset in that link's frame)."""
 
-    def __init__(self, chain: dict, joint_map: dict[int, tuple[str, float, float]], tool: tuple[str, list[float]],
-                 points: dict[str, tuple[str, list[float]]] | None = None):
-        self.joints = [_Joint(j["name"], j["type"], j["parent"], j["child"], np.asarray(j["xyz"], dtype=np.float64),
-                              rpy_matrix(*j["rpy"]), None if j.get("axis") is None else np.asarray(j["axis"], dtype=np.float64))
-                       for j in chain["joints"]]
+    def __init__(
+        self,
+        chain: dict,
+        joint_map: dict[int, tuple[str, float, float]],
+        tool: tuple[str, list[float]],
+        points: dict[str, tuple[str, list[float]]] | None = None,
+    ):
+        self.joints = [
+            _Joint(
+                j["name"],
+                j["type"],
+                j["parent"],
+                j["child"],
+                np.asarray(j["xyz"], dtype=np.float64),
+                rpy_matrix(*j["rpy"]),
+                None if j.get("axis") is None else np.asarray(j["axis"], dtype=np.float64),
+            )
+            for j in chain["joints"]
+        ]
         self.joint_map = joint_map
         self.tool_link, self.tool_offset = tool[0], np.asarray(tool[1], dtype=np.float64)
         # monitored points for the workspace check: name -> (link, offset); the tool point is always monitored
@@ -123,8 +138,19 @@ class Chain:
             J[:, i] = (self.tool(dq) - base) / eps
         return J
 
-    def solve(self, target, q0, low, high, *, seeds=(), iters: int = 200, damping: float = 0.02, step: float = 6.0,
-              tol: float = 1e-3) -> tuple[np.ndarray, float]:
+    def solve(
+        self,
+        target,
+        q0,
+        low,
+        high,
+        *,
+        seeds=(),
+        iters: int = 200,
+        damping: float = 0.02,
+        step: float = 6.0,
+        tol: float = 1e-3,
+    ) -> tuple[np.ndarray, float]:
         """Damped-least-squares IK for the tool point; tries q0 then each seed; returns (q, residual in m).
         Joint values beyond the arm joints (e.g. the gripper) are passed through from q0."""
         target = np.asarray(target, dtype=np.float64).reshape(3)
@@ -147,7 +173,7 @@ class Chain:
                 if d < tol:
                     break
                 J = self.jacobian(q)
-                dq = J.T @ np.linalg.solve(J @ J.T + damping ** 2 * np.eye(3), err)
+                dq = J.T @ np.linalg.solve(J @ J.T + damping**2 * np.eye(3), err)
                 nrm = float(np.linalg.norm(dq))
                 if nrm > step:
                     dq *= step / nrm
@@ -167,11 +193,22 @@ def urdf_to_chain(urdf_path: str | Path, robot: str, source: str = "") -> dict:
         o, a, lim = j.find("origin"), j.find("axis"), j.find("limit")
         xyz = [float(v) for v in (o.get("xyz", "0 0 0") if o is not None else "0 0 0").split()]
         rpy = [float(v) for v in (o.get("rpy", "0 0 0") if o is not None else "0 0 0").split()]
-        joints.append({"name": j.get("name"), "type": j.get("type"), "parent": j.find("parent").get("link"),
-                       "child": j.find("child").get("link"), "xyz": xyz, "rpy": rpy,
-                       "axis": [float(v) for v in a.get("xyz").split()] if a is not None and j.get("type") != "fixed" else None,
-                       "limit": {"lower": float(lim.get("lower")), "upper": float(lim.get("upper"))}
-                       if lim is not None and lim.get("lower") is not None else None})
+        joints.append(
+            {
+                "name": j.get("name"),
+                "type": j.get("type"),
+                "parent": j.find("parent").get("link"),
+                "child": j.find("child").get("link"),
+                "xyz": xyz,
+                "rpy": rpy,
+                "axis": [float(v) for v in a.get("xyz").split()]
+                if a is not None and j.get("type") != "fixed"
+                else None,
+                "limit": {"lower": float(lim.get("lower")), "upper": float(lim.get("upper"))}
+                if lim is not None and lim.get("lower") is not None
+                else None,
+            }
+        )
     # order parent before child
     by_parent: dict[str, list[dict]] = {}
     for j in joints:
@@ -184,5 +221,10 @@ def urdf_to_chain(urdf_path: str | Path, robot: str, source: str = "") -> dict:
         for j in by_parent.get(link, []):
             ordered.append(j)
             stack.append(j["child"])
-    return {"robot": robot, "sources": {"urdf": source or Path(urdf_path).name}, "joint_mapping": "identity: degrees -> radians",
-            "joints": ordered, "links": [{"name": l.get("name")} for l in root.findall("link")]}
+    return {
+        "robot": robot,
+        "sources": {"urdf": source or Path(urdf_path).name},
+        "joint_mapping": "identity: degrees -> radians",
+        "joints": ordered,
+        "links": [{"name": l.get("name")} for l in root.findall("link")],
+    }

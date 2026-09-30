@@ -6,6 +6,7 @@ Lines of code are non-blank, non-comment lines of Python. Duplicated code: every
 code lines (whitespace collapsed; docstrings and comments dropped) under src/ that also appears elsewhere under src/
 marks its lines as duplicated; the figure is the number of such lines.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,8 +32,11 @@ def code_lines(path: Path) -> list[tuple[int, str]]:
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
             first = node.body[0]
-            if isinstance(first, ast.Expr) and isinstance(getattr(first, "value", None), ast.Constant) \
-                    and isinstance(first.value.value, str):
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(getattr(first, "value", None), ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
                 doc_lines.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
     comment_only: set[int] = set()
     try:
@@ -43,16 +47,24 @@ def code_lines(path: Path) -> list[tuple[int, str]]:
         pass
     out = []
     for i, line in enumerate(src.splitlines(), 1):
-        s = " ".join(line.split("#", 1)[0].split()) if "#" in line and "'" not in line and '"' not in line \
+        s = (
+            " ".join(line.split("#", 1)[0].split())
+            if "#" in line and "'" not in line and '"' not in line
             else " ".join(line.split())
+        )
         if s and i not in doc_lines and i not in comment_only:
             out.append((i, s))
     return out
 
 
 def measure(repo: Path) -> dict:
-    groups = {"src": repo / "src", "tests": repo / "tests", "scripts": repo / "scripts", "tools": repo / "tools",
-              "adapters": repo / "adapters"}
+    groups = {
+        "src": repo / "src",
+        "tests": repo / "tests",
+        "scripts": repo / "scripts",
+        "tools": repo / "tools",
+        "adapters": repo / "adapters",
+    }
     res: dict = {"loc": {}, "files": {}}
     for name, root in groups.items():
         files = [p for p in root.rglob("*.py") if "__pycache__" not in p.parts] if root.exists() else []
@@ -60,14 +72,15 @@ def measure(repo: Path) -> dict:
         res["loc"][name] = sum(len(code_lines(p)) for p in files)
     src_files = sorted(p for p in (repo / "src").rglob("*.py") if "__pycache__" not in p.parts)
     res["modules"] = len(src_files)
-    res["largest_modules"] = sorted(((str(p.relative_to(repo)), len(code_lines(p))) for p in src_files),
-                                    key=lambda x: -x[1])[:10]
+    res["largest_modules"] = sorted(
+        ((str(p.relative_to(repo)), len(code_lines(p))) for p in src_files), key=lambda x: -x[1]
+    )[:10]
     windows: dict[str, list[tuple[Path, int]]] = defaultdict(list)
     lines_of: dict[Path, list[tuple[int, str]]] = {}
     for p in src_files:
         cl = lines_of[p] = code_lines(p)
         for k in range(len(cl) - WINDOW + 1):
-            chunk = "\n".join(t for _, t in cl[k:k + WINDOW])
+            chunk = "\n".join(t for _, t in cl[k : k + WINDOW])
             if len(chunk) < 120:  # skip windows of trivial lines (closing brackets, returns)
                 continue
             windows[hashlib.sha1(chunk.encode()).hexdigest()].append((p, k))

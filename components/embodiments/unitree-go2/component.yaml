@@ -18,7 +18,7 @@ assets:
 - unitree_go2
 licence: BSD-3-Clause (MuJoCo Menagerie)
 composable: true
-runtime: robouse.backends.components_sim.robots:Go2
+runtime: robouse.backends.components.sim.robots:Go2
 arms: []
 action_groups:
 - name: base.twist

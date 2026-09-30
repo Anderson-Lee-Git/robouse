@@ -1,6 +1,6 @@
 # VLA policies (`vla` harness)
 
-`--harness vla --model PRESET` drives an episode with a vision-language-action policy served elsewhere (usually on a GPU). The client (`src/robouse/vla/client.py`, standard library + numpy) is copied into the trial workspace and reaches the robot only through `robo`, like every harness; it speaks each policy server's own wire protocol, so the servers run unmodified.
+`--harness vla --model PRESET` drives an episode with a vision-language-action policy served elsewhere (usually on a GPU). The client (`src/robouse/harnesses/vla/client.py`, standard library + numpy) is copied into the trial workspace and reaches the robot only through `robo`, like every harness; it speaks each policy server's own wire protocol, so the servers run unmodified.
 
 ```bash
 export ROBOUSE_VLA_URL=ws://gpu-box:8000          # the policy server
@@ -16,11 +16,11 @@ robouse run --task real-so101-reach --harness vla --model gr00t/so101 --out runs
 | `xpolicylab` | XPolicyLab policy servers (pi0/pi0.5, GR00T, OpenVLA-OFT, RDT-1B, SmolVLA, ACT, Diffusion Policy, ...) | websocket; msgpack + msgpack-numpy envelope (`hello`, `reset`, `infer`, `trial_end`), Observation Data Format v1.0, reply a list of per-step action dicts |
 | `openvla` | OpenVLA `vla-scripts/deploy.py` | HTTP POST `/act`, json-numpy `{"image", "instruction", "unnorm_key"}`, reply one action |
 | `gr00t` | Isaac GR00T N1.6/N1.7 `run_gr00t_server.py` | ZeroMQ REQ/REP, msgpack + msgpack-numpy, `{"endpoint": "get_action", "data": {"observation": ...}}`, reply `[{key: [B, H, D]}, info]` |
-| `http-json` | Robo Use's MolmoAct2 server and `src/robouse/vla/lerobot_server.py` (any LeRobot policy: SmolVLA, pi0, pi0.5, ACT, diffusion, MolmoAct2; LIBERO pipeline or joint-state robots) | HTTP JSON: `/reset`, `/act` with base64 PNG images and state, reply `{"actions": [[...]]}` |
+| `http-json` | Robo Use's MolmoAct2 server and `src/robouse/harnesses/vla/lerobot_server.py` (any LeRobot policy: SmolVLA, pi0, pi0.5, ACT, diffusion, MolmoAct2; LIBERO pipeline or joint-state robots) | HTTP JSON: `/reset`, `/act` with base64 PNG images and state, reply `{"actions": [[...]]}` |
 
 ## Presets
 
-`src/robouse/vla/presets.json` fixes, per policy, the wire, the observation template (dotted keys filled from a camera, state fields, the instruction or a constant, with resizing, padding and flips), the action mapping onto the task's action vector (selection, sign, scale, gripper conventions such as OpenVLA's, relative-to-state) and the chunk controller. Shipped: `openpi/pi05_libero`, `openpi/pi0_libero`, `lerobot/groot_n1.7_libero`, `lerobot/evo1_libero`, `lerobot/vla_jepa_libero`, `openvla/openvla-7b-libero`, `molmoact2/libero`, `lerobot/smolvla_libero`, `lerobot/pi05_libero`, `gr00t/so101`, `xpolicylab/metal-joint`, `xpolicylab/so101-joint`, and `*/generic` presets to fill in. Override any field with `ROBOUSE_VLA_POLICY_CONFIG=overrides.json`. State sources are dotted field names, `{"const": [...]}`, or `{"field": name, "scale": s, "fn": "quat_to_axis_angle" | "width_to_fingers"}` for robots that report a quantity in another form. `per_backend: {backend: {...}}` in an override applies top-level keys only on that simulator, so one job can span suites.
+`src/robouse/harnesses/vla/presets.json` fixes, per policy, the wire, the observation template (dotted keys filled from a camera, state fields, the instruction or a constant, with resizing, padding and flips), the action mapping onto the task's action vector (selection, sign, scale, gripper conventions such as OpenVLA's, relative-to-state) and the chunk controller. Shipped: `openpi/pi05_libero`, `openpi/pi0_libero`, `lerobot/groot_n1.7_libero`, `lerobot/evo1_libero`, `lerobot/vla_jepa_libero`, `openvla/openvla-7b-libero`, `molmoact2/libero`, `lerobot/smolvla_libero`, `lerobot/pi05_libero`, `gr00t/so101`, `xpolicylab/metal-joint`, `xpolicylab/so101-joint`, and `*/generic` presets to fill in. Override any field with `ROBOUSE_VLA_POLICY_CONFIG=overrides.json`. State sources are dotted field names, `{"const": [...]}`, or `{"field": name, "scale": s, "fn": "quat_to_axis_angle" | "width_to_fingers"}` for robots that report a quantity in another form. `per_backend: {backend: {...}}` in an override applies top-level keys only on that simulator, so one job can span suites.
 
 ## Chunk execution and checks
 
