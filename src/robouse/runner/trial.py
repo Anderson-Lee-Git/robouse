@@ -186,12 +186,11 @@ def run_trial(
     if split:
         server_cmd += ["--split", split]
     oracle_token = uuid.uuid4().hex
-    server = subprocess.Popen(
-        server_cmd,
-        env={**os.environ, "ROBOUSE_ORACLE_TOKEN": oracle_token},
-        stdout=open(tdir / "episode" / "server.log", "w"),
-        stderr=subprocess.STDOUT,
-    )
+    with open(tdir / "episode" / "server.log", "w") as server_log:  # the child keeps its own copy of the handle
+        server = subprocess.Popen(
+            server_cmd, env={**os.environ, "ROBOUSE_ORACLE_TOKEN": oracle_token}, stdout=server_log,
+            stderr=subprocess.STDOUT,
+        )
     exc = None
     launch = None
     agent_rc = None
@@ -248,7 +247,7 @@ def run_trial(
                     agent.wait(timeout=15)
                 except subprocess.TimeoutExpired:
                     os.killpg(agent.pid, signal.SIGKILL)
-    except Exception as e:  # infrastructure failure, recorded in result.json
+    except Exception as e:  # noqa: BLE001 - an infrastructure failure, recorded in result.json
         exc = f"{type(e).__name__}: {e}"
     finally:
         # close the episode if the agent did not call `robo done`
@@ -304,7 +303,7 @@ def run_trial(
         from .atif import write_trajectory
 
         write_trajectory(tdir, harness)
-    except Exception as e:  # trajectory conversion is best effort; raw output is kept
+    except Exception as e:  # noqa: BLE001 - trajectory conversion is best effort; the raw output is kept
         (tdir / "agent" / "trajectory_error.txt").write_text(f"{type(e).__name__}: {e}")
 
     cost = trial_cost(

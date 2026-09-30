@@ -476,7 +476,8 @@ def decode_png(path: str) -> np.ndarray:
         return np.asarray(Image.open(path).convert("RGB"))
     except ImportError:
         pass
-    data = open(path, "rb").read()
+    with open(path, "rb") as f:
+        data = f.read()
     assert data[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
     pos, idat, w, h, ctype = 8, b"", 0, 0, 2
     while pos < len(data):

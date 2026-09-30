@@ -17,6 +17,7 @@ from pathlib import Path
 
 from robouse.backends.embodied import VERIFY_SH
 from robouse.core.prompts import EMBODIED_USAGE
+from robouse.tasks import write_task
 from robouse.real.drivers.rosbridge import ros_profile
 from robouse.real.robots import PROFILES
 
@@ -44,8 +45,6 @@ ROS_ARM = {
 def prof_of(t: dict):
     return ros_profile(ROS_ARM) if t["robot"] == "ros" else PROFILES[t["robot"]]
 
-
-from robouse.tasks import write_task
 
 SAFETY = (
     "**Safety layer.** Every command passes the episode server's safety guard before it reaches the motors: joint "

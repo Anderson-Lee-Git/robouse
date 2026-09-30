@@ -122,7 +122,7 @@ class MetaWorldBackend(Backend):
     def close(self) -> None:
         try:
             self.env.close()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort teardown
             pass
 
 

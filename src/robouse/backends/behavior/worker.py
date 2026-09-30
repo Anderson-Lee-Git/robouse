@@ -601,7 +601,7 @@ class Worker:
         try:
             self._run(self.prims.apply_ref(prim, obj, attempts=3))
         except (ActionPrimitiveErrorGroup, ActionPrimitiveError) as e:
-            raise SkillError(f"{name} {args[0]} failed: {str(e)[:300]}")
+            raise SkillError(f"{name} {args[0]} failed: {str(e)[:300]}") from None
         return {"message": f"{name} {args[0]}: ok"}
 
     # ---- observation -----------------------------------------------------------------------------------------------

@@ -778,14 +778,12 @@ def _prompt(trial: Path, cfg: dict, harness: str) -> str:
             from ..tasks import load_task
 
             instr = load_task(tp).instruction
-        except Exception:
+        except (OSError, ValueError, KeyError):  # the task folder moved or changed since the trial
             instr = ""
     if harness in TRACE_HARNESSES:
         return instr or f"task {cfg.get('task')}"
-    try:
-        from ..harnesses import PROMPT_PREFIX
-    except Exception:  # pragma: no cover
-        PROMPT_PREFIX = ""
+    from ..harnesses import PROMPT_PREFIX
+
     return PROMPT_PREFIX + instr if instr else f"(prompt not recorded) task {cfg.get('task')}"
 
 
@@ -1149,7 +1147,7 @@ def main(argv: list[str] | None = None) -> int:
             write_trajectory(p, cfg.get("harness") or "unknown")
             t = _read_json(p / "agent" / "trajectory.json") or {}
             print(f"{p}: {len(t.get('steps', []))} steps")
-        except Exception as e:  # keep going over many trials
+        except Exception as e:  # noqa: BLE001 - keep going over many trials
             rc = 1
             print(f"{p}: {type(e).__name__}: {e}", file=sys.stderr)
     return rc

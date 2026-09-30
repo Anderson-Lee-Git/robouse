@@ -1,3 +1,4 @@
+# ruff: noqa: B023 - each closure is consumed by `yield from` within its own loop iteration
 """Reference solutions for the menagerie tasks. They drive the robot only through the robo socket.
 
 The waypoint structure (approach, descend, close, lift, carry, seat with the measured grasp offset, staged

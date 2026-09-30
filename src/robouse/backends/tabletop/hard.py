@@ -688,8 +688,6 @@ def _quad(cells):
 def _quad_example(cells, supply):
     after = _quad(cells)
     left = list(supply)
-    for c, _, _ in after[:]:
-        pass
     need = [c for c, r, k in after if (c, r, k) not in cells]
     for c in need:
         left[left.index(c)] = None

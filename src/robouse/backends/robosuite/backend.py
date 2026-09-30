@@ -368,11 +368,11 @@ class RobosuiteBackend(Backend):
         try:
             if self._renderer is not None:
                 self._renderer.close()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort teardown
             pass
         try:
             self.env.close()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort teardown
             pass
 
 

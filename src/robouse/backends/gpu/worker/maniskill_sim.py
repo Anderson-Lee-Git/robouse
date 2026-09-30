@@ -421,7 +421,9 @@ class MSTask:
                 try:
                     val = max(-1.0, min(1.0, float(args[0])))
                 except ValueError:
-                    raise ValueError("gripper open|close|VALUE (VALUE in [-1, 1]: finger target, -1 closed, +1 open)")
+                    raise ValueError(
+                        "gripper open|close|VALUE (VALUE in [-1, 1]: finger target, -1 closed, +1 open)"
+                    ) from None
             self._set_mode("pd_joint_pos")
             if val > 0:
                 self.planner.open_gripper(t=10, gripper_state=val)

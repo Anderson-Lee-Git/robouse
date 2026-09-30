@@ -131,7 +131,7 @@ def scene_problem(task) -> str:
     from robouse.backends.libero.backend import _quiet_imports
 
     _, get_libero_path, _ = _quiet_imports()
-    bddl = open(os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)).read()
+    bddl = Path(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file).read_text()
     return re.search(r"\(problem\s+([^\s)]+)\)", bddl).group(1)
 
 

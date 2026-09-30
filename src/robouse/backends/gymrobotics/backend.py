@@ -240,7 +240,7 @@ class GymRoboticsBackend(Backend):
             if self._renderer is not None:
                 self._renderer.close()
             self.env.close()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort teardown
             pass
 
 

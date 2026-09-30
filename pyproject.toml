@@ -135,12 +135,16 @@ ignore = [
     "E501",    # long lines: the formatter wraps code; long strings and tables stay whole
     "E731",    # small named lambdas in tables
     "SIM108",  # ternaries are not always clearer
+    "SIM102",  # nested ifs often read better next to their comments
+    "SIM105",  # try/except/pass is as clear as contextlib.suppress
+    "E741",    # `l` for a line or a length is conventional here
 ]
 
 [tool.ruff.lint.per-file-ignores]
 # simulator workers and standalone clients run outside the package, with setup before their imports
-"src/robouse/backends/*/worker.py" = ["E402"]
-"src/robouse/backends/gpu/worker/*.py" = ["E402"]
+# (simulator libraries raise arbitrary exception types; a worker reports them and keeps serving)
+"src/robouse/backends/*/worker.py" = ["E402", "BLE001", "SIM115"]
+"src/robouse/backends/gpu/worker/*.py" = ["E402", "BLE001", "SIM115"]
 "src/robouse/harnesses/*/client.py" = ["E402"]
 "tests/*" = ["B011"]
 

@@ -86,7 +86,7 @@ def parse_floats(args, n_min: int, n_max: int, what: str) -> list[float]:
     try:
         v = [float(a) for a in args]
     except ValueError:
-        raise ValueError(f"{what}: arguments must be numbers, got {args}")
+        raise ValueError(f"{what}: arguments must be numbers, got {args}") from None
     if not n_min <= len(v) <= n_max:
         raise ValueError(f"{what}: expected {n_min}-{n_max} numbers, got {len(v)}")
     return v

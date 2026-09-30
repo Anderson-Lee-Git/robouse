@@ -90,7 +90,7 @@ def run_many(
             try:
                 r = json.loads(rj.read_text())
                 c = json.loads((rj.parent / "config.json").read_text())
-            except Exception:
+            except (OSError, ValueError):  # a trial folder that is still being written, or broken
                 continue
             if not r.get("exception_info") and (r.get("episode") or {}).get("outcome"):
                 done.add((r.get("task_name"), c.get("seed"), c.get("epoch", 0)))
@@ -117,7 +117,6 @@ def run_many(
             indent=2,
         )
     )
-    log = open(job_dir / "run_log.jsonl", "a")
     results = []
 
     def one(item) -> dict:
@@ -148,7 +147,7 @@ def run_many(
         r["task"] = t.id + (f"@seed{sd}" if sd is not None else "") + (f"#e{ep}" if epochs > 1 else "")
         return r
 
-    with cf.ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:
+    with open(job_dir / "run_log.jsonl", "a") as log, cf.ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:
         futs = [ex.submit(one, x) for x in runs]
         for fut in cf.as_completed(futs):
             r = fut.result()

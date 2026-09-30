@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -41,7 +42,7 @@ class RealArmBackend(EmbodiedBackend):
         if rig:
             import yaml
 
-            entry = (yaml.safe_load(open(rig)) or {}).get(self.cfg.get("robot", "metal"))
+            entry = (yaml.safe_load(Path(rig).read_text()) or {}).get(self.cfg.get("robot", "metal"))
             if entry:
                 self.cfg = {
                     **{k: v for k, v in self.cfg.items() if k != "fixture"},

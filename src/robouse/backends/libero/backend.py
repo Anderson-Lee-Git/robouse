@@ -27,6 +27,7 @@ Success is LIBERO's own `check_success()` (the task's BDDL goal predicates).
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import numpy as np
 
@@ -251,7 +252,7 @@ class LiberoBackend(Backend):
     def close(self) -> None:
         try:
             self.env.close()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort teardown
             pass
 
 
@@ -263,7 +264,7 @@ def oracle_main(env: str) -> None:
 
     from ...agent_cli import _send
 
-    actions = json.load(open(env))["actions"]
+    actions = json.loads(Path(env).read_text())["actions"]
     for a in actions:
         r = _send({"op": "act", "action": [float(x) for x in a], "repeat": 1})
         if not r.get("ok") or "episode" in (r.get("result") or {}):

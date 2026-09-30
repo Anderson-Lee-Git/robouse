@@ -513,7 +513,7 @@ class TabletopBackend(Backend):
         if self._renderer is not None:
             try:
                 self._renderer.close()
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort teardown
                 pass
             self._renderer = None
 

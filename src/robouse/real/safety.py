@@ -77,7 +77,7 @@ class HardwareLock:
         OPERATOR_DIR.mkdir(parents=True, exist_ok=True)
         tag = "".join(c if c.isalnum() else "_" for c in f"{robot}-{port}".strip("-"))
         self.path = OPERATOR_DIR / f"{tag}.lock"
-        self._fh = open(self.path, "a+")
+        self._fh = open(self.path, "a+")  # noqa: SIM115 - held (and locked) for the whole session
         try:
             fcntl.flock(self._fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
@@ -250,8 +250,8 @@ class EventLog:
         self._log = self._ev = None
         if run_dir is not None:
             run_dir.mkdir(parents=True, exist_ok=True)
-            self._log = open(run_dir / "log.jsonl", "w")
-            self._ev = open(run_dir / "events.jsonl", "w")
+            self._log = open(run_dir / "log.jsonl", "w")  # noqa: SIM115 - open for the whole session
+            self._ev = open(run_dir / "events.jsonl", "w")  # noqa: SIM115
 
     def event(self, _kind: str, **kw) -> None:
         rec = {"t": round(time.time() - self.t0, 3), "event": _kind, **kw}

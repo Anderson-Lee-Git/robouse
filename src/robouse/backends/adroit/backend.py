@@ -20,6 +20,8 @@ within 10 cm of the target. success_mode final: judged after `robo done` and 10 
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from ..base import ActionSpec, Backend, StepInfo
@@ -381,7 +383,7 @@ class AdroitBackend(Backend):
             if self._renderer is not None:
                 self._renderer.close()
             self.env.close()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort teardown
             pass
 
 
@@ -394,7 +396,7 @@ def oracle_main(env: str) -> None:
 
     from robouse.agent_cli import _send
 
-    demo = json.load(open(env))
+    demo = json.loads(Path(env).read_text())
     info = _send({"op": "info"})["result"]
     rng = {n: v["range"] for n, v in info["actuators"].items()}
     names = info["action"]["names"]
