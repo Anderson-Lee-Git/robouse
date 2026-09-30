@@ -28,6 +28,7 @@ import logging
 import sys
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
@@ -108,7 +109,10 @@ def act(req: dict) -> dict:
         obs = _joint_obs(req) if JOINT else _libero_obs(req)
         obs = P["pre"](obs)
         if hasattr(policy, "_rollout_action_generator"):  # MolmoAct2: per-episode flow-matching generator
+            policy._action_queue = deque(maxlen=policy.config.n_action_steps)  # this episode's queue, not the last one's
             policy._rollout_action_generator = ep["generator"]
+            if ep["generator"] is None:
+                policy._rollout_task_key = None  # first chunk of the episode: seed = eval_seed, whatever ran before
         out = []
         for _ in range(P["n"]):
             a = policy.select_action(obs)

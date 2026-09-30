@@ -14,7 +14,7 @@ Wire protocols (`wire` in the policy config):
               one action
   gr00t       Isaac GR00T N1.6/N1.7 policy server: ZeroMQ REQ/REP, msgpack + msgpack-numpy,
               {"endpoint": "get_action", "data": {"observation": {...}}} -> [action dict {key: [B, H, D]}, info]
-  http-json   plain HTTP JSON (Robo Use's MolmoAct2 server and src/robouse/vla/lerobot_server.py for any LeRobot policy:
+  http-json   plain HTTP JSON (src/robouse/harnesses/vla/lerobot_server.py, for any LeRobot policy including MolmoAct2:
               SmolVLA, pi0, ACT, diffusion): POST /reset, POST /act {"task", "images": {slot: base64 PNG}, "state"} ->
               {"actions": [[...]]}
 

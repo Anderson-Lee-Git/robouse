@@ -5,7 +5,7 @@ socket, no access to the simulator). Each cycle:
   1. `observe` with images: the front camera and the wrist camera (LIBERO: `agentview`, `robot0_eye_in_hand`),
      saved as PNG by the episode server; plus the robot state.
   2. POST the two PNGs, the task's language instruction and the state to the MolmoAct2 policy server
-     (src/robouse/molmoact2/server.py on a GPU); get back an action chunk (10 actions for MolmoAct2-LIBERO).
+     (src/robouse/harnesses/vla/lerobot_server.py on a GPU); get back an action chunk (10 actions for MolmoAct2-LIBERO).
   3. Apply the actions one by one with `act`, stopping as soon as the episode ends.
 Until the episode ends (success under success_mode "first", or the step budget); then `done` if still open.
 
