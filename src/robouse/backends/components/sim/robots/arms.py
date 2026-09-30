@@ -8,13 +8,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from ....embodied import ActionGroup, Skill, SkillArg, lookat_xyaxes, r3, wrap, yaw_of
-from .base import *  # noqa: F403 - replaced by explicit imports below
+from .base import GRASP_DOC, Driver, _delete, _yawq
 
-
-GRASP_DOC = {
-    "top": "top-down: the gripper points straight down and its fingers close along the world y axis",
-    "front": "front: the gripper points along the robot's heading and stays level; its fingers close horizontally",
-}
 
 ARM_ARG = SkillArg("arm", "enum", default="auto", choices=["auto", "left", "right"],
                    doc="which arm (bimanual rigs; auto: for move_to the arm whose base is nearer the target, otherwise the arm "

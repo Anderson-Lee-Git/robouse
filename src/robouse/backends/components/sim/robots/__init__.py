@@ -17,8 +17,8 @@ step (budget, video, success checks). A skill never moves the robot in a way `ro
 
 from __future__ import annotations
 
-from .arms import ARM_ARG, GRASP_DOC, Aloha, ArmCfg, ArmRig, Panda
-from .base import CONTROL_DT, N_SUB, PHYS_DT, Driver, FloorRobot
+from .arms import ARM_ARG, Aloha, ArmCfg, ArmRig, Panda
+from .base import CONTROL_DT, GRASP_DOC, N_SUB, PHYS_DT, Driver, FloorRobot
 from .drone import Crazyflie
 from .mobile import GoogleRobot, MobileManip, Tiago
 from .quadruped import Go2

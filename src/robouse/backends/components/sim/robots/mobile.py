@@ -8,8 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ....embodied import ActionGroup, Skill, SkillArg, lookat_xyaxes, r3, wrap, yaw_of
-from .arms import *  # noqa: F403
-from .base import *  # noqa: F403
+from .base import FloorRobot
 
 
 class MobileManip(FloorRobot):

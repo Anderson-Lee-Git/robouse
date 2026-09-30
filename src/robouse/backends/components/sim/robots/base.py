@@ -14,6 +14,11 @@ PHYS_DT = .002
 CONTROL_DT = .05
 N_SUB = round(CONTROL_DT / PHYS_DT)
 
+GRASP_DOC = {
+    "top": "top-down: the gripper points straight down and its fingers close along the world y axis",
+    "front": "front: the gripper points along the robot's heading and stays level; its fingers close horizontally",
+}
+
 
 def _yawq(yaw: float) -> list[float]:
     return [math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2)]
