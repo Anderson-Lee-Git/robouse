@@ -19,6 +19,6 @@ ENV PYTHONPATH=/src/src
 WORKDIR /src
 EOF
   echo "== building robouse-gate-$rt"
-  docker build -q -t "robouse-gate-$rt" "$ctx" > "/tmp/robouse-gate-$rt.build.log" 2>&1 || { tail -30 "/tmp/robouse-gate-$rt.build.log"; exit 1; }
+  DOCKER_BUILDKIT=1 docker build -q -t "robouse-gate-$rt" "$ctx" > "/tmp/robouse-gate-$rt.build.log" 2>&1 || { tail -30 "/tmp/robouse-gate-$rt.build.log"; exit 1; }
   rm -rf "$ctx"
 done
