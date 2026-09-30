@@ -66,7 +66,7 @@ def _analysis(sub: argparse._SubParsersAction) -> None:
     su.set_defaults(func=_summarize)
 
     d = sub.add_parser(
-        "doctor", help="what this machine can run: backends, harnesses, credentials, VLA, real-robot SDKs, plugins"
+        "doctor", help="what this machine can run: simulators, harnesses, credentials and the VLA server"
     )
     d.set_defaults(func=lambda a: _call(".doctor", "run"))
 
