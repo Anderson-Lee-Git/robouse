@@ -275,6 +275,10 @@ class DrivingBackend(EmbodiedBackend):
         w, h = (width, height) if width and height else self.render_size
         return self._call("render", width=int(w), height=int(h), camera=self.camera or "topdown")
 
+    def render_record(self, width: int, height: int) -> np.ndarray:
+        # the follow camera at 12 px per metre (the agent's 320 px view is 5 px per metre): the cars stay legible
+        return self._call("render", width=int(width), height=int(height), camera=self.camera or "topdown", scale=12.0)
+
     def close(self) -> None:
         if self.proc.poll() is not None:
             return

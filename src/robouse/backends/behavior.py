@@ -111,6 +111,9 @@ class BehaviorBackend(Backend):
             self._last_frame = img
         return img
 
+    def render_record(self, width: int, height: int) -> None:
+        return None  # OmniGibson's worker renders fixed-size frames; the video keeps that native size
+
     def success(self) -> bool:
         return bool(self._call("success")["success"])
 
