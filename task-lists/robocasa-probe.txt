@@ -1,0 +1,3 @@
+robocasa-close-drawer-kitchen7
+robocasa-turn-on-toaster-kitchen7
+robocasa-close-kettle-lid-kitchen1

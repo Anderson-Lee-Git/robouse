@@ -8,3 +8,11 @@ runs/
 .env.*
 node_modules/
 .cache/
+MUJOCO_LOG.TXT
+tasks-local/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+dist/
+build/

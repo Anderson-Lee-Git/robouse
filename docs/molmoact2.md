@@ -24,7 +24,7 @@ Read these numbers with two caveats:
 - The initial states are the first states of LIBERO training demonstrations (the ones the reference solution replays; see [suites/libero.md](suites/libero.md)). MolmoAct2-LIBERO was trained on these demonstrations, so it has seen these exact starting layouts. 20/20 fits its published 98.25% on LIBERO's held-out evaluation states, but it is not a held-out measurement.
 - These are single episodes. The 95% interval on 20/20 is roughly 83-100%.
 
-Controls on the same 20 tasks: reference solution 20/20 (`runs/oracle-libero`), no-op 0/20 (`runs/noop-libero`). All 50 trials in these three jobs pass `scripts/audit.py` with no flags. LLM agents run on the same tasks on the Mac. A smoke trial of `claude-code` + `claude-opus-5-5` solved `libero-goal-8` in 279 of 300 steps (`runs/smoke-libero-claude`).
+Controls on the same 20 tasks: reference solution 20/20 (`runs/oracle-libero`), no-op 0/20 (`runs/noop-libero`). All 50 trials in these three jobs pass `tools/analysis/audit.py` with no flags. LLM agents run on the same tasks on the Mac. A smoke trial of `claude-code` + `claude-opus-5-5` solved `libero-goal-8` in 279 of 300 steps (`runs/smoke-libero-claude`).
 
 Zero-shot, all 10 ran out their step budget. The policy moves the gripper (largest commanded |dx|, |dy|, |dz| per trial 0.5-0.8) but completes nothing. This was expected. Those scenes are a different robot (a Sawyer, or a floating gripper), with a different camera and no wrist camera, and every observation is out of distribution for a checkpoint trained only on LIBERO's Franka.
 
@@ -141,7 +141,7 @@ Both have videos in their trial directories.
 
 These are small samples: 1 episode per LIBERO task, where the paper uses 50, and 10 ManiSkill episodes. They show that the pipeline and checkpoints work end to end and are consistent with the published numbers. They are not a re-measurement of those numbers. The 95% interval on 39/40 is roughly 87-100%.
 
-All 50 trials pass `scripts/audit.py` with no flags. They show up in `scripts/view.sh` and `scripts/build_gallery.py` like any other job. In the viewer, harness is `lerobot-eval` or `molmoact2-sim-eval`, and model is the HF model id.
+All 50 trials pass `tools/analysis/audit.py` with no flags. They show up in `tools/ops/view.sh` and `tools/site/build_gallery.py` like any other job. In the viewer, harness is `lerobot-eval` or `molmoact2-sim-eval`, and model is the HF model id.
 
 ### How it ran
 

@@ -7,14 +7,15 @@ navigation tasks (UMaze, Medium, Large; two seeded start/goal pairs each). The t
 
 Usage: python adapters/gymrobotics/generate.py --out tasks/gymrobotics
 """
+
 from __future__ import annotations
 
 import argparse
 import shutil
 from pathlib import Path
 
-from robouse.backends.gymrobotics import TASKS
-from robouse.prompts import ROBO_USAGE
+from robouse.backends.gymrobotics.backend import TASKS
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import to_native
 
 
@@ -22,7 +23,9 @@ def _metaworld_verify() -> str:
     """The verifier is shared with the Meta-World adapter (it copies the episode server's verdict)."""
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("_mw_generate", Path(__file__).resolve().parents[1] / "metaworld" / "generate.py")
+    spec = importlib.util.spec_from_file_location(
+        "_mw_generate", Path(__file__).resolve().parents[1] / "metaworld" / "generate.py"
+    )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.VERIFY
@@ -77,10 +80,12 @@ The action `robo act DX DY DZ GRIP` moves the gripper by up to 5 cm per step alo
 
 FETCH = {
     "FetchReach-v4": dict(
-        title="Fetch Reach", difficulty="easy", tags=["fetch", "mujoco", "single-arm", "reach"],
+        title="Fetch Reach",
+        difficulty="easy",
+        tags=["fetch", "mujoco", "single-arm", "reach"],
         goal="Move the gripper to the goal position and hold it there.",
         success="Success: the gripper centre (`hand_pos`) is within 5 cm of `goal_pos`, judged after you call "
-                "`robo done` and the robot has held still for about 10 steps.",
+        "`robo done` and the robot has held still for about 10 steps.",
         fields="""\
 In `robo observe`: `hand_pos`/`hand_vel` are the gripper position (m) and velocity (m/s), and `goal_pos`
 is the target (shown as a red sphere in camera images). The fingers are locked in this task, so GRIP has
@@ -90,18 +95,22 @@ The action `robo act DX DY DZ GRIP` moves the gripper by up to 5 cm per step alo
 (DX = 1 means 5 cm).""",
     ),
     "FetchPush-v4": dict(
-        title="Fetch Push", difficulty="medium", tags=["fetch", "mujoco", "single-arm", "push"],
+        title="Fetch Push",
+        difficulty="medium",
+        tags=["fetch", "mujoco", "single-arm", "push"],
         goal="Push the block across the table so it rests on the goal position.",
         success="Success: the block centre (`obj1_pos`) is within 5 cm of `goal_pos`, judged after you call "
-                "`robo done` and the robot has held still for about 10 steps.",
+        "`robo done` and the robot has held still for about 10 steps.",
         fields=FETCH_FIELDS,
     ),
     "FetchPickAndPlace-v4": dict(
-        title="Fetch Pick and Place", difficulty="medium", tags=["fetch", "mujoco", "single-arm", "pick-place"],
+        title="Fetch Pick and Place",
+        difficulty="medium",
+        tags=["fetch", "mujoco", "single-arm", "pick-place"],
         goal="Pick up the block and place it at the goal position. The goal may be on the table or in the air; "
-             "if it is in the air, hold the block there.",
+        "if it is in the air, hold the block there.",
         success="Success: the block centre (`obj1_pos`) is within 5 cm of `goal_pos` in 3-D, judged after you call "
-                "`robo done` and the robot has held still for about 10 steps (keeping the gripper as it was).",
+        "`robo done` and the robot has held still for about 10 steps (keeping the gripper as it was).",
         fields=FETCH_FIELDS,
     ),
 }
@@ -136,24 +145,52 @@ def _toml(**kw) -> str:
 def build(task_id: str, env: str, seed: int) -> tuple[str, str]:
     if env in FETCH:
         f = FETCH[env]
-        toml = _toml(id=task_id, desc=f["goal"].replace('"', "'"), env=env, category="manipulation",
-                     difficulty=f["difficulty"], tags=f["tags"], seed=seed, max_steps=300, camera="default",
-                     skills=True, mode="final", mode_why="the goal must still hold after `robo done` and a settle period")
-        instr = (f"# {f['title']} (seed {seed})\n\n" + FETCH_INTRO.format(env=env, seed=seed)
-                 + f"\n\n**Goal:** {f['goal']}\n\n{f['success']}\n\n{_unwrap(f['fields'])}\n\n" + ROBO_USAGE)
+        toml = _toml(
+            id=task_id,
+            desc=f["goal"].replace('"', "'"),
+            env=env,
+            category="manipulation",
+            difficulty=f["difficulty"],
+            tags=f["tags"],
+            seed=seed,
+            max_steps=300,
+            camera="default",
+            skills=True,
+            mode="final",
+            mode_why="the goal must still hold after `robo done` and a settle period",
+        )
+        instr = (
+            f"# {f['title']} (seed {seed})\n\n"
+            + FETCH_INTRO.format(env=env, seed=seed)
+            + f"\n\n**Goal:** {f['goal']}\n\n{f['success']}\n\n{_unwrap(f['fields'])}\n\n"
+            + ROBO_USAGE
+        )
         return toml, instr
     name, diff, max_steps = MAZE[env]
     goal = "Roll the ball through the maze to the goal."
-    toml = _toml(id=task_id, desc=goal, env=env, category="navigation", difficulty=diff,
-                 tags=["pointmaze", "mujoco", "navigation", "2d"], seed=seed, max_steps=max_steps, camera="top",
-                 skills=False, mode="first", mode_why="reaching the goal ends the episode (PointMaze/D4RL episodic protocol)")
-    instr = (f"# Point Maze: {name} (seed {seed})\n\n"
-             f"A small ball moves on the floor of a walled {name}, pushed by a force you choose "
-             f"(adapted from Gymnasium-Robotics, `{env}`, start/goal seed {seed}).\n\n"
-             f"**Goal:** {goal}\n\n"
-             "Success: the ball centre comes within 0.45 m of `goal_pos`. The episode ends as solved the moment "
-             "this happens (you do not need to stop on the goal or call `robo done` afterwards).\n\n"
-             f"{_unwrap(MAZE_NOTES)}\n\n" + ROBO_USAGE)
+    toml = _toml(
+        id=task_id,
+        desc=goal,
+        env=env,
+        category="navigation",
+        difficulty=diff,
+        tags=["pointmaze", "mujoco", "navigation", "2d"],
+        seed=seed,
+        max_steps=max_steps,
+        camera="top",
+        skills=False,
+        mode="first",
+        mode_why="reaching the goal ends the episode (PointMaze/D4RL episodic protocol)",
+    )
+    instr = (
+        f"# Point Maze: {name} (seed {seed})\n\n"
+        f"A small ball moves on the floor of a walled {name}, pushed by a force you choose "
+        f"(adapted from Gymnasium-Robotics, `{env}`, start/goal seed {seed}).\n\n"
+        f"**Goal:** {goal}\n\n"
+        "Success: the ball centre comes within 0.45 m of `goal_pos`. The episode ends as solved the moment "
+        "this happens (you do not need to stop on the goal or call `robo done` afterwards).\n\n"
+        f"{_unwrap(MAZE_NOTES)}\n\n" + ROBO_USAGE
+    )
     return toml, instr
 
 
@@ -174,7 +211,8 @@ def main() -> None:
         (d / "instruction.md").write_text(instr)
         (d / "solution" / "solve.sh").write_text(
             "#!/bin/bash\n# Reference solution: scripted controller that uses only the robo socket and public observations.\n"
-            f"set -euo pipefail\npython -m robouse.oracle --backend gymrobotics --env {task_id}\n")
+            f"set -euo pipefail\npython -m robouse.oracle --backend gymrobotics --env {task_id}\n"
+        )
         (d / "tests" / "test.sh").write_text(verify)
         for f in (d / "solution" / "solve.sh", d / "tests" / "test.sh"):
             f.chmod(0o755)

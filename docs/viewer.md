@@ -2,11 +2,11 @@
 
 There are two ways to look at trials: the full BenchFlow viewer (one trial at a time, video synced to the agent's steps) and a static overview page (every trial on one page).
 
-## Full viewer: `scripts/view.sh`
+## Full viewer: `tools/ops/view.sh`
 
 ```
-scripts/view.sh               # http://127.0.0.1:8768
-scripts/view.sh --port 8770
+tools/ops/view.sh               # http://127.0.0.1:8768
+tools/ops/view.sh --port 8770
 ```
 
 It runs the BenchFlow viewer from the `robouse` branch of the private repo `benchflow-ai/trial-viewer` (https://github.com/benchflow-ai/trial-viewer/tree/robouse), checked out at `~/benchflow/trial-viewer`, with `--root robouse=<repo>/runs --tasks robotics=<repo>/tasks/*`. One-time setup: `gh repo clone benchflow-ai/trial-viewer ~/benchflow/trial-viewer && git -C ~/benchflow/trial-viewer checkout robouse`; the first start installs the Python environment and builds the frontend (about a minute; needs `uv` and Node.js 20+). That branch adds what Robo Use needs on top of the viewer at `~/benchflow/data/viewer`: robot trials, `task.md` task folders and a column per harness and model. The default port is 8768 because 8765 and 8766 usually serve the 3D/CUA runs on this Mac; set `VIEWER=/path/to/viewer` to use another checkout. The viewer is read-only and binds to 127.0.0.1.
@@ -70,27 +70,27 @@ How video time is computed. The episode server records one frame every `frame_ev
 
 How tool calls are matched to the trace. Claude Code and Codex do not timestamp their events, so shell commands are matched to `episode/trace.jsonl` entries in order. A command owns as many consecutive entries as it made robo requests: the larger of the `robo <subcommand>` invocations in the command text and the robo result blocks in its output (a loop prints one block per call). Then the last result the command printed (the `hand_pos` and `steps_used` of a state, or an error line) is looked up in the trace to correct the end point. A script (python, bash) whose output shows no robo results gets the entries between the previous and the next matched command; a loop that ran more requests than it printed gets the unmatched ones after it. On the trials of 2026-09-27 (177 LLM trials), no request was left unmatched and 860 of 861 printed states matched an entry of their own step; the exception is a response that the server never wrote to the trace (see open issues).
 
-## Overview page: `scripts/build_gallery.py`
+## Overview page: `tools/site/build_gallery.py`
 
 ```
-.venv/bin/python scripts/audit.py          # optional: adds the audit column
-.venv/bin/python scripts/build_gallery.py  # writes runs/_gallery/index.html
+.venv/bin/python tools/analysis/audit.py          # optional: adds the audit column
+.venv/bin/python tools/site/build_gallery.py  # writes runs/_gallery/index.html
 open runs/_gallery/index.html
 ```
 
-A single self-contained HTML file (white background, system font, no network). The top shows totals (trials, tasks, harness·model pairs, solve rate, suspicious, infra failures) for the current filter. Below them is a sortable table of every trial (task, job, suite, source benchmark, harness, model, reward, outcome, env steps, wall time, audit flags, viewer link), filterable by harness, model, suite, source benchmark, job, solved or failed, audit status and free text. Under the table there is one card per trial, 48 at a time, each with the video, the agent's last message, the `robo done` message and links to the full viewer, the video and the trial folder. Videos are linked relatively (`../<job>/<trial>/artifacts/recording.mp4`), so the page works from disk or when `runs/` is served. The viewer links need `scripts/view.sh` running (change the base with `--viewer URL`).
+A single self-contained HTML file (white background, system font, no network). The top shows totals (trials, tasks, harness·model pairs, solve rate, suspicious, infra failures) for the current filter. Below them is a sortable table of every trial (task, job, suite, source benchmark, harness, model, reward, outcome, env steps, wall time, audit flags, viewer link), filterable by harness, model, suite, source benchmark, job, solved or failed, audit status and free text. Under the table there is one card per trial, 48 at a time, each with the video, the agent's last message, the `robo done` message and links to the full viewer, the video and the trial folder. Videos are linked relatively (`../<job>/<trial>/artifacts/recording.mp4`), so the page works from disk or when `runs/` is served. The viewer links need `tools/ops/view.sh` running (change the base with `--viewer URL`).
 
-## Public viewer: `scripts/build_runs_site.py`
+## Public viewer: `tools/site/build_runs_site.py`
 
 ```
-.venv/bin/python scripts/build_runs_site.py --out ~/benchflow/roboharm/site/runs   # then deploy the site
+.venv/bin/python tools/site/build_runs_site.py --out ~/benchflow/roboharm/site/runs   # then deploy the site
 ```
 
 This builds https://robouse.ai/runs/, a static viewer for the final runs: every `runs/final-*` job, including jobs that are still running (their finished trials are in; rerun the command to add more). Unfinished trials are left out, except in jobs listed in `PARTIAL_JOBS`, where they are shown as partial. A job counts as running while a `robouse` process writes into it (checked with `ps` on the build machine); suites with a running job get a dot in the matrix. A rebuild takes about four minutes; videos and filmstrips that are already up to date are not encoded again.
 
-Pages (plain HTML plus one script, `scripts/runs_site/runs.js`, and one stylesheet, `scripts/runs_site/runs.css`, on top of the site's shared header, footer, palette and type from the site repo's `tools/chrome.py`):
+Pages (plain HTML plus one script, `tools/site/runs_site/runs.js`, and one stylesheet, `tools/site/runs_site/runs.css`, on top of the site's shared header, footer, palette and type from the site repo's `tools/chrome.py`):
 
-- `/runs/`: the results matrix (suites down, harness + model across; each cell is % solved and solved / scored, tinted by the solve rate, and opens that suite with the column highlighted), then every task with one column per harness + model, filterable by suite, model, outcome (solved, not solved, infra, partial, not run, split) and text. The counting rule is `scripts/results.py`'s: per task the latest trial that was not an infrastructure failure. Opus 5.5 is tagged partial.
+- `/runs/`: the results matrix (suites down, harness + model across; each cell is % solved and solved / scored, tinted by the solve rate, and opens that suite with the column highlighted), then every task with one column per harness + model, filterable by suite, model, outcome (solved, not solved, infra, partial, not run, split) and text. The counting rule is `tools/analysis/results.py`'s: per task the latest trial that was not an infrastructure failure. Opus 5.5 is tagged partial.
 - `/runs/<suite>/`: the same task table for one suite (`?m=<column>` highlights a column).
 - `/runs/task/<task>/`: the task's title, description, facts, every trial of it (other attempts are listed as not counted), a compare picker, the `task.md` instruction and its `robouse:` spec.
 - `/runs/t/<trial>/`: one trial, with tabs. **Recording**: the video with a step lane, previous / next step (arrow keys), 0.25× / 0.5× / 1× speed, and the step list beside it (click a step to seek; the current step highlights while playing; steps that share a video time keep the one you clicked), then a filmstrip of the camera images the agent looked at (click to seek). **Trajectory**: prompt, messages, reasoning, commands, outputs and the camera images inline, each step with a seek button. **Verdict**: what the agent said (robo done, give-up, or nothing) against what the simulator checked, the verifier output and the episode facts. **Timing & tokens**: wall time, episode time, env steps against the budget, tokens and, where the harness reports them, per-step input and output tokens; a bar of the wall clock between steps. **Files**: the trial folder, with result.json and config.json shown (raw logs, the trace and server logs are not published).

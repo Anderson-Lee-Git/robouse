@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robouse"
-version = "0.1.1"
+dynamic = ["version"]
 description = "Agent as a policy for embodied agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,8 +25,9 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# The base install is light: the task loader and the `robouse` / `robo` commands. `robo` (the agent-facing command)
-# uses only the standard library. Simulators are extras.
+# The base install is light: the task loader, the episode server and the `robouse` / `robo` commands. `robo` (the
+# agent-facing command) uses only the standard library. Simulators are extras, and so is BenchFlow (`--engine
+# benchflow`: every trial in Docker, the simulator in its own container).
 dependencies = ["numpy>=1.24", "pyyaml>=6"]
 
 [project.optional-dependencies]
@@ -40,8 +41,11 @@ gymrobotics = ["robouse[sim]", "gymnasium-robotics>=1.4"]
 # robosuite 1.5 conflicts with LIBERO's robosuite==1.4.0 pin. In an environment that also runs LIBERO, install it
 # into an isolated directory instead (docs/suites/robosuite.md). LIBERO itself is installed by hand
 # (docs/suites/libero.md) because it needs --no-deps.
-robosuite = ["robouse[sim]", "robosuite>=1.5,<1.6"]
+robosuite = ["robouse[sim]", "robosuite>=1.5.2,<1.6"]
 dexjoco = ["robouse[sim]", "scipy>=1.10"]
+# BenchFlow runs trials in Docker and loads robouse task folders as a native task format. Needs Python 3.12 and, until
+# BenchFlow releases the task-format hook, BenchFlow from its `robouse` branch (see [tool.uv.sources]).
+benchflow = ["benchflow>=0.7.9.dev0; python_version >= '3.12'"]
 all = ["robouse[sim,metaworld,gymrobotics,robosuite,dexjoco]"]
 
 [project.urls]
@@ -54,33 +58,135 @@ Issues = "https://github.com/benchflow-ai/robouse/issues"
 robouse = "robouse.cli:main"
 robo = "robouse.agent_cli:main"
 
+# BenchFlow loads robouse task folders natively (`bench eval run --tasks-dir tasks/metaworld ...`).
+[project.entry-points."benchflow.task_formats"]
+robouse = "robouse.engine.format:RobouseTaskFormat"
+
+# Until BenchFlow publishes the task-format hook, install it from the branch that adds it.
+[tool.uv.sources]
+benchflow = { git = "https://github.com/benchflow-ai/benchflow", branch = "robouse" }
+
+[tool.hatch.version]
+path = "src/robouse/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/robouse"]
-# robocasa_episodes are recorded, machine-specific scene files for the RoboCasa suite (not yet bundled as tasks).
-exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes"]
+exclude = ["**/__pycache__", "**/*.pyc"]
 
 # The task folders ship inside the wheel as robouse/bundled_tasks, so `robouse tasks` and
 # `robouse run --task <id>` work without a checkout.
 [tool.hatch.build.targets.wheel.force-include]
-# One entry per suite that is self-contained. Left out: robocasa (its recorded episode layouts are machine-specific
-# and not distributed) and any suite still in development.
+# One entry per suite. Left out: behavior, robodojo and gpu-* (their simulators run on remote GPU workers), and
+# real and stationerybench (real robots: not run through Robo Use on live hardware yet).
+# Suites whose simulator needs its own virtualenv (dexjoco, driving, dmcontrol, myosuite, humanoidbench, maniskill,
+# robocasa) still need that setup; docs/suites.md says how.
+"tasks/adroit" = "robouse/bundled_tasks/adroit"
+"tasks/composed" = "robouse/bundled_tasks/composed"
 "tasks/arc-style" = "robouse/bundled_tasks/arc-style"
+"tasks/crazyflie" = "robouse/bundled_tasks/crazyflie"
+"tasks/cubepick" = "robouse/bundled_tasks/cubepick"
+"tasks/dexhand" = "robouse/bundled_tasks/dexhand"
 "tasks/dexjoco" = "robouse/bundled_tasks/dexjoco"
+"tasks/dmcontrol" = "robouse/bundled_tasks/dmcontrol"
+"tasks/driving" = "robouse/bundled_tasks/driving"
 "tasks/drone" = "robouse/bundled_tasks/drone"
 "tasks/gymrobotics" = "robouse/bundled_tasks/gymrobotics"
 "tasks/hard" = "robouse/bundled_tasks/hard"
+"tasks/humanoid" = "robouse/bundled_tasks/humanoid"
+"tasks/humanoidbench" = "robouse/bundled_tasks/humanoidbench"
+"tasks/kitchen" = "robouse/bundled_tasks/kitchen"
 "tasks/libero" = "robouse/bundled_tasks/libero"
+"tasks/libero-90" = "robouse/bundled_tasks/libero-90"
 "tasks/libero-style" = "robouse/bundled_tasks/libero-style"
+"tasks/maniskill" = "robouse/bundled_tasks/maniskill"
 "tasks/menagerie" = "robouse/bundled_tasks/menagerie"
 "tasks/metaworld" = "robouse/bundled_tasks/metaworld"
+"tasks/mobile-manip" = "robouse/bundled_tasks/mobile-manip"
+"tasks/myosuite" = "robouse/bundled_tasks/myosuite"
+"tasks/nav" = "robouse/bundled_tasks/nav"
+"tasks/quadruped" = "robouse/bundled_tasks/quadruped"
 "tasks/robo-use-families" = "robouse/bundled_tasks/robo-use-families"
+"tasks/robocasa" = "robouse/bundled_tasks/robocasa"
 "tasks/roboharm" = "robouse/bundled_tasks/roboharm"
 "tasks/robosuite" = "robouse/bundled_tasks/robosuite"
 "tasks/safety" = "robouse/bundled_tasks/safety"
 "tasks/vision" = "robouse/bundled_tasks/vision"
+"components" = "robouse/bundled_components"
 "assets/menagerie/provenance.json" = "robouse/assets_provenance/menagerie.json"
 "assets/menagerie/skydio_x2/PROVENANCE.json" = "robouse/assets_provenance/skydio_x2.json"
+"assets/menagerie/embodiments.json" = "robouse/assets_provenance/embodiments.json"
+"assets/humanoidbench/provenance.json" = "robouse/assets_provenance/humanoidbench.json"
+"assets/robocasa/provenance.json" = "robouse/assets_provenance/robocasa.json"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/robouse", "/tasks", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/README.md", "/LICENSE", "/pyproject.toml"]
-exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/src/robouse/backends/robocasa_episodes", "/tasks/robocasa", "/tasks/behavior"]
+include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/assets/humanoidbench/provenance.json", "/assets/robocasa/provenance.json", "/README.md", "/LICENSE", "/pyproject.toml"]
+exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["tasks", "components", "assets"]
+per-file-target-version = { "tools/**" = "py312" }  # maintainer tools run on the development environment
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE", "SIM", "PLE", "RUF100"]
+ignore = [
+    "E501",    # long lines: the formatter wraps code; long strings and tables stay whole
+    "E731",    # small named lambdas in tables
+    "SIM108",  # ternaries are not always clearer
+    "SIM102",  # nested ifs often read better next to their comments
+    "SIM105",  # try/except/pass is as clear as contextlib.suppress
+    "E741",    # `l` for a line or a length is conventional here
+]
+
+[tool.ruff.lint.per-file-ignores]
+# simulator workers and standalone clients run outside the package, with setup before their imports
+# (simulator libraries raise arbitrary exception types; a worker reports them and keeps serving)
+"src/robouse/backends/*/worker.py" = ["E402", "BLE001", "SIM115"]
+"src/robouse/backends/gpu/worker/*.py" = ["E402", "BLE001", "SIM115"]
+"src/robouse/harnesses/*/client.py" = ["E402"]
+# maintainer tools, generators and test servers: best-effort loops over many files are fine
+"tests/*" = ["B011", "BLE001", "SIM115"]
+"tools/**" = ["BLE001", "SIM115", "B023", "B007", "SIM401"]
+"adapters/**" = ["BLE001", "SIM115"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+# files other agents are editing on other branches this week; formatted once they have merged
+exclude = ["tools/site/build_runs_site.py", "tools/docs/build_docs.py", "tools/docs/cli_reference.py"]
+
+[tool.mypy]
+python_version = "3.12"  # numpy's stubs need 3.12 syntax; the package itself supports 3.11
+ignore_missing_imports = true
+follow_imports = "silent"
+check_untyped_defs = true
+warn_unused_ignores = true
+files = [
+    "src/robouse/config.py",
+    "src/robouse/_maintainer.py",
+    "src/robouse/core",
+    "src/robouse/workers",
+    "src/robouse/lib",
+    "src/robouse/cli",
+    "src/robouse/runner/__init__.py",
+    "src/robouse/runner/trial.py",
+    "src/robouse/runner/jobs.py",
+    "src/robouse/runner/sandbox.py",
+    "src/robouse/runner/cost.py",
+    "src/robouse/harnesses/__init__.py",
+    "src/robouse/harnesses/credentials.py",
+    "src/robouse/tasks.py",
+    "src/robouse/oracle.py",
+    "src/robouse/session.py",
+    "src/robouse/assets.py",
+    "src/robouse/backends/__init__.py",
+    "src/robouse/backends/base.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.coverage.run]
+source = ["robouse"]
+omit = ["*/worker.py", "*/gpu/worker/*"]
