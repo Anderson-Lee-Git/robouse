@@ -4,7 +4,7 @@ Compose a task from components with `robouse tasks init`, or write one by hand f
 
 ## Compose a task
 
-Pick an embodiment, a scene and a task template ([Components](concepts.md#components)). The robot models come from MuJoCo Menagerie; download them once with `robouse fetch-assets`.
+Pick an embodiment, a scene and a task template ([Components](concepts.md#components)). The robot models come from MuJoCo Menagerie; download them once with `robouse fetch-assets --all`.
 
 ```console
 $ robouse tasks init --embodiment franka-panda --scene tabletop --task put-in-container --out mytasks

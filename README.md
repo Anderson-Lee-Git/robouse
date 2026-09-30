@@ -9,7 +9,7 @@ robouse run --task arc-gravity --harness claude-code-glm --model moonshotai/Kimi
 
 Python 3.11 to 3.13. Extras add simulators: `metaworld`, `gymrobotics`, `robosuite`, `dexjoco`, `all`.
 
-Docs: [robouse.ai/docs](https://robouse.ai/docs/). Results: [robouse.ai/hub/leaderboard](https://robouse.ai/hub/leaderboard/).
+Docs: [robouse.ai/docs](https://robouse.ai/docs/). Results: [robouse.ai/runs](https://robouse.ai/runs/).
 
 ## Working on Robo Use
 

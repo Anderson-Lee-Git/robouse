@@ -39,12 +39,13 @@ FROM = {
 }
 # What a suite needs beyond `pip install 'robouse[sim]'`, by backend.
 ASSETS = "`robouse fetch-assets`"
+ASSETS_ALL = "`robouse fetch-assets --all`"
 VENV = "own virtualenv (below)"
 NEEDS = {
     "tabletop": "", "metaworld": "`[metaworld]`", "gymrobotics": "`[gymrobotics]`", "kitchen": "`[gymrobotics]`",
     "adroit": "`[gymrobotics]`", "robosuite": "`[robosuite]`", "libero": "[LIBERO setup](#libero)",
-    "menagerie": ASSETS, "roboharm": ASSETS, "drone": ASSETS, "quadruped": ASSETS, "humanoid": ASSETS,
-    "mobile_manip": ASSETS, "dexhand": ASSETS, "crazyflie": ASSETS, "components": ASSETS,
+    "menagerie": ASSETS, "roboharm": ASSETS, "drone": ASSETS, "quadruped": ASSETS_ALL, "humanoid": ASSETS_ALL,
+    "mobile_manip": ASSETS_ALL, "dexhand": ASSETS_ALL, "crazyflie": ASSETS_ALL, "components": ASSETS_ALL,
     "dexjoco": VENV, "driving": VENV, "dmcontrol": VENV, "myosuite": VENV, "humanoidbench": VENV, "maniskill": VENV,
     "robocasa": VENV, "nav": "", "cubepick": "", "real": "",
 }

@@ -36,7 +36,7 @@ img/suites/robocasa.webp | `robocasa`
 <!-- suites-table -->
 <!-- /suites-table -->
 
-`robouse fetch-assets` downloads the MuJoCo Menagerie robot models once, each checked by SHA-256. Solve rates of models on these suites: [leaderboard](/hub/leaderboard/).
+`robouse fetch-assets` downloads the MuJoCo Menagerie robot models for `menagerie`, `roboharm` and `drone`; `robouse fetch-assets --all` adds every robot the other suites and composed tasks use (about 2 GB). Each file is checked by SHA-256. Results of models on these suites: [Runs](/runs/).
 
 ## LIBERO
 

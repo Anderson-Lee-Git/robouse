@@ -1,45 +1,45 @@
 # CLIs
 
-`robouse` runs tasks, trials and runs; `robo` is the agent's only way to act. The help below is the output of `robouse 0.1.1`.
+`robouse` runs tasks, trials and runs; `robo` is the agent's only way to act. The help below is the output of `robouse 0.2.0`.
 
 ```console
 $ robouse --help
 usage: robouse [-h] [--version]
-               {serve,run,run-many,estop,operator,hil-check,robots,report,grade,doctor,summarize,tasks,fetch-assets,export,components}
+               {serve,run,run-many,export,tasks,components,fetch-assets,report,grade,summarize,doctor,estop,operator,hil-check,robots}
                ...
 
-Robo Use: agent as a policy for embodied agents. Runs robot tasks with an
-agent harness as the policy. https://robouse.ai
+Robo Use: run robot tasks with an agent harness as the policy.
+https://robouse.ai
 
 positional arguments:
-  {serve,run,run-many,estop,operator,hil-check,robots,report,grade,doctor,summarize,tasks,fetch-assets,export,components}
+  {serve,run,run-many,export,tasks,components,fetch-assets,report,grade,summarize,doctor,estop,operator,hil-check,robots}
     serve               run one trusted episode server (used by `run`)
     run                 run one trial end to end
     run-many            run a set of trials
+    export              write tasks as native BenchFlow task packages (needs
+                        robouse[benchflow])
+    tasks               list, compose, scaffold and check tasks
+    components          list, show and check components
+    fetch-assets        download the MuJoCo Menagerie robot models (menagerie,
+                        roboharm, drone; --robot or --all for the embodiment
+                        suites and composed tasks)
+    report              metrics with 95% confidence intervals over job
+                        folders, grouped by trial attributes
+    grade               a vision-language model's second opinion on finished
+                        trials, from their video frames (writes
+                        <trial>/grader/vlm.json)
+    summarize           distil a trial into learnings (markdown) for --prior-
+                        learnings
+    doctor              what this machine can run: backends, harnesses,
+                        credentials, VLA, real-robot SDKs, plugins
     estop               latch the real-robot e-stop (every real episode stops
                         at its next command); --clear releases it
     operator            answer a pending operator gate or verdict, or send the
                         policy a remark
-    hil-check           strict replay of recorded real sessions through the
-                        safety guard + tracking-model fit
+    hil-check           replay recorded real sessions strictly through the
+                        safety guard and fit the tracking model
     robots              list real-robot profiles, drivers and hardware-in-the-
                         loop fixtures
-    report              metrics with 95% confidence intervals over job
-                        folders, grouped by trial attributes
-    grade               VLM second opinion on finished trials from their video
-                        frames (writes <trial>/grader/vlm.json)
-    doctor              what this machine can run: backends, harnesses,
-                        credentials, VLA, real-robot SDKs, plugins
-    summarize           distil a trial into learnings (markdown) for --prior-
-                        learnings
-    tasks               list, compose (init), scaffold and check tasks;
-                        `robouse tasks --help`
-    fetch-assets        download the MuJoCo Menagerie robot models (Menagerie-
-                        based suites and composed tasks)
-    export              write robouse tasks as native BenchFlow task packages
-                        (a movable bundle)
-    components          list, show and check components; `robouse components
-                        --help`
 
 options:
   -h, --help            show this help message and exit
@@ -66,13 +66,13 @@ options:
   --seed SEED           override the task's seed
   --max-wall-s MAX_WALL_S
                         wall-clock budget in seconds (default 1800)
-  --record-size WxH     render the episode video at this size, e.g. 1280x720
-                        (agent images unchanged; default: native size; also
-                        $ROBOUSE_RECORD_SIZE)
+  --record-size WxH     render the episode video at this size, e.g. 1280x720;
+                        agent images are unchanged (default: the backend's
+                        native size, or $ROBOUSE_RECORD_SIZE)
   --ready-file READY_FILE
                         file created once the server is listening
-  --split SPLIT         placement split for backends with seeded placements:
-                        nominal, interpolation or extrapolation
+  --split SPLIT         placement split: nominal, interpolation or
+                        extrapolation (tasks with seeded placements)
 ```
 
 Runs one episode server until the episode ends, then prints the verdict as JSON. `robouse run` starts it for you; to drive a robot by hand, start it and set `ROBOUSE_SOCKET` to the socket path.
@@ -81,52 +81,53 @@ Runs one episode server until the episode ends, then prints the verdict as JSON.
 
 ```console
 $ robouse run --help
-usage: robouse run [-h] --task TASK --harness HARNESS [--model MODEL] --out
-                   OUT [--timeout TIMEOUT] [--record-size WxH] [--seed SEED]
-                   [--rig RIG] [--split SPLIT]
-                   [--extra-instruction EXTRA_INSTRUCTION]
-                   [--prior-learnings PRIOR_LEARNINGS] [--seeds SEEDS]
+usage: robouse run [-h] --task TASK --out OUT [--seeds SEEDS] --harness
+                   HARNESS [--model MODEL] [--timeout TIMEOUT]
+                   [--record-size WxH] [--seed SEED] [--rig RIG]
+                   [--split SPLIT] [--extra-instruction EXTRA_INSTRUCTION]
+                   [--prior-learnings PRIOR_LEARNINGS]
                    [--engine {local,benchflow}] [--sandbox SANDBOX]
                    [--reasoning-effort REASONING_EFFORT] [--job-name JOB_NAME]
 
 options:
   -h, --help            show this help message and exit
   --task TASK           task folder or bundled task id
-  --harness HARNESS, --agent HARNESS
-                        oracle, noop, claude-code, codex, claude-code-glm,
-                        codex-glm, mini-swe-agent-glm, molmoact2 or vla (see
-                        https://robouse.ai/docs/harnesses/); with --engine
-                        benchflow, a BenchFlow agent (see `bench agent list`)
-  --model MODEL         model for the harness (default: the harness's default)
   --out OUT             job folder; the trial is written to
                         OUT/<task>__<harness>__<id>/
+  --seeds SEEDS         (--engine benchflow) one trial per seed, e.g. 0-4 or
+                        0,3,7
+  --harness HARNESS, --agent HARNESS
+                        harness: oracle, noop, claude-code, codex, claude-
+                        code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or
+                        vla (https://robouse.ai/docs/concepts/#harnesses);
+                        with --engine benchflow, a BenchFlow agent (`bench
+                        agent list`)
+  --model MODEL         model for the harness (default: the harness's)
   --timeout TIMEOUT     agent wall-clock limit in seconds (default: the task's
                         agent.timeout_sec)
-  --record-size WxH     render the episode video at this size, e.g. 1280x720
-                        (agent images unchanged; default: native size; also
-                        $ROBOUSE_RECORD_SIZE)
+  --record-size WxH     render the episode video at this size, e.g. 1280x720;
+                        agent images are unchanged (default: the backend's
+                        native size, or $ROBOUSE_RECORD_SIZE)
   --seed SEED           override the task's seed
-  --rig RIG             real-robot rig file (YAML, keyed by robot): runs real
-                        tasks on live hardware instead of the mock
+  --rig RIG             real-robot rig file (YAML, keyed by robot): real tasks
+                        run on live hardware instead of the mock
   --split SPLIT         placement split: nominal, interpolation or
-                        extrapolation (tabletop pick-and-place tasks)
+                        extrapolation (tasks with seeded placements)
   --extra-instruction EXTRA_INSTRUCTION
                         text appended to the task instruction (recorded in
                         config.json)
   --prior-learnings PRIOR_LEARNINGS
                         markdown notes (e.g. from `robouse summarize`)
                         appended to the instruction
-  --seeds SEEDS         (--engine benchflow) one trial per seed, e.g. 0-4 or
-                        0,3,7
   --engine {local,benchflow}
-                        local (default): host processes, macOS Seatbelt
-                        sandbox, no Docker; benchflow: one BenchFlow job in
-                        Docker (needs robouse[benchflow])
+                        local (default): processes on this machine, macOS
+                        Seatbelt sandbox, no Docker; benchflow: one BenchFlow
+                        job in Docker (needs robouse[benchflow])
   --sandbox SANDBOX     (--engine benchflow) BenchFlow sandbox (default
                         docker)
   --reasoning-effort REASONING_EFFORT
                         (--engine benchflow) agent reasoning effort, for
-                        agents that expose one
+                        agents that have one
   --job-name JOB_NAME   (--engine benchflow) BenchFlow job name (default: a
                         timestamp)
 ```
@@ -137,200 +138,105 @@ Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `excepti
 
 ```console
 $ robouse run-many --help
-usage: robouse run-many [-h] [--tasks TASKS] --harness HARNESS [--model MODEL]
-                        --out OUT [--filter FILTER] [--limit LIMIT]
-                        [--concurrency CONCURRENCY] [--timeout TIMEOUT]
-                        [--task-list TASK_LIST] [--record-size WxH] [--resume]
-                        [--rig RIG] [--include INCLUDE] [--exclude EXCLUDE]
+usage: robouse run-many [-h] [--tasks TASKS] --out OUT [--filter FILTER]
+                        [--task-list TASK_LIST] [--include INCLUDE]
+                        [--exclude EXCLUDE] [--mode {sim,real}]
                         [--sample SAMPLE] [--sample-seed SAMPLE_SEED]
-                        [--seeds SEEDS] [--epochs EPOCHS] [--retries RETRIES]
-                        [--split SPLIT] [--mode {sim,real}]
+                        [--limit LIMIT] [--seeds SEEDS] [--epochs EPOCHS]
+                        [--concurrency CONCURRENCY] [--retries RETRIES]
+                        [--resume] [--dry-run] --harness HARNESS
+                        [--model MODEL] [--timeout TIMEOUT]
+                        [--record-size WxH] [--seed SEED] [--rig RIG]
+                        [--split SPLIT]
                         [--extra-instruction EXTRA_INSTRUCTION]
-                        [--prior-learnings PRIOR_LEARNINGS] [--dry-run]
-                        [--seed SEED] [--engine {local,benchflow}]
-                        [--sandbox SANDBOX]
+                        [--prior-learnings PRIOR_LEARNINGS]
+                        [--engine {local,benchflow}] [--sandbox SANDBOX]
                         [--reasoning-effort REASONING_EFFORT]
                         [--job-name JOB_NAME]
 
 options:
   -h, --help            show this help message and exit
   --tasks TASKS         task root (default: the bundled tasks)
-  --harness HARNESS, --agent HARNESS
-                        oracle, noop, claude-code, codex, claude-code-glm,
-                        codex-glm, mini-swe-agent-glm, molmoact2 or vla (see
-                        https://robouse.ai/docs/harnesses/); with --engine
-                        benchflow, a BenchFlow agent (see `bench agent list`)
-  --model MODEL         model for the harness (default: the harness's default)
   --out OUT             job folder; one trial folder per task
   --filter FILTER       only task ids containing this substring
-  --limit LIMIT         run at most this many tasks (0: all)
-  --concurrency CONCURRENCY
-                        trials run in parallel (default 1)
-  --timeout TIMEOUT     agent wall-clock limit per trial in seconds (default:
-                        each task's)
   --task-list TASK_LIST
-                        file with one task id per line (subset of --tasks)
-  --record-size WxH     render the episode video at this size, e.g. 1280x720
-                        (agent images unchanged; default: native size; also
-                        $ROBOUSE_RECORD_SIZE)
-  --resume              skip tasks that already have a finished, non-infra-
-                        failed trial in --out
-  --rig RIG             real-robot rig file (YAML, keyed by robot): real tasks
-                        run on live hardware, one at a time
+                        file with one task id per line (a subset of --tasks)
   --include INCLUDE     only task ids matching this glob (repeatable), e.g.
                         'libero-10-*'
   --exclude EXCLUDE     skip task ids matching this glob (repeatable)
+  --mode {sim,real}     only simulated or only real-robot tasks
   --sample SAMPLE       run a seeded random sample of N tasks
   --sample-seed SAMPLE_SEED
                         seed for --sample (default 0)
-  --seeds SEEDS         episode seeds per task, e.g. 0-4 or 0,3,7 (default:
-                        the task's own seed); gives pass@k
-  --epochs EPOCHS       repeat each (task, seed) N times (real robots:
-                        repeated trials)
+  --limit LIMIT         run at most this many tasks (default 0: all)
+  --seeds SEEDS         episode seeds per task, e.g. 0-4 or 0,3,7: one trial
+                        per task and seed, for pass@k (default: the task's own
+                        seed)
+  --epochs EPOCHS       repeat each task and seed N times (default 1)
+  --concurrency CONCURRENCY
+                        trials run in parallel (default 1)
   --retries RETRIES     rerun a trial up to N times after an infrastructure
-                        failure (exponential backoff; the failed trial is kept
-                        in OUT/_infra_failed)
-  --split SPLIT         placement split: nominal, interpolation or
-                        extrapolation (identical placements per seed)
-  --mode {sim,real}     only simulated or only real-robot tasks
-  --extra-instruction EXTRA_INSTRUCTION
-                        text appended to every task instruction
-  --prior-learnings PRIOR_LEARNINGS
-                        markdown notes appended to every instruction (retry
-                        with learning)
+                        failure, with backoff; the failed trial is kept in
+                        OUT/_infra_failed (default 0)
+  --resume              skip tasks that have a finished trial in --out that
+                        did not fail on infrastructure
   --dry-run             print the resolved trial plan and exit
+  --harness HARNESS, --agent HARNESS
+                        harness: oracle, noop, claude-code, codex, claude-
+                        code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or
+                        vla (https://robouse.ai/docs/concepts/#harnesses);
+                        with --engine benchflow, a BenchFlow agent (`bench
+                        agent list`)
+  --model MODEL         model for the harness (default: the harness's)
+  --timeout TIMEOUT     agent wall-clock limit in seconds (default: each
+                        task's)
+  --record-size WxH     render the episode video at this size, e.g. 1280x720;
+                        agent images are unchanged (default: the backend's
+                        native size, or $ROBOUSE_RECORD_SIZE)
   --seed SEED           override every task's seed
+  --rig RIG             real-robot rig file (YAML, keyed by robot): real tasks
+                        run on live hardware instead of the mock, one at a
+                        time
+  --split SPLIT         placement split: nominal, interpolation or
+                        extrapolation (tasks with seeded placements)
+  --extra-instruction EXTRA_INSTRUCTION
+                        text appended to the task instruction (recorded in
+                        config.json)
+  --prior-learnings PRIOR_LEARNINGS
+                        markdown notes (e.g. from `robouse summarize`)
+                        appended to the instruction
   --engine {local,benchflow}
-                        local (default): host processes, macOS Seatbelt
-                        sandbox, no Docker; benchflow: one BenchFlow job in
-                        Docker (needs robouse[benchflow])
+                        local (default): processes on this machine, macOS
+                        Seatbelt sandbox, no Docker; benchflow: one BenchFlow
+                        job in Docker (needs robouse[benchflow])
   --sandbox SANDBOX     (--engine benchflow) BenchFlow sandbox (default
                         docker)
   --reasoning-effort REASONING_EFFORT
                         (--engine benchflow) agent reasoning effort, for
-                        agents that expose one
+                        agents that have one
   --job-name JOB_NAME   (--engine benchflow) BenchFlow job name (default: a
                         timestamp)
 ```
 
 Prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved. Examples: [Run a suite or dataset](run-a-suite.md).
 
-## robouse estop
+## robouse export
 
 ```console
-$ robouse estop --help
-usage: robouse estop [-h] [--clear] [reason]
-
-positional arguments:
-  reason
-
-options:
-  -h, --help  show this help message and exit
-  --clear
-```
-
-## robouse operator
-
-```console
-$ robouse operator --help
-usage: robouse operator [-h] [--note NOTE] {status,answer,say} [value]
-
-positional arguments:
-  {status,answer,say}
-  value
-
-options:
-  -h, --help           show this help message and exit
-  --note NOTE
-```
-
-## robouse hil-check
-
-```console
-$ robouse hil-check --help
-usage: robouse hil-check [-h] [fixtures ...]
-
-positional arguments:
-  fixtures    fixture names under assets/hil (default: all)
-
-options:
-  -h, --help  show this help message and exit
-```
-
-## robouse robots
-
-```console
-$ robouse robots --help
-usage: robouse robots [-h]
-
-options:
-  -h, --help  show this help message and exit
-```
-
-## robouse report
-
-```console
-$ robouse report --help
-usage: robouse report [-h] [--by BY] [--metrics METRICS] [--json JSON]
-                      [--cost-quality COST_QUALITY] [--svg SVG]
-                      jobs [jobs ...]
-
-positional arguments:
-  jobs                  job folders (run-many --out)
+$ robouse export --help
+usage: robouse export [-h] --tasks TASKS [TASKS ...] --out OUT
+                      [--filter FILTER] [--noop]
 
 options:
   -h, --help            show this help message and exit
-  --by BY               group keys, comma-separated (repeatable): harness,
-                        model, suite, category, difficulty, task, split, seed,
-                        mode, job, regime, released (default harness,model)
-  --metrics METRICS     metrics to show, comma-separated (default: the nine
-                        robot metrics + cost)
-  --json JSON           write the full report as JSON
-  --cost-quality COST_QUALITY
-                        write cost-vs-success points (JSON) for groups with a
-                        known cost
-  --svg SVG             write a cost-vs-success scatter (SVG)
-```
-
-## robouse grade
-
-```console
-$ robouse grade --help
-usage: robouse grade [-h] [--model MODEL] [--rubric RUBRIC]
-                     trials [trials ...]
-
-positional arguments:
-  trials           trial folders or job folders
-
-options:
-  -h, --help       show this help message and exit
-  --model MODEL    vision-language model (OpenAI-compatible; default Kimi K3
-                   on Baseten)
-  --rubric RUBRIC  extra rubric text appended to the task's success rule
-```
-
-## robouse doctor
-
-```console
-$ robouse doctor --help
-usage: robouse doctor [-h]
-
-options:
-  -h, --help  show this help message and exit
-```
-
-## robouse summarize
-
-```console
-$ robouse summarize --help
-usage: robouse summarize [-h] [-o OUT] trial
-
-positional arguments:
-  trial              trial folder (OUT/<task>__<harness>__<id>)
-
-options:
-  -h, --help         show this help message and exit
-  -o OUT, --out OUT  output file (default: <trial>/learnings.md; - for stdout)
+  --tasks TASKS [TASKS ...]
+                        task folders, suite folders or a task root
+  --out OUT             bundle folder: <out>/tasks/<id>/ and
+                        <out>/runtime-<hash>/
+  --filter FILTER       comma-separated substrings; keep tasks whose id
+                        contains one
+  --noop                no-op reference solution (negative control: must score
+                        0)
 ```
 
 ## robouse tasks
@@ -371,7 +277,7 @@ usage: robouse tasks init [-h] [--embodiment ID] [--scene ID] [--task ID]
                           [--obs MODE] [--budget BUDGET] [--perturb KIND]
                           [--safety LEVEL] [--roles ROLES] [--seed N]
                           [--out DIR] [--grid] [--from DIR] [--upgrade]
-                          [--no-validate] [--keep-runs DIR]
+                          [--no-validate] [--keep-trials DIR]
                           [DIR]
 
 compose a task from components and validate it (--embodiment, --scene,
@@ -379,79 +285,51 @@ compose a task from components and validate it (--embodiment, --scene,
 scaffold a blank task (DIR)
 
 positional arguments:
-  DIR              blank task folder to create (scaffold mode)
+  DIR                   blank task folder to create (scaffold mode)
 
 options:
-  -h, --help       show this help message and exit
-  --embodiment ID  embodiment component id (robouse components list)
-  --scene ID       scene component id
-  --task ID        task component id
-  --obs MODE       observation mode: state (default), vision or noisy
-  --budget BUDGET  step budget: normal (default), loose or tight
-  --perturb KIND   perturbation: none (default), push, dynamics or clutter
-  --safety LEVEL   safety overlay: none (default), direct, indirect or privacy
-  --roles ROLES    roles: single (default) or planner-operator
-  --seed N         instance seed (default 0)
-  --out DIR        folder to write the composed task folder(s) into
-  --grid           comma-separated values in any flag: compose every
-                   compatible combination
-  --from DIR       regenerate the composed task in this folder from its
-                   recorded instance
-  --upgrade        with --from: use the installed component versions if they
-                   differ
-  --no-validate    write without running the reference solution and the no-op
-                   control
-  --keep-runs DIR  keep the validation trials in this folder
+  -h, --help            show this help message and exit
+  --embodiment ID       embodiment component id (robouse components list)
+  --scene ID            scene component id
+  --task ID             task component id
+  --obs MODE            observation mode: state (default), vision or noisy
+  --budget BUDGET       step budget: normal (default), loose or tight
+  --perturb KIND        perturbation: none (default), push, dynamics or
+                        clutter
+  --safety LEVEL        safety overlay: none (default), direct, indirect or
+                        privacy
+  --roles ROLES         roles: single (default) or planner-operator
+  --seed N              instance seed (default 0)
+  --out DIR             folder to write the composed task folder(s) into
+  --grid                comma-separated values in any flag: compose every
+                        compatible combination
+  --from DIR            regenerate the composed task in this folder from its
+                        recorded instance
+  --upgrade             with --from: use the installed component versions if
+                        they differ
+  --no-validate         write without running the reference solution and the
+                        no-op control
+  --keep-trials DIR, --keep-runs DIR
+                        keep the validation trials in this folder
 ```
 
 ```console
 $ robouse tasks check --help
-usage: robouse tasks check [-h] [--level LEVEL] [--no-run] [--keep-runs DIR]
+usage: robouse tasks check [-h] [--level LEVEL] [--no-run] [--keep-trials DIR]
                            DIR
 
 positional arguments:
-  DIR              task folder
-
-options:
-  -h, --help       show this help message and exit
-  --level LEVEL    `bench tasks check` level (default structural)
-  --no-run         skip the reference solution and no-op control trials
-  --keep-runs DIR  keep the trials in this folder
-```
-
-`robouse tasks` alone lists the tasks: id, backend and simulator env id. `tasks init` composes a task from components and keeps it only if the reference solution scores 1 and the no-op control 0; with only `DIR` it scaffolds a blank task folder. `tasks check` re-runs those checks on any task folder ([Write or compose a task](write-a-task.md)).
-
-## robouse fetch-assets
-
-```console
-$ robouse fetch-assets --help
-usage: robouse fetch-assets [-h] [--dest DEST] [--robot ROBOT]
-
-options:
-  -h, --help     show this help message and exit
-  --dest DEST    target directory (default: ~/.cache/robouse/menagerie or
-                 $ROBOUSE_MENAGERIE_ASSETS)
-  --robot ROBOT  only this Menagerie robot folder (repeatable), e.g.
-                 unitree_go2
-```
-
-## robouse export
-
-```console
-$ robouse export --help
-usage: robouse export [-h] --tasks TASKS [TASKS ...] --out OUT
-                      [--filter FILTER] [--noop]
+  DIR                   task folder
 
 options:
   -h, --help            show this help message and exit
-  --tasks TASKS [TASKS ...]
-                        task folders, suite folders or a task root
-  --out OUT             bundle directory: <out>/tasks/<id>/ and
-                        <out>/runtime-<hash>/
-  --filter FILTER       comma-separated substrings; keep tasks whose id
-                        matches one
-  --noop                noop oracle (negative control: must score 0)
+  --level LEVEL         `bench tasks check` level (default structural)
+  --no-run              skip the reference solution and no-op control trials
+  --keep-trials DIR, --keep-runs DIR
+                        keep the trials in this folder
 ```
+
+`robouse tasks` alone lists the tasks: id, backend and simulator env id. `tasks init` composes a task from components and keeps it only if the reference solution scores 1 and the no-op control 0; with only `DIR` it scaffolds a blank task folder. `tasks check` re-runs those checks on any task folder ([Write or compose a task](write-a-task.md)).
 
 ## robouse components
 
@@ -521,6 +399,139 @@ options:
   --roles ROLES    roles: single (default) or planner-operator
   --seed N         instance seed to lay out (default 0)
   --json           print the report as JSON
+```
+
+## robouse fetch-assets
+
+```console
+$ robouse fetch-assets --help
+usage: robouse fetch-assets [-h] [--dest DEST] [--robot ROBOT] [--all]
+
+options:
+  -h, --help     show this help message and exit
+  --dest DEST    target folder (default: <cache>/menagerie, or
+                 $ROBOUSE_MENAGERIE_ASSETS)
+  --robot ROBOT  only this Menagerie robot folder (repeatable), e.g.
+                 unitree_go2
+  --all          every robot the bundled suites use (about 2 GB)
+```
+
+## robouse report
+
+```console
+$ robouse report --help
+usage: robouse report [-h] [--by BY] [--metrics METRICS] [--json JSON]
+                      [--cost-quality COST_QUALITY] [--svg SVG]
+                      jobs [jobs ...]
+
+positional arguments:
+  jobs                  job folders (run-many --out)
+
+options:
+  -h, --help            show this help message and exit
+  --by BY               group keys, comma-separated (repeatable): harness,
+                        model, suite, category, difficulty, task, split, seed,
+                        mode, job, regime, released (default harness,model)
+  --metrics METRICS     metrics to show, comma-separated (default: the nine
+                        robot metrics and cost)
+  --json JSON           write the full report as JSON
+  --cost-quality COST_QUALITY
+                        write cost-versus-success points (JSON) for groups
+                        with a known cost
+  --svg SVG             write a cost-versus-success scatter (SVG)
+```
+
+## robouse grade
+
+```console
+$ robouse grade --help
+usage: robouse grade [-h] [--model MODEL] [--rubric RUBRIC]
+                     trials [trials ...]
+
+positional arguments:
+  trials           trial folders or job folders
+
+options:
+  -h, --help       show this help message and exit
+  --model MODEL    vision-language model, OpenAI-compatible (default: Kimi K3
+                   on Baseten)
+  --rubric RUBRIC  extra rubric text appended to the task's success rule
+```
+
+## robouse summarize
+
+```console
+$ robouse summarize --help
+usage: robouse summarize [-h] [-o OUT] trial
+
+positional arguments:
+  trial              trial folder (OUT/<task>__<harness>__<id>)
+
+options:
+  -h, --help         show this help message and exit
+  -o OUT, --out OUT  output file (default: <trial>/learnings.md; - for stdout)
+```
+
+## robouse doctor
+
+```console
+$ robouse doctor --help
+usage: robouse doctor [-h]
+
+options:
+  -h, --help  show this help message and exit
+```
+
+## robouse estop
+
+```console
+$ robouse estop --help
+usage: robouse estop [-h] [--clear] [reason]
+
+positional arguments:
+  reason      why (default: operator e-stop)
+
+options:
+  -h, --help  show this help message and exit
+  --clear     release the e-stop
+```
+
+## robouse operator
+
+```console
+$ robouse operator --help
+usage: robouse operator [-h] [--note NOTE] {status,answer,say} [value]
+
+positional arguments:
+  {status,answer,say}  status, answer or say
+  value                answer: yes, no, partial or skip; say: the remark
+
+options:
+  -h, --help           show this help message and exit
+  --note NOTE          a note recorded with the answer
+```
+
+## robouse hil-check
+
+```console
+$ robouse hil-check --help
+usage: robouse hil-check [-h] [fixtures ...]
+
+positional arguments:
+  fixtures    hardware-in-the-loop fixture names (default: all)
+
+options:
+  -h, --help  show this help message and exit
+```
+
+## robouse robots
+
+```console
+$ robouse robots --help
+usage: robouse robots [-h]
+
+options:
+  -h, --help  show this help message and exit
 ```
 
 ## robo

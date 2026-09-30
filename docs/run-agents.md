@@ -9,7 +9,7 @@ export BASETEN_API_KEY=...
 robouse run --task arc-gravity --harness claude-code-glm --model moonshotai/Kimi-K3 --out runs/try
 ```
 
-The command prints a JSON summary ([Quickstart](quickstart.md#run-the-agent)). A non-null `exception` in it means the trial could not start (a missing credential, a harness not on `PATH`); that trial is not scored. Tasks on other simulators need their extra, for example `pip install 'robouse[metaworld]'` for `metaworld-*` ([Suites](suites.md)).
+A non-null `exception` in the printed summary means the trial could not start (a missing credential, a harness not on `PATH`); that trial is not scored. Tasks on other simulators need their extra, for example `pip install 'robouse[metaworld]'` for `metaworld-*` ([Suites](suites.md)).
 
 Options:
 
@@ -26,7 +26,7 @@ On macOS, model harnesses run under `sandbox-exec`. The profile denies reading t
 export ROBOUSE_SANDBOX_DENY="$PWD/runs:$HOME/.aws"
 ```
 
-Paths are separated by colons. `ROBOUSE_SANDBOX=0` turns the sandbox off; `config.json` records whether it was on. It is a file fence, not a full security boundary. Linux has no sandbox; for container isolation, run exported tasks with `bench eval run` ([Run a suite or dataset](run-a-suite.md#run-under-benchflow)).
+Paths are separated by colons. `ROBOUSE_SANDBOX=0` turns the sandbox off; It is a file fence, not a full security boundary. Linux has no sandbox; for container isolation, run published datasets with `bench eval run -d` ([Run a suite or dataset](run-a-suite.md#a-dataset)).
 
 ## VLAs
 
@@ -37,12 +37,10 @@ export ROBOUSE_VLA_URL=ws://gpu-box:8000
 robouse run --task libero-10-0 --harness vla --model openpi/pi05_libero --out runs/pi05
 ```
 
-This needs a running policy server; it was not run for these docs. Without `ROBOUSE_VLA_URL` the trial stops at 0 steps with `vla needs ROBOUSE_VLA_URL`.
-
 | Preset | Server |
 |---|---|
 | `openpi/pi05_libero`, `openpi/pi0_libero` | openpi `serve_policy.py` |
-| `lerobot/groot_n1.7_libero`, `lerobot/evo1_libero`, `lerobot/vla_jepa_libero`, `lerobot/smolvla_libero`, `lerobot/pi05_libero` | `robouse/vla/lerobot_server.py` (any LeRobot policy) |
+| `lerobot/groot_n1.7_libero`, `lerobot/evo1_libero`, `lerobot/vla_jepa_libero`, `lerobot/smolvla_libero`, `lerobot/pi05_libero` | `robouse/harnesses/vla/lerobot_server.py` (any LeRobot policy) |
 | `openvla/openvla-7b-libero` | OpenVLA `vla-scripts/deploy.py` |
 | `molmoact2/libero` | Robo Use's MolmoAct2 server |
 | `gr00t/so101` | Isaac GR00T `run_gr00t_server.py` |
@@ -50,5 +48,3 @@ This needs a running policy server; it was not run for these docs. Without `ROBO
 | `openpi/generic`, `gr00t/generic`, `xpolicylab/generic`, `http-json/generic` | templates to fill in |
 
 A preset fixes the wire protocol, how the policy's observation is built from the task's cameras and state, how its actions map onto the task's action vector, and how action chunks are executed. Override any field with a JSON file in `ROBOUSE_VLA_POLICY_CONFIG`. Before the first action the client checks that the preset fits the task (backend, action dimension, control mode); a mismatch ends the episode at 0 steps. A VLA does not decide when it is finished: the client calls `robo done` when the step budget is nearly spent, or, if the preset sets `stop.still_steps`, once the commanded action stops changing.
-
-Solve rates of the presets on LIBERO: [Results](/hub/leaderboard/).

@@ -87,7 +87,7 @@ PAGES: list[tuple[str, str, str, str, str]] = [
     ("Get started", "docs/quickstart.md", "quickstart", "Quickstart",
      "Install robouse and let Claude Code with Kimi K3 solve arc-gravity, a rule-inference task on a table, in 26 robo calls."),
     ("Get started", "docs/supported.md", "supported", "Supported",
-     "Which models, harnesses, platforms and output formats Robo Use 0.2.0 supports, and how each was tested."),
+     "The models, harnesses, platforms, isolation modes and formats Robo Use 0.2.0 supports, and what each needs."),
     ("Concepts", "docs/concepts.md", "concepts", "Concepts",
      "Tasks, scoring, episodes, the robo command, harnesses and the trial folder: how one Robo Use trial works."),
     ("Guides", "docs/run-agents.md", "run-agents", "Run agents and VLAs",
@@ -108,7 +108,7 @@ PAGES: list[tuple[str, str, str, str, str]] = [
      "Episode metrics from the physical trace, placement splits, and robouse report with 95% intervals."),
 ]
 # Extra sidebar links to other parts of the site: (group, label, url).
-SIDEBAR_LINKS = [("Results", "Leaderboard", "/hub/leaderboard/")]
+SIDEBAR_LINKS = [("Results", "Runs", "/runs/")]
 # Docs kept in the repository but not published: internal notes, run logs and machine-specific setup.
 EXCLUDED = {
     "docs/review-log.md": "internal log of documentation review passes",
@@ -117,7 +117,7 @@ EXCLUDED = {
     "docs/remix.md": "replaced by the compose sections of concepts.md and write-a-task.md",
     "docs/research/": "internal literature and dataset surveys",
     "docs/dogfood.md": "log of the commands run to check the public docs",
-    "docs/results.md": "generated table for the repository; the public results are the hub leaderboard",
+    "docs/results.md": "generated table for the repository; the public results are robouse.ai/runs/",
     "docs/audit.md": "the maintainers' audit script over local runs",
     "docs/viewer.md": "the maintainers' viewer setup and viewer formats",
     "docs/benchflow.md": "maintainers' notes on the BenchFlow engine",

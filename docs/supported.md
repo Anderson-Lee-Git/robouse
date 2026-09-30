@@ -1,49 +1,35 @@
 # Supported
 
-What Robo Use 0.2.0 supports and how each item was tested. "Docs check": run from the 0.2.0 package for these docs. "v1 runs": the runs published on the [leaderboard](/hub/leaderboard/).
+Robo Use 0.2.0.
 
-## Models
+## Models and harnesses
 
-| Model · harness | Status |
+| Model · harness | Needs |
 |---|---|
-| `moonshotai/Kimi-K3` · `claude-code-glm` | docs check: the [Quickstart](quickstart.md) trial |
-| `claude-sonnet-5` · `claude-code` | docs check on 0.1.1; v1 runs |
-| `gpt-6-astra` · `codex` | v1 runs |
-| `zai-org/GLM-5.3` · `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` | v1 runs |
-| VLA presets · `vla` | GPU runs on LIBERO, see the leaderboard; not run for these docs (needs a GPU policy server) |
-| `allenai/MolmoAct2-LIBERO-LeRobot` · `molmoact2` | v1 runs on LIBERO; needs a GPU policy server |
-
-Other models work wherever the harness accepts them through `--model`; they were not tested.
-
-## Tasks
-
-| Item | Status |
-|---|---|
-| Reference solutions and no-op controls of the tasks in the package | docs check: see the last two columns of [Suites](suites.md) |
-| Real-robot tasks on the hardware-in-the-loop mock | docs check |
-| Real-robot tasks on live hardware | not tested |
+| `moonshotai/Kimi-K3` · `claude-code-glm` | `BASETEN_API_KEY` |
+| `zai-org/GLM-5.3` · `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` | `BASETEN_API_KEY` |
+| `claude-sonnet-5` · `claude-code` | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` |
+| `gpt-6-astra` · `codex` | `OPENAI_API_KEY` or a `codex login` |
+| VLA presets · `vla` | a policy server, usually on a GPU |
+| `allenai/MolmoAct2-LIBERO-LeRobot` · `molmoact2` | a policy server on a GPU |
 
 ## Platforms
 
-| Platform | Status |
+| Platform | Notes |
 |---|---|
-| macOS on Apple silicon, Python 3.12, MuJoCo 3.3.0 | docs check |
-| Python 3.11 and 3.13 | supported; docs check on 0.1.1 |
+| macOS on Apple silicon | Python 3.11 to 3.13 |
+| Linux arm64 | set `MUJOCO_GL=egl`; the `robosuite` extra needs a C compiler |
 | Python 3.14 | not supported: MuJoCo 3.3.0 and Meta-World have no build for it |
-| Linux | not tested for these docs; offscreen rendering needs `MUJOCO_GL=egl` or `osmesa` |
 
 ## Isolation
 
-| Mode | Status |
+| Mode | Isolation |
 |---|---|
-| `robouse run`, macOS: model harnesses under `sandbox-exec` | docs check: the profile blocks a listed path and the package |
-| `robouse run`, Linux | no sandbox |
-| `bench eval run -d`: agent and simulator in separate Docker containers | docs check with `bench` 0.7.4 |
+| `robouse run` on macOS | model harnesses run under `sandbox-exec` ([Run agents and VLAs](run-agents.md#isolation)) |
+| `robouse run` on Linux | none |
+| `bench eval run -d` | agent and simulator in separate Docker containers |
 
-## Output formats
+## Formats
 
-| Output | Status |
-|---|---|
-| Trial folder in BenchFlow's trial layout (`config.json`, `result.json`, `verifier/reward.txt`) | docs check |
-| Agent trajectory in ATIF v1.7 (`agent/trajectory.json`) | docs check |
-| Task folders in BenchFlow's task format (`task.md`, schema 1.3) | docs check |
+- Tasks: BenchFlow task folders (`task.md`, schema 1.3).
+- Trials: BenchFlow's trial layout (`config.json`, `result.json`, `verifier/reward.txt`), with the agent's steps in ATIF v1.7 (`agent/trajectory.json`).

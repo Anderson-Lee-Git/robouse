@@ -17,7 +17,7 @@ This example runs Claude Code with Kimi K3, served by Baseten. You need [Claude 
 export BASETEN_API_KEY=...
 ```
 
-To use Claude models instead, run `--harness claude-code --model claude-sonnet-5` with `ANTHROPIC_API_KEY` set. Other harnesses: [Concepts](concepts.md#harnesses).
+Other harnesses and models: [Concepts](concepts.md#harnesses).
 
 ## Pick a task
 
@@ -27,7 +27,7 @@ arc-gravity tabletop
 arc-gravity-vision tabletop
 ```
 
-`robouse tasks` lists every task in the package with its simulator backend. In `arc-gravity` the agent sees example grids of blocks before and after, works out the rule (blocks fall toward the front, like gravity), and then moves the real blocks with a gripper.
+In `arc-gravity` the agent sees example grids of blocks before and after, works out the rule (blocks fall toward the front, like gravity), and then moves the real blocks with a gripper.
 
 ## Run the agent
 
@@ -43,7 +43,7 @@ $ robouse run --task arc-gravity --harness claude-code-glm --model moonshotai/Ki
 }
 ```
 
-The agent read the instruction, observed the scene, moved the blocks with `robo move-to` and called `robo done`. The episode server then checked where the blocks were and scored the trial 1. The trial made 26 `robo` calls and cost about $2.16 at Baseten's list price.
+The agent observed the scene, moved the blocks with `robo move-to` and called `robo done`; the episode server then checked where the blocks were. The trial made 26 `robo` calls and cost about $2.16 at Baseten's list price.
 
 ## Look at the result
 
