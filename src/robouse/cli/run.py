@@ -12,8 +12,8 @@ from pathlib import Path
 from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_task_path
 
 HARNESS_HELP = (
-    "harness: oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or "
-    "vla (https://robouse.ai/docs/harnesses/)"
+    "harness: oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm, dimcode, molmoact2 "
+    "or vla (https://robouse.ai/docs/harnesses/)"
 )
 RECORD_SIZE_HELP = (
     "render the episode video at this size, e.g. 1280x720; agent images are unchanged "
@@ -38,6 +38,12 @@ def _engine_opts(p: argparse.ArgumentParser) -> None:
 def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
     p.add_argument("--harness", "--agent", dest="harness", metavar="HARNESS", required=True, help=HARNESS_HELP)
     p.add_argument("--model", default="", help="model for the harness (default: the harness's)")
+    p.add_argument(
+        "--interface",
+        choices=("cli", "mcp", "both"),
+        help="what the agent drives the robot with: the robo CLI, the robo MCP tools, or both "
+        "(default: " + ("each task's" if many else "the task's") + " robouse.interface, else cli)",
+    )
     p.add_argument(
         "--timeout",
         type=float,
@@ -199,6 +205,7 @@ def run(a: argparse.Namespace) -> int:
         split=a.split,
         extra_instruction=a.extra_instruction,
         prior_learnings=a.prior_learnings,
+        interface=a.interface,
     )
     print(json.dumps(res, indent=2))
     return 0
@@ -264,6 +271,7 @@ def run_many(a: argparse.Namespace) -> int:
         mode=a.mode,
         extra_instruction=a.extra_instruction,
         prior_learnings=a.prior_learnings,
+        interface=a.interface,
     )
     return 0
 

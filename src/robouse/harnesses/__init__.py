@@ -11,6 +11,7 @@ Harnesses
   claude-code-glm        Claude Code CLI against a Baseten model (default GLM-5.3) through a local image-capping proxy
   codex-glm              Codex CLI with a custom OpenAI-compatible provider (Baseten)
   mini-swe-agent-glm     mini-swe-agent (litellm) with a Baseten model
+  dimcode                Dimensional's dimcode (built on Pi) with a Baseten model (default GLM-5.3); see dimcode.py
   molmoact2              MolmoAct2 VLA policy: molmoact2/client.py drives `robo` with action chunks from a policy
                          server at $ROBOUSE_MOLMOACT2_URL; model e.g. allenai/MolmoAct2-LIBERO-LeRobot
   vla                    any served VLA (vla/client.py): --model is a preset from vla/presets.json; server at
@@ -233,6 +234,12 @@ def _vla(model, prompt, workspace, task, env) -> Launch:
     )
 
 
+def _dimcode(model, prompt, workspace, task, env) -> Launch:
+    from . import dimcode
+
+    return dimcode.build(model, prompt, workspace, task, env)
+
+
 HARNESSES: dict[str, Builder] = {
     "oracle": _oracle,
     "noop": _noop,
@@ -243,6 +250,7 @@ HARNESSES: dict[str, Builder] = {
     "mini-swe-agent-glm": _mini_swe_agent_glm,
     "molmoact2": _molmoact2,
     "vla": _vla,
+    "dimcode": _dimcode,
 }
 
 
