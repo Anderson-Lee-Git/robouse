@@ -73,13 +73,13 @@ def trials(job: Path) -> dict[str, dict]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", required=True, type=Path)
-    ap.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
+    ap.add_argument("--repo", type=Path, help="the checkout under test (default: this one)")
     ap.add_argument("--python", default=sys.executable)
     ap.add_argument("--per-suite", type=int, default=3)
     ap.add_argument("--suites", help="comma-separated subset of the CPU suites")
     ap.add_argument("--concurrency", type=int, default=4)
     a = ap.parse_args(argv)
-    repo = a.repo.resolve()
+    repo = (a.repo or Path(__file__).resolve().parents[1]).resolve()
     env = {**os.environ, "PYTHONPATH": str(repo / "src")}
     suites = a.suites.split(",") if a.suites else CPU_SUITES
     summary: dict[str, dict] = {}
