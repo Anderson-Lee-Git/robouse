@@ -13,7 +13,7 @@ if (mode === "stdio") {
   const { StdioClientTransport } = await load("dist/stdio.mjs");
   transport = new StdioClientTransport({
     command: rest[0],
-    args: [rest[1], "mcp"],
+    args: rest[1] ? [rest[1], "mcp"] : ["mcp"],  // `python robo mcp`, or an installed `robo mcp`
     env: { ROBOUSE_SOCKET: process.env.ROBOUSE_SOCKET, PATH: process.env.PATH },
   });
 } else {
