@@ -752,11 +752,20 @@ document.querySelectorAll(".code").forEach(function (box) {
     var cur = -1;  // above the first section nothing is current; at the very bottom the last section is
     heads.forEach(function (h, i) { if (h && h.getBoundingClientRect().top < 120) cur = i; });
     if (cur >= 0 && innerHeight + scrollY >= document.documentElement.scrollHeight - 2) cur = heads.length - 1;
+    if (picked >= 0) cur = picked;  // the entry the reader clicked stays current until they scroll by themselves
     links.forEach(function (a, i) { a.classList.toggle("on", i === cur); });
   }
+  var picked = -1, release = function () { if (picked >= 0) { picked = -1; update(); } };
+  links.forEach(function (a, i) { a.addEventListener("click", function () { picked = i; update(); }); });
+  ["wheel", "touchstart", "keydown"].forEach(function (t) { window.addEventListener(t, release, { passive: true }); });
   document.addEventListener("scroll", update, { passive: true });
   update();
 })();
+// phones: Esc closes the open docs menu and returns focus to its toggle
+document.addEventListener("keydown", function (e) {
+  var t = document.getElementById("navtoggle");
+  if (e.key === "Escape" && t && t.checked) { t.checked = false; t.focus(); }
+});
 """
 
 
