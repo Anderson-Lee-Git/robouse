@@ -112,9 +112,6 @@ PUBLIC = frozenset(
         "ROBOUSE_VLA_POLICY_CONFIG",
         "ROBOUSE_MOLMOACT2_URL",
         "ROBOUSE_MOLMOACT2_TOKEN",
-        "ROBOUSE_GRADER_URL",
-        "ROBOUSE_GRADER_API_KEY",
-        "ROBOUSE_OPERATOR_DIR",
     }
 )
 

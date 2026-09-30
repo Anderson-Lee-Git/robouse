@@ -76,7 +76,8 @@ def test_a_forged_verdict_scores_zero(tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.skipif(
-    not (sys.platform.startswith("linux") and bwrap_works()), reason="needs working bubblewrap on Linux"
+    not (sys.platform == "darwin" or (sys.platform.startswith("linux") and bwrap_works())),
+    reason="needs the macOS Seatbelt sandbox or working bubblewrap on Linux",
 )
 def test_the_sandbox_hides_the_reference_solution_and_the_job(tmp_path, monkeypatch) -> None:
     task = load_task(ROOT / "tasks" / "arc-style" / "arc-gravity")

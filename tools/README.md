@@ -5,6 +5,7 @@ Maintainer tools for the Robo Use repository. None of them ship in the package. 
 | Path | What it does |
 |---|---|
 | `gate.py` | Release gate: reference solution (must score 1) and no-op (must score 0) on a seeded sample of every CPU suite. |
+| `ci/ci.yml` | The GitHub Actions workflow (lint, format, types, tests on Python 3.11 and 3.12, the wheel). To turn it on, copy it to `.github/workflows/ci.yml`; pushing a workflow needs a GitHub token with the `workflow` scope. |
 | `metrics.py` | Code-quality metrics: lines of code, duplicated lines, module count. |
 | `analysis/audit.py` | Audits trial folders under `runs/` for infrastructure failures and oddities (`docs/audit.md`). |
 | `analysis/results.py` | Writes the results tables in `docs/results.md` from the audit. |
