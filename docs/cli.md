@@ -10,24 +10,353 @@ Robo Use: run robot tasks with an agent harness as the policy.
 https://robouse.ai
 
 options:
-  -h, --help    show this help message and exit
-  --version     show program's version number and exit
+  -h, --help      show this help message and exit
+  --version       show program's version number and exit
 
 commands:
   COMMAND
-    run         run one trial end to end
-    run-many    run a set of trials
-    tasks       list, create and check tasks
-    components  list, show and check components
-    fetch-assets
-                download the MuJoCo Menagerie robot models (menagerie,
-                roboharm, drone; --robot or --all for the embodiment suites
-                and composed tasks)
-    report      metrics with 95% confidence intervals over job folders,
-                grouped by trial attributes
-    summarize   distil a trial into learnings (markdown) for --prior-learnings
-    doctor      what this machine can run: simulators, harnesses, credentials
-                and the VLA server
+    run           run one trial end to end
+    run-many      run a set of trials
+    tasks         list, create and check tasks
+    components    list, show and check components
+    fetch-assets  download the MuJoCo Menagerie robot models (menagerie,
+                  roboharm, drone; --robot or --all for the embodiment suites
+                  and composed tasks)
+    report        metrics with 95% confidence intervals over job folders,
+                  grouped by trial attributes
+    summarize     distil a trial into learnings (markdown) for --prior-
+                  learnings
+    doctor        what this machine can run: simulators, harnesses,
+                  credentials and the VLA server
+```
+
+## robouse run
+
+```console
+$ robouse run --help
+usage: robouse run [-h] --task TASK --out OUT --harness HARNESS
+                   [--model MODEL] [--timeout TIMEOUT] [--record-size WxH]
+                   [--seed SEED] [--split SPLIT]
+                   [--extra-instruction EXTRA_INSTRUCTION]
+                   [--prior-learnings PRIOR_LEARNINGS]
+
+options:
+  -h, --help            show this help message and exit
+  --task TASK           task folder or bundled task id
+  --out OUT             job folder; the trial is written to
+                        OUT/<task>__<harness>__<id>/
+  --harness HARNESS, --agent HARNESS
+                        harness: oracle, noop, claude-code, codex, claude-
+                        code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or
+                        vla (https://robouse.ai/docs/harnesses/)
+  --model MODEL         model for the harness (default: the harness's)
+  --timeout TIMEOUT     agent wall-clock limit in seconds (default: the task's
+                        agent.timeout_sec)
+  --record-size WxH     render the episode video at this size, e.g. 1280x720;
+                        agent images are unchanged (default: the backend's
+                        native size, or $ROBOUSE_RECORD_SIZE)
+  --seed SEED           override the task's seed
+  --split SPLIT         placement split: nominal, interpolation or
+                        extrapolation (tasks with seeded placements)
+  --extra-instruction EXTRA_INSTRUCTION
+                        text appended to the task instruction (recorded in
+                        config.json)
+  --prior-learnings PRIOR_LEARNINGS
+                        markdown notes (e.g. from `robouse summarize`)
+                        appended to the instruction
+```
+
+Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`. A non-null `exception` means the trial did not run to a result (an infrastructure failure: a missing credential, a harness error before the episode ended, or Ctrl-C); it is not scored and the command exits 1.
+
+## robouse run-many
+
+```console
+$ robouse run-many --help
+usage: robouse run-many [-h] [--tasks TASKS] --out OUT [--filter FILTER]
+                        [--task-list TASK_LIST] [--include INCLUDE]
+                        [--exclude EXCLUDE] [--sample SAMPLE]
+                        [--sample-seed SAMPLE_SEED] [--limit LIMIT]
+                        [--seeds SEEDS] [--epochs EPOCHS]
+                        [--concurrency CONCURRENCY] [--retries RETRIES]
+                        [--resume] [--dry-run] --harness HARNESS
+                        [--model MODEL] [--timeout TIMEOUT]
+                        [--record-size WxH] [--seed SEED] [--split SPLIT]
+                        [--extra-instruction EXTRA_INSTRUCTION]
+                        [--prior-learnings PRIOR_LEARNINGS]
+
+options:
+  -h, --help            show this help message and exit
+  --tasks TASKS         task root (default: the bundled tasks)
+  --out OUT             job folder; one trial folder per task
+  --filter FILTER       only task ids containing this substring
+  --task-list TASK_LIST
+                        file with one task id per line (a subset of --tasks)
+  --include INCLUDE     only task ids matching this glob (repeatable), e.g.
+                        'libero-10-*'
+  --exclude EXCLUDE     skip task ids matching this glob (repeatable)
+  --sample SAMPLE       run a seeded random sample of N tasks
+  --sample-seed SAMPLE_SEED
+                        seed for --sample (default 0)
+  --limit LIMIT         run at most this many tasks (default 0: all)
+  --seeds SEEDS         episode seeds per task, e.g. 0-4 or 0,3,7: one trial
+                        per task and seed, for pass@k (default: the task's own
+                        seed)
+  --epochs EPOCHS       repeat each task and seed N times (default 1)
+  --concurrency CONCURRENCY
+                        trials run in parallel (default 1)
+  --retries RETRIES     rerun a trial up to N times after an infrastructure
+                        failure, with backoff; the failed trial is kept in
+                        OUT/_infra_failed (default 0)
+  --resume              skip tasks that have a finished trial in --out that
+                        did not fail on infrastructure
+  --dry-run             print the resolved trial plan and exit
+  --harness HARNESS, --agent HARNESS
+                        harness: oracle, noop, claude-code, codex, claude-
+                        code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or
+                        vla (https://robouse.ai/docs/harnesses/)
+  --model MODEL         model for the harness (default: the harness's)
+  --timeout TIMEOUT     agent wall-clock limit in seconds (default: each
+                        task's)
+  --record-size WxH     render the episode video at this size, e.g. 1280x720;
+                        agent images are unchanged (default: the backend's
+                        native size, or $ROBOUSE_RECORD_SIZE)
+  --seed SEED           override every task's seed
+  --split SPLIT         placement split: nominal, interpolation or
+                        extrapolation (tasks with seeded placements)
+  --extra-instruction EXTRA_INSTRUCTION
+                        text appended to the task instruction (recorded in
+                        config.json)
+  --prior-learnings PRIOR_LEARNINGS
+                        markdown notes (e.g. from `robouse summarize`)
+                        appended to the instruction
+```
+
+Prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved; exits 1 if any trial failed on infrastructure. Examples: [Run a suite or dataset](run-a-suite.md).
+
+## robouse tasks
+
+```console
+$ robouse tasks --help
+usage: robouse tasks [-h] {list,init,check} ...
+
+list, create and check tasks
+
+positional arguments:
+  {list,init,check}
+    list             list tasks (default: the bundled tasks)
+    init             compose a task from components, regenerate one, or
+                     scaffold a blank task
+    check            validate a task: schema, `bench tasks check`, reference
+                     solution 1, no-op control 0
+
+options:
+  -h, --help         show this help message and exit
+```
+
+```console
+$ robouse tasks list --help
+usage: robouse tasks list [-h] [--path] [ROOT]
+
+positional arguments:
+  ROOT        task root (default: the bundled tasks)
+
+options:
+  -h, --help  show this help message and exit
+  --path      print the bundled task directory and exit
+```
+
+```console
+$ robouse tasks init --help
+usage: robouse tasks init [-h] [--embodiment ID] [--scene ID] [--task ID]
+                          [--obs MODE] [--budget BUDGET] [--perturb KIND]
+                          [--safety LEVEL] [--roles ROLES] [--seed N]
+                          [--out DIR] [--grid] [--from DIR] [--upgrade]
+                          [--no-validate] [--keep-trials DIR]
+                          [DIR]
+
+compose a task from components and validate it (--embodiment, --scene,
+--task), regenerate a composed task from its recorded instance (--from), or
+scaffold a blank task (DIR)
+
+positional arguments:
+  DIR                   blank task folder to create (scaffold mode)
+
+options:
+  -h, --help            show this help message and exit
+  --embodiment ID       embodiment component id (robouse components list)
+  --scene ID            scene component id
+  --task ID             task component id
+  --obs MODE            observation mode: state (default), vision or noisy
+  --budget BUDGET       step budget: normal (default), loose or tight
+  --perturb KIND        perturbation: none (default), push, dynamics or
+                        clutter
+  --safety LEVEL        safety overlay: none (default), direct, indirect or
+                        privacy
+  --roles ROLES         roles: single (default) or planner-operator
+  --seed N              instance seed (default 0)
+  --out DIR             folder to write the composed task folder(s) into
+  --grid                comma-separated values in any flag: compose every
+                        compatible combination
+  --from DIR            regenerate the composed task in this folder from its
+                        recorded instance
+  --upgrade             with --from: use the installed component versions if
+                        they differ
+  --no-validate         write without running the reference solution and the
+                        no-op control
+  --keep-trials DIR, --keep-runs DIR
+                        keep the validation trials in this folder
+```
+
+```console
+$ robouse tasks check --help
+usage: robouse tasks check [-h] [--level LEVEL] [--no-run] [--keep-trials DIR]
+                           DIR
+
+positional arguments:
+  DIR                   task folder
+
+options:
+  -h, --help            show this help message and exit
+  --level LEVEL         `bench tasks check` level (default structural)
+  --no-run              skip the reference solution and no-op control trials
+  --keep-trials DIR, --keep-runs DIR
+                        keep the trials in this folder
+```
+
+`robouse tasks` alone lists the tasks: id, backend and simulator env id. `tasks init` composes a task from components and keeps it only if the reference solution scores 1 and the no-op control 0; with only `DIR` it scaffolds a blank task folder. `tasks check` re-runs those checks on any task folder ([Write or compose a task](write-a-task.md)).
+
+## robouse components
+
+```console
+$ robouse components --help
+usage: robouse components [-h] {list,show,check} ...
+
+the embodiments, scenes, task templates and modifiers composed tasks are built
+from
+
+positional arguments:
+  {list,show,check}
+    list             list components
+    show             print one component's manifest
+    check            whether an embodiment, a scene and a task template fit
+                     together, and why not
+
+options:
+  -h, --help         show this help message and exit
+```
+
+```console
+$ robouse components list --help
+usage: robouse components list [-h] [--all]
+                               [{embodiments,scenes,tasks,modifiers}]
+
+positional arguments:
+  {embodiments,scenes,tasks,modifiers}
+                        only this kind
+
+options:
+  -h, --help            show this help message and exit
+  --all                 also list fixed components (the existing suites'
+                        robots and scenes)
+```
+
+```console
+$ robouse components show --help
+usage: robouse components show [-h] [--compatible] ID
+
+positional arguments:
+  ID            component id
+
+options:
+  -h, --help    show this help message and exit
+  --compatible  also list the combinations it composes into
+```
+
+```console
+$ robouse components check --help
+usage: robouse components check [-h] [--obs MODE] [--budget BUDGET]
+                                [--perturb KIND] [--safety LEVEL]
+                                [--roles ROLES] [--seed N] [--json]
+                                EMBODIMENT SCENE TASK
+
+positional arguments:
+  EMBODIMENT       embodiment component id
+  SCENE            scene component id
+  TASK             task component id
+
+options:
+  -h, --help       show this help message and exit
+  --obs MODE       observation mode: state (default), vision or noisy
+  --budget BUDGET  step budget: normal (default), loose or tight
+  --perturb KIND   perturbation: none (default), push, dynamics or clutter
+  --safety LEVEL   safety overlay: none (default), direct, indirect or privacy
+  --roles ROLES    roles: single (default) or planner-operator
+  --seed N         instance seed to lay out (default 0)
+  --json           print the report as JSON
+```
+
+## robouse fetch-assets
+
+```console
+$ robouse fetch-assets --help
+usage: robouse fetch-assets [-h] [--dest DEST] [--robot ROBOT] [--all]
+
+options:
+  -h, --help     show this help message and exit
+  --dest DEST    target folder (default: <cache>/menagerie, or
+                 $ROBOUSE_MENAGERIE_ASSETS)
+  --robot ROBOT  only this Menagerie robot folder (repeatable), e.g.
+                 unitree_go2
+  --all          every robot the bundled suites use (about 2 GB)
+```
+
+## robouse report
+
+```console
+$ robouse report --help
+usage: robouse report [-h] [--by BY] [--metrics METRICS] [--json JSON]
+                      [--cost-quality COST_QUALITY] [--svg SVG]
+                      jobs [jobs ...]
+
+positional arguments:
+  jobs                  job folders (run-many --out)
+
+options:
+  -h, --help            show this help message and exit
+  --by BY               group keys, comma-separated (repeatable): harness,
+                        model, suite, category, difficulty, task, split, seed,
+                        mode, job, regime, released (default harness,model)
+  --metrics METRICS     metrics to show, comma-separated (default: the nine
+                        robot metrics and cost)
+  --json JSON           write the full report as JSON
+  --cost-quality COST_QUALITY
+                        write cost-versus-success points (JSON) for groups
+                        with a known cost
+  --svg SVG             write a cost-versus-success scatter (SVG)
+```
+
+## robouse summarize
+
+```console
+$ robouse summarize --help
+usage: robouse summarize [-h] [-o OUT] trial
+
+positional arguments:
+  trial              trial folder (OUT/<task>__<harness>__<id>)
+
+options:
+  -h, --help         show this help message and exit
+  -o OUT, --out OUT  output file (default: <trial>/learnings.md; - for stdout)
+```
+
+## robouse doctor
+
+```console
+$ robouse doctor --help
+usage: robouse doctor [-h]
+
+options:
+  -h, --help  show this help message and exit
 ```
 
 ## robo
@@ -50,4 +379,4 @@ request.
 Add --json to any command for raw JSON output.
 ```
 
-Each call sends one JSON object to the episode server at `$ROBOUSE_SOCKET` and prints the response, for example `{"op": "act", "action": [0, 0, -1, 1], "repeat": 5}` and `{"ok": true, "result": {...}}`. Operations: `info`, `status`, `observe`, `act`, `move_to`, `grip`, `skill`, `done`, `give_up`. `robo info` also describes the robot's embodiment: its action groups, skills, cameras and budgets. Skills run on the server, and each simulated step they take counts against the budget. Without an episode, `robo` prints an error and exits 1.
+Each call sends one JSON object to the episode server at `$ROBOUSE_SOCKET` and prints the response, for example `{"op": "act", "action": [0, 0, -1, 1], "repeat": 5}` and `{"ok": true, "result": {...}}`. The commands map to the operations `info`, `observe`, `act`, `move_to`, `grip`, `skill`, `done` and `give_up`. `robo info` also describes the robot's embodiment: its action groups, skills, cameras and budgets. Skills run on the server, and each simulated step they take counts against the budget. Without an episode, `robo` prints an error and exits 1.

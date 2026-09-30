@@ -42,11 +42,12 @@ def helptext(exe: str, *args: str) -> str:
 
 
 def subcommands(text: str) -> list[tuple[str, str]]:
-    """(name, one-line help) for each subcommand listed under the first {a,b,...} group of an argparse help text."""
-    m = re.search(r"^  \{([\w,-]+)\}\n((?:    .*\n?)*)", text, re.M)
+    """(name, one-line help) for each subcommand listed under the first {a,b,...} group of an argparse help text, or
+    under a metavar such as COMMAND (then the names are the listed lines, and hidden subcommands are not among them)."""
+    m = re.search(r"^  (?:\{([\w,-]+)\}|[A-Z_]+)\n((?:    .*\n?)*)", text, re.M)
     if not m:
         return []
-    names = m.group(1).split(",")
+    names = m.group(1).split(",") if m.group(1) else re.findall(r"^    ([\w-]+)(?:\s{2,}|$)", m.group(2), re.M)
     helps: dict[str, str] = {}
     cur = None
     for line in m.group(2).splitlines():
