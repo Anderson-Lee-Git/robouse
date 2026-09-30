@@ -24,8 +24,8 @@ breadcrumb links its hub task page, read from <site>/hub/search.json.
   <out>/v/<trial>.mp4            the recording, re-encoded (H.264 Main, CRF 30, faststart, no audio)
   <out>/f/<trial>.webp           the camera images the agent looked at, as one sprite of 112 px tiles (at most 60)
 
-Which trial counts is the rule of scripts/results.py, per seed: per harness + model, task and seed, the latest trial that
-was not an infrastructure failure (scripts/audit.py decides); a task with only infrastructure failures shows as "infra".
+Which trial counts is the rule of tools/analysis/results.py, per seed: per harness + model, task and seed, the latest trial that
+was not an infrastructure failure (tools/analysis/audit.py decides); a task with only infrastructure failures shows as "infra".
 Runs without a seed are one seed. Several counted seeds show as "3/5 seeds" and pass@k. The other attempts are
 published too and labelled as not counted.
 
