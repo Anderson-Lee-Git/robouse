@@ -7,8 +7,8 @@ The quickest way to a new task is to compose it from components: pick an embodim
 ```console
 $ robouse tasks init --embodiment franka-panda --scene tabletop --task put-in-container --out mytasks
 wrote mytasks/put-in-container--franka-panda--tabletop--s0
-oracle reward 1.0 (done, 159 steps); noop reward 0.0 (done)
-accepted: oracle 1, noop 0
+reference solution reward 1.0 (done, 158 steps); no-op control reward 0.0 (done)
+accepted: reference solution 1, no-op control 0
 ```
 
 The markdown body of `task.md` is what the agent reads. For this seed it starts with the goal: "Put the yellow block in the grey tray. Leave the other objects where they are."

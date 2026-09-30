@@ -74,7 +74,12 @@ The seed chooses the objects, colours and placements; the same seed always write
 
 ```console
 $ robouse tasks init --grid --embodiment franka-panda,unitree-go2 --scene tabletop --task put-in-container,go-to-landmark --out mygrid
-GRID_OUTPUT
+result    combination                                 task folder, or why it was rejected
+accepted  franka-panda + tabletop + put-in-container  put-in-container--franka-panda--tabletop--s0
+rejected  franka-panda + tabletop + go-to-landmark    incompatible: go to the mat described by a spatial relation needs a floor placement or an airspace placement; Franka Emika Panda is placed on arm and has reach, grasp, top-grasp, precise, wrist-camera
+rejected  unitree-go2 + tabletop + put-in-container   incompatible: put an object in a container needs capabilities reach, grasp; Unitree Go2 is placed on floor and has locomote, legged, head-camera, push
+accepted  unitree-go2 + tabletop + go-to-landmark     go-to-landmark--unitree-go2--tabletop--s0
+2 accepted, 2 rejected, of 4 combinations; task folders in mygrid
 ```
 
 `robouse tasks init --from DIR --out NEW` regenerates a composed task from its recorded instance and confirms that the layout is the recorded one. If a component's installed version differs from the recorded one, it stops unless `--upgrade` is given. `robouse tasks check DIR` re-validates any task folder: the task.md schema, `bench tasks check`, the reference solution (1) and the no-op control (0).
