@@ -76,7 +76,7 @@ def main() -> int:
         spec = {"id": "probe", "max_steps": 3000, "nav": {"scene": home, "target": target, "spawn": spawn}}
         try:
             g = NavBackend(spec).geodesic(tuple(spawn))
-        except Exception:  # noqa: BLE001
+        except Exception:
             g = float("inf")
         if not g < 1e9:
             print(f"skip {tid}: spawn cannot reach the target in the box geometry")

@@ -17,9 +17,9 @@ from pathlib import Path
 
 from robouse.backends.embodied import VERIFY_SH
 from robouse.core.prompts import EMBODIED_USAGE
-from robouse.tasks import write_task
 from robouse.real.drivers.rosbridge import ros_profile
 from robouse.real.robots import PROFILES
+from robouse.tasks import write_task
 
 ROS_ARM = {
     "display": "6-joint ROS arm (rosbridge)",

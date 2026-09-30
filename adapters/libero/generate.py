@@ -125,7 +125,6 @@ def replay_ok(suite: str, index: int, init_state: list, actions: list, max_steps
 
 def scene_problem(task) -> str:
     """LIBERO scene class of a task, from its BDDL file."""
-    import os
     import re
 
     from robouse.backends.libero.backend import _quiet_imports
