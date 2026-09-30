@@ -175,7 +175,8 @@ table.tasks th.ms-off.hl,table.tasks td.ms-off.hl{display:table-cell !important}
 
 /* ---------------------------------------------------------------- facts, badges, states */
 dl.facts{display:flex;flex-wrap:wrap;gap:var(--sp-12) var(--sp-36);margin:var(--sp-20) 0 0;padding:var(--sp-12) 0;border-top:var(--hairline);border-bottom:var(--hairline)}
-dl.facts div{min-width:0}
+dl.facts div{min-width:0;max-width:100%}
+dl.facts dd{overflow-wrap:break-word}
 .rv dt{font:400 var(--fs-meta)/1.4 var(--sans);color:var(--muted)}
 .rv dd{margin:var(--sp-2) 0 0;font-weight:500;font-variant-numeric:tabular-nums}
 .rv dd a{border-radius:var(--r-xs);transition:color var(--t-fast)}
