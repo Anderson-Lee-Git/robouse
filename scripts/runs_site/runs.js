@@ -421,7 +421,7 @@
         if (d.withheld) return withheldNote();
         if (!d.steps.length) return emptyState("No trajectory was recorded for this trial.", "The recording and the Verdict tab still show what happened.");
         var n = d.steps.length;  /* the same count as the Trajectory tab: every step listed */
-        var first = d.steps[0] && d.steps[0].i > 1 && d.prompt ? '<li class="nov"><span class="i">1</span><span class="t"></span><span class="a msg">Task prompt (on the Trajectory tab)</span><span class="x"></span></li>' : "";
+        var first = d.steps[0] && d.steps[0].i > 1 && d.prompt ? '<li class="nov"><span class="i">1</span><span class="t"></span><span class="a msg"><a href="#trajectory">Task prompt</a></span><span class="x"></span></li>' : "";
         return '<div class="recbox"><div class="rechead"><span>Steps · click one to seek</span><span class="num">' + n + ' steps<span class="keys"> · <kbd>←</kbd> <kbd>→</kbd> to step</span></span></div><ol class="slist">' + first + stepListHTML(d) + "</ol>" +
           (d.hidden ? '<p class="muted small slnote">' + d.hidden + " one-action steps in the middle are not listed.</p>" : "") + "</div>";
       }
