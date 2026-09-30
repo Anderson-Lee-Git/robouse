@@ -13,8 +13,7 @@ from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_tas
 
 HARNESS_HELP = (
     "harness: oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or "
-    "vla (https://robouse.ai/docs/concepts/#harnesses); with --engine benchflow, a BenchFlow agent "
-    "(`bench agent list`)"
+    "vla (https://robouse.ai/docs/harnesses/)"
 )
 RECORD_SIZE_HELP = (
     "render the episode video at this size, e.g. 1280x720; agent images are unchanged "
@@ -28,16 +27,12 @@ SIM_HINT = (
 
 
 def _engine_opts(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "--engine",
-        choices=("local", "benchflow"),
-        default="local",
-        help="local (default): processes on this machine, macOS Seatbelt sandbox, no Docker; benchflow: one "
-        "BenchFlow job in Docker (needs robouse[benchflow])",
-    )
-    p.add_argument("--sandbox", default="docker", help="(--engine benchflow) BenchFlow sandbox (default docker)")
-    p.add_argument("--reasoning-effort", help="(--engine benchflow) agent reasoning effort, for agents that have one")
-    p.add_argument("--job-name", help="(--engine benchflow) BenchFlow job name (default: a timestamp)")
+    # The BenchFlow engine needs a BenchFlow release with the task-format hook (on BenchFlow's `robouse` branch today),
+    # so these options work but are not listed until that release exists.
+    p.add_argument("--engine", choices=("local", "benchflow"), default="local", help=argparse.SUPPRESS)
+    p.add_argument("--sandbox", default="docker", help=argparse.SUPPRESS)
+    p.add_argument("--reasoning-effort", help=argparse.SUPPRESS)
+    p.add_argument("--job-name", help=argparse.SUPPRESS)
 
 
 def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
@@ -51,11 +46,7 @@ def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
     )
     p.add_argument("--record-size", metavar="WxH", help=RECORD_SIZE_HELP)
     p.add_argument("--seed", type=int, help="override " + ("every task's" if many else "the task's") + " seed")
-    p.add_argument(
-        "--rig",
-        help="real-robot rig file (YAML, keyed by robot): real tasks run on live hardware instead of "
-        "the mock" + (", one at a time" if many else ""),
-    )
+    p.add_argument("--rig", help=argparse.SUPPRESS)  # real-robot rig file; listed once live hardware has run
     p.add_argument(
         "--split", help="placement split: nominal, interpolation or extrapolation (tasks with seeded placements)"
     )
@@ -69,7 +60,7 @@ def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
 
 
 def register(sub: argparse._SubParsersAction) -> None:
-    s = sub.add_parser("serve", help="run one trusted episode server (used by `run`)")
+    s = sub.add_parser("serve")  # the episode server `run` starts; not listed
     s.add_argument("--task", required=True, help="task folder or bundled task id")
     s.add_argument("--run-dir", required=True, help="where the episode record is written")
     s.add_argument("--socket", required=True, help="Unix socket path to listen on")
@@ -81,12 +72,13 @@ def register(sub: argparse._SubParsersAction) -> None:
     s.add_argument(
         "--split", help="placement split: nominal, interpolation or extrapolation (tasks with seeded placements)"
     )
+    s.add_argument("--secrets-stdin", action="store_true", help=argparse.SUPPRESS)  # the runner's token and key
     s.set_defaults(func=serve)
 
     r = sub.add_parser("run", help="run one trial end to end")
     r.add_argument("--task", required=True, help="task folder or bundled task id")
     r.add_argument("--out", required=True, help="job folder; the trial is written to OUT/<task>__<harness>__<id>/")
-    r.add_argument("--seeds", help="(--engine benchflow) one trial per seed, e.g. 0-4 or 0,3,7")
+    r.add_argument("--seeds", help=argparse.SUPPRESS)  # BenchFlow engine only
     _trial_opts(r, many=False)
     r.set_defaults(func=run)
 
@@ -99,7 +91,7 @@ def register(sub: argparse._SubParsersAction) -> None:
         "--include", action="append", help="only task ids matching this glob (repeatable), e.g. 'libero-10-*'"
     )
     m.add_argument("--exclude", action="append", help="skip task ids matching this glob (repeatable)")
-    m.add_argument("--mode", choices=["sim", "real"], help="only simulated or only real-robot tasks")
+    m.add_argument("--mode", choices=["sim", "real"], help=argparse.SUPPRESS)
     m.add_argument("--sample", type=int, default=0, help="run a seeded random sample of N tasks")
     m.add_argument("--sample-seed", type=int, default=0, help="seed for --sample (default 0)")
     m.add_argument("--limit", type=int, default=0, help="run at most this many tasks (default 0: all)")
@@ -126,7 +118,7 @@ def register(sub: argparse._SubParsersAction) -> None:
     _trial_opts(m, many=True)
     m.set_defaults(func=run_many)
 
-    ex = sub.add_parser("export", help="write tasks as native BenchFlow task packages (needs robouse[benchflow])")
+    ex = sub.add_parser("export")  # native BenchFlow packages; listed once BenchFlow releases the task-format hook
     ex.add_argument("--tasks", required=True, nargs="+", help="task folders, suite folders or a task root")
     ex.add_argument("--out", required=True, help="bundle folder: <out>/tasks/<id>/ and <out>/runtime-<hash>/")
     ex.add_argument("--filter", default="", help="comma-separated substrings; keep tasks whose id contains one")
@@ -170,6 +162,7 @@ def serve(a: argparse.Namespace) -> int:
         spec["seed"] = a.seed
     if a.split:
         spec["placement"] = {**(spec.get("placement") or {}), "split": a.split}
+    secrets = json.loads(sys.stdin.readline() or "{}") if a.secrets_stdin else None
     res = serve_episode(
         spec,
         Path(a.run_dir),
@@ -177,8 +170,9 @@ def serve(a: argparse.Namespace) -> int:
         Path(a.workspace) if a.workspace else None,
         max_wall_s=a.max_wall_s,
         ready_file=Path(a.ready_file) if a.ready_file else None,
+        secrets=secrets,
     )
-    print(json.dumps(res))
+    print(json.dumps({k: v for k, v in res.items() if k != "signature"}))
     return 0
 
 
@@ -187,7 +181,7 @@ def run(a: argparse.Namespace) -> int:
         return _run_benchflow(a, [load_task(resolve_task_path(a.task))])
     if a.seeds:
         print(
-            "robouse: --seeds needs --engine benchflow; with the local engine use run-many --seeds, or --seed",
+            "robouse: run takes one seed (--seed); use run-many --seeds for several",
             file=sys.stderr,
         )
         return 2

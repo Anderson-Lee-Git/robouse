@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 # Suites whose simulator runs on this machine's CPU (in the main environment or a simulator virtualenv). Left out:
-# behavior, robodojo and gpu-* (remote GPU workers).
+# behavior, robodojo and gpu-* (remote GPU workers) and stationerybench (in development, not bundled).
 CPU_SUITES = [
     "adroit",
     "arc-style",
@@ -50,7 +50,6 @@ CPU_SUITES = [
     "roboharm",
     "robosuite",
     "safety",
-    "stationerybench",
     "vision",
 ]
 

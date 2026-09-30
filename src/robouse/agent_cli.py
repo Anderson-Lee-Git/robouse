@@ -1,6 +1,7 @@
 """`robo`: the only way an agent touches the robot. Standard library only.
 
-Finds the episode socket from $ROBOUSE_SOCKET (set by the runner) and sends one JSON request.
+Finds the episode socket from $ROBOUSE_SOCKET (set by the runner; $ROBO_SOCKET on BenchFlow) and sends one JSON
+request.
 
   robo info                          action space, skills, step budget
   robo observe [--image] [--camera C] robot and object state; --image also saves a camera PNG and prints its path
@@ -21,12 +22,13 @@ import socket
 import sys
 
 
-def _send(req: dict) -> dict:
-    path = os.environ.get("ROBOUSE_SOCKET") or _find_socket()
+def _send(req: dict, path: str | None = None) -> dict:
+    path = path or os.environ.get("ROBOUSE_SOCKET") or os.environ.get("ROBO_SOCKET") or _find_socket()
     if not path:
         return {"ok": False, "error": "no episode: ROBOUSE_SOCKET is not set"}
-    if os.environ.get("ROBOUSE_ORACLE_TOKEN"):  # set only for the reference solution
-        req = {**req, "token": os.environ["ROBOUSE_ORACLE_TOKEN"]}
+    token = os.environ.get("ROBOUSE_ORACLE_TOKEN") or os.environ.get("ROBO_ORACLE_TOKEN")  # the reference solution's
+    if token:
+        req = {**req, "token": token}
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(120)
     try:

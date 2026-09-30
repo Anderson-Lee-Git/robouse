@@ -77,7 +77,7 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 # `robouse run --task <id>` work without a checkout.
 [tool.hatch.build.targets.wheel.force-include]
 # One entry per suite. Left out: behavior, robodojo and gpu-* (their simulators run on remote GPU workers), and
-# stationerybench (in development). The real suite runs on the hardware-in-the-loop mock unless a rig file is given.
+# real and stationerybench (real robots: not run through Robo Use on live hardware yet).
 # Suites whose simulator needs its own virtualenv (dexjoco, driving, dmcontrol, myosuite, humanoidbench, maniskill,
 # robocasa) still need that setup; docs/suites.md says how.
 "tasks/adroit" = "robouse/bundled_tasks/adroit"
@@ -105,7 +105,6 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "tasks/myosuite" = "robouse/bundled_tasks/myosuite"
 "tasks/nav" = "robouse/bundled_tasks/nav"
 "tasks/quadruped" = "robouse/bundled_tasks/quadruped"
-"tasks/real" = "robouse/bundled_tasks/real"
 "tasks/robo-use-families" = "robouse/bundled_tasks/robo-use-families"
 "tasks/robocasa" = "robouse/bundled_tasks/robocasa"
 "tasks/roboharm" = "robouse/bundled_tasks/roboharm"
@@ -148,7 +147,7 @@ ignore = [
 "src/robouse/harnesses/*/client.py" = ["E402"]
 # maintainer tools, generators and test servers: best-effort loops over many files are fine
 "tests/*" = ["B011", "BLE001", "SIM115"]
-"tools/**" = ["BLE001", "SIM115", "B023"]
+"tools/**" = ["BLE001", "SIM115", "B023", "B007", "SIM401"]
 "adapters/**" = ["BLE001", "SIM115"]
 
 [tool.ruff.format]

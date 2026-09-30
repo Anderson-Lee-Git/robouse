@@ -34,7 +34,7 @@ from ..backends import make_backend
 from ..backends.base import embodiment_dict
 from .cameras import mujoco_camera
 from .probe import PhysicsProbe
-from .protocol import FINISH_MESSAGES, MOTION_OPS, read_request, send_reply
+from .protocol import FINISH_MESSAGES, MOTION_OPS, read_request, send_reply, sign_result
 from .recording import VideoRecorder, record_size
 
 log = logging.getLogger(__name__)
@@ -51,7 +51,14 @@ def _hook(obj: Any, name: str) -> Callable | None:
 
 
 class Episode:
-    def __init__(self, spec: dict, run_dir: Path, workspace: Path | None = None, seed: int | None = None):
+    def __init__(
+        self,
+        spec: dict,
+        run_dir: Path,
+        workspace: Path | None = None,
+        seed: int | None = None,
+        secrets: dict | None = None,
+    ):
         self.spec = spec
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -73,7 +80,11 @@ class Episode:
         self.obs_mode = str(spec.get("obs_mode", "state"))
         self.visible_fields = list(spec.get("visible_fields", ["hand_pos", "gripper_open"]))
         self.cameras = list(spec.get("cameras", [getattr(self.backend, "camera", "")]))
-        self._oracle_token = config.env("ROBOUSE_ORACLE_TOKEN")
+        # the reference solution's token and the key that signs result.json (from the runner, on the server's stdin);
+        # a server started by another tool (a hub runtime) may get the token from its environment instead
+        secrets = secrets or {}
+        self._oracle_token = str(secrets.get("oracle_token") or config.env("ROBOUSE_ORACLE_TOKEN"))
+        self._result_key = str(secrets.get("result_key") or "")
         self.max_repeat = max(
             1, min(MAX_REPEAT, int(spec.get("max_repeat", MAX_REPEAT)))
         )  # `act --repeat`, `grip --steps`
@@ -317,8 +328,12 @@ class Episode:
     def move_to(self, pos: Any, grip: Any, max_steps: int, tol: float) -> dict:
         if not self.skills_enabled or "move_to" not in self.backend.skills():
             return {"ok": False, "error": "move_to is not available for this task; use act"}
-        if not isinstance(pos, list) or len(pos) != 3:
-            return {"ok": False, "error": "pos must be [x, y, z]"}
+        if not isinstance(pos, list) or len(pos) != 3 or not all(_finite(x) for x in pos):
+            return {"ok": False, "error": "pos must be [x, y, z], finite numbers"}
+        if grip is not None and not _finite(grip):
+            return {"ok": False, "error": "grip must be a finite number"}
+        if not _finite(tol) or tol <= 0:
+            return {"ok": False, "error": "tol must be a positive number"}
         target = np.asarray(pos, dtype=float)
         g = float(getattr(self.backend, "_grip", -1.0) if grip is None else grip)
         n, stalled = 0, False
@@ -351,6 +366,8 @@ class Episode:
     def grip(self, value: float, steps: int) -> dict:
         if not self.skills_enabled or "grip" not in self.backend.skills():
             return {"ok": False, "error": "grip is not available for this task; use act"}
+        if not _finite(value):
+            return {"ok": False, "error": "the grip value must be a finite number"}
         n = 0
         for _ in range(max(1, min(self.max_repeat, steps))):
             if not self._budget_left():
@@ -475,6 +492,8 @@ class Episode:
         self._add_metrics()
         if self.video.size:
             self.result["video_size"] = list(self.video.size)
+        if self._result_key:
+            self.result["signature"] = sign_result(self.result, self._result_key)
         (self.run_dir / "result.json").write_text(json.dumps(self.result, indent=2))
         self.video.close()
         return {"outcome": outcome, "episode": "finished"}
@@ -501,6 +520,10 @@ class Episode:
         self.backend.close()
 
 
+def _finite(x: Any) -> bool:
+    return isinstance(x, int | float) and not isinstance(x, bool) and bool(np.isfinite(x))
+
+
 def _strip(resp: dict) -> dict:
     """The response without the raw observation vector, to keep the trace readable."""
     r = json.loads(json.dumps(resp))
@@ -517,9 +540,11 @@ def serve(
     workspace: Path | None = None,
     max_wall_s: float = 1800,
     ready_file: Path | None = None,
+    secrets: dict | None = None,
 ) -> dict:
-    """Run one episode on a Unix socket until it finishes (plus `linger_s`) or the runner sends `shutdown`."""
-    ep = Episode(spec, run_dir, workspace)
+    """Run one episode on a Unix socket until it finishes (plus `linger_s`) or the runner sends `shutdown`. `secrets`:
+    the reference solution's token and the key that signs result.json."""
+    ep = Episode(spec, run_dir, workspace, secrets=secrets)
     if os.path.exists(sock_path):
         os.unlink(sock_path)
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

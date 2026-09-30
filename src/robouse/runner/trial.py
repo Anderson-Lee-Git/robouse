@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import shutil
 import signal
 import subprocess
@@ -30,11 +31,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .. import config, harnesses
-from ..core.protocol import RUNNER_PREFIX
+from .. import harnesses
+from ..core.protocol import RUNNER_PREFIX, verify_result
 from ..tasks import Task
+from . import sandbox
 from .cost import trial_cost
-from .sandbox import sandbox_profile
 
 AGENT_CLI = Path(__file__).resolve().parents[1] / "agent_cli.py"
 SRC = Path(__file__).resolve().parents[2]  # the folder holding the robouse package
@@ -117,6 +118,38 @@ def _wait_ready(p: Path, proc: subprocess.Popen, timeout: float = 120, log: Path
     raise TimeoutError("episode server did not start")
 
 
+def _verdict(path: Path, key: str) -> tuple[dict, bool]:
+    """The episode server's result.json and whether it carries the server's signature (the agent cannot forge it)."""
+    try:
+        episode = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}, False
+    return episode, verify_result(episode, key)
+
+
+def _verify(task: Task, episode: dict, tdir: Path) -> float:
+    """The task's verifier/test.sh turns the verdict into reward.txt. It reads a private copy of the checked verdict
+    (outside the trial folder), and a reward that contradicts the verdict is not taken."""
+    with tempfile.TemporaryDirectory(prefix="robouse-verdict-") as private:
+        (Path(private) / "result.json").write_text(json.dumps(episode))
+        vt = subprocess.run(
+            ["bash", str(task.verifier_script)],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "ROBOUSE_EPISODE_DIR": private, "ROBOUSE_VERIFIER_DIR": str(tdir / "verifier")},
+            check=False,
+        )
+    (tdir / "verifier" / "test-stdout.txt").write_text(vt.stdout + vt.stderr)
+    rf = tdir / "verifier" / "reward.txt"
+    reward = float(rf.read_text().strip()) if rf.exists() and rf.read_text().strip() else 0.0
+    if reward > 0 and not episode.get("success"):
+        (tdir / "verifier" / "test-stdout.txt").write_text(
+            vt.stdout + vt.stderr + "\nreward ignored: the episode server's verdict is not a success\n"
+        )
+        return 0.0
+    return reward
+
+
 def run_trial(
     task: Task,
     harness: str,
@@ -187,14 +220,18 @@ def run_trial(
         server_cmd += ["--seed", str(seed)]
     if split:
         server_cmd += ["--split", split]
-    oracle_token = uuid.uuid4().hex
+    server_cmd.append("--secrets-stdin")
+    # the reference solution's token and the key that signs the verdict go to the server on its stdin: never in an
+    # environment or a command line, which other processes of this user can read
+    oracle_token, result_key = secrets.token_hex(16), secrets.token_hex(32)
+    server_env = {k: v for k, v in os.environ.items() if k != "ROBOUSE_ORACLE_TOKEN"}
     with open(tdir / "episode" / "server.log", "w") as server_log:  # the child keeps its own copy of the handle
         server = subprocess.Popen(
-            server_cmd,
-            env={**os.environ, "ROBOUSE_ORACLE_TOKEN": oracle_token},
-            stdout=server_log,
-            stderr=subprocess.STDOUT,
+            server_cmd, env=server_env, stdin=subprocess.PIPE, stdout=server_log, stderr=subprocess.STDOUT
         )
+    assert server.stdin is not None
+    server.stdin.write(json.dumps({"oracle_token": oracle_token, "result_key": result_key}).encode() + b"\n")
+    server.stdin.close()
     exc = None
     launch = None
     agent_rc = None
@@ -220,17 +257,13 @@ def run_trial(
         if harness == "oracle":  # only the reference solution may see privileged state in vision tasks
             base_env["ROBOUSE_ORACLE_TOKEN"] = oracle_token
         launch = harnesses.build(harness, model, task.instruction, ws, task, base_env)
-        sandboxed = (
-            harness not in ("oracle", "noop")
-            and sys.platform == "darwin"
-            and config.flag("ROBOUSE_SANDBOX", default=True)
-        )
-        if sandboxed:
+        if harness in ("oracle", "noop"):  # the trusted reference solution and the negative control
+            cfg["sandbox"] = "none"
+        else:
             ports = tuple(
                 int(m) for v in launch.env.values() for m in re.findall(r"//(?:127\.0\.0\.1|localhost):(\d+)", str(v))
             )
-            launch.cmd = ["sandbox-exec", "-p", sandbox_profile(ws, ports), *launch.cmd]
-        cfg["sandbox"] = "macos-seatbelt" if sandboxed else "none"
+            launch.cmd, cfg["sandbox"] = sandbox.wrap(launch.cmd, ws, sock, [job_dir, task.path], ports)
         (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
         with open(tdir / "agent" / "stdout.jsonl", "w") as out, open(tdir / "agent" / "stderr.txt", "w") as err:
             agent = subprocess.Popen(
@@ -257,10 +290,8 @@ def run_trial(
         # close the episode if the agent did not call `robo done`
         from ..agent_cli import _send
 
-        os.environ["ROBOUSE_SOCKET"] = sock
-        os.environ.pop("ROBOUSE_ORACLE_TOKEN", None)
         try:
-            st = _send({"op": "status"})
+            st = _send({"op": "status"}, path=sock)
         except OSError:  # the server is still busy (e.g. a slow remote simulator step); it ends on its own clock
             st = {}
         if st.get("ok") and not st["result"]["finished"]:
@@ -270,31 +301,20 @@ def run_trial(
                     "text": f"{RUNNER_PREFIX} agent timed out"
                     if timed_out
                     else f"{RUNNER_PREFIX} agent exited without robo done",
-                }
+                },
+                path=sock,
             )
         try:
             server.wait(timeout=60)
         except subprocess.TimeoutExpired:
             server.kill()
 
-    ep = tdir / "episode" / "result.json"
-    episode = json.loads(ep.read_text()) if ep.exists() else {}
+    episode, verified = _verdict(tdir / "episode" / "result.json", result_key)
+    if not verified and exc is None:
+        exc = "VerdictError: the episode's result.json is missing or does not carry the server's signature"
     if timed_out and episode.get("outcome") == "gave_up":
         episode["outcome"] = "agent_timeout"
-    # verifier: the task's own verifier/test.sh turns the trusted verdict into reward.txt
-    vt = subprocess.run(
-        ["bash", str(task.verifier_script)],
-        capture_output=True,
-        text=True,
-        env={
-            **os.environ,
-            "ROBOUSE_EPISODE_DIR": str(tdir / "episode"),
-            "ROBOUSE_VERIFIER_DIR": str(tdir / "verifier"),
-        },
-    )
-    (tdir / "verifier" / "test-stdout.txt").write_text(vt.stdout + vt.stderr)
-    rf = tdir / "verifier" / "reward.txt"
-    reward = float(rf.read_text().strip()) if rf.exists() and rf.read_text().strip() else 0.0
+    reward = _verify(task, episode, tdir) if verified else 0.0
 
     # artifacts: video + observation images the agent saw
     if (tdir / "episode" / "recording.mp4").exists():

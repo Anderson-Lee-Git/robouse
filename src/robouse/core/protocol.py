@@ -8,6 +8,8 @@ standalone script, so it keeps its own copy of the client side.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import socket
 
@@ -48,3 +50,22 @@ def send_reply(conn: socket.socket, reply: dict) -> bool:
         return True
     except OSError:
         return False
+
+
+# ---- the signed verdict ------------------------------------------------------------------------------------------
+# The runner gives the episode server a per-trial key on its stdin (never in its environment or command line, which
+# other processes of the same user can read). The server signs result.json with it, and the runner accepts the
+# verdict only if the signature matches, so an agent that rewrites result.json cannot change its score.
+
+
+def _canonical(result: dict) -> bytes:
+    return json.dumps({k: v for k, v in result.items() if k != "signature"}, sort_keys=True).encode()
+
+
+def sign_result(result: dict, key: str) -> str:
+    return hmac.new(key.encode(), _canonical(result), hashlib.sha256).hexdigest()
+
+
+def verify_result(result: dict, key: str) -> bool:
+    sig = result.get("signature")
+    return isinstance(sig, str) and hmac.compare_digest(sig, sign_result(result, key))

@@ -63,4 +63,4 @@ def test_sandbox_denies_private_folders(tmp_path, monkeypatch) -> None:
 
 
 def test_public_variables_are_declared() -> None:
-    assert config.PUBLIC <= set(config.ENV)
+    assert set(config.ENV) >= config.PUBLIC

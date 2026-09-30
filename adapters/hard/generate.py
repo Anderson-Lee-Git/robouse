@@ -23,8 +23,8 @@ from pathlib import Path
 
 import yaml
 
-from robouse.backends.tabletop.backend import WRIST_CAM_FOVY, WRIST_CAM_POS
 from robouse.backends.tabletop.hard import HARD_SCENARIOS
+from robouse.backends.tabletop.scene import WRIST_CAM_FOVY, WRIST_CAM_POS
 from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import write_task
 

@@ -1,4 +1,6 @@
-"""`robouse estop`, `operator`, `hil-check` and `robots`: the human side of real-robot runs."""
+"""`robouse estop`, `operator`, `hil-check` and `robots`: the human side of real-robot runs. Not listed in `robouse
+--help` until the live-hardware path has run through Robo Use; the commands work.
+"""
 
 from __future__ import annotations
 
@@ -7,26 +9,22 @@ import json
 
 
 def register(sub: argparse._SubParsersAction) -> None:
-    e = sub.add_parser(
-        "estop", help="latch the real-robot e-stop (every real episode stops at its next command); --clear releases it"
-    )
+    e = sub.add_parser("estop")
     e.add_argument("reason", nargs="?", default="operator e-stop", help="why (default: operator e-stop)")
     e.add_argument("--clear", action="store_true", help="release the e-stop")
     e.set_defaults(func=estop)
 
-    o = sub.add_parser("operator", help="answer a pending operator gate or verdict, or send the policy a remark")
+    o = sub.add_parser("operator")
     o.add_argument("action", choices=["status", "answer", "say"], help="status, answer or say")
     o.add_argument("value", nargs="?", default="", help="answer: yes, no, partial or skip; say: the remark")
     o.add_argument("--note", default="", help="a note recorded with the answer")
     o.set_defaults(func=operator)
 
-    hc = sub.add_parser(
-        "hil-check", help="replay recorded real sessions strictly through the safety guard and fit the tracking model"
-    )
+    hc = sub.add_parser("hil-check")
     hc.add_argument("fixtures", nargs="*", help="hardware-in-the-loop fixture names (default: all)")
     hc.set_defaults(func=hil_check)
 
-    r = sub.add_parser("robots", help="list real-robot profiles, drivers and hardware-in-the-loop fixtures")
+    r = sub.add_parser("robots")
     r.set_defaults(func=robots)
 
 

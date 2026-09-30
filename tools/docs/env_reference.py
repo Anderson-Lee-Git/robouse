@@ -1,7 +1,8 @@
 """Write docs/configuration.md, the environment variables users set, from robouse.config (ENV, PUBLIC).
 
-    python tools/docs/env_reference.py [--check]
+python tools/docs/env_reference.py [--check]
 """
+
 from __future__ import annotations
 
 import argparse

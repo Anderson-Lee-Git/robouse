@@ -42,7 +42,7 @@ robouse:
 
 A household kitchen from RoboCasa (kitchen layout 9, style 9): counters, cabinets, drawers, a sink and appliances, simulated in MuJoCo. The robot is a Franka Panda arm on a mobile base (RoboCasa's PandaOmron), parked where RoboCasa's task set-up puts it, facing the relevant fixture; the base and torso do not move in this task, only the arm and its two-finger gripper (fingers open to 8 cm). World frame in metres, z up; `robot_forward` in `robo observe` is the horizontal direction the robot faces. The arm's reach from the parked base is limited (about 0.7 m forward of `robot_base_pos` at counter height, less low down or far to the side), and the arm and hand can collide with the counter and fixtures.
 
-**Goal:** Pick the object named in `task_instruction` up from the counter and put it inside the open wall cabinet above the counter (its door is already open).
+**Goal:** Pick up the object the instruction names from the counter and put it inside the open wall cabinet above the counter (its door is already open).
 
 **Success:** RoboCasa's own check for PickPlaceCounterToCabinet: all eight corners of the object's bounding box are inside one of the cabinet's shelf compartments (within 5 cm) and the gripper is at least 25 cm from the object. Success is judged by the episode server after you call `robo done` and the robot has held still for about 10 steps.
 

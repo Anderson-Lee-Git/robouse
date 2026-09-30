@@ -72,7 +72,7 @@ TXT = {
         title="Counter to sink",
         difficulty="medium",
         tags=["pick-place", "sink"],
-        goal="Pick the object named in `task_instruction` up from the counter and put it in the sink.",
+        goal="Pick up the object the instruction names from the counter and put it in the sink.",
         success=(
             "RoboCasa's own check for PickPlaceCounterToSink: the object lies inside the sink basin and the gripper is at "
             "least 25 cm from it (the object is released)."
@@ -87,7 +87,7 @@ TXT = {
         difficulty="hard",
         tags=["pick-place", "cabinet"],
         goal=(
-            "Pick the object named in `task_instruction` up from the counter and put it inside the open wall cabinet above "
+            "Pick up the object the instruction names from the counter and put it inside the open wall cabinet above "
             "the counter (its door is already open)."
         ),
         success=(
@@ -155,7 +155,7 @@ TXT = {
         difficulty="hard",
         tags=["stove", "knob", "appliance"],
         goal=(
-            "Turn on the burner named in `task_instruction` by rotating its control knob. The knob sits on the stovetop; it has "
+            "Turn on the burner the instruction names by rotating its control knob. The knob sits on the stovetop; it has "
             "a raised ridge across its top that can be pushed sideways."
         ),
         success=(
@@ -174,7 +174,7 @@ TXT = {
         difficulty="hard",
         tags=["stove", "knob", "appliance"],
         goal=(
-            "Turn off the burner named in `task_instruction` by rotating its control knob back. The knob sits on the stovetop; "
+            "Turn off the burner the instruction names by rotating its control knob back. The knob sits on the stovetop; "
             "it has a raised ridge across its top that can be pushed sideways."
         ),
         success=(
