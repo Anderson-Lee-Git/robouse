@@ -4,6 +4,7 @@ into trials and harnesses."""
 from __future__ import annotations
 
 import base64
+import re
 import http.client
 import json
 import os
@@ -323,7 +324,7 @@ def test_the_mcp_module_reads_no_files_but_its_images(tmp_path) -> None:
     """Static check: the server opens only the image paths the episode server returned (no oracle, run folder or
     result.json access), and imports nothing from the trusted side."""
     src = (SRC / "robouse" / "mcp_server.py").read_text()
-    assert src.count("open(") == 2  # the returned image, and the workspace's .robouse/socket pointer
+    assert len(re.findall(r"\bopen\(", src)) == 2  # the returned image, and the workspace's .robouse/socket pointer
     imports = [ln.strip() for ln in src.splitlines() if ln.strip().startswith(("import ", "from "))]
     assert all("core" not in ln and "runner" not in ln and "harnesses" not in ln for ln in imports), imports
     for trusted in ("oracle_token", "result_key", "verify_result", "sign_result", "ROBOUSE_ORACLE_TOKEN"):
@@ -525,13 +526,12 @@ def _trial(job: Path, res: dict) -> tuple[dict, dict, list[dict]]:
 
 
 def _agent_entries(trace: list[dict]) -> list[dict]:
-    import re
-
+    """The agent's requests in a canonical form (the tool call each one is), with their replies."""
     out = []
     for e in trace:
         if e["req"].get("op") == "status" or str(e["req"].get("text", "")).startswith("[runner]"):
             continue
-        req = {k: v for k, v in e["req"].items() if k != "via"}
+        req = mcp_server.request_tool(e["req"])
         resp = json.loads(re.sub(r"/robouse-ws-[^/\"]+", "/WS", json.dumps(e["resp"])))
         out.append({"steps": e["steps"], "req": req, "resp": resp})
     return out

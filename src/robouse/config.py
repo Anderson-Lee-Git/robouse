@@ -28,6 +28,10 @@ ENV: dict[str, str] = {
     "ROBOUSE_VERIFIER_DIR": "folder a task verifier writes reward.txt to (set by the runner)",
     "ROBOUSE_TEXT_ONLY": "1: `robo observe --image` prints the path without attaching the image (set for harnesses "
     "whose API rejects images)",
+    "ROBOUSE_INTERFACE": "the trial's robot interface: cli, mcp or both (set by the runner; see harnesses/interface.py)",
+    "ROBOUSE_SEND_VIA": "mcp: `robo` and reference solutions send every request through a `robo mcp` server (set by "
+    "the runner for oracle and noop with --interface mcp)",
+    "ROBOUSE_MCP_URL": "the `robo` MCP endpoint of a harness that speaks MCP over HTTP (set by the runner)",
     # local runner sandbox
     "ROBOUSE_SANDBOX": "0 disables the macOS Seatbelt sandbox around agent processes (default 1)",
     "ROBOUSE_SANDBOX_DENY": "extra colon-separated paths agents may neither read nor write",
@@ -76,6 +80,8 @@ ENV: dict[str, str] = {
     "ROBOUSE_VLA_CONFIG": "resolved `vla` preset, passed to the client (set by the runner)",
     "ROBOUSE_MOLMOACT2_URL": "MolmoAct2 policy server for the `molmoact2` harness",
     "ROBOUSE_MOLMOACT2_TOKEN": "bearer token for the MolmoAct2 server",
+    "ROBOUSE_DIMCODE": "the dimcode executable for the `dimcode` harness (default: `dimcode` on PATH)",
+    "ROBOUSE_DIMCODE_NODE": "Node 24 or 26 that runs dimcode (default: `node` on PATH)",
     "ROBOUSE_TASK_LANGUAGE": "the language instruction a VLA client sends (set by the runner)",
     "ROBOUSE_GRADER_URL": "OpenAI-compatible endpoint for `robouse grade` (default: Baseten)",
     "ROBOUSE_GRADER_API_KEY": "API key for `robouse grade` (default: BASETEN_API_KEY)",
@@ -112,6 +118,8 @@ PUBLIC = frozenset(
         "ROBOUSE_VLA_POLICY_CONFIG",
         "ROBOUSE_MOLMOACT2_URL",
         "ROBOUSE_MOLMOACT2_TOKEN",
+        "ROBOUSE_DIMCODE",
+        "ROBOUSE_DIMCODE_NODE",
     }
 )
 

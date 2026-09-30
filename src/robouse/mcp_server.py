@@ -262,10 +262,9 @@ def _socket_path() -> str | None:
     p = os.environ.get("ROBOUSE_SOCKET") or os.environ.get("ROBO_SOCKET")
     if p:
         return p
-    for base in (os.environ.get("ROBOUSE_WORKSPACE"), os.getcwd()):
-        f = os.path.join(base, ".robouse", "socket") if base else ""
-        if f and os.path.exists(f):
-            return open(f).read().strip()
+    f = os.path.join(os.getcwd(), ".robouse", "socket")
+    if os.path.exists(f):
+        return open(f).read().strip()
     return None
 
 
