@@ -21,15 +21,15 @@ from pathlib import Path
 
 DOC = Path(__file__).resolve().parents[2] / "docs" / "cli.md"
 NOTES = {
-    "run": "Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`. A non-null `exception` means the trial could not start; it is not scored.",
-    "run-many": "Prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved. Examples: [Run a suite or dataset](run-a-suite.md).",
+    "run": "Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`. A non-null `exception` means the trial did not run to a result (an infrastructure failure: a missing credential, a harness error before the episode ended, or Ctrl-C); it is not scored and the command exits 1.",
+    "run-many": "Prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved; exits 1 if any trial failed on infrastructure. Examples: [Run a suite or dataset](run-a-suite.md).",
     "tasks": "`robouse tasks` alone lists the tasks: id, backend and simulator env id. `tasks init` composes a task from components and keeps it only if the reference solution scores 1 and the no-op control 0; with only `DIR` it scaffolds a blank task folder. `tasks check` re-runs those checks on any task folder ([Write or compose a task](write-a-task.md)).",
     "serve": "Runs one episode server until the episode ends, then prints the verdict as JSON. `robouse run` starts it for you; to drive a robot by hand, start it and set `ROBOUSE_SOCKET` to the socket path.",
 }
 ROBO_NOTE = (
     "Each call sends one JSON object to the episode server at `$ROBOUSE_SOCKET` and prints the response, for example "
     '`{"op": "act", "action": [0, 0, -1, 1], "repeat": 5}` and `{"ok": true, "result": {...}}`. '
-    "Operations: `info`, `status`, `observe`, `act`, `move_to`, `grip`, `skill`, `done`, `give_up`. "
+    "The commands map to the operations `info`, `observe`, `act`, `move_to`, `grip`, `skill`, `done` and `give_up`. "
     "`robo info` also describes the robot's embodiment: its action groups, skills, cameras and budgets. "
     "Skills run on the server, and each simulated step they take counts against the budget. "
     "Without an episode, `robo` prints an error and exits 1."

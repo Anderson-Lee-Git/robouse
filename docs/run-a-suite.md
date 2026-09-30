@@ -17,7 +17,7 @@ oracle/-: 4/4 solved
 
 Without `--tasks`, `run-many` runs every task in the package. Each finished trial is appended to `runs/mw-oracle/run_log.jsonl`. After an interruption, run the same command with `--resume`: tasks that already have a finished trial are skipped.
 
-A trial that ended in an infrastructure failure has an `EXC` note on its line; `--retries N` reruns it up to N times.
+A trial that ended in an infrastructure failure (the simulator or the harness failed, for example on an API error, or the run was interrupted) has an `EXC` note on its line and is not scored; `--retries N` reruns it up to N times, `--resume` reruns it, and `run-many` exits 1 if any trial ends that way.
 
 ## Pick tasks and repeats
 

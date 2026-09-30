@@ -9,7 +9,7 @@ export BASETEN_API_KEY=...
 robouse run --task arc-gravity --harness claude-code-glm --model moonshotai/Kimi-K3 --out runs/try
 ```
 
-A non-null `exception` in the printed summary means the trial could not start (a missing credential, a harness not on `PATH`); that trial is not scored. Tasks on other simulators need their extra, for example `pip install 'robouse[metaworld]'` for `metaworld-*` ([Suites](suites.md)).
+A non-null `exception` in the printed summary means the trial did not run to a result (a missing credential, a harness not on `PATH`, a harness that stopped on an API error before ending the episode, or Ctrl-C); that trial is not scored, and `robouse run` exits 1. Tasks on other simulators need their extra, for example `pip install 'robouse[metaworld]'` for `metaworld-*` ([Suites](suites.md)).
 
 Options:
 
