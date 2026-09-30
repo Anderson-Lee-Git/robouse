@@ -23,7 +23,7 @@ import shutil
 import tomllib
 from pathlib import Path
 
-from robouse.backends.tabletop.backend import SCENARIOS
+from robouse.backends.tabletop.scenarios import SCENARIOS
 from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import to_native
 

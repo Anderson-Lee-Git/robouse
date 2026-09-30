@@ -16,8 +16,9 @@ from collections.abc import Callable
 
 import numpy as np
 
-from .backend import DR_TRAVEL, HAND_HI, HAND_LO, _box, _cyl, _meta
-from .backend import target_of as _target_of
+from .oracle import target_of as _target_of
+from .scenarios import _box, _cyl, _meta
+from .scene import DR_TRAVEL, HAND_HI, HAND_LO
 
 HARD_SCENARIOS: dict[str, dict] = {}
 
