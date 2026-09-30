@@ -52,13 +52,15 @@ import argparse
 import html
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
-from collections import defaultdict
+import time
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -98,7 +100,7 @@ def pair_of(harness: str, model: str) -> int:
     if k not in HM_KEY:
         ml = str(model).split("/")[-1]
         key = re.sub(r"[^a-z0-9]+", "-", f"{harness}-{ml}".lower()).strip("-")
-        HM.append({"key": key, "harness": harness, "model": model, "label": f"{harness} + {ml}", "short": f"{html.escape(harness)}<br>{html.escape(ml)}",
+        HM.append({"key": key, "harness": harness, "model": model, "label": f"{ml} · {harness}", "short": f"{html.escape(ml)}<br>{html.escape(harness)}",
                    "harness_label": harness, "model_label": ml, "family": re.split(r"[-_ .]", ml)[0] or ml, "provider": "", "weights": "closed",
                    "kind": "agent", "released": None, "status": "active", "note": "", "cost_ok": False})
         HM_KEY[k] = len(HM) - 1
@@ -348,6 +350,15 @@ def pick(trials: list[dict]) -> dict:
 
 def status(t: dict) -> str:
     return "partial" if t["partial"] else ("infra" if t["infra"] else ("ok" if t["solved"] else "no"))
+
+
+OUTCOME_TEXT = {"success_reached": "Goal reached", "done": "Agent said done", "gave_up": "Agent gave up", "budget_exhausted": "Step budget used up",
+                "agent_timeout": "Agent timed out", "wall_time_exhausted": "Time limit reached", "agent_exited": "Agent exited", "no result": "No result"}
+
+
+def outcome_text(code: str | None) -> str:
+    """The runner's outcome code as words ("success_reached" -> "Goal reached"); the code stays in the trial's JSON."""
+    return OUTCOME_TEXT.get(code or "", (code or "–").replace("_", " ").capitalize())
 
 
 STATUS_TEXT = {"partial": "Partial", "infra": "Infra failure", "ok": "Solved", "no": "Not solved"}
@@ -715,7 +726,7 @@ def load_chrome(site: Path) -> None:
     spec = importlib.util.spec_from_file_location("site_chrome", p)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    CHROME["header"], CHROME["footer"], CHROME["bridge"], CHROME["link"] = mod.header("/hub/"), mod.FOOTER, mod.BRIDGE, mod.LINK
+    CHROME["header"], CHROME["footer"], CHROME["bridge"], CHROME["link"] = mod.header("/runs/"), mod.FOOTER, mod.BRIDGE, mod.LINK
 
 
 def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str = "", data: str = "") -> str:
@@ -767,14 +778,12 @@ def hub_tasks(site: Path) -> dict[str, tuple[str, str]]:
 
 
 def runs_head(active: str) -> str:
-    """The title block both tabs of /runs share (All runs, Compare): one h1, one lede, the tabs, so the tab bar never moves
-    between them. Solve rates and per-task results are on the hub."""
-    return (f'<section class="page-head head">\n  <h1>Runs</h1>\n  <p class="lede">Every published trial, with its recording, steps and verdict. '
-            f'Solve rates are on the <a class="ln" href="/hub/leaderboard/">leaderboard</a>; one trial counts per task and model{" and seed" if HAS_SEEDS[0] else ""}.</p>\n  {subnav(active)}\n</section>')
+    """The title block both tabs of /runs/ share (All runs, Compare): one h1, one lede, the tabs, so the tab bar never moves."""
+    return (f'<section class="page-head head">\n  <h1>Runs</h1>\n  <p class="lede">Each run is a batch of trials of one model on one dataset.</p>\n  {subnav(active)}\n</section>')
 
 
 def subnav(active: str) -> str:
-    items = [("jobs", "/runs/jobs/", "All runs"), ("compare", "/runs/compare/", "Compare")]
+    items = [("runs", "/runs/", "All runs"), ("compare", "/runs/compare/", "Compare")]
     return '<nav class="sub tabs" aria-label="Runs" data-fade>' + "".join(f'<a href="{h}"{" aria-current=page" if k == active else ""}>{x}</a>' for k, h, x in items) + "</nav>"
 
 
@@ -788,6 +797,13 @@ def fmt_s(x) -> str:
         return "–"
     x = float(x)
     return f"{x:.0f} s" if x < 120 else f"{x / 60:.1f} min"
+
+
+def fmt_date(ts: str) -> str:
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%b %-d, %Y")
+    except (ValueError, AttributeError):
+        return ""
 
 
 def fmt_day(ts: str) -> str:
@@ -809,11 +825,9 @@ def plab(i: int) -> str:
 
 def model_mark(p: dict) -> str:
     """The model's mark (.model-mark in the site's /ui.css, the same as UI.modelMark in /ui.js and build_hub.model_mark):
-    its provider's icon from tools/models.json `icon`, or a monogram; decorative, the name beside it is the text."""
-    if p.get("icon"):
-        return f'<span class="model-mark" style="--mm:url(/icons/models/{esc(p["icon"])}.svg)" aria-hidden="true"></span>'
-    w = [x for x in re.split(r"[\s-]+", re.sub(r"[^A-Za-z0-9 -]", "", p.get("provider") or p.get("model_label") or p.get("label") or "?")) if x]
-    return f'<span class="model-mark mono" aria-hidden="true">{esc((w[0][0] + w[1][0] if len(w) > 1 else (w or ["?"])[0][0]).upper())}</span>'
+    its provider's icon from tools/models.json `icon`, or an empty slot; decorative, the name beside it is the text."""
+    return (f'<span class="model-mark" style="--mm:url(/icons/models/{esc(p["icon"])}.svg)" aria-hidden="true"></span>' if p.get("icon")
+            else '<span class="model-mark none" aria-hidden="true"></span>')
 
 
 def phtml(i: int) -> str:
@@ -859,9 +873,14 @@ def list_foot(noun: str, hint: str) -> str:
 SEED_KEY = '<span><span class="g s some">3/5</span>seeds solved</span>'
 
 
+def hslug(i: int) -> str:
+    """A harness as a filter value: its label, lower-case, no spaces (the list filter splits values on spaces)."""
+    return re.sub(r"[^a-z0-9]+", "-", (HM[i].get("harness_label") or HM[i]["harness"]).lower()).strip("-")
+
+
 def pair_attrs(i: int) -> str:
     p = HM[i]
-    return f'data-pair="{p["key"]}" data-family="{esc(p.get("family") or "")}" data-harness="{esc(p.get("harness_label") or p["harness"])}"'
+    return f'data-pair="{p["key"]}" data-family="{esc(p.get("family") or "")}" data-harness="{hslug(i)}"'
 
 
 def sel_opts(values: list[str]) -> str:
@@ -894,7 +913,7 @@ def player_controls() -> str:
             f'<button type="button" class="pb" data-k="next" aria-label="Next step" title="Next step (→)" disabled>{ICON["next"]}</button>'
             f'<span class="seg sm" role="group" aria-label="Playback speed">{speeds}</span><span class="now trunc" aria-live="off"></span>'
             f'<button type="button" class="pb" data-k="full" aria-label="Full screen" title="Full screen (f)" disabled>{ICON["full"]}</button></div>'
-            f'<p class="cap">The simulation recording has only the moments the robot moved, not the agent’s thinking time.</p></div>')
+            f'<p class="cap">Plays only while the robot moves.</p></div>')
 
 
 def skeleton() -> str:
@@ -902,24 +921,95 @@ def skeleton() -> str:
             + "".join(f'<span class="skel" style="width:{w}%;height:14px"></span>' for w in (92, 84, 88, 70, 90, 78, 86, 64, 80, 74)) + "</div>")
 
 
+RUN_OF: dict[str, dict] = {}  # run slug -> {hm, ds, probe, trials, title, ...}, set in main; a trial's run is t["run"]
+
+
+def group_runs(trials: list[dict], jobs: dict) -> dict[str, dict]:
+    """Runs as people think of them: one model and harness on one hub dataset. The runner's jobs are per suite and are
+    sometimes sharded (GR00T's four LIBERO suites), so jobs of one pair on one dataset merge into one run; a zero-shot
+    probe (a policy on suites it was not trained for) is its own run, split per dataset."""
+    out: dict[str, dict] = {}
+    # a task the hub does not list (a pilot variant) belongs to the dataset that holds the rest of its suite
+    by_suite: dict[str, Counter] = defaultdict(Counter)
+    for t in trials:
+        if t["task"] in HUB:
+            by_suite[t["suite"]][HUB[t["task"]][1]] += 1
+    for t in trials:
+        ds = (HUB[t["task"]][1] if t["task"] in HUB else by_suite[t["suite"]].most_common(1)[0][0] if by_suite[t["suite"]]
+              else SUITE_TITLE.get(t["suite"], t["suite"]))
+        probe = "zeroshot" in t["job"]
+        slug = re.sub(r"[^a-z0-9]+", "-", f'{HM[t["hm"]]["key"]} {ds}{" zero-shot" if probe else ""}'.lower()).strip("-")
+        r = out.setdefault(slug, {"slug": slug, "hm": t["hm"], "ds": ds, "probe": probe, "trials": [], "jobs": set(), "start": "", "state": "finished"})
+        r["trials"].append(t)
+        r["jobs"].add(t["job"])
+        if t["started"]:
+            r["start"] = min(r["start"] or t["started"], t["started"])
+        if jobs.get(t["job"], {}).get("state") == "running":
+            r["state"] = "running"
+        t["run"] = slug
+    for r in out.values():
+        ts = r["trials"]
+        r["scored"] = sum(1 for t in ts if t["counted"] and not t["infra"] and not t["partial"])
+        r["solved"] = sum(1 for t in ts if t["counted"] and not t["infra"] and not t["partial"] and t["solved"])
+        r["title"] = f'{plab(r["hm"])} · {r["ds"].split("/")[-1]}' + (" · zero-shot probe" if r["probe"] else "")
+    return out
+
+
 def trial_crumbs(t: dict) -> str:
-    """Hub / dataset / task / pair: a trial sits under its task's hub page (or under All runs for a task the hub lacks)."""
-    url, ds = HUB.get(t["task"], ("", ""))
-    trail = ([("Hub", "/hub/"), (ds, url.rsplit("/", 2)[0] + "/"), (t["task"], url)] if url else [("All runs", "/runs/jobs/"), (t["task"], "")])
-    bits = [f'<a href="{h}">{esc(x)}</a>' if h else esc(x) for x, h in trail] + [esc(HM[t["hm"]]["key"])]
+    """Runs / the run; the task title is the h1 right below."""
+    r = RUN_OF.get(t.get("run", ""), {})
+    trail = [("Runs", "/runs/"), (r.get("title", t["job"]), f'/runs/r/{r["slug"]}/' if r else "")]
+    bits = [f'<a href="{h}">{esc(x)}</a>' if h else esc(x) for x, h in trail]
     return '<nav class="crumbs" aria-label="Breadcrumb">' + "<span>/</span>".join(bits) + "</nav>"
+
+
+def jpeg_size(p: Path) -> tuple[int, int] | None:
+    """(width, height) of a baseline or progressive JPEG, read from its SOF marker (no imaging library)."""
+    try:
+        b = p.read_bytes()
+    except OSError:
+        return None
+    i = 2
+    while i + 9 < len(b):
+        if b[i] != 0xFF:
+            return None
+        m, n = b[i + 1], int.from_bytes(b[i + 2:i + 4], "big")
+        if m in (0xC0, 0xC1, 0xC2):
+            return int.from_bytes(b[i + 7:i + 9], "big"), int.from_bytes(b[i + 5:i + 7], "big")
+        i += 2 + n
+    return None
+
+
+def box_style(t: dict) -> str:
+    """The player box takes the recording's shape (from its poster), so a 4:3 recording is not letterboxed in a square."""
+    wh = jpeg_size(POSTERS / f"{t['trial']}.jpg")
+    return f' style="--ar:{wh[0]}/{wh[1]}"' if wh and wh[1] else ""
+
+
+def poster_attr(t: dict) -> str:
+    """A still from the middle of the recording (runs/p/<trial>.jpg, extracted with ffmpeg on the build VM), so the player
+    is never a black box before it plays."""
+    return f' poster="/runs/p/{t["trial"]}.jpg"' if (POSTERS / f"{t['trial']}.jpg").is_file() else ""
+
+
+POSTERS = Path()  # <out>/p, set in main
 
 
 def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     st = status(t)
     label = plab(t["hm"])
-    facts = [("Reward", freward(t["reward"])), ("Outcome", f'<span class="mono">{brk(t["outcome"] or "–")}</span>'),
-             ("Env steps", steps_html(t)),
-             ("Robo requests", fnum(t["checks"].get("robo_requests"))), ("Wall time", esc(fmt_s(t["wall"]))), ("Started", esc(fmt_day(t["started"])))]
+    # the badge says solved or not; the outcome is shown when it gives the reason, the reward when it is not plainly 0 or 1
+    facts = [("Outcome", esc(outcome_text(t["outcome"])))] if st != "ok" and t["outcome"] else []
+    try:
+        if float(t["reward"]) not in (0.0, 1.0):
+            facts.append(("Reward", freward(t["reward"])))
+    except (TypeError, ValueError):
+        pass
+    facts += [("Steps", steps_html(t)), ("Time", esc(fmt_s(t["wall"])))]
     if t.get("seed") is not None:
         facts.append(("Seed", esc(t["seed"])))
     counted = "" if t["counted"] else f'<span class="tag">not counted: {"infrastructure failure" if t["infra"] else "a later trial counts"}</span>'
-    vid = (f'<div class="vbox"><video id="vid" src="{video}" muted playsinline preload="auto" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls()}' if video
+    vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls()}' if video
            else '<div class="vbox novideo"><div class="empty-state"><b>No recording for this trial.</b>The episode ended before the simulator wrote a frame.</div></div>')
     tabs = [("recording", "Recording", ""), ("trajectory", "Trajectory", f" <span class=\"num\">{n_steps}</span>" if n_steps else ""), ("verdict", "Verdict", ""),
             ("run", "Timing &amp; tokens", ""), ("files", "Files", "")]
@@ -946,87 +1036,88 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 def build_compare() -> str:
     body = f"""
 {runs_head("compare")}
-<p class="meta tabnote">Two trials of one task side by side. Pick them here, on a task page, or from a trial with “Compare”.</p>
+<p class="meta tabnote">Pick two trials of one task.</p>
 <div id="compare" class="compare" aria-busy="true">{skeleton()}</div>
 """
     return page("Compare · Runs · Robo Use", body, cls="comparepage", canonical="https://robouse.ai/runs/compare/")
 
 
-def build_jobs(jobs: dict) -> str:
+def build_runs(runs: dict) -> str:
+    """/runs/: every run (one model and harness on one dataset), newest first; sortable and filterable, each row opens
+    the run's trials. Two runs of one model on one dataset differ by their label (zero-shot probe) and start time."""
     rows = []
-    for j in sorted(jobs.values(), key=lambda j: j["start"] or "", reverse=True):
-        st = j["state"]
-        i = j["hm"]
-        unf = f' <span class="muted">({j["unfinished"]} unfinished)</span>' if j["unfinished"] and st != "finished" else ""
-        su = sorted(j["suites"])
-        rows.append(f'<tr {pair_attrs(i)} data-state="{st}" data-q="{esc((j["name"] + " " + plab(i) + " " + HM[i]["label"] + " " + " ".join(su)).lower())}">'
-                    f'<th scope="row" data-v="{esc(j["name"])}"><a class="mono trunc" href="/runs/jobs/{esc(j["name"])}/" title="{esc(j["name"])}">{esc(j["name"])}</a></th>'
-                    f'<td data-v="{i:04d}">{phtml(i)}</td>'
-                    f'<td class="sus">{esc(", ".join(SUITE_TITLE.get(s, s) for s in su))}</td>'
-                    f'<td class="n num" data-v="{j["trials"]}">{j["trials"]}</td>'
-                    f'<td class="n num" data-v="{j["solved"] / j["scored"] if j["scored"] else -1:.4f}">{j["solved"]}/{j["scored"]}</td>'
-                    f'<td class="n num" data-v="{j["infra"]}">{j["infra"] or "·"}</td>'
-                    f'<td><span class="state {st}">{st}</span>{unf}</td>'
-                    f'<td class="muted num" data-v="{esc(j["start"])}">{esc(fmt_day(j["start"]))}</td></tr>')
-    idxs = sorted({j["hm"] for j in jobs.values()})
-    fams = sorted({HM[i].get("family") or "" for i in idxs} - {""})
-    harn = sorted({HM[i].get("harness_label") or HM[i]["harness"] for i in idxs})
-    states = sorted({j["state"] for j in jobs.values()})
+    # newest day first; runs of one day read by dataset, then model
+    order = sorted(runs.values(), key=lambda r: (r["ds"], plab(r["hm"]).lower()))
+    for r in sorted(order, key=lambda r: (r["start"] or "")[:10], reverse=True):
+        i = r["hm"]
+        rate = r["solved"] / r["scored"] if r["scored"] else -1
+        tag = ' <span class="rtag">zero-shot probe</span>' if r["probe"] else ""
+        state = ' <span class="state running">running</span>' if r["state"] == "running" else ""
+        rows.append(f'<tr {pair_attrs(i)} data-dataset="{esc(r["ds"])}" data-q="{esc((plab(i) + " " + r["ds"] + (" zero-shot probe" if r["probe"] else "")).lower())}">'
+                    f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i)}</a></th>'
+                    f'<td class="sus" data-v="{esc(r["ds"])}">{esc(r["ds"])}{tag}</td>'
+                    f'<td class="muted num" data-v="{esc(r["start"])}">{esc(fmt_date(r["start"]))}{state}</td>'
+                    f'<td class="n num" data-v="{len(r["trials"])}">{len(r["trials"])}</td>'
+                    f'<td class="n num" data-v="{rate:.4f}">{f"{rate * 100:.0f}%" if rate >= 0 else "·"}</td></tr>')
+    idxs = sorted({r["hm"] for r in runs.values()})
+    harn = sorted({(hslug(i), HM[i].get("harness_label") or HM[i]["harness"]) for i in idxs}, key=lambda x: x[1].lower())
+    dss = sorted({r["ds"] for r in runs.values()})
     ctrl = ('<div class="fbar"><div class="frow ctl-row">'
-            + '<label class="search"><span class="vh">Search jobs</span><input type="search" data-lq placeholder="Search jobs" autocomplete="off" spellcheck="false"></label>'
-            + (f'<select data-lf="family" aria-label="Model family"><option value="">All families</option>{sel_opts(fams)}</select>' if len(fams) > 1 else "")
-            + (f'<select data-lf="harness" aria-label="Harness"><option value="">All harnesses</option>{sel_opts(harn)}</select>' if len(harn) > 1 else "")
-            + (f'<select data-lf="state" aria-label="State"><option value="">Any state</option>{sel_opts(states)}</select>' if len(states) > 1 else "")
-            + scope_select()
+            + '<label class="search"><span class="vh">Search runs</span><input type="search" data-lq placeholder="Search runs" autocomplete="off" spellcheck="false"></label>'
+            + (f'<select data-lf="harness" aria-label="Harness"><option value="">All harnesses</option>{"".join(f"<option value={chr(34)}{esc(k)}{chr(34)}>{esc(v)}</option>" for k, v in harn)}</select>' if len(harn) > 1 else "")
+            + (f'<select data-lf="dataset" aria-label="Dataset"><option value="">All datasets</option>{sel_opts(dss)}</select>' if len(dss) > 1 else "")
             + '<span class="count push" data-lcount aria-live="polite"></span></div></div>')
     body = f"""
-{runs_head("jobs")}
-<p class="meta tabnote">One job per harness + model and suite, newest first. A job still running shows its finished trials.</p>
-<div class="lst" data-list="jobs" data-limit="50" data-noun="jobs">
+{runs_head("runs")}
+<div class="lst" data-list="jobs" data-limit="50" data-noun="runs">
 {ctrl}
-<div class="scroll tbl"><table class="list jobs">
-  <thead><tr>{th_sort("Job", "text", "tcol")}{th_sort("Harness + model", "num")}<th scope="col">Suite</th>{th_sort("Trials", "num", "n")}{th_sort("Solved", "num", "n")}{th_sort("Infra", "num", "n")}<th scope="col">State</th>{th_sort("Started", "text")}</tr></thead>
+<div class="scroll tbl"><table class="list runs">
+  <thead><tr>{th_sort("Model · harness", "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('aria-sort="none"', 'aria-sort="descending"')}{th_sort("Trials", "num", "n")}{th_sort("Solve rate", "num", "n")}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
-{list_foot("jobs", "Widen the filters, or show all models.")}
+{list_foot("runs", "Clear the search or the filters.")}
 </div>
 """
-    return page("Jobs · Runs · Robo Use", body, cls="jobs", canonical="https://robouse.ai/runs/jobs/")
+    return page("Runs · Robo Use", body, desc=f"{len(runs)} runs of {len(idxs)} models, each with its trials, recordings and verdicts.",
+                cls="jobs", canonical="https://robouse.ai/runs/")
 
 
-def build_job(j: dict, trials: list[dict]) -> str:
+def build_run(r: dict) -> str:
     rows = []
-    for t in sorted(trials, key=lambda t: (t["task"], str(t.get("seed")))):
+    # the counted trial of each task first; an earlier trial of the same task says so, with its start time
+    for t in sorted(r["trials"], key=lambda t: (t["title"], t["task"], not t["counted"], str(t.get("seed")), t["started"] or "")):
         st = status(t)
         seed = f'<span class="muted"> · seed {esc(t["seed"])}</span>' if t.get("seed") is not None else ""
-        rows.append(f'<tr class="{"" if t["counted"] else "dim"}" data-outcome="{st}" data-counted="{int(t["counted"])}" data-q="{esc(t["task"].lower())}">'
-                    f'<th scope="row" data-v="{esc(t["task"])}"><a class="tk" href="/runs/t/{esc(t["trial"])}/"><span class="tn">{esc(t["task"])}</span></a>{seed}</th>'
+        if not t["counted"]:
+            seed += f'<span class="muted"> · earlier trial, {esc(fmt_day(t["started"]))}</span>'
+        rows.append(f'<tr class="{"" if t["counted"] else "dim"}" data-outcome="{st}" data-counted="{int(t["counted"])}" data-q="{esc((t["task"] + " " + t["title"]).lower())}">'
+                    f'<th scope="row" data-v="{esc(t["title"])}"><a class="rtk" href="/runs/t/{esc(t["trial"])}/">{esc(t["title"])}</a>{seed}</th>'
                     f'<td data-v="{ST_RANK[st]}"><span class="badge {st}">{STATUS_TEXT[st]}</span>{"" if t["counted"] else " <span class=muted>not counted</span>"}</td>'
-                    f'<td class="mono oc">{esc(t["outcome"] or "–")}</td>'
+                    f'<td class="oc">{esc(outcome_text(t["outcome"])) if st != "ok" else ""}</td>'
                     f'<td class="n num" data-v="{num_attr(t["steps_used"])}">{steps_html(t)}</td>'
-                    f'<td class="n num" data-v="{num_attr(t["wall"])}">{esc(fmt_s(t["wall"]))}</td><td class="muted num" data-v="{esc(t["started"])}">{esc(fmt_day(t["started"]))}</td></tr>')
+                    f'<td class="n num" data-v="{num_attr(t["wall"])}">{esc(fmt_s(t["wall"]))}</td></tr>')
+    states = {status(t) for t in r["trials"]}
+    opts = "".join(f'<option value="{k}">{v}</option>' for k, v in (("ok", "Solved"), ("no", "Not solved"), ("infra", "Infrastructure failure"), ("partial", "Partial")) if k in states)
     ctrl = ('<div class="fbar"><div class="frow ctl-row">'
             '<label class="search"><span class="vh">Search tasks</span><input type="search" data-lq placeholder="Search tasks" autocomplete="off" spellcheck="false"></label>'
-            '<select data-lf="outcome" aria-label="Result"><option value="">Any result</option><option value="ok">Solved</option><option value="no">Not solved</option>'
-            '<option value="infra">Infra failure</option><option value="partial">Partial</option></select>'
-            '<select data-lf="counted" aria-label="Counted"><option value="">All trials</option><option value="1">Counted trials only</option></select>'
-            '<span class="count push" data-lcount aria-live="polite"></span></div></div>')
+            + (f'<select data-lf="outcome" aria-label="Result"><option value="">Any result</option>{opts}</select>' if len(states) > 1 else "")
+            + '<span class="count push" data-lcount aria-live="polite"></span></div></div>')
     body = f"""
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/hub/leaderboard/">Leaderboard</a><span>/</span><a href="/runs/jobs/">All runs</a><span>/</span>{esc(j["name"])}</nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{esc(r["title"])}</nav>
 <section class="page-head head">
-  <h1>{esc(j["name"])}</h1>
-  <p class="meta">{esc(plab(j["hm"]))} · {j["trials"]} trials · {j["solved"]}/{j["scored"]} solved · <span class="state {j["state"]}">{j["state"]}</span></p>
+  <h1>{esc(r["title"])}</h1>
+  <p class="meta">{esc(r["ds"])} · {esc(fmt_date(r["start"]))} · {r["solved"]} of {r["scored"]} solved{' · <span class="state running">running</span>' if r["state"] == "running" else ""}</p>
 </section>
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
 {ctrl}
-<div class="scroll tbl"><table class="list">
-  <thead><tr>{th_sort("Task", "text", "tcol")}{th_sort("Result", "num")}{th_sort("Outcome")}{th_sort("Env steps", "num", "n")}{th_sort("Wall", "num", "n")}{th_sort("Started", "text")}</tr></thead>
+<div class="scroll tbl"><table class="list rt">
+  <thead><tr>{th_sort("Task", "text", "tcol")}{th_sort("Result", "num")}{th_sort("Outcome")}{th_sort("Steps", "num", "n")}{th_sort("Time", "num", "n")}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
-{list_foot("trials", "Widen the filters or clear the search.")}
+{list_foot("trials", "Clear the search or the filter.")}
 </div>
 """
-    return page(f"{j['name']} · Jobs · Robo Use", body, cls="jobs")
+    return page(f"{r['title']} · Runs · Robo Use", body, cls="jobs", desc=f"{r['title']}: {r['solved']} of {r['scored']} solved.")
 
 
 # ---------------------------------------------------------------- checks
@@ -1124,7 +1215,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
     rich = [k for k in tasks if any((t["dir"] / "artifacts" / "recording.mp4").is_file() and (t["dir"] / "agent" / "trajectory.json").is_file() for t in by_task[k])]
     borrow = set(rich[:2])
     trials, jobs = [], {}
-    t0 = datetime(2026, 9, 1, tzinfo=UTC).timestamp()
+    t0 = datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp()
     for ti, task in enumerate(tasks):
         srcs = sorted(by_task[task], key=lambda t: (not t.get("counted"), t["infra"], t["trial"]))
         src = next((t for t in srcs if (t["dir"] / "artifacts" / "recording.mp4").is_file()), srcs[0])
@@ -1146,7 +1237,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
                      "partial": False, "outcome": "infra_error" if infra else ("success_reached" if solved else "max_steps_reached"),
                      "steps_used": None if infra else rng.randint(8, mx), "max_steps": mx, "wall": round(wall, 1), "checks": {"robo_requests": rng.randint(5, 120)},
                      "infra_items": [{"id": "synthetic", "evidence": "fabricated infrastructure failure"}] if infra else [], "agent_text": "", "final_message": "",
-                     "started": datetime.fromtimestamp(start, UTC).isoformat(), "finished": datetime.fromtimestamp(start + wall, UTC).isoformat(),
+                     "started": datetime.fromtimestamp(start, timezone.utc).isoformat(), "finished": datetime.fromtimestamp(start + wall, timezone.utc).isoformat(),
                      "src_trial": src["trial"] if real_dir else None}
                 if ti == 0 and i == 0 and seed == 1:  # one fabricated trial carries every optional block (leaderboard spec section 5)
                     t["fake_extra"] = {
@@ -1204,7 +1295,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     out = a.out.expanduser().resolve()
     site = out.parent
-    VER = datetime.now(UTC).strftime("%Y%m%d%H%M")
+    VER = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
     SYNTH = a.synthetic > 0
     if SYNTH:
         if out.is_relative_to(REAL_SITE.resolve()) or out.is_relative_to(REAL_SITE.parent.resolve()):
@@ -1231,10 +1322,13 @@ def main(argv: list[str] | None = None) -> int:
         synth_site(site, chosen)
     HAS_SEEDS[0] = any(len(ts) > 1 for ts in chosen.values())
     HUB.update(hub_tasks(site))
-    for sub in ("t", "task", "d", "jobs"):
+    RUN_OF.update(group_runs(trials, jobs))
+    global POSTERS
+    POSTERS = out / "p"
+    for sub in ("t", "task", "d", "jobs", "r"):
         if (out / sub).exists():
             shutil.rmtree(out / sub)
-    for sub in ("v", "f", "d", "t", "jobs", "compare"):
+    for sub in ("v", "f", "d", "t", "r", "compare"):
         (out / sub).mkdir(parents=True, exist_ok=True)
     tdocs: dict[str, dict] = {}
     tinfo: dict[str, dict] = {}
@@ -1308,24 +1402,20 @@ def main(argv: list[str] | None = None) -> int:
             withheld += w
 
     suites = sorted({i["suite"] for i in tinfo.values()})
-    for p in [out / "index.html", *(p for p in out.iterdir() if p.is_dir() and p.name not in ("t", "v", "f", "d", "jobs", "compare"))]:
+    for p in [out / "index.html", *(p for p in out.iterdir() if p.is_dir() and p.name not in ("t", "v", "f", "p", "d", "r", "compare"))]:
         if p.is_dir():  # the results matrix, suite and task pages of earlier builds: the hub has them now (308s in vercel.json)
             shutil.rmtree(p)
         elif p.exists():
             p.unlink()
     counted = sum(len(ts) for ts in chosen.values())
     (out / "compare" / "index.html").write_text(build_compare())
-    by_job = defaultdict(list)
-    for t in trials:
-        by_job[t["job"]].append(t)
-    for name, j in jobs.items():
-        ts = by_job[name]
-        j["scored"] = sum(1 for t in ts if t["counted"] and not t["infra"] and not t["partial"])
-        j["solved"] = sum(1 for t in ts if t["counted"] and not t["infra"] and not t["partial"] and t["solved"])
-        j["infra"] = sum(1 for t in ts if t["infra"])
-        (out / "jobs" / name).mkdir(parents=True, exist_ok=True)
-        (out / "jobs" / name / "index.html").write_text(build_job(j, ts))
-    (out / "jobs" / "index.html").write_text(build_jobs(jobs))
+    for slug, r in RUN_OF.items():
+        (out / "r" / slug).mkdir(parents=True, exist_ok=True)
+        (out / "r" / slug / "index.html").write_text(build_run(r))
+    (out / "index.html").write_text(build_runs(RUN_OF))
+    # the old job pages: each job's URL moves to the run that holds its trials (tools/build_hub.py writes the 308s)
+    moved = {f"/runs/jobs/{t['job']}": f"/runs/r/{t['run']}/" for t in sorted(trials, key=lambda t: t["trial"])}
+    (out / "d" / "moved.json").write_text(json.dumps(dict(sorted(moved.items())), indent=1))
     index = {"hm": [[p["label"], p["key"]] for p in HM], "suites": {s: SUITE_TITLE.get(s, s) for s in suites},
              "trials": {t["trial"]: [t["task"], t["hm"], status(t), int(t["counted"])] for t in trials},
              "titles": {k: v["title"] for k, v in tinfo.items()}, "urls": {k: HUB[k][0] for k in tinfo if k in HUB}}
