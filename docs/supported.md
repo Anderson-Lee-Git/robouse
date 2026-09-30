@@ -10,7 +10,7 @@ What Robo Use 0.1.1 supports, and how each item was tested. "Docs check": run fr
 | `gpt-6-astra` | `codex` | v1 runs: 222 trials |
 | `zai-org/GLM-5.3` on Baseten | `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` | v1 runs: 221, 122 and 222 trials |
 | `allenai/MolmoAct2-LIBERO-LeRobot` | `molmoact2` | v1 runs: 30 trials; needs a GPU policy server |
-| VLA presets `openpi/pi05_libero`, `lerobot/groot_n1.7_libero`, `openpi/pi0_libero`, `lerobot/evo1_libero`, `lerobot/vla_jepa_libero`, `lerobot/smolvla_libero` | `vla` | GPU runs on the 40 LIBERO tasks: 38, 38, 36, 40, 38 and 26 of 40 ([VLA policies](vla.md)); need a GPU policy server |
+| VLA presets `openpi/pi05_libero`, `lerobot/groot_n1.7_libero`, `openpi/pi0_libero`, `lerobot/evo1_libero`, `lerobot/vla_jepa_libero`, `lerobot/smolvla_libero`, `lerobot/pi05_libero`, `lerobot/pi0fast_libero`, `lerobot/pi0_libero` | `vla` | GPU runs on the 40 LIBERO tasks: 38, 38, 36, 40, 38, 26, 37, 32 (of 39 scored) and 30 ([VLA policies](vla.md)); need a GPU policy server |
 
 Other models work wherever the harness accepts them through `--model`; they were not tested.
 
@@ -91,7 +91,7 @@ Added on the `parity` branch and tested as stated. Compared with inspect-robots 
 | Capability | Status |
 |---|---|
 | `vla` harness with the openpi, XPolicyLab, OpenVLA, GR00T and HTTP-JSON wires; presets for pi0 / pi0.5 (LIBERO), OpenVLA (LIBERO), MolmoAct2, SmolVLA and pi0.5 via LeRobot, GR00T N1.6/N1.7 (SO-101), XPolicyLab joint policies ([VLA policies](vla.md)) | every wire end to end against mock servers built on the upstream libraries: 5/5 tasks solved (`tools/ops/vla_dogfood.sh`); openpi and HTTP-JSON wires also with real GPU-served checkpoints (next row) |
-| Real checkpoints on a GPU (openpi server; `lerobot_server.py` in LeRobot e0d50211) | LIBERO, 40 tasks, 1 episode each: pi0.5 38, GR00T N1.7 38, pi0 36, EVO1 40, VLA-JEPA 38, SmolVLA 26; upstream cross-checks: GR00T `lerobot-eval` 37/40, pi0.5 openpi evaluator libero_spatial 10/10; zero-shot probe on LIBERO-90, robosuite and Meta-World: pi0.5 1/12, GR00T 0/12 |
+| Real checkpoints on a GPU (openpi server; `lerobot_server.py` in LeRobot e0d50211) | LIBERO, 40 tasks, 1 episode each: pi0.5 38, GR00T N1.7 38, pi0 36, EVO1 40, VLA-JEPA 38, SmolVLA 26, LeRobot ports of pi0.5 37, pi0-FAST 32 of 39, pi0 30; upstream cross-checks: GR00T `lerobot-eval` 37/40 (and 8/8 with NVIDIA's official processor), pi0.5 openpi evaluator libero_spatial 10/10, LeRobot pi0.5 `lerobot-eval` libero_spatial and libero_10 20/20; zero-shot probe on LIBERO-90, robosuite and Meta-World: pi0.5 1/12, GR00T 0/12 |
 | Real model on CPU: SmolVLA-LIBERO (HuggingFaceVLA/smolvla_libero, Apache-2.0) behind `src/robouse/harnesses/vla/lerobot_server.py` | tested end to end on an Apple-silicon CPU through the sandboxed harness: 2 of 5 LIBERO tasks solved (libero-spatial-0 in 89 steps, libero-object-0 in 136; failed libero-spatial-1, libero-goal-0, libero-10-0); about 1 s per 10-action chunk (`runs/smolvla-cpu`) |
 | Chunk controllers (open loop with replanning, ACT temporal ensembling, smoothing) and a compatibility check before the first action | unit tests; the check rejected an incompatible pairing at 0 steps |
 

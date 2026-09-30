@@ -178,9 +178,19 @@
     }
   },
   "lerobot/pi05_libero": {
-    "inherit": "molmoact2/libero",
-    "licence": "lerobot/pi05_libero_finetuned_v044: Gemma terms; its tokenizer comes from the gated google/paligemma-3b-pt-224 (accept the licence, then `hf auth login`)",
-    "doc": "LeRobot's pi0.5 LIBERO port (lerobot/pi05_libero_finetuned_v044) behind `src/robouse/harnesses/vla/lerobot_server.py`. openpi's own pi05_libero checkpoint needs no gated download: preset openpi/pi05_libero."
+    "inherit": "lerobot/smolvla_libero",
+    "licence": "lerobot/pi05_libero_finetuned_v044: Gemma terms; its tokenizer comes from the gated google/paligemma-3b-pt-224 (accept the licence, then set HF_TOKEN on the server)",
+    "doc": "LeRobot's pi0.5 LIBERO port (lerobot/pi05_libero_finetuned_v044) behind `src/robouse/harnesses/vla/lerobot_server.py` (`--env.type=libero --policy.n_action_steps=10`, cameras image and image2)."
+  },
+  "lerobot/pi0_libero": {
+    "inherit": "lerobot/smolvla_libero",
+    "licence": "lerobot/pi0_libero_finetuned_v044: Gemma terms; gated PaliGemma tokenizer as for lerobot/pi05_libero",
+    "doc": "LeRobot's pi0 LIBERO port (lerobot/pi0_libero_finetuned_v044) behind `src/robouse/harnesses/vla/lerobot_server.py` (`--env.type=libero --policy.n_action_steps=10`)."
+  },
+  "lerobot/pi0fast_libero": {
+    "inherit": "lerobot/smolvla_libero",
+    "licence": "lerobot/pi0fast-libero: Gemma terms (PaliGemma base); gated PaliGemma tokenizer as for lerobot/pi05_libero",
+    "doc": "LeRobot's pi0-FAST LIBERO port (lerobot/pi0fast-libero) behind `src/robouse/harnesses/vla/lerobot_server.py` with LeRobot's documented flags (`--policy.max_action_tokens=256`, rename_map to base_0_rgb / left_wrist_0_rgb)."
   },
   "lerobot/groot_n1.7_libero": {
     "inherit": "molmoact2/libero",
