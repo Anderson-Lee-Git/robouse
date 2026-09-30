@@ -23,6 +23,3 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 | `ROBOUSE_VLA_POLICY_CONFIG` | JSON file with overrides for the `vla` preset |
 | `ROBOUSE_MOLMOACT2_URL` | MolmoAct2 policy server for the `molmoact2` harness |
 | `ROBOUSE_MOLMOACT2_TOKEN` | bearer token for the MolmoAct2 server |
-| `ROBOUSE_GRADER_URL` | OpenAI-compatible endpoint for `robouse grade` (default: Baseten) |
-| `ROBOUSE_GRADER_API_KEY` | API key for `robouse grade` (default: BASETEN_API_KEY) |
-| `ROBOUSE_OPERATOR_DIR` | operator channel and e-stop latch for real robots (default ~/.config/robouse-operator) |

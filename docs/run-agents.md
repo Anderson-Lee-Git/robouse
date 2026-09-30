@@ -20,13 +20,12 @@ Options:
 
 ## Isolation
 
-On macOS, model harnesses run under `sandbox-exec`. The profile denies reading the Robo Use package (it holds the reference solutions), other trials' workspaces and connections to other servers on the machine. It also denies the paths in `ROBOUSE_SANDBOX_DENY`: list your `--out` folder (the episode record is written there) and any credential files.
+Model harnesses run in a sandbox, so the agent cannot read the reference solution, the job folder or other trials. The reference solution and the no-op control run without it.
 
-```sh
-export ROBOUSE_SANDBOX_DENY="$PWD/runs:$HOME/.aws"
-```
+- **macOS**: the system's Seatbelt sandbox (`sandbox-exec`); nothing to install.
+- **Linux**: bubblewrap. Install it first, for example `sudo apt-get install bubblewrap`.
 
-Paths are separated by colons. `ROBOUSE_SANDBOX=0` turns the sandbox off; It is a file fence, not a full security boundary. Linux has no sandbox; for container isolation, run published datasets with `bench eval run -d` ([Run a suite or dataset](run-a-suite.md#a-dataset)).
+`ROBOUSE_SANDBOX_DENY` adds paths the agent may not read or write, separated by colons, such as credential files. `ROBOUSE_SANDBOX=0` runs the agent without a sandbox; use it only on a machine you trust, since the agent can then read the reference solution.
 
 ## VLAs
 

@@ -33,6 +33,7 @@ Modifiers change the composed task:
 
 | Flag | Effect |
 |---|---|
+| `--obs vision` | `robo observe` does not report objects or fixtures; the agent finds them in camera images |
 | `--obs noisy` | object and fixture positions carry about 1.5 cm of noise, new at every observation |
 | `--budget loose`, `--budget tight` | 1.5× or 0.6× the step budget |
 | `--perturb push` | the task object is shoved once, the first time a gripper comes within 16 cm of it |

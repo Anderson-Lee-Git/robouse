@@ -6,7 +6,7 @@ no-op columns from the job folders of a sweep.
 
 The table is the text between the `<!-- suites-table -->` and `<!-- /suites-table -->` lines; the rest of the page is
 hand-written. Counts come from the package (`robouse tasks --path`), so they cannot drift from the release. A suite
-without trials in a job folder shows "not run". Run it against the release users install, not a checkout.
+without trials in a job folder shows "-". Run it against the release users install, not a checkout.
 """
 from __future__ import annotations
 
@@ -41,13 +41,14 @@ FROM = {
 ASSETS = "`robouse fetch-assets`"
 ASSETS_ALL = "`robouse fetch-assets --all`"
 VENV = "own virtualenv (below)"
+HUB = "[the hub](run-a-suite.md#a-dataset) only"
 NEEDS = {
     "tabletop": "", "metaworld": "`[metaworld]`", "gymrobotics": "`[gymrobotics]`", "kitchen": "`[gymrobotics]`",
     "adroit": "`[gymrobotics]`", "robosuite": "`[robosuite]`", "libero": "[LIBERO setup](#libero)",
     "menagerie": ASSETS, "roboharm": ASSETS, "drone": ASSETS, "quadruped": ASSETS_ALL, "humanoid": ASSETS_ALL,
     "mobile_manip": ASSETS_ALL, "dexhand": ASSETS_ALL, "crazyflie": ASSETS_ALL, "components": ASSETS_ALL,
-    "dexjoco": VENV, "driving": VENV, "dmcontrol": VENV, "myosuite": VENV, "humanoidbench": VENV, "maniskill": VENV,
-    "robocasa": VENV, "nav": "", "cubepick": "", "real": "",
+    "dexjoco": VENV, "driving": VENV, "dmcontrol": VENV, "myosuite": VENV, "humanoidbench": HUB, "maniskill": HUB,
+    "robocasa": HUB, "nav": "", "cubepick": "", "real": "",
 }
 
 
@@ -74,10 +75,8 @@ def results(job: Path | None) -> dict[str, list[float]]:
 def cell(ids: list[str], res: dict[str, list[float]], want: float) -> str:
     ran = [t for t in ids if res.get(t)]
     if not ran:
-        return "not run"
-    ok = sum(1 for t in ran if all(x == want for x in res[t]))
-    solved = sum(1 for t in ran if any(x == 1.0 for x in res[t]))
-    return f"{solved}/{len(ran)}" if ok == len(ran) else f"{solved}/{len(ran)} (check)"
+        return "-"
+    return f"{sum(1 for t in ran if any(x == 1.0 for x in res[t]))}/{len(ran)}"
 
 
 def main() -> None:
@@ -107,8 +106,8 @@ def main() -> None:
                     f"{cell(ids, oracle, 1.0)} | {cell(ids, noop, 0.0)} |")
         total += len(ids)
     table = [f"{version} bundles {total} tasks in {len(rows)} suites. \"Needs\" is what a suite needs beyond "
-             "`pip install 'robouse[sim]'`. The last two columns count the tasks whose reference solution scored 1, "
-             "and whose no-op control scored 1 (it must be 0).", "",
+             "`pip install 'robouse[sim]'`. The last two columns count the tasks that scored 1 with the reference "
+             "solution and with the no-op control.", "",
              "| Suite | What | Tasks | Needs | Reference solution | No-op control |", "|---|---|---|---|---|---|", *rows]
     text = DOC.read_text(encoding="utf-8")
     if BEGIN not in text or END not in text:

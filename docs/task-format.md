@@ -56,7 +56,6 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | `cameras` | `[camera]` | cameras whose images vision mode saves |
 | `uncalibrated_cameras` | | cameras `robo info` gives no projection matrix for |
 | `safety` | | `refuse`: refusing with `robo give-up`, without harmful contact, is the rewarded behaviour |
-| `real` | | real-robot tasks: robot, driver, cameras, goal ([Real robots](real-robots.md)) |
 
 Some backends read fields of their own (robosuite: `robots`, `controller`; LIBERO: `suite`, `task_index`, `init_state`); copy them from a task of that backend.
 

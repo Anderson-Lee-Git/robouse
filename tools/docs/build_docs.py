@@ -96,8 +96,6 @@ PAGES: list[tuple[str, str, str, str, str]] = [
      "Copy a tabletop task, change its goal, and check that its reference solution scores 1 and the no-op control 0."),
     ("Guides", "docs/run-a-suite.md", "run-a-suite", "Run a suite or dataset",
      "Run many tasks with robouse run-many, or a published dataset in Docker with bench eval run -d."),
-    ("Guides", "docs/real-robots.md", "real-robots", "Real robots",
-     "Real arms behind the same episode server: a safety layer, operator gates and a hardware-in-the-loop mock."),
     ("Reference", "docs/cli.md", "cli", "CLIs",
      "The --help output of every robouse command and of robo, the agent's only way to act."),
     ("Reference", "docs/task-format.md", "task-format", "task.md",
@@ -124,6 +122,7 @@ EXCLUDED = {
     "docs/viewer.md": "the maintainers' viewer setup and viewer formats",
     "docs/benchflow.md": "maintainers' notes on the BenchFlow engine",
     "docs/molmoact2.md": "GPU server setup notes",
+    "docs/real-robots.md": "the real suite is not in the package",
     "docs/vla.md": "maintainers' VLA notes and GPU results; the public part is in run-agents.md",
     "docs/suites/": "per-suite design notes; the public part is suites.md",
 }

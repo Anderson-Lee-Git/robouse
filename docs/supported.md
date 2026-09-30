@@ -6,7 +6,7 @@ Robo Use 0.2.0.
 
 | Model · harness | Needs |
 |---|---|
-| `moonshotai/Kimi-K3` · `claude-code-glm` | `BASETEN_API_KEY` |
+| `moonshotai/Kimi-K3` · `claude-code-glm`, `mini-swe-agent-glm` | `BASETEN_API_KEY` |
 | `zai-org/GLM-5.3` · `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` | `BASETEN_API_KEY` |
 | `claude-sonnet-5` · `claude-code` | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` |
 | `gpt-6-astra` · `codex` | `OPENAI_API_KEY` or a `codex login` |
@@ -18,15 +18,15 @@ Robo Use 0.2.0.
 | Platform | Notes |
 |---|---|
 | macOS on Apple silicon | Python 3.11 to 3.13 |
-| Linux arm64 | set `MUJOCO_GL=egl`; the `robosuite` extra needs a C compiler |
+| Linux arm64 | set `MUJOCO_GL=egl`; bubblewrap for model harnesses; the `robosuite` extra needs a C compiler |
 | Python 3.14 | not supported: MuJoCo 3.3.0 and Meta-World have no build for it |
 
 ## Isolation
 
 | Mode | Isolation |
 |---|---|
-| `robouse run` on macOS | model harnesses run under `sandbox-exec` ([Run agents and VLAs](run-agents.md#isolation)) |
-| `robouse run` on Linux | none |
+| `robouse run` on macOS | model harnesses run under Seatbelt ([Run agents and VLAs](run-agents.md#isolation)) |
+| `robouse run` on Linux | model harnesses run under bubblewrap |
 | `bench eval run -d` | agent and simulator in separate Docker containers |
 
 ## Formats

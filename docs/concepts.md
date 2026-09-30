@@ -45,6 +45,7 @@ skills: ['move_to', 'grip']
 steps_used: 0
 max_steps: 500
 observation_mode: state
+embodiment: {'name': 'sawyer-2f', 'kind': 'arm', 'action_groups': [...], 'sensors': {...}, 'skills': [...], ...}
 $ robo observe
 state:
   hand_pos: [0.0042, 0.6005, 0.1946]
@@ -80,7 +81,6 @@ Outcomes, recorded in `episode/result.json`:
 | `wall_time_exhausted` | the episode's wall-clock limit ran out |
 | `agent_timeout` | the harness hit its time limit |
 | `agent_exited` | the server was shut down mid-episode |
-| `safety_stop` | real robots: the safety layer stopped the episode |
 
 ## Harnesses
 
