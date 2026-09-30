@@ -24,4 +24,4 @@ The verifier, `verifier/test.sh`, copies the server's verdict into `reward.txt` 
 
 ## Controls
 
-Every task has a reference solution (`--harness oracle`) and is checked with a no-op control (`--harness noop`). A task whose reference solution does not score 1, or whose no-op scores anything, is broken. All 341 bundled tasks pass both; see [Suites](suites.md).
+Every task has a reference solution (`--harness oracle`) and is checked with a no-op control (`--harness noop`). A task whose reference solution does not score 1, or whose no-op scores anything, is broken. All 392 bundled tasks pass both; see [Suites](suites.md).

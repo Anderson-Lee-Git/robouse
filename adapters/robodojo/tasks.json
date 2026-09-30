@@ -1,0 +1,315 @@
+{
+  "stack_bowls": {
+    "title": "Stack the three bowls",
+    "step_lim": 800,
+    "goal": "Three identical bowls stand on the table. Nest them into one stack, then move both arms back to their starting pose.",
+    "success": "All three bowls are upright (each within 45 degrees of vertical, and the lowest one within 7 degrees), each bowl is higher than the one below it and within 4 cm of it horizontally, and both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "keep the bowl nearest the middle as the base; grasp each other bowl by its rim with the nearer arm, set it into the base bowl, release; both arms home",
+    "tags": [
+      "stacking",
+      "pick-place"
+    ],
+    "capabilities": [
+      "pick-place",
+      "stacking"
+    ],
+    "difficulty": "medium",
+    "ported": true
+  },
+  "general_pickup": {
+    "title": "Pick up the named object",
+    "step_lim": 200,
+    "goal": "One object stands on the table. Pick it up and lift it by more than 10 cm.",
+    "success": "The object's centre is more than 10 cm higher than where it started (RoboDojo's `is_lift` with a 0.1 m threshold). The episode ends as solved the moment that happens; the arms need not go home.",
+    "oracle": "grasp the object across its narrow side from above with the nearer arm and lift it 15 cm",
+    "tags": [
+      "pick-place",
+      "open-vocabulary"
+    ],
+    "capabilities": [
+      "grasping",
+      "open-vocabulary"
+    ],
+    "difficulty": "easy",
+    "ported": true
+  },
+  "press_by_number": {
+    "title": "Press the buttons as many times as the number cards say",
+    "step_lim": 700,
+    "goal": "Two number cards stand behind two red buttons, and a blue button stands to the right. Press the left red button (`button0`) as many times as the number on the card behind it (`num0`), then press the blue button (`button2`) once, then press the right red button (`button1`) as many times as its card (`num1`) shows, then press the blue button once more, then move both arms back to their starting pose. (RoboDojo's instruction below does not spell out this order; the check requires it.) A card's number is its `model_id` in `robo observe` (1 to 9).",
+    "success": "RoboDojo counts a press each time a button's travel goes from above 95% to below 50% of its range. The stages must happen in this order: `button0` pressed and released (back above 90%) exactly num0 times, then `button2` pressed and released, then `button1` pressed and released exactly num1 times, then `button2` pressed and released again, and finally both grippers back at their starting pose (within 15 cm along each axis and 20 degrees). Pressing any button more often than required (more than num0, num1 or 2 presses) fails the episode at once.",
+    "oracle": "close the gripper above each button, push the cap down until its travel is below 50%, lift until it springs back, repeat the required number of times in the required order; both arms home",
+    "tags": [
+      "memory",
+      "counting",
+      "articulated",
+      "buttons"
+    ],
+    "capabilities": [
+      "counting",
+      "sequencing",
+      "articulated"
+    ],
+    "difficulty": "medium",
+    "ported": true
+  },
+  "stack_blocks": {
+    "title": "Stack the three blocks",
+    "step_lim": 550,
+    "goal": "Three wooden blocks of the same size but different textures lie on the table. Stack them into a single tower of three, then move both arms back to their starting pose.",
+    "success": "Sorted by height, each block's centre is within 1.5, 1.75 or 2 cm of the one below it horizontally (RoboDojo's tolerance for the block set in the scene, from `block_0`'s `model_id`) and more than 5 mm above it, and both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "keep the block nearest the middle as the base; pick each other block from above across its narrow side and set it centred on the top of the tower; both arms home",
+    "tags": [
+      "stacking",
+      "pick-place"
+    ],
+    "capabilities": [
+      "pick-place",
+      "stacking"
+    ],
+    "difficulty": "medium",
+    "ported": true
+  },
+  "swap_blocks": {
+    "title": "Swap the two blocks through the empty mat, pressing the button after each move",
+    "step_lim": 700,
+    "goal": "Three mats lie in a row; two of them carry a block and one is empty. Swap the two blocks using the empty mat: move one block onto the empty mat, press the button, move the other block onto the first block's mat, press the button, move the first block onto the second block's original mat, press the button, then move both arms back to their starting pose.",
+    "success": "RoboDojo's stages, in order: a block is lifted while the other stays; it ends on the empty mat (block centre within 3 cm of the mat centre) while the other is still on its mat; the button is pressed (travel below 50%) and released (above 90%); the second block is lifted and ends on the first block's original mat; button pressed and released; the first block is lifted and ends on the second block's original mat, so both have swapped places; button pressed and released, and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees). The button must be pressed exactly three times: a fourth press fails the episode at once.",
+    "oracle": "move block 0 to the empty mat, press; block 1 to block 0's mat, press; block 0 to block 1's mat, press; both arms home",
+    "tags": [
+      "memory",
+      "pick-place",
+      "buttons",
+      "sequencing"
+    ],
+    "capabilities": [
+      "pick-place",
+      "sequencing",
+      "articulated"
+    ],
+    "difficulty": "hard",
+    "ported": false
+  },
+  "stack_blocks_by_language": {
+    "title": "Stack the blocks in the colour order the instruction names",
+    "step_lim": 400,
+    "goal": "Three coloured cubes lie on the table. Stack them bottom to top in the colour order RoboDojo's instruction names, then move both arms back to their starting pose. The colours are visible in the camera images; in `robo observe` a cube's colour follows from its `model_id` (RoboDojo's mapping: 1 blue, 2 green, 3 red, 7 yellow, 8 orange, 9 cyan). The `description` field of these cubes does not name their colour.",
+    "success": "The cube named first is at the bottom, the one named second on it and the one named third on top: each cube's centre is within 1.75 cm of the one below it horizontally and more than 5 mm above it; and both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "read the colour order from the instruction, set the second cube on the first and the third on the second, picking each from above across its narrow side; both arms home",
+    "tags": [
+      "stacking",
+      "language",
+      "open-vocabulary"
+    ],
+    "capabilities": [
+      "pick-place",
+      "stacking",
+      "language-grounding"
+    ],
+    "difficulty": "medium",
+    "ported": true
+  },
+  "solve_equation": {
+    "title": "Complete the equation with the missing tile",
+    "step_lim": 300,
+    "goal": "Tiles on a row of pads spell an equation `A op B = C` (C may take two pads), with one pad empty. Pick the one tile from the spare tiles on the table that makes the equation true (a digit tile's value is its `model_id` modulo 10; operator tiles are labelled `plus`, `minus`, `multiplication` and `division`) and put it on the empty pad, upright and facing the same way as the other tiles, then move both arms back to their starting pose.",
+    "success": "A tile with the correct value is within 1.8 cm of the empty pad's centre horizontally, its x and y axes are within 45 degrees of the world x and y axes, and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "work out the missing value from the tiles on the pads, pick a matching spare tile, turn it to face +x and set it on the empty pad; both arms home",
+    "tags": [
+      "reasoning",
+      "arithmetic",
+      "pick-place"
+    ],
+    "capabilities": [
+      "reasoning",
+      "pick-place"
+    ],
+    "difficulty": "medium",
+    "ported": false
+  },
+  "cover_blocks": {
+    "title": "Cover the blocks left to right, then uncover them red, green, blue",
+    "step_lim": 800,
+    "goal": "Three coloured blocks (labels `red`, `green`, `blue`) stand in a row, with three upside-down cups in front of them. Cover the blocks with the cups one at a time from left to right (smallest x first), then lift the cups off again in the order red, green, blue, and finally move both arms back to their starting pose. The cups must stay upside down, and the blocks must stay where they are.",
+    "success": "RoboDojo's stages, in order (a block counts as covered when a cup's footprint contains the block's footprint, the block's top is below the cup's top, and the cup's bottom is less than 3 cm above the block's bottom; every cup must be upside down within 10 degrees at each stage): only the leftmost block covered; the left and middle blocks covered; all three covered; red uncovered with green and blue still covered; red and green uncovered with blue covered; all three uncovered and both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees). Moving any block more than 5 cm from where it started fails the episode at once.",
+    "oracle": "carry the cup in front of each block onto it, left to right; then carry the cups back, red, green, blue",
+    "tags": [
+      "memory",
+      "sequencing",
+      "pick-place"
+    ],
+    "capabilities": [
+      "memory",
+      "sequencing",
+      "pick-place"
+    ],
+    "difficulty": "hard",
+    "ported": true
+  },
+  "arrange_largest_number": {
+    "title": "Arrange the digit tiles into the largest number",
+    "step_lim": 1050,
+    "goal": "Four or five digit tiles (labels `digit_0`, `digit_1`, ...; a tile's digit is its `model_id` modulo 10) lie on the table, and the same number of pads (`mat_0`, `mat_1`, ...) stand in a row. Put the tiles on the pads so that they read the largest possible number from left to right (the largest digit on `mat_0`), each tile upright and facing the same way as it would be read (its x axis along +x and its y axis along +y), then move both arms back to their starting pose.",
+    "success": "For each tile, in descending order of digit: it is within 2 cm of its pad's centre horizontally (largest digit on `mat_0`, next on `mat_1`, ...), its y axis is within 45 degrees of +y (either way for a 0) and its x axis within 45 degrees of +x (not checked for 0 and 8); and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "sort the tiles by digit, pick each from above, turn it to face +x and set it on its pad; both arms home",
+    "tags": [
+      "reasoning",
+      "pick-place",
+      "reorientation"
+    ],
+    "capabilities": [
+      "reasoning",
+      "pick-place",
+      "reorientation"
+    ],
+    "difficulty": "hard",
+    "ported": false
+  },
+  "sort_nesting_dolls_by_size": {
+    "title": "Line up the five nesting dolls by size",
+    "step_lim": 1050,
+    "goal": "Five nesting dolls of different sizes stand on the table (`doll0` to `doll4`). Arrange them in one row across the table from left to right, from smallest to largest, standing upright, then move both arms back to their starting pose.",
+    "success": "RoboDojo ranks the dolls by `model_id` modulo 5 (its size index) and requires, from left to right in decreasing order of that index, each doll's centre more than 3 cm to the left (smaller x) of the next one's; all five centres within 3.5 cm of each other in y; every doll upright (within 15 degrees of vertical); and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "set the dolls upright in RoboDojo's order at five spots 12 cm apart along y = -0.12, outer spots first; both arms home",
+    "tags": [
+      "ordering",
+      "pick-place"
+    ],
+    "capabilities": [
+      "ordering",
+      "pick-place"
+    ],
+    "difficulty": "medium",
+    "ported": false
+  },
+  "classify_objects": {
+    "title": "Sort the objects into the three baskets by category",
+    "step_lim": 1100,
+    "goal": "Objects of three categories lie on the table (labels `cat0_*`, `cat1_*` and `cat2_*`, one to three objects per category), and three baskets (`basket0`, `basket1`, `basket2`) stand at the far side. Put all objects of each category into one basket, a different basket per category, then move both arms back to their starting pose.",
+    "success": "Each basket holds every object of some category (an object is in a basket when its centre is inside the basket's footprint and above the basket's bottom), the objects of category i are no higher than 1 cm above the top of basket i (so nothing is left balanced on a rim), and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "assign each category to the basket that needs the least carrying; drop each object into its basket from 4 cm above the rim with the arm on that basket's side, the other arm first setting down objects out of that arm's reach in the middle of the table; both arms home",
+    "tags": [
+      "sorting",
+      "pick-place",
+      "long-horizon"
+    ],
+    "capabilities": [
+      "categorisation",
+      "pick-place",
+      "long-horizon"
+    ],
+    "difficulty": "hard",
+    "ported": false
+  },
+  "put_bottles_into_dustbin": {
+    "title": "Put the four bottles into the dustbin",
+    "step_lim": 700,
+    "goal": "Four bottles stand on the table and a dustbin stands on the floor to the left of the table (x = -0.63). Put all four bottles into the dustbin, handing bottles over from the right arm to the left arm where needed, then move both arms back to their starting pose.",
+    "success": "Every bottle is inside the dustbin: seen from above, the bottle's whole bounding box lies within the dustbin's; the bottle's top is below the dustbin's top; and the bottle's bottom is 0 to 40 cm above the dustbin's bottom. Also both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "the right arm sets each right-side bottle down on the left half of the table (a handover through the table); the left arm carries each bottle low over the table edge and releases it over the dustbin; both arms home",
+    "tags": [
+      "handover",
+      "pick-place",
+      "long-horizon",
+      "bimanual"
+    ],
+    "capabilities": [
+      "bimanual",
+      "pick-place",
+      "long-horizon"
+    ],
+    "difficulty": "hard",
+    "ported": true
+  },
+  "pour_balls_into_vase": {
+    "title": "Pour the balls from the cup into the vase",
+    "step_lim": 600,
+    "goal": "A cup holding seven small balls (`sphere_0` to `sphere_6`) and a vase stand on the table. Pour all the balls from the cup into the vase, put the cup back down upright, then move both arms back to their starting pose.",
+    "success": "All seven balls are inside the vase (each ball's centre inside the vase's footprint and above the vase's bottom), the cup is upright (within 15 degrees of vertical), and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "grasp the cup's rim from above, lift it over the vase with the rim's centre above the vase's centre, tip it by turning the hand about the grasp axis, turn it back and set it down where it was; both arms home",
+    "tags": [
+      "pouring",
+      "precision"
+    ],
+    "capabilities": [
+      "pouring",
+      "tool-use"
+    ],
+    "difficulty": "hard",
+    "ported": false
+  },
+  "stack_bowls_random": {
+    "title": "Stack the three bowls (random layout)",
+    "step_lim": 800,
+    "goal": "Three identical bowls stand on the table. Nest them into one stack, then move both arms back to their starting pose. Unrelated clutter objects also lie on the table; RoboDojo's check ignores them.",
+    "success": "All three bowls are upright (each within 45 degrees of vertical, and the lowest one within 7 degrees), each bowl is higher than the one below it and within 4 cm of it horizontally, and both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "keep the bowl nearest the middle as the base; grasp each other bowl by its rim with the nearer arm, set it into the base bowl, release; both arms home",
+    "tags": [
+      "stacking",
+      "pick-place",
+      "random-layout"
+    ],
+    "capabilities": [
+      "pick-place",
+      "stacking"
+    ],
+    "difficulty": "medium",
+    "ported": true
+  },
+  "stack_blocks_random": {
+    "title": "Stack the three blocks (random layout)",
+    "step_lim": 550,
+    "goal": "Three wooden blocks of the same size but different textures lie on the table. Stack them into a single tower of three, then move both arms back to their starting pose. Unrelated clutter objects also lie on the table; RoboDojo's check ignores them.",
+    "success": "Sorted by height, each block's centre is within 1.5 cm of the one below it horizontally and more than 5 mm above it, and both grippers are back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "keep the block nearest the middle as the base; pick each other block from above across its narrow side and set it centred on the top of the tower; both arms home",
+    "tags": [
+      "stacking",
+      "pick-place",
+      "random-layout"
+    ],
+    "capabilities": [
+      "pick-place",
+      "stacking"
+    ],
+    "difficulty": "medium",
+    "ported": true
+  },
+  "arrange_largest_number_random": {
+    "title": "Arrange the digit tiles into the largest number (random layout)",
+    "step_lim": 1050,
+    "goal": "Four or five digit tiles (labels `digit_0`, `digit_1`, ...; a tile's digit is its `model_id` modulo 10) lie on the table, and the same number of pads (`mat_0`, `mat_1`, ...) stand in a row. Put the tiles on the pads so that they read the largest possible number from left to right (the largest digit on `mat_0`), each tile upright and facing the same way as it would be read (its x axis along +x and its y axis along +y), then move both arms back to their starting pose. Unrelated clutter objects also lie on the table; RoboDojo's check ignores them.",
+    "success": "For each tile, in descending order of digit: it is within 2 cm of its pad's centre horizontally (largest digit on `mat_0`, next on `mat_1`, ...), its y axis is within 45 degrees of +y (either way for a 0) and its x axis within 45 degrees of +x (not checked for 0 and 8); and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "sort the tiles by digit, pick each from above, turn it to face +x and set it on its pad; both arms home",
+    "tags": [
+      "reasoning",
+      "pick-place",
+      "reorientation",
+      "random-layout"
+    ],
+    "capabilities": [
+      "reasoning",
+      "pick-place",
+      "reorientation"
+    ],
+    "difficulty": "hard",
+    "ported": false
+  },
+  "sort_nesting_dolls_by_size_random": {
+    "title": "Line up the five nesting dolls by size (random layout)",
+    "step_lim": 1050,
+    "goal": "Five nesting dolls of different sizes stand on the table (`doll0` to `doll4`). Arrange them in one row across the table from left to right, from smallest to largest, standing upright, then move both arms back to their starting pose. Unrelated clutter objects also lie on the table; RoboDojo's check ignores them.",
+    "success": "RoboDojo ranks the dolls by `model_id` modulo 5 (its size index) and requires, from left to right in decreasing order of that index, each doll's centre more than 3 cm to the left (smaller x) of the next one's; all five centres within 3.5 cm of each other in y; every doll upright (within 15 degrees of vertical); and both grippers back at their starting pose (within 15 cm along each axis and 20 degrees).",
+    "oracle": "set the dolls upright in RoboDojo's order at five spots 12 cm apart along y = -0.12, outer spots first; both arms home",
+    "tags": [
+      "ordering",
+      "pick-place",
+      "random-layout"
+    ],
+    "capabilities": [
+      "ordering",
+      "pick-place"
+    ],
+    "difficulty": "medium",
+    "ported": false
+  }
+}

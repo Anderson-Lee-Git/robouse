@@ -8,6 +8,10 @@
   "electric_refrigerator.n.01_1"
  ],
  [
+  "navigate_to",
+  "bottle.n.01_1"
+ ],
+ [
   "grasp",
   "bottle.n.01_1"
  ],
@@ -21,7 +25,7 @@
  ],
  [
   "navigate_to",
-  "electric_refrigerator.n.01_1"
+  "bottle.n.01_2"
  ],
  [
   "grasp",

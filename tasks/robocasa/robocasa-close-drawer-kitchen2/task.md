@@ -40,17 +40,17 @@ robouse:
 
 # Close the drawer (RoboCasa kitchen 2)
 
-A household kitchen from RoboCasa (kitchen layout 2, style 2): counters, cabinets, drawers, a sink and appliances, simulated in MuJoCo. The robot is a Franka Panda arm on a mobile base (RoboCasa's PandaOmron), parked where RoboCasa's task set-up puts it, facing the relevant fixture; the base and torso do not move in this task, only the arm and its two-finger gripper (fingers open to 8 cm). World frame in metres, z up; `robot_forward` in `robo observe` is the horizontal direction the robot faces. The arm's reach from the parked base is limited (roughly 0.4 m forward of the base at counter height), and the arm can collide with the counter and fixtures.
+A household kitchen from RoboCasa (kitchen layout 2, style 2): counters, cabinets, drawers, a sink and appliances, simulated in MuJoCo. The robot is a Franka Panda arm on a mobile base (RoboCasa's PandaOmron), parked where RoboCasa's task set-up puts it, facing the relevant fixture; the base and torso do not move in this task, only the arm and its two-finger gripper (fingers open to 8 cm). World frame in metres, z up; `robot_forward` in `robo observe` is the horizontal direction the robot faces. The arm's reach from the parked base is limited (about 0.7 m forward of `robot_base_pos` at counter height, less low down or far to the side), and the arm and hand can collide with the counter and fixtures.
 
 **Goal:** One of the drawers next to the robot is pulled open. Close it fully.
 
-**Success:** RoboCasa's own check for CloseDrawer: the drawer's slide joint is at most 0.5 % of its travel from closed (`drawer_open_fraction` <= 0.005). Success is judged by the episode server after you call `robo done` and the robot has held still for about 10 steps.
+**Success:** RoboCasa's own check for CloseDrawer: the drawer is at most 5 % open (`drawer_open_fraction` <= 0.05, where 1 means pulled out by 55 % of the drawer's depth, as far as RoboCasa opens drawers). Success is judged by the episode server after you call `robo done` and the robot has held still for about 10 steps.
 
-**Task fields in `robo observe`:** `drawer_handle_pos` (centre of the drawer handle; it moves with the drawer), `drawer_open_fraction` (0 closed .. 1 fully open) and `drawer_front_normal` (unit vector pointing out of the drawer front, toward where it opens).
+**Task fields in `robo observe`:** `drawer_handle_pos` (centre of the drawer handle; it moves with the drawer), `drawer_open_fraction` (0 closed .. 1 open as far as RoboCasa opens drawers) and `drawer_front_normal` (unit vector pointing out of the drawer front, toward where it opens).
 
 **Controls.** `robo act DX DY DZ GRIP` moves the gripper's commanded target by DX, DY, DZ times 2 cm per step along the WORLD x, y, z axes (each in [-1, 1]); the gripper keeps its orientation (pointing straight down). GRIP 0 keeps the fingers as they are, any positive value closes them, and a negative value -f opens them to fraction f (-1 fully open). One step is 50 ms (RoboCasa's 20 Hz control rate). The arm follows the target through RoboCasa's operational-space controller; the target stays within 5 cm of the hand. `robo move-to X Y Z` and `robo grip G` work as described below.
 
-**Observation.** `robo observe` reports `hand_pos` (the point between the fingertips), `hand_target` (the commanded target), `gripper_open` (0 closed .. 1 open), `robot_base_pos`, `robot_forward`, `task_instruction` (RoboCasa's own language instruction) and the task fields below. `robo observe --image` saves a picture from the robot's shoulder camera (`--camera robot0_agentview_left`, `robot0_agentview_right`, `robot0_eye_in_hand` and `robot0_frontview` are also available).
+**Observation.** `robo observe` reports `hand_pos` (the point between the fingertips), `hand_target` (the commanded target), `gripper_open` (0 closed .. 1 open), `robot_base_pos`, `robot_forward`, `task_instruction` (RoboCasa's own language instruction) and the task fields listed above. `robo observe --image` saves a picture from the robot's shoulder camera (`--camera robot0_agentview_left`, `robot0_agentview_right`, `robot0_eye_in_hand` and `robot0_frontview` are also available).
 
 The step budget is 400 steps (20 s of simulated time).
 

@@ -1,0 +1,103 @@
+---
+schema_version: '1.3'
+task:
+  name: robocurve/stationerybench/uncap_marker
+  description: Uncap the marker
+metadata:
+  source_benchmark: StationeryBench (robocurve/stationerybench, MIT)
+  source_task: stationerybench/uncap_marker
+  upstream_commit: 43d5dd380eeb9f555fe691a896a076cf43d3b18b
+  suite: stationerybench
+  category: bimanual manipulation
+  difficulty: hard
+  tags:
+  - real-robot
+  - bimanual
+  - so101
+  - operator-judged
+  embodiment_mode: real
+  upstream_epochs: 20
+  tested_on_hardware: false
+agent:
+  timeout_sec: 1800
+verifier:
+  timeout_sec: 120
+robouse:
+  id: stationerybench-uncap-marker
+  backend: real
+  env: stationerybench-uncap-marker
+  seed: 0
+  max_steps: 1200
+  camera: all
+  cameras:
+  - all
+  - camera0
+  - camera1
+  skills: true
+  success_mode: final
+  frame_every: 2
+  real:
+    robot: so101-bimanual
+    driver: mock
+    fixture: so101-bimanual-sort
+    cameras:
+    - camera0
+    - camera1
+    rubric:
+    - No purposeful contact with the marker
+    - Touches or moves the marker deliberately
+    - Holds the marker securely in one gripper
+    - Cap separated from the body, either part still held
+    - Cap and body both released on the table
+    verdict: operator
+    scene_setup: 1. Cap the marker fully. 2. Lay it flat at the centre of the bench, roughly midway between the two arm bases, aligned front-to-back with the cap toward the arms.
+    goal_text: Pull the cap off the sharpie and place them separately on the table.
+---
+
+# StationeryBench: Uncap the marker
+
+You control two SO-101 follower arms (real robots), standing at the far edge of a desk bench and facing the operator; left and right are the operator's left and right. Each arm has five joints and a gripper (LeRobot calibration: 0 deg at the middle of each joint's range; gripper 0 = closed, 100 = open). Cameras show the bench.
+
+## Task
+
+> Pull the cap off the sharpie and place them separately on the table.
+
+Objects: - black Sharpie fine-point permanent marker, capped
+
+Setup (done by the operator before the episode): 1. Cap the marker fully. 2. Lay it flat at the centre of the bench, roughly midway between the two arm bases, aligned front-to-back with the cap toward the arms.
+
+**Success:** after you call `robo done`, the operator watching the robot reports the highest rubric stage reached; the task counts as solved at stage 4 and the stage over 4 is the progress score.
+
+| Stage | Description |
+|---|---|
+| 0 | No purposeful contact with the marker |
+| 1 | Touches or moves the marker deliberately |
+| 2 | Holds the marker securely in one gripper |
+| 3 | Cap separated from the body, either part still held |
+| 4 | Cap and body both released on the table |
+
+**Controls.** `robo act` takes one absolute target per joint in this order: left_shoulder_pan, left_shoulder_lift, left_elbow_flex, left_wrist_flex, left_wrist_roll, left_gripper, right_shoulder_pan, right_shoulder_lift, right_elbow_flex, right_wrist_flex, right_wrist_roll, right_gripper. Targets are approached at the safety speed limit over the following control steps (10 Hz). Skills: `move_joints` (both arms' ten arm joints, interpolated), `grip VALUE [left|right|both]`, `home`, `park`. The safety layer clamps joint limits, limits speed, bounds how far a command may lead the measured position, stops on over-temperature or the operator's e-stop, and lets the operator gate every episode.
+
+**Observation.** `robo observe` reports `joint_pos` by name, `gripper` per arm, `target`, `telemetry` and `mode` (`real` or `hil-mock`); `robo observe --image` shows the cameras. Remarks from the operator appear under `operator_notes`.
+
+The budget is 1200 control steps (120 s, upstream's time limit).
+
+## How to control the robot
+
+You are the robot's policy. You act only through the `robo` command in your shell. There is no other way to move the robot, and you cannot read or change the simulator, the scoring, or other files to succeed; the episode server judges the final physical state itself.
+
+```
+robo info                          # the robot, its sensors, action groups, skills and step budget
+robo observe                       # robot and scene state as numbers
+robo observe --image [--camera C]  # also saves a camera image and prints its path (open it to look)
+robo act V1 V2 ... [--repeat N]    # one low-level action (the action groups under Controls), applied N times (N <= 50)
+robo skill NAME ARG ...            # run a skill listed by `robo info`; it runs until it finishes and reports the result
+robo done "short summary"          # end the episode and ask for scoring
+robo give-up "reason"              # end the episode without claiming success
+```
+
+- Positions are in metres in the world frame (+z up); angles are in degrees unless a field says otherwise.
+- The episode has a fixed step budget (see `robo info`); every simulated control step counts, including the steps a skill runs.
+- Skills are ordinary controllers: they can fail, stop early or be blocked by the scene. Read what they report and re-observe.
+- Success is judged about 10 steps after you call `robo done`, with the robot holding still (each action group's hold value: zero for velocity and delta commands, full brake for a car), so the goal must still be true when the robot stops.
+- Call `robo done` exactly once when finished.

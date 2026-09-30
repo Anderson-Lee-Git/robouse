@@ -7,6 +7,7 @@ server gives full state to requests carrying the per-episode oracle token, which
 
 Usage: python adapters/vision/generate.py   (reads tasks/<suite>, writes tasks/vision/<id>-vision)
 """
+
 from __future__ import annotations
 
 import shutil
@@ -15,10 +16,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "tasks" / "vision"
 
-METAWORLD = ["reach", "reach-wall", "push", "push-back", "push-wall", "pick-place", "pick-place-wall", "bin-picking",
-             "basketball", "soccer", "sweep", "sweep-into", "shelf-place", "hammer", "assembly", "disassemble",
-             "pick-out-of-hole", "plate-slide", "coffee-push", "drawer-open", "door-open", "button-press",
-             "dial-turn", "window-open"]
+METAWORLD = [
+    "reach",
+    "reach-wall",
+    "push",
+    "push-back",
+    "push-wall",
+    "pick-place",
+    "pick-place-wall",
+    "bin-picking",
+    "basketball",
+    "soccer",
+    "sweep",
+    "sweep-into",
+    "shelf-place",
+    "hammer",
+    "assembly",
+    "disassemble",
+    "pick-out-of-hole",
+    "plate-slide",
+    "coffee-push",
+    "drawer-open",
+    "door-open",
+    "button-press",
+    "dial-turn",
+    "window-open",
+]
 TABLETOP_SUITES = ["libero-style", "arc-style", "robo-use-families"]
 
 CAMS = {"metaworld": ["corner", "topview"], "tabletop": ["front", "top"]}
@@ -60,8 +83,13 @@ def main() -> None:
         note = NOTE.format(fields=", ".join(f"`{f}`" for f in vis), cams=", ".join(f"`{c}`" for c in cams))
         body = t.instruction
         first_break = body.find("\n\n") + 2
-        write_task(OUT / new_id, meta, body[:first_break] + note + body[first_break:],
-                   t.oracle_script.read_text(), t.verifier_script.read_text())
+        write_task(
+            OUT / new_id,
+            meta,
+            body[:first_break] + note + body[first_break:],
+            t.oracle_script.read_text(),
+            t.verifier_script.read_text(),
+        )
         n += 1
     print(f"wrote {n} vision tasks to {OUT}")
 

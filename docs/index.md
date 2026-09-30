@@ -7,7 +7,7 @@ pip install 'robouse[sim]'
 robouse run --task arc-gravity --harness claude-code --model claude-sonnet-5 --out runs/quickstart
 ```
 
-- **341 tasks** in 14 suites ship with the package, adapted from Meta-World, Gymnasium-Robotics, LIBERO, robosuite, DexJoCo and MuJoCo Menagerie, plus Robo Use's own tabletop, vision, hard, safety and drone suites.
+- **392 tasks** in 20 suites ship with the package, adapted from Meta-World, Gymnasium-Robotics, LIBERO, robosuite, DexJoCo, MetaDrive and MuJoCo Menagerie, plus Robo Use's own tabletop, vision, hard, safety and drone suites, and embodiment suites for quadrupeds, humanoids, mobile manipulators, dexterous hands, Crazyflie swarms and cars.
 - **The policy is an agent harness.** Claude Code, Codex and mini-swe-agent are built in; any agent that can run shell commands can drive the robot.
 - **Every task ships a reference solution** that scores 1, and doing nothing scores 0.
 - **Every trial is a folder** with the video, the agent's trajectory and the reward, in BenchFlow's trial layout.
