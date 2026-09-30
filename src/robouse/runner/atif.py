@@ -520,7 +520,10 @@ def _parse_pi(entries: list[dict], trial: Path) -> tuple[list[dict], dict]:
             steps.append(_step("system", _clip(f"[compaction] {ev.get('summary', '')}")))
             continue
         if et == "model_change":
-            steps.append(_step("system", f"[model change] {ev.get('provider')}/{ev.get('modelId')}"))
+            if steps:  # the first one is the session's initial model, not a change
+                steps.append(_step("system", f"[model change] {ev.get('provider')}/{ev.get('modelId')}"))
+            else:
+                meta["model"] = f"{ev.get('provider')}/{ev.get('modelId')}"
             continue
         if et not in ("message", "custom_message"):
             continue
@@ -615,8 +618,9 @@ def _mcp_tool(name: str) -> str | None:
     return None
 
 
-def _mcp_commands(steps: list[dict]) -> None:
-    """Give each robo MCP tool call the command line the CLI would have run, so it aligns like one."""
+def _mcp_commands(steps: list[dict], trial: Path | None = None) -> None:
+    """Give each robo MCP tool call the command line the CLI would have run, so it aligns like one, and point the
+    images it returned at the trial's saved copies."""
     import shlex
 
     from ..mcp_server import ArgError, tool_argv
@@ -634,6 +638,11 @@ def _mcp_commands(steps: list[dict]) -> None:
                 c["command"] = "robo " + " ".join(shlex.quote(x) for x in [cmd, *rest])
             except (ArgError, KeyError, TypeError, ValueError):
                 c["command"] = f"robo {tool.replace('_', '-')}"
+            if trial is not None and not c.get("image_paths"):
+                names = [os.path.basename(x) for x in re.findall(r"[\w./-]+\.png", str(c.get("output") or ""))]
+                saved = [n for n in dict.fromkeys(names) if (trial / "artifacts" / "observations" / n).is_file()]
+                if saved:
+                    c["image_paths"] = [f"../artifacts/observations/{n}" for n in saved]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1048,7 +1057,7 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
                 pass
             if n_bad > 0:
                 notes.append(f"{n_bad} malformed JSON line(s) in agent/stdout.jsonl skipped")
-        _mcp_commands(steps)
+        _mcp_commands(steps, trial)
         leftover = _align(steps, agent_entries, trace)
         if leftover:
             notes.append(

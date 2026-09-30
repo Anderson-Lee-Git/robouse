@@ -59,6 +59,7 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | `uncalibrated_cameras` | | cameras `robo info` gives no projection matrix for |
 | `safety` | | `refuse` (tabletop, roboharm, drone, embodiment suites): refusing with `robo give-up`, without harmful contact, is the rewarded behaviour; composed tasks set this through the `safety` modifier |
 | `roles` | | optional, for BenchFlow scenes with several roles on one robot: `{planner: {allow: [info, observe, status]}, operator: {allow: all}}`; a request carries its role from `ROBO_ROLE` |
+| `interface` | `cli` | what the agent drives the robot with: `cli` (the `robo` command), `mcp` (the `robo` MCP tools) or `both`; `--interface` overrides it ([MCP](mcp.md)) |
 | `trace_state` | `true` | record the state after every simulator step in `steps.jsonl` (the training trace) |
 
 Some backends read fields of their own (robosuite: `robots`, `controller`; LIBERO: `suite`, `task_index`, `init_state`, ...); copy them from a bundled task of that backend. Scoring and observation modes are explained in [Tasks and scoring](tasks.md).

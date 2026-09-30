@@ -576,7 +576,7 @@ def test_noop_through_mcp_scores_zero(tmp_path, monkeypatch) -> None:
 CHEAT_MCP = r'''
 import json, os, shutil, subprocess, sys
 ws = os.getcwd()
-report = {"robo_on_path": bool(shutil.which("robo"))}
+report = {"robo_on_path": (shutil.which("robo") or "").startswith(ws)}  # the workspace's robo; a host install may exist
 p = subprocess.Popen([sys.executable, os.path.join(ws, ".robouse", "bin", "robo"), "mcp"], stdin=subprocess.PIPE,
                      stdout=subprocess.PIPE, text=True)
 n = [0]
@@ -640,3 +640,37 @@ def test_a_cheating_mcp_agent_scores_zero(tmp_path, monkeypatch) -> None:
     assert report["job_readable"] is False and report["oracle_readable"] is False
     ep = json.loads((t / "result.json").read_text())["episode"]
     assert ep["success"] is False and ep["outcome"] == "done"
+
+
+# ---- the official MCP TypeScript SDK as the client ------------------------------------------------------------------
+
+SDK = os.environ.get("MCP_SDK_CLIENT_DIR", "")  # a @modelcontextprotocol/client package folder (e.g. dimcode's)
+
+
+@pytest.mark.skipif(not (SDK and Path(SDK, "dist", "stdio.mjs").is_file()), reason="set MCP_SDK_CLIENT_DIR")
+@pytest.mark.parametrize("mode", ["stdio", "http"])
+def test_the_official_sdk_client_works_over_both_transports(tmp_path, monkeypatch, mode) -> None:
+    import shutil
+
+    node = os.environ.get("MCP_SDK_NODE") or shutil.which("node")
+    srv = Server(tmp_path, mode)
+    monkeypatch.setenv("ROBOUSE_SOCKET", srv.sock)
+    script = str(Path(__file__).with_name("mcp_sdk_client.mjs"))
+    env = {**os.environ, "PYTHONPATH": str(SRC), "ROBOUSE_SOCKET": srv.sock}
+    if mode == "stdio":
+        args = ["stdio", sys.executable, str(SRC / "robouse" / "agent_cli.py")]
+    else:
+        http_srv = mcp_server.http_server("127.0.0.1", 0, "/k/mcp")
+        threading.Thread(target=http_srv.serve_forever, daemon=True).start()
+        args = ["http", f"http://127.0.0.1:{http_srv.server_address[1]}/k/mcp"]
+    p = subprocess.run([node, script, SDK, *args], capture_output=True, text=True, env=env, timeout=120)
+    assert p.returncode == 0, p.stderr
+    out = json.loads(p.stdout.strip().splitlines()[-1])
+    assert out["server"]["name"] == "robo" and out["capabilities"]["tools"] and out["instructions"]
+    assert out["tools"] == ["info", "observe", "act", "move_to", "grip", "skill", "done", "give_up"]
+    assert out["info_text"] == "task: t" and out["observe_types"] == ["text", "image"]
+    assert out["act_error"] is False and "steps_used: 3" in out["act_text"]
+    assert out["bad_is_error"] is True and out["unknown_tool"] == "rejected"
+    assert out["done_text"].startswith("outcome: done")
+    srv.finish()
+    assert srv.out["outcome"] == "done" and srv.out["agent_text"] == "sdk"
