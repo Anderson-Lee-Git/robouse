@@ -33,11 +33,12 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import config
+from ..workers.client import StdioWorker
 from .base import StepInfo
 from .embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg
 
 WORKER = Path(__file__).with_name("driving_worker.py")
-DEFAULT_PY = Path.home() / ".cache" / "robouse" / "metadrive-venv" / "bin" / "python"
 CONTROL_DT = 0.1
 MAX_KMH = 80.0          # MetaDrive's default car: no engine force above 80 km/h
 
@@ -151,18 +152,12 @@ class DrivingBackend(EmbodiedBackend):
         self.camera = spec.get("camera", "topdown")
         self.render_size = tuple(spec.get("render_size", (480, 480)))
         self.decl = self._declare()
-        py = os.environ.get("ROBOUSE_METADRIVE_PYTHON", str(DEFAULT_PY))
-        if not Path(py).exists():
-            raise RuntimeError(f"MetaDrive virtualenv not found at {py}; see docs/suites/driving.md")
         # run from the worker's own folder so no stray module (e.g. a profile.py in the cwd) shadows the stdlib
-        self.proc = subprocess.Popen([py, str(WORKER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=str(WORKER.parent),
-                                     env={**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1",
+        self.worker = StdioWorker("metadrive", config.sim_python("metadrive", "metadrive"), WORKER, setup="docs/suites/driving.md", env={
                                           "PYGAME_HIDE_SUPPORT_PROMPT": "1", "SDL_VIDEODRIVER": "dummy",
-                                          "SDL_AUDIODRIVER": "dummy", "AUDIODEV": "null"},
-                                     stderr=subprocess.DEVNULL if os.environ.get("ROBOUSE_METADRIVE_QUIET", "1") == "1" else None)
+                                          "SDL_AUDIODRIVER": "dummy", "AUDIODEV": "null"})
         self._state = None
         self._new_events: list[dict] = []
-        self._worker_dead = ""
         self.last_judge: dict = {}
 
     def _declare(self) -> Embodiment:
@@ -197,32 +192,8 @@ class DrivingBackend(EmbodiedBackend):
 
     # ---- worker ------------------------------------------------------------------------------------------------
     def _call(self, cmd: str, **kw):
-        if self.proc.poll() is not None:
-            self._dead(f"exit code {self.proc.returncode}")
-        try:
-            self.proc.stdin.write((json.dumps({"cmd": cmd, **kw}) + "\n").encode())
-            self.proc.stdin.flush()
-            line = self.proc.stdout.readline()
-            if not line:
-                raise EOFError("no reply")
-            hdr = json.loads(line)
-            if hdr.get("ok") and cmd == "render":
-                h, w, c = hdr["shape"]
-                data = self.proc.stdout.read(hdr["nbytes"])
-                if len(data) != hdr["nbytes"]:
-                    raise EOFError("truncated image")
-                return np.frombuffer(data, dtype=np.uint8).reshape(h, w, c)
-        except (BrokenPipeError, EOFError, OSError, ValueError) as e:
-            self._dead(f"{type(e).__name__}: {e}")
-        if not hdr.get("ok"):
-            raise RuntimeError(f"MetaDrive worker: {hdr.get('error')}")
-        return hdr["result"]
+        return self.worker.call(cmd, **kw)
 
-    def _dead(self, why: str):
-        self._state = None
-        self._worker_dead = why
-        raise RuntimeError(f"simulator worker died ({why}); the episode cannot continue "
-                           "(run with ROBOUSE_METADRIVE_QUIET=0 to see the worker's stderr)")
 
     # ---- episode -----------------------------------------------------------------------------------------------
     def reset(self, seed: int) -> None:
@@ -280,14 +251,7 @@ class DrivingBackend(EmbodiedBackend):
         return self._call("render", width=int(width), height=int(height), camera=self.camera or "topdown", scale=12.0)
 
     def close(self) -> None:
-        if self.proc.poll() is not None:
-            return
-        try:
-            self.proc.stdin.write(b'{"cmd": "close"}\n')
-            self.proc.stdin.flush()
-            self.proc.wait(timeout=10)
-        except Exception:
-            self.proc.kill()
+        self.worker.close()
 
     # ---- skills ------------------------------------------------------------------------------------------------
     def _ahead(self) -> dict | None:

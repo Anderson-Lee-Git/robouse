@@ -9,14 +9,13 @@ talks to it over HTTPS (Daytona preview URLs) with a shared secret:
 
 Methods: open (args: task, seed) -> {"session", "info"}; close; and, per session, info, reset, step, observe, render,
 success, skill, camera_info. Images travel as base64 JPEG. Requests must carry the shared secret from
-$ROBOUSE_GPU_SECRET in the X-Robouse-Secret header. A session with no request for IDLE_S seconds is killed.
+$ROBOUSE_GPU_SECRET in the X-Robouse-Secret header (robouse.workers.wire.serve_http). A session with no request for IDLE_S seconds is killed.
 
 Usage (on the GPU machine):  ROBOUSE_GPU_SECRET=... python server.py --sim maniskill --port 8800
 """
 from __future__ import annotations
 
 import argparse
-import hmac
 import importlib
 import json
 import multiprocessing as mp
@@ -26,7 +25,11 @@ import sys
 import threading
 import time
 import traceback
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+try:
+    from wire import serve_http  # robouse/workers/wire.py, uploaded next to this file (tools/gpu/up.py)
+except ImportError:
+    from robouse.workers.wire import serve_http
 
 IDLE_S = float(os.environ.get("ROBOUSE_GPU_IDLE_S", "2400"))
 MAX_SESSIONS = int(os.environ.get("ROBOUSE_GPU_MAX_SESSIONS", "10"))
@@ -98,7 +101,6 @@ class Session:
 
 class State:
     sim = ""
-    secret = ""
     sessions: dict[str, Session] = {}
     lock = threading.Lock()
 
@@ -151,44 +153,6 @@ def handle(req: dict) -> dict:
     return r
 
 
-def _jsonable(o):
-    """numpy scalars and arrays (and anything with .tolist()) in simulator results."""
-    if hasattr(o, "tolist"):
-        return o.tolist()
-    if hasattr(o, "item"):
-        return o.item()
-    raise TypeError(f"not JSON serializable: {type(o).__name__}")
-
-
-class Handler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-
-    def log_message(self, *a):
-        pass
-
-    def _send(self, code: int, obj: dict) -> None:
-        body = json.dumps(obj, default=_jsonable).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_GET(self):
-        self._send(200, {"ok": True, "result": "robouse gpu worker"})
-
-    def do_POST(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(n)
-        if not hmac.compare_digest(self.headers.get("X-Robouse-Secret", ""), State.secret):
-            return self._send(403, {"ok": False, "error": "forbidden"})
-        try:
-            req = json.loads(raw or b"{}")
-            resp = handle(req)
-        except Exception as e:
-            resp = {"ok": False, "error": f"{type(e).__name__}: {e}"[:1000]}
-        self._send(200, resp)
-
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -196,12 +160,8 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8800)
     a = ap.parse_args()
     State.sim = a.sim
-    State.secret = os.environ["ROBOUSE_GPU_SECRET"]
     threading.Thread(target=_reaper, daemon=True).start()
-    srv = ThreadingHTTPServer(("0.0.0.0", a.port), Handler)
-    srv.daemon_threads = True
-    print(f"robouse gpu worker: {a.sim} on :{a.port}", flush=True)
-    srv.serve_forever()
+    serve_http(handle, a.port, os.environ.get("ROBOUSE_GPU_SECRET", ""), name=f"robouse gpu worker: {a.sim}")
 
 
 if __name__ == "__main__":

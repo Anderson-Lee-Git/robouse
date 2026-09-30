@@ -25,7 +25,6 @@ import json
 import os
 import sys
 
-sys.path = [p for p in sys.path if os.path.abspath(p or ".") != os.path.dirname(os.path.abspath(__file__))]
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("GIT_PYTHON_REFRESH", "quiet")  # myosuite imports gitpython; the runtime image has no git executable
@@ -268,7 +267,7 @@ class Worker:
         return out
 
     # ---- rendering -----------------------------------------------------------------------------------------------
-    def render(self, width: int, height: int) -> bytes:
+    def render(self, width: int, height: int) -> np.ndarray:
         import mujoco
 
         key = (width, height)
@@ -293,35 +292,4 @@ class Worker:
         opt = mujoco.MjvOption()
         opt.flags[mujoco.mjtVisFlag.mjVIS_TENDON] = 0  # hide the muscle-tendon paths: the bones and targets stay visible
         rr.update_scene(self.d, camera=cam, scene_option=opt)
-        return np.ascontiguousarray(rr.render(), dtype=np.uint8).tobytes()
-
-
-def main() -> None:
-    # the protocol owns the real stdout; anything MyoSuite prints goes to stderr instead
-    out = os.fdopen(os.dup(1), "wb")
-    os.dup2(2, 1)
-    sys.stdout = sys.stderr
-    w = Worker()
-    for line in sys.stdin.buffer:
-        try:
-            req = json.loads(line)
-            cmd = req.pop("cmd")
-            if cmd == "close":
-                break
-            if cmd == "render":
-                data = w.render(int(req["width"]), int(req["height"]))
-                out.write((json.dumps({"ok": True, "nbytes": len(data)}) + "\n").encode())
-                out.write(data)
-                out.flush()
-                continue
-            res = getattr(w, cmd)(**req)
-            out.write((json.dumps({"ok": True, "result": res}) + "\n").encode())
-        except Exception as e:  # noqa: BLE001
-            import traceback
-
-            out.write((json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}", "tb": traceback.format_exc()[-1500:]}) + "\n").encode())
-        out.flush()
-
-
-if __name__ == "__main__":
-    main()
+        return np.ascontiguousarray(rr.render(), dtype=np.uint8)

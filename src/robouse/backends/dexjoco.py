@@ -26,10 +26,11 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import config
+from ..workers.client import StdioWorker
 from .base import ActionSpec, Backend, StepInfo, G
 
 WORKER = Path(__file__).with_name("dexjoco_worker.py")
-DEFAULT_PY = Path.home() / ".cache" / "robouse" / "dexjoco-venv" / "bin" / "python"
 POS_STEP, ROT_STEP, HAND_STEP = 0.02, 0.2, 0.3
 POS_LIM, ROT_LIM, HAND_LIM = 8.0, 3.0, 6.0  # per-step limits in action units: 16 cm, 0.6 rad, 1.8 rad
 FINGER_NAMES = [f"{f}{j}" for f in ("index", "middle", "ring", "thumb") for j in range(4)]
@@ -80,29 +81,13 @@ class DexjocoBackend(Backend):
                "ring 8-11, thumb 12-15). One step = 20 ms." + (" Right arm first (R_), then left arm (L_)." if self.bimanual else ""))
         lim = ([POS_LIM] * 3 + [ROT_LIM] * 3 + [HAND_LIM] * 16) * len(arms)
         self.action_spec = ActionSpec(names=names, low=[-x for x in lim], high=lim, doc=doc)
-        py = os.environ.get("ROBOUSE_DEXJOCO_PYTHON", str(DEFAULT_PY))
-        if not Path(py).exists():
-            raise RuntimeError(f"DexJoCo virtualenv not found at {py}; see docs/suites/dexjoco.md")
-        self.proc = subprocess.Popen([py, str(WORKER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     env={**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"},
-                                     stderr=subprocess.DEVNULL if os.environ.get("ROBOUSE_DEXJOCO_QUIET", "1") == "1" else None)
+        self.worker = StdioWorker("dexjoco", config.sim_python("dexjoco", "dexjoco"), WORKER, setup="docs/suites/dexjoco.md")
         self._state = None
         self._success = False
         self._grip = 0.0  # skills and the settle hold send 0 = keep the hand as commanded
 
     def _call(self, cmd: str, **kw):
-        self.proc.stdin.write((json.dumps({"cmd": cmd, **kw}) + "\n").encode())
-        self.proc.stdin.flush()
-        line = self.proc.stdout.readline()
-        if not line:
-            raise RuntimeError("DexJoCo worker exited")
-        hdr = json.loads(line)
-        if not hdr.get("ok"):
-            raise RuntimeError(hdr.get("error"))
-        if cmd == "render":
-            data = self.proc.stdout.read(hdr["nbytes"])
-            return np.frombuffer(data, dtype=np.uint8).reshape(kw["height"], kw["width"], 3)
-        return hdr["result"]
+        return self.worker.call(cmd, **kw)
 
     def reset(self, seed: int) -> None:
         self.meta = self._call("make", task=self.task, init_state=self.init_state, seed=0)
@@ -136,15 +121,7 @@ class DexjocoBackend(Backend):
         return self._call("render", camera=self.camera, width=int(w), height=int(h))
 
     def close(self) -> None:
-        try:
-            self.proc.stdin.write(b'{"cmd": "close"}\n')
-            self.proc.stdin.flush()
-            self.proc.wait(timeout=10)
-        except Exception:
-            self.proc.kill()
-
-
-# ---- reference solution: replay the recorded human demonstration through the socket ----------------------------------
+        self.worker.close()
 
 def _q2R(q):
     from scipy.spatial.transform import Rotation as R

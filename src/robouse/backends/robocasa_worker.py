@@ -11,7 +11,6 @@ import json
 import os
 import sys
 
-sys.path = [p for p in sys.path if os.path.abspath(p or ".") != os.path.dirname(os.path.abspath(__file__))]
 
 import numpy as np  # noqa: E402
 
@@ -355,42 +354,11 @@ class Worker:
         return st
 
     # ---- rendering -----------------------------------------------------------------------------------------------
-    def render(self, camera: str, width: int, height: int) -> bytes:
+    def render(self, camera: str, width: int, height: int) -> np.ndarray:
         img = self.env.sim.render(width=width, height=height, camera_name=camera)
-        return np.ascontiguousarray(img[::-1]).astype(np.uint8).tobytes()
+        return np.ascontiguousarray(img[::-1]).astype(np.uint8)
 
     def camera(self, name: str) -> dict:
         m, d = self.env.sim.model, self.env.sim.data
         i = m.camera_name2id(name)
         return {"pos": [float(v) for v in d.cam_xpos[i]], "xmat": [float(v) for v in d.cam_xmat[i]], "fovy": float(m.cam_fovy[i])}
-
-
-def main() -> None:
-    w = Worker()
-    out = sys.stdout.buffer
-    real_stdout = sys.stdout
-    sys.stdout = sys.stderr  # library prints must not corrupt the protocol
-    for line in sys.stdin:
-        req = json.loads(line)
-        cmd = req.pop("cmd")
-        try:
-            if cmd == "render":
-                data = w.render(req["camera"], int(req["width"]), int(req["height"]))
-                out.write((json.dumps({"ok": True, "nbytes": len(data)}) + "\n").encode())
-                out.write(data)
-                out.flush()
-                continue
-            if cmd == "close":
-                break
-            res = getattr(w, cmd)(**req)
-            out.write((json.dumps({"ok": True, "result": res}) + "\n").encode())
-        except Exception as e:  # report and keep serving
-            import traceback
-
-            out.write((json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}", "trace": traceback.format_exc()[-2000:]}) + "\n").encode())
-        out.flush()
-    real_stdout.flush()
-
-
-if __name__ == "__main__":
-    main()

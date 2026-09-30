@@ -4,10 +4,10 @@ Isaac Sim needs an NVIDIA RTX GPU, so the simulator runs remotely: one `robodojo
 on a GPU machine (see docs/suites/robodojo.md), each holding RoboDojo's own evaluation environment for that task. This
 backend is a thin HTTP client for the worker. The episode server, step budget, trace, video, verifier and harnesses all
 run locally as for any other backend. The agent never sees the worker's address: it is read from a file under
-~/benchflow (denied to model harnesses by the macOS sandbox profile), and the worker rejects requests without the
+a private endpoints file (denied to model harnesses by the local runner's sandbox), and the worker rejects requests without the
 shared secret.
 
-Worker endpoints come from $ROBOUSE_ROBODOJO_REMOTE (default: <repo>/runs/_robodojo/remote.json):
+Worker endpoints come from $ROBOUSE_ROBODOJO_REMOTE (default: <config>/remote/robodojo.json, see robouse.config):
   {"secret": "...", "headers": {...}, "workers": {"<robodojo task>": "https://..."}}
 
 Embodiment: RoboDojo's simulated ARX X5 bimanual platform (two 6-joint ARX X5 arms with parallel grippers, bases 0.6 m
@@ -19,74 +19,24 @@ worker after every action; the episode ends as solved the first time it does (`s
 """
 from __future__ import annotations
 
-import base64
-import http.client
-import io
-import json
 import math
 import os
 import time
-import urllib.parse
-from pathlib import Path
 
 import numpy as np
 
+from ..workers.client import WorkerUnavailable, decode_png_b64, load_endpoints, remote_worker
 from .base import StepInfo
 from .embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Oracle, Sensor, Skill, SkillArg
 
-REPO = Path(__file__).resolve().parents[3]
-REMOTE_FILE = REPO / "runs" / "_robodojo" / "remote.json"
-RETRY_METHODS = {"info", "observe", "render", "success", "status"}
+RETRY_METHODS = frozenset({"info", "observe", "render", "success", "status"})
+SETUP = "docs/suites/robodojo.md"
 ARMS = ("left", "right")
 STEP_S = 0.04  # one RoboDojo action: 10 physics steps of 4 ms
 # A skill call returns after at most this much wall time (the robo client waits 120 s for a reply); the result then
 # says `stopped` and the same call continues from where the arm is.
 SKILL_WALL_S = float(os.environ.get("ROBOUSE_ROBODOJO_SKILL_WALL_S", 90))
 
-
-def _remote() -> dict:
-    p = Path(os.environ.get("ROBOUSE_ROBODOJO_REMOTE", str(REMOTE_FILE)))
-    if not p.exists():
-        raise RuntimeError(f"RoboDojo worker endpoints not configured ({p}); see docs/suites/robodojo.md")
-    return json.loads(p.read_text())
-
-
-def _decode(b64: str) -> np.ndarray:
-    from PIL import Image
-
-    return np.asarray(Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB"))
-
-
-class _Conn:
-    """One kept-alive HTTPS connection to the worker (a TLS handshake per step would dominate the step time)."""
-
-    def __init__(self, url: str, headers: dict, timeout: float):
-        u = urllib.parse.urlparse(url)
-        self.https = u.scheme == "https"
-        self.host, self.port = u.hostname, u.port
-        self.path = (u.path.rstrip("/") or "") + "/rpc"
-        self.headers = headers
-        self.timeout = timeout
-        self.c = None
-
-    def post(self, body: bytes, timeout: float | None = None) -> dict:
-        if self.c is None:
-            cls = http.client.HTTPSConnection if self.https else http.client.HTTPConnection
-            self.c = cls(self.host, self.port, timeout=timeout or self.timeout)
-        self.c.timeout = timeout or self.timeout
-        if self.c.sock is not None:
-            self.c.sock.settimeout(self.c.timeout)
-        try:
-            self.c.request("POST", self.path, body=body, headers=self.headers)
-            r = self.c.getresponse()
-            data = r.read()
-            if r.status != 200:
-                raise RuntimeError(f"worker HTTP {r.status}: {data[:200]!r}")
-            return json.loads(data)
-        except Exception:
-            self.c.close()
-            self.c = None
-            raise
 
 
 # ---- small rotation helpers (quaternions are w, x, y, z) ------------------------------------------------------------
@@ -228,12 +178,8 @@ class RoboDojoBackend(EmbodiedBackend):
     def __init__(self, spec: dict):
         super().__init__(spec)
         self.task = spec["env"]  # RoboDojo task name, e.g. stack_bowls
-        r = _remote()
-        url = r.get("workers", {}).get(self.task)
-        if not url:
-            raise RuntimeError(f"no RoboDojo worker for task {self.task!r}")
-        headers = {"Content-Type": "application/json", "X-Robouse-Secret": r.get("secret", ""), **r.get("headers", {})}
-        self.conn = _Conn(url, headers, float(spec.get("rpc_timeout_s", 300)))
+        self.worker = remote_worker(load_endpoints("robodojo", SETUP), self.task, "RoboDojo",
+                                    float(spec.get("rpc_timeout_s", 300)), RETRY_METHODS)
         self.decl = _decl(int(spec.get("max_steps", 600)))
         self.camera = str(spec.get("camera", "cam_head"))
         self.frame_every = int(spec.get("frame_every", 2))
@@ -246,19 +192,7 @@ class RoboDojoBackend(EmbodiedBackend):
         self.last_judge = None
 
     def _call(self, method: str, _timeout: float | None = None, **args):
-        body = json.dumps({"method": method, "args": args}).encode()
-        tries = 3 if method in RETRY_METHODS else 1
-        for i in range(tries):
-            try:
-                resp = self.conn.post(body, _timeout)
-                break
-            except Exception:
-                if i == tries - 1:
-                    raise
-                time.sleep(1 + i)
-        if not resp.get("ok"):
-            raise RuntimeError(resp.get("error", "worker error"))
-        return resp["result"]
+        return self.worker.call(method, _timeout, **args)
 
     # ---- Backend interface -----------------------------------------------------------------------------------------
     def _wait_ready(self, timeout: float = 900) -> None:
@@ -268,25 +202,23 @@ class RoboDojoBackend(EmbodiedBackend):
             try:
                 if self._call("info", _timeout=30):
                     return
-            except Exception:
+            except WorkerUnavailable:
                 continue
         raise RuntimeError("RoboDojo worker did not come back after a restart")
 
     def reset(self, seed: int) -> None:
         try:
             r = self._call("reset", layout=int(seed), _timeout=600)
-        except (OSError, http.client.HTTPException, RuntimeError) as e:
-            if "HTTP" not in str(e) and not isinstance(e, (OSError, http.client.HTTPException)):
-                raise
+        except WorkerUnavailable:
             # the worker is still starting (or restarting after the previous episode): wait for it once
-            self.conn.c = None
+            self.worker.close()
             self._wait_ready(float(self.spec.get("ready_timeout_s", 900)))
             r = self._call("reset", layout=int(seed), _timeout=600)
         for _ in range(3):
             if not r.get("restarting"):
                 break
             # the worker starts a fresh RoboDojo process for every episode (robodojo_worker.py, Worker.reset)
-            self.conn.c = None
+            self.worker.close()
             time.sleep(10)
             self._wait_ready(float(self.spec.get("ready_timeout_s", 900)))
             r = self._call("reset", layout=int(seed), _timeout=600)
@@ -314,7 +246,7 @@ class RoboDojoBackend(EmbodiedBackend):
         self._n += 1
         frame = self._n % self.frame_every == 0
         r = self._call("step", action=self._vec(), frame=frame, camera=self.camera)
-        self._last_frame = _decode(r.pop("frame")) if r.get("frame") else None
+        self._last_frame = decode_png_b64(r.pop("frame")) if r.get("frame") else None
         self._ee = {k: list(v) for k, v in r.get("ee", {}).items()} or self._ee
         self.last = r
 
@@ -337,7 +269,7 @@ class RoboDojoBackend(EmbodiedBackend):
     def render(self, width: int = 640, height: int = 480) -> np.ndarray:
         if self.camera == self.spec.get("camera", "cam_head") and self._last_frame is not None:
             return self._last_frame
-        img = _decode(self._call("render", camera=self.camera)["jpeg"])
+        img = decode_png_b64(self._call("render", camera=self.camera)["jpeg"])
         if self.camera == self.spec.get("camera", "cam_head"):
             self._last_frame = img
         return img

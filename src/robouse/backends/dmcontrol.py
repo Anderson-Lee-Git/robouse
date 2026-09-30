@@ -24,11 +24,12 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import config
+from ..workers.client import StdioWorker
 from .base import StepInfo
 from .embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg
 
 WORKER = Path(__file__).with_name("dmcontrol_worker.py")
-DEFAULT_PY = Path.home() / ".cache" / "robouse" / "dmcontrol-venv" / "bin" / "python"
 DM_CONTROL_VERSION = "1.0.47"
 MUJOCO_VERSION = "3.14.0"
 
@@ -105,12 +106,7 @@ class DMControlBackend(EmbodiedBackend):
         self.camera = spec.get("camera", self.task["camera"])
         self.render_size = tuple(spec.get("render_size", (480, 480)))
         self.decl = self._declare()
-        py = os.environ.get("ROBOUSE_DMCONTROL_PYTHON", str(DEFAULT_PY))
-        if not Path(py).exists():
-            raise RuntimeError(f"dm_control virtualenv not found at {py}; see docs/suites/dmcontrol.md")
-        self.proc = subprocess.Popen([py, str(WORKER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=str(WORKER.parent),
-                                     env={**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"},
-                                     stderr=subprocess.DEVNULL if os.environ.get("ROBOUSE_DMCONTROL_QUIET", "1") == "1" else None)
+        self.worker = StdioWorker("dmcontrol", config.sim_python("dmcontrol", "dmcontrol"), WORKER, setup="docs/suites/dmcontrol.md")
         self._state = None
         self._success = False
         self.last_judge: dict = {}
@@ -147,26 +143,7 @@ class DMControlBackend(EmbodiedBackend):
 
     # ---- worker ------------------------------------------------------------------------------------------------
     def _call(self, cmd: str, **kw):
-        if self.proc.poll() is not None:
-            raise RuntimeError(f"dm_control worker exited (code {self.proc.returncode}); run with ROBOUSE_DMCONTROL_QUIET=0 to see why")
-        try:
-            self.proc.stdin.write((json.dumps({"cmd": cmd, **kw}) + "\n").encode())
-            self.proc.stdin.flush()
-            line = self.proc.stdout.readline()
-            if not line:
-                raise EOFError("no reply")
-            hdr = json.loads(line)
-            if hdr.get("ok") and cmd == "render":
-                h, w, c = hdr["shape"]
-                data = self.proc.stdout.read(hdr["nbytes"])
-                if len(data) != hdr["nbytes"]:
-                    raise EOFError("truncated image")
-                return np.frombuffer(data, dtype=np.uint8).reshape(h, w, c)
-        except (BrokenPipeError, EOFError, OSError, ValueError) as e:
-            raise RuntimeError(f"dm_control worker died ({type(e).__name__}: {e})") from None
-        if not hdr.get("ok"):
-            raise RuntimeError(f"dm_control worker: {hdr.get('error')}")
-        return hdr["result"]
+        return self.worker.call(cmd, **kw)
 
     # ---- episode -----------------------------------------------------------------------------------------------
     def reset(self, seed: int) -> None:
@@ -214,14 +191,7 @@ class DMControlBackend(EmbodiedBackend):
         return self._call("render", width=int(w), height=int(h), camera=self.camera or DOMAINS[self.domain]["cameras"][0])
 
     def close(self) -> None:
-        if self.proc.poll() is not None:
-            return
-        try:
-            self.proc.stdin.write(b'{"cmd": "close"}\n')
-            self.proc.stdin.flush()
-            self.proc.wait(timeout=10)
-        except Exception:
-            self.proc.kill()
+        self.worker.close()
 
     # ---- skills (Jaco tasks) -----------------------------------------------------------------------------------
     def skill_move_to(self, x: float, y: float, z: float, yaw: float = 999.0, grip: float = 0.0):

@@ -1,5 +1,5 @@
 """Upload the GPU worker code to our sandbox, (re)start workers, and write the endpoints file.
-  up.py BOX push                       upload backends/gpu_worker/*.py to /root/gw
+  up.py BOX push                       upload backends/gpu_worker/*.py and workers/wire.py to /root/gw
   up.py BOX start SIM PORT [PYTHON]    (re)start one worker in a session
   up.py BOX links SIM=PORT ...         write runs/_gpu/remote.json (0600) with preview URLs
   up.py BOX sh 'cmd'                   run a shell command (prints output)
@@ -9,6 +9,7 @@ from pathlib import Path
 from dt import d
 from box import ours
 SRC = Path(__file__).resolve().parents[2] / "src" / "robouse" / "backends" / "gpu_worker"
+WIRE = Path(__file__).resolve().parents[2] / "src" / "robouse" / "workers" / "wire.py"
 REMOTE = Path(__file__).resolve().parents[2] / "runs" / "_gpu" / "remote.json"
 SECRET = Path(__file__).resolve().parents[2] / "runs" / "_gpu" / "secret"
 PY = {"maniskill": "/opt/sim/bin/python", "genesis": "/opt/sim/bin/python", "playground": "/opt/mjx/bin/python", "isaaclab": "/opt/isaac/bin/python"}
@@ -31,7 +32,7 @@ if __name__ == "__main__":
     s = box(sys.argv[1]); cmd = sys.argv[2]
     if cmd == "push":
         sh(s, "mkdir -p /root/gw")
-        for f in sorted(SRC.glob("*.py")):
+        for f in [*sorted(SRC.glob("*.py")), WIRE]:
             s.fs.upload_file(f.read_bytes(), f"/root/gw/{f.name}")
         extra = SRC / "assets"
         if extra.is_dir():

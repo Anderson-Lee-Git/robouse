@@ -20,7 +20,6 @@ import sys
 import time
 import types
 
-sys.path = [p for p in sys.path if os.path.abspath(p or ".") != os.path.dirname(os.path.abspath(__file__))]
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")  # DexJoCo's controller inverts small matrices every substep; threaded
 os.environ.setdefault("OMP_NUM_THREADS", "1")       # BLAS makes that ~70x slower on macOS
 
@@ -308,7 +307,7 @@ class Worker:
         return None
 
     # ---- rendering -----------------------------------------------------------------------------------------------
-    def render(self, camera: str, width: int, height: int) -> bytes:
+    def render(self, camera: str, width: int, height: int) -> np.ndarray:
         import mujoco
 
         key = (width, height)
@@ -318,7 +317,7 @@ class Worker:
             self._renderers[key] = mujoco.Renderer(self.M, height=height, width=width)
         r = self._renderers[key]
         r.update_scene(self.D, camera=camera)
-        return np.ascontiguousarray(r.render(), dtype=np.uint8).tobytes()
+        return np.ascontiguousarray(r.render(), dtype=np.uint8)
 
     def camera_matrix(self, camera: str) -> dict:
         import mujoco
@@ -326,34 +325,3 @@ class Worker:
         cid = mujoco.mj_name2id(self.M, mujoco.mjtObj.mjOBJ_CAMERA, camera)
         return {"fovy": float(self.M.cam_fovy[cid]), "pos": self.D.cam_xpos[cid].tolist(),
                 "xmat": self.D.cam_xmat[cid].tolist()}
-
-
-def main() -> None:
-    # the protocol owns the real stdout; anything DexJoCo prints goes to stderr instead
-    out = os.fdopen(os.dup(1), "wb")
-    os.dup2(2, 1)
-    sys.stdout = sys.stderr
-    w = Worker()
-    for line in sys.stdin.buffer:
-        try:
-            req = json.loads(line)
-            cmd = req.pop("cmd")
-            if cmd == "close":
-                break
-            if cmd == "render":
-                data = w.render(req["camera"], int(req["width"]), int(req["height"]))
-                out.write((json.dumps({"ok": True, "nbytes": len(data)}) + "\n").encode())
-                out.write(data)
-                out.flush()
-                continue
-            res = getattr(w, cmd)(**req)
-            out.write((json.dumps({"ok": True, "result": res}) + "\n").encode())
-        except Exception as e:  # noqa: BLE001
-            import traceback
-
-            out.write((json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}", "tb": traceback.format_exc()[-1500:]}) + "\n").encode())
-        out.flush()
-
-
-if __name__ == "__main__":
-    main()

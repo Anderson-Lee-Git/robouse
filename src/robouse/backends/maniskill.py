@@ -27,11 +27,12 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import config
+from ..workers.client import StdioWorker
 from .base import ActionSpec, Backend, StepInfo
 
 WORKER = Path(__file__).with_name("maniskill_worker.py")
-DEFAULT_PY = Path.home() / ".cache" / "robouse" / "maniskill-venv" / "bin" / "python"
-MOLTENVK_ICD = Path.home() / ".cache" / "robouse" / "moltenvk" / "MoltenVK" / "MoltenVK" / "dynamic" / "dylib" / "macOS" / "MoltenVK_icd.json"
+MOLTENVK_ICD = ("moltenvk", "MoltenVK", "MoltenVK", "dynamic", "dylib", "macOS", "MoltenVK_icd.json")  # under the cache dir
 
 # task id -> ManiSkill env id, seed (object layout), step budget
 TASKS: dict[str, dict] = {
@@ -69,34 +70,18 @@ class ManiSkillBackend(Backend):
             doc="DX/DY/DZ move the gripper by 2 cm per unit per step along world x/y/z; DROLL/DPITCH/DYAW turn it by 0.1 rad "
                 "per unit per step about world x/y/z; GRIP > 0 closes, -f opens to fraction f (-1 fully open), 0 keeps the fingers. "
                 "One step = 50 ms.")
-        py = os.environ.get("ROBOUSE_MANISKILL_PYTHON", str(DEFAULT_PY))
-        if not Path(py).exists():
-            raise RuntimeError(f"ManiSkill virtualenv not found at {py}; see docs/suites/maniskill.md")
         env = dict(os.environ)
-        if sys.platform == "darwin" and "VK_ICD_FILENAMES" not in env and MOLTENVK_ICD.exists():
-            env["VK_ICD_FILENAMES"] = str(MOLTENVK_ICD)  # SAPIEN renders through MoltenVK on macOS
+        icd = config.cache_dir().joinpath(*MOLTENVK_ICD)
+        if sys.platform == "darwin" and "VK_ICD_FILENAMES" not in env and icd.exists():
+            env["VK_ICD_FILENAMES"] = str(icd)  # SAPIEN renders through MoltenVK on macOS
         env.setdefault("MVK_CONFIG_LOG_LEVEL", "0")
-        self.proc = subprocess.Popen([py, str(WORKER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env,
-                                     stderr=subprocess.DEVNULL if os.environ.get("ROBOUSE_MANISKILL_QUIET", "1") == "1" else None)
+        self.worker = StdioWorker("maniskill", config.sim_python("maniskill", "maniskill"), WORKER, setup="docs/suites/maniskill.md", env=env)
         self._state = None
         self._success = False
         self.last_judge = None
 
     def _call(self, cmd: str, **kw):
-        if self.proc.poll() is not None:
-            raise RuntimeError("ManiSkill worker exited")
-        self.proc.stdin.write((json.dumps({"cmd": cmd, **kw}) + "\n").encode())
-        self.proc.stdin.flush()
-        line = self.proc.stdout.readline()
-        if not line:
-            raise RuntimeError("ManiSkill worker exited")
-        hdr = json.loads(line)
-        if not hdr.get("ok"):
-            raise RuntimeError(hdr.get("error"))
-        if cmd == "render":
-            data = self.proc.stdout.read(hdr["nbytes"])
-            return np.frombuffer(data, dtype=np.uint8).reshape(kw["height"], kw["width"], 3)
-        return hdr["result"]
+        return self.worker.call(cmd, **kw)
 
     def reset(self, seed: int) -> None:
         self.meta = self._call("make", env_id=self.task["env"], seed=int(seed), render_size=self.render_size)
@@ -134,13 +119,7 @@ class ManiSkillBackend(Backend):
         return self._call("render", camera=self.camera, width=w, height=h)
 
     def close(self) -> None:
-        try:
-            self.proc.stdin.write(b'{"cmd": "close"}\n')
-            self.proc.stdin.flush()
-            self.proc.wait(timeout=10)
-        except Exception:
-            self.proc.kill()
-
+        self.worker.close()
 
 def oracle_main(env: str) -> None:
     from .maniskill_oracles import run

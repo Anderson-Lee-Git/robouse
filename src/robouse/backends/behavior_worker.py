@@ -7,7 +7,8 @@ robot). It answers JSON-over-HTTP requests from the robouse `behavior` backend (
   POST /rpc  {"method": "...", "args": {...}}  ->  {"ok": true, "result": ...} | {"ok": false, "error": "..."}
 
 Methods: info, reset, observe, skill, wait, render, success, goal_status. Images travel as base64 JPEG.
-Requests carry the shared secret from $ROBOUSE_BEHAVIOR_SECRET in the `X-Robouse-Secret` header.
+Requests carry the shared secret from $ROBOUSE_BEHAVIOR_SECRET in the `X-Robouse-Secret` header; the worker does not
+start without it. Copy robouse's `workers/wire.py` next to this script (the shared HTTP server).
 
 Robot actions are OmniGibson's symbolic semantic action primitives (omnigibson.action_primitives.
 symbolic_semantic_action_primitives) for open, close, toggle_on and toggle_off: they set the post-condition state
@@ -47,7 +48,11 @@ import sys
 import time
 import traceback
 import types
-from http.server import BaseHTTPRequestHandler, HTTPServer
+
+try:
+    from wire import serve_http  # robouse/workers/wire.py, copied next to this script
+except ImportError:
+    from robouse.workers.wire import serve_http
 
 REACH_M = 1.25          # max horizontal distance from the robot base to a target object's bounding box
 NAV_OFFSETS = (0.35, 0.5, 0.7, 0.9, 1.1)   # stand-off distances (m) from the target's bounding box tried by navigate_to
@@ -686,39 +691,8 @@ def main():
     w = Worker(a.activity, a.instance, a.scene, [r for r in a.rooms.split(",") if r] or None)
     print(json.dumps({"ready": True, "activity": a.activity, "load_s": w.load_s, "objects": w.scope_names}), flush=True)
 
-    class H(BaseHTTPRequestHandler):
-        def log_message(self, *args):
-            pass
-
-        def do_GET(self):
-            body = json.dumps({"ok": True, "activity": a.activity}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def do_POST(self):
-            if secret and self.headers.get("X-Robouse-Secret") != secret:
-                self.send_response(403)
-                self.end_headers()
-                return
-            n = int(self.headers.get("Content-Length", 0))
-            try:
-                req = json.loads(self.rfile.read(n) or b"{}")
-                resp = {"ok": True, "result": w.call(req.get("method", ""), req.get("args") or {})}
-            except Exception as e:
-                traceback.print_exc()
-                resp = {"ok": False, "error": f"{type(e).__name__}: {e}"[:800]}
-            body = json.dumps(resp).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-    HTTPServer(("0.0.0.0", a.port), H).serve_forever()
-
+    serve_http(lambda req: w.call(req.get("method", ""), req.get("args") or {}), a.port, secret,
+               name=f"behavior worker ({a.activity})", threaded=False)
 
 if __name__ == "__main__":
     main()

@@ -3,10 +3,10 @@
 The simulator runs in a worker on a GPU machine (backends/gpu_worker/server.py, one worker per simulator family, one
 child process per episode). This backend is a thin HTTPS client for it; the episode server, budgets, trace, video,
 verifier and harnesses all run locally as for any other backend. The agent never sees the worker's address: it is
-read from a file under ~/benchflow (denied to model harnesses by the macOS sandbox profile), not from the
+read from a private endpoints file (denied to model harnesses by the local runner's sandbox), not from the
 environment, and the worker rejects requests without the shared secret.
 
-Worker endpoints come from $ROBOUSE_GPU_REMOTE (default: <repo>/runs/_gpu/remote.json):
+Worker endpoints come from $ROBOUSE_GPU_REMOTE (default: <config>/remote/gpu.json, see robouse.config):
   {"secret": "...", "workers": {"maniskill": "https://...", ...}, "worker_headers": {"maniskill": {...}, ...}}
 
 Task spec (the `robouse:` block): backend: gpu, sim: <family>, env: <task key in that family's module>, seed, and
@@ -15,67 +15,17 @@ skills, the cameras and the embodiment (BenchFlow embodied spec, docs/embodied.m
 """
 from __future__ import annotations
 
-import base64
-import http.client
-import io
-import json
-import os
-import time
-import urllib.parse
-from pathlib import Path
+import logging
 
 import numpy as np
 
+from ..workers.client import WorkerError, decode_png_b64, load_endpoints, remote_worker
 from .base import ActionSpec, Backend, StepInfo
 
-REPO = Path(__file__).resolve().parents[3]
-REMOTE_FILE = REPO / "runs" / "_gpu" / "remote.json"
-RETRY_METHODS = {"info", "observe", "render", "success", "camera_info", "goal_status"}
+log = logging.getLogger(__name__)
 
-
-def _remote() -> dict:
-    p = Path(os.environ.get("ROBOUSE_GPU_REMOTE", str(REMOTE_FILE)))
-    if not p.exists():
-        raise RuntimeError(f"GPU worker endpoints not configured ({p}); see docs/suites/gpu-track.md")
-    return json.loads(p.read_text())
-
-
-def _decode(b64: str) -> np.ndarray:
-    from PIL import Image
-
-    return np.asarray(Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB"))
-
-
-class _Conn:
-    """One kept-alive HTTPS connection to a worker (a fresh TLS handshake per step would dominate the step time)."""
-
-    def __init__(self, url: str, headers: dict, timeout: float):
-        u = urllib.parse.urlparse(url)
-        self.https = u.scheme == "https"
-        self.host, self.port = u.hostname, u.port
-        self.path = (u.path.rstrip("/") or "") + "/rpc"
-        self.headers = headers
-        self.timeout = timeout
-        self.c = None
-
-    def post(self, body: bytes, timeout: float | None = None) -> dict:
-        if self.c is None:
-            cls = http.client.HTTPSConnection if self.https else http.client.HTTPConnection
-            self.c = cls(self.host, self.port, timeout=timeout or self.timeout)
-        self.c.timeout = timeout or self.timeout
-        if self.c.sock is not None:
-            self.c.sock.settimeout(self.c.timeout)
-        try:
-            self.c.request("POST", self.path, body=body, headers=self.headers)
-            r = self.c.getresponse()
-            data = r.read()
-            if r.status != 200:
-                raise RuntimeError(f"worker HTTP {r.status}: {data[:200]!r}")
-            return json.loads(data)
-        except Exception:
-            self.c.close()
-            self.c = None
-            raise
+RETRY_METHODS = frozenset({"info", "observe", "render", "success", "camera_info", "goal_status"})
+SETUP = "docs/suites/gpu-track.md"
 
 
 class GpuBackend(Backend):
@@ -85,18 +35,11 @@ class GpuBackend(Backend):
         self.spec = spec
         self.sim = spec["sim"]
         self.task = spec["env"]
-        r = _remote()
-        url = r.get("workers", {}).get(self.sim)
-        if not url:
-            raise RuntimeError(f"no GPU worker for simulator {self.sim!r}")
-        extra = r.get("worker_headers", {}).get(self.sim, r.get("headers", {}))  # e.g. the proxy's preview token
-        headers = {"Content-Type": "application/json", "X-Robouse-Secret": r.get("secret", ""), **extra}
-        self.timeout = float(spec.get("rpc_timeout_s", 600))
-        self.conn = _Conn(url, headers, self.timeout)
-        self.session = ""
+        self.worker = remote_worker(load_endpoints("gpu", SETUP), self.sim, "GPU",
+                                    float(spec.get("rpc_timeout_s", 600)), RETRY_METHODS)
         opened = self._call("open", task=self.task, seed=int(spec.get("seed", 0)), opts=spec.get("opts") or {},
                             load_timeout_s=float(spec.get("ready_timeout_s", 900)), _timeout=float(spec.get("ready_timeout_s", 900)) + 60)
-        self.session = opened["session"]
+        self.worker.session = opened["session"]
         self.remote_info = opened["info"]
         a = self.remote_info["action"]
         self.action_spec = ActionSpec(list(a["names"]), list(a["low"]), list(a["high"]), a.get("doc", ""))
@@ -109,25 +52,13 @@ class GpuBackend(Backend):
         self.last_step: dict = {}
 
     def _call(self, method: str, _timeout: float | None = None, **args):
-        body = json.dumps({"method": method, "session": self.session, "args": args}).encode()
-        tries = 3 if method in RETRY_METHODS else 1
-        for i in range(tries):
-            try:
-                resp = self.conn.post(body, _timeout)
-                break
-            except Exception:
-                if i == tries - 1:
-                    raise
-                time.sleep(1 + i)
-        if not resp.get("ok"):
-            raise RuntimeError(resp.get("error", "worker error"))
-        return resp["result"]
+        return self.worker.call(method, _timeout, **args)
 
     def _take_frames(self, r: dict) -> None:
         fr = r.pop("frames", None) or []
-        self._pending.extend(_decode(f) for f in fr)
+        self._pending.extend(decode_png_b64(f) for f in fr)
         if r.get("frame"):
-            self._last_frame = _decode(r.pop("frame"))
+            self._last_frame = decode_png_b64(r.pop("frame"))
         else:
             self._last_frame = None
         if "hold_last" in r:
@@ -163,7 +94,7 @@ class GpuBackend(Backend):
     def render(self, width: int = 640, height: int = 480) -> np.ndarray:
         if self.camera == self.remote_info.get("camera") and self._last_frame is not None:
             return self._last_frame
-        img = _decode(self._call("render", camera=self.camera)["jpeg"])
+        img = decode_png_b64(self._call("render", camera=self.camera)["jpeg"])
         if self.camera == self.remote_info.get("camera"):
             self._last_frame = img
         return img
@@ -182,12 +113,13 @@ class GpuBackend(Backend):
         return self.remote_info.get("embodiment", {})
 
     def close(self) -> None:
-        if self.session:
+        if self.worker.session:
             try:
                 self._call("close", _timeout=60)
-            except Exception:
-                pass
-            self.session = ""
+            except WorkerError as e:  # the worker reaps idle sessions itself
+                log.warning("closing the GPU session failed: %s", e)
+            self.worker.session = None
+        self.worker.close()
 
 
 def oracle_main(env: str) -> None:

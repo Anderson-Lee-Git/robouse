@@ -24,11 +24,12 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import config
+from ..workers.client import StdioWorker
 from .base import ActionSpec, Backend, StepInfo, G, arm_layout
 
 WORKER = Path(__file__).with_name("robocasa_worker.py")
 EPISODES = Path(__file__).with_name("robocasa_episodes")
-DEFAULT_PY = Path.home() / ".cache" / "robouse" / "robocasa-venv" / "bin" / "python"
 
 # RoboCasa env -> task-specific observation features and step budget
 KINDS: dict[str, dict] = {
@@ -101,29 +102,13 @@ class RobocasaBackend(Backend):
             names=["DX", "DY", "DZ", "GRIP"], low=[-1.0] * 4, high=[1.0] * 4,
             doc="DX/DY/DZ move the gripper by 2 cm per unit per step along world x/y/z; GRIP: 0 keeps the fingers, > 0 closes, "
                 "-f opens to fraction f (-1 fully open). One step = 50 ms.")
-        py = os.environ.get("ROBOUSE_ROBOCASA_PYTHON", str(DEFAULT_PY))
-        if not Path(py).exists():
-            raise RuntimeError(f"RoboCasa virtualenv not found at {py}; see docs/suites/robocasa.md")
         # PYTHONHASHSEED: RoboCasa iterates over sets of names when placing objects; fix the order so a seed is reproducible
-        self.proc = subprocess.Popen([py, str(WORKER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     env={**os.environ, "PYTHONHASHSEED": "0"},
-                                     stderr=subprocess.DEVNULL if os.environ.get("ROBOUSE_ROBOCASA_QUIET", "1") == "1" else None)
+        self.worker = StdioWorker("robocasa", config.sim_python("robocasa", "robocasa"), WORKER, setup="docs/suites/robocasa.md", env={"PYTHONHASHSEED": "0"})
         self._state = None
         self._success = False
 
     def _call(self, cmd: str, **kw):
-        self.proc.stdin.write((json.dumps({"cmd": cmd, **kw}) + "\n").encode())
-        self.proc.stdin.flush()
-        line = self.proc.stdout.readline()
-        if not line:
-            raise RuntimeError("RoboCasa worker exited")
-        hdr = json.loads(line)
-        if not hdr.get("ok"):
-            raise RuntimeError(hdr.get("error"))
-        if cmd == "render":
-            data = self.proc.stdout.read(hdr["nbytes"])
-            return np.frombuffer(data, dtype=np.uint8).reshape(kw["height"], kw["width"], 3)
-        return hdr["result"]
+        return self.worker.call(cmd, **kw)
 
     def reset(self, seed: int) -> None:
         t = self.task
@@ -163,13 +148,7 @@ class RobocasaBackend(Backend):
         return self._call("render", camera=self.camera, width=int(w), height=int(h))
 
     def close(self) -> None:
-        try:
-            self.proc.stdin.write(b'{"cmd": "close"}\n')
-            self.proc.stdin.flush()
-            self.proc.wait(timeout=10)
-        except Exception:
-            self.proc.kill()
-
+        self.worker.close()
 
 def oracle_main(env: str) -> None:
     from .robocasa_oracles import run

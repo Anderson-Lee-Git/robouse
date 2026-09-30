@@ -3,10 +3,10 @@
 Isaac Sim needs an NVIDIA RTX GPU, so the simulator runs remotely: one `behavior_worker.py` process per activity on
 a GPU machine (see docs/suites/behavior.md), each holding its scene loaded. This backend is a thin HTTP client for
 that worker; the episode server, budgets, trace, video, verifier and harnesses all run locally as for any other
-backend. The agent never sees the worker's address: it is read from a file under ~/benchflow (denied to model
-harnesses by the macOS sandbox profile), not from the environment.
+backend. The agent never sees the worker's address: it is read from a private endpoints file (denied to model
+harnesses by the local runner's sandbox), not from the environment.
 
-Worker endpoints come from $ROBOUSE_BEHAVIOR_REMOTE (default: <repo>/runs/_behavior/remote.json):
+Worker endpoints come from $ROBOUSE_BEHAVIOR_REMOTE (default: <config>/remote/behavior.json, see robouse.config):
   {"secret": "...", "headers": {...}, "workers": {"<activity>": "https://...", "<activity>@<instance>": "https://..."}}
 A worker entry may also be {"url": "https://...", "headers": {...}} when workers run on several machines.
 A task's worker key is its `worker` field, else the activity name for instance 0 and `<activity>@<instance>` otherwise.
@@ -23,32 +23,16 @@ Success: BEHAVIOR's BDDL goal predicates, evaluated by the worker after `robo do
 """
 from __future__ import annotations
 
-import base64
-import io
 import json
 import os
-import urllib.request
 from pathlib import Path
 
 import numpy as np
 
+from ..workers.client import decode_png_b64, load_endpoints, remote_worker
 from .base import ActionSpec, Backend, StepInfo
 
-REPO = Path(__file__).resolve().parents[3]
-REMOTE_FILE = REPO / "runs" / "_behavior" / "remote.json"
-
-
-def _remote() -> dict:
-    p = Path(os.environ.get("ROBOUSE_BEHAVIOR_REMOTE", str(REMOTE_FILE)))
-    if not p.exists():
-        raise RuntimeError(f"BEHAVIOR worker endpoints not configured ({p}); see docs/suites/behavior.md")
-    return json.loads(p.read_text())
-
-
-def _decode(b64: str) -> np.ndarray:
-    from PIL import Image
-
-    return np.asarray(Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB"))
+SETUP = "docs/suites/behavior.md"
 
 
 SKILLS = [  # (name, takes an object, doc, preconditions)
@@ -116,16 +100,8 @@ class BehaviorBackend(Backend):
     def __init__(self, spec: dict):
         self.spec = spec
         self.activity = spec["env"]
-        r = _remote()
-        key = worker_key(spec)
-        w = r.get("workers", {}).get(key)  # a URL, or {"url": ..., "headers": {...}} for per-machine headers
-        if not w:
-            raise RuntimeError(f"no BEHAVIOR worker for {key!r}")
-        url, extra = (w, {}) if isinstance(w, str) else (w["url"], w.get("headers", {}))
-        self.url = url.rstrip("/") + "/rpc"
-        self.headers = {"Content-Type": "application/json", "X-Robouse-Secret": r.get("secret", ""),
-                        **r.get("headers", {}), **extra}
-        self.timeout = float(spec.get("rpc_timeout_s", 300))
+        self.worker = remote_worker(load_endpoints("behavior", SETUP), worker_key(spec), "BEHAVIOR",
+                                    float(spec.get("rpc_timeout_s", 300)))
         self.max_steps = int(spec.get("max_steps", 60))
         self.camera = "follow"
         self._grip = 0.0
@@ -137,12 +113,10 @@ class BehaviorBackend(Backend):
         self._skills = {}
 
     def _call(self, method: str, **args):
-        req = urllib.request.Request(self.url, data=json.dumps({"method": method, "args": args}).encode(), headers=self.headers)
-        with urllib.request.urlopen(req, timeout=self.timeout) as f:
-            resp = json.loads(f.read())
-        if not resp.get("ok"):
-            raise RuntimeError(resp.get("error", "worker error"))
-        return resp["result"]
+        return self.worker.call(method, **args)
+
+    def close(self) -> None:
+        self.worker.close()
 
     # ---- Backend interface -----------------------------------------------------------------------------------------
     def reset(self, seed: int) -> None:
@@ -158,7 +132,7 @@ class BehaviorBackend(Backend):
 
     def run_skill(self, name: str, args: list[str]) -> dict:
         r = self._call("skill", name=name, args=args, frames=True)
-        self._pending.extend(_decode(f) for f in r.pop("frames", []) or [])
+        self._pending.extend(decode_png_b64(f) for f in r.pop("frames", []) or [])
         self._last_frame = None
         return {"ok": bool(r.get("ok")), "message": r.get("message", "")}
 
@@ -172,7 +146,7 @@ class BehaviorBackend(Backend):
     def render(self, width: int = 640, height: int = 480) -> np.ndarray:
         if self.camera == "follow" and self._last_frame is not None:
             return self._last_frame
-        img = _decode(self._call("render", camera=self.camera)["jpeg"])
+        img = decode_png_b64(self._call("render", camera=self.camera)["jpeg"])
         if self.camera == "follow":
             self._last_frame = img
         return img

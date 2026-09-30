@@ -30,11 +30,12 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import config
+from ..workers.client import StdioWorker
 from .base import StepInfo
 from .embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg
 
 WORKER = Path(__file__).with_name("myosuite_worker.py")
-DEFAULT_PY = Path.home() / ".cache" / "robouse" / "myosuite-venv" / "bin" / "python"
 CONTROL_DT = 0.02
 SKILL_MAX = 300
 
@@ -112,14 +113,8 @@ class MyoSuiteBackend(EmbodiedBackend):
             raise KeyError(f"unknown MyoSuite task {env!r}")
         self.task_id, self.task = env, TASKS[env]
         self.render_size = tuple(spec.get("render_size", (480, 480)))
-        py = os.environ.get("ROBOUSE_MYOSUITE_PYTHON", str(DEFAULT_PY))
-        if not Path(py).exists():
-            raise RuntimeError(f"MyoSuite virtualenv not found at {py}; see docs/suites/myosuite.md")
-        self.proc = subprocess.Popen([py, str(WORKER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=str(WORKER.parent),
-                                     env={**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"},
-                                     stderr=subprocess.DEVNULL if os.environ.get("ROBOUSE_MYOSUITE_QUIET", "1") == "1" else None)
+        self.worker = StdioWorker("myosuite", config.sim_python("myosuite", "myosuite"), WORKER, setup="docs/suites/myosuite.md")
         self._state = None
-        self._worker_dead = ""
         self.last_judge: dict = {}
         self.meta = self._call("make", env_id=self.task["env"], seed=int(spec.get("seed", self.task["seed"])),
                                camera=self.task.get("camera"))
@@ -183,31 +178,8 @@ class MyoSuiteBackend(EmbodiedBackend):
 
     # ---- worker ------------------------------------------------------------------------------------------------
     def _call(self, cmd: str, **kw):
-        if self.proc.poll() is not None:
-            self._dead(f"exit code {self.proc.returncode}")
-        try:
-            self.proc.stdin.write((json.dumps({"cmd": cmd, **kw}) + "\n").encode())
-            self.proc.stdin.flush()
-            line = self.proc.stdout.readline()
-            if not line:
-                raise EOFError("no reply")
-            hdr = json.loads(line)
-            if hdr.get("ok") and cmd == "render":
-                data = self.proc.stdout.read(hdr["nbytes"])
-                if len(data) != hdr["nbytes"]:
-                    raise EOFError("truncated image")
-                return np.frombuffer(data, dtype=np.uint8).reshape(kw["height"], kw["width"], 3)
-        except (BrokenPipeError, EOFError, OSError, ValueError) as e:
-            self._dead(f"{type(e).__name__}: {e}")
-        if not hdr.get("ok"):
-            raise RuntimeError(f"MyoSuite worker: {hdr.get('error')}")
-        return hdr["result"]
+        return self.worker.call(cmd, **kw)
 
-    def _dead(self, why: str):
-        self._state = None
-        self._worker_dead = why
-        raise RuntimeError(f"simulator worker died ({why}); the episode cannot continue "
-                           "(run with ROBOUSE_MYOSUITE_QUIET=0 to see the worker's stderr)")
 
     # ---- episode -----------------------------------------------------------------------------------------------
     def reset(self, seed: int) -> None:
@@ -262,14 +234,7 @@ class MyoSuiteBackend(EmbodiedBackend):
         return self._call("render", width=int(w), height=int(h))
 
     def close(self) -> None:
-        if self.proc.poll() is not None:
-            return
-        try:
-            self.proc.stdin.write(b'{"cmd": "close"}\n')
-            self.proc.stdin.flush()
-            self.proc.wait(timeout=10)
-        except Exception:
-            self.proc.kill()
+        self.worker.close()
 
     # ---- skills ------------------------------------------------------------------------------------------------
     def start_skill(self, name: str, raw_args: list[str]):

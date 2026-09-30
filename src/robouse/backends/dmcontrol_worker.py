@@ -22,7 +22,6 @@ import math
 import os
 import sys
 
-sys.path = [p for p in sys.path if os.path.abspath(p or ".") != os.path.dirname(os.path.abspath(__file__))]
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 if sys.platform.startswith("linux"):
@@ -329,44 +328,11 @@ class Worker:
         return float(self.env.task.get_reward(self.physics)) >= 1.0 - 1e-6
 
     # ---- rendering -----------------------------------------------------------------------------------------------
-    def render(self, camera: str, width: int, height: int) -> bytes:
+    def render(self, camera: str, width: int, height: int) -> np.ndarray:
         g = self.physics.model.vis.global_  # the offscreen buffer must hold the frame (visual only; recordings)
         if width > g.offwidth or height > g.offheight:
             if getattr(self.physics, "_contexts", None):
                 self.physics._free_rendering_contexts()  # noqa: SLF001  rebuilt at the new size on the next render
             g.offwidth, g.offheight = max(g.offwidth, width), max(g.offheight, height)
         img = self.physics.render(height=height, width=width, camera_id=camera)
-        return np.ascontiguousarray(img, dtype=np.uint8).tobytes()
-
-
-def main() -> None:
-    # the protocol owns the real stdout; anything dm_control prints goes to stderr instead
-    out = os.fdopen(os.dup(1), "wb")
-    os.dup2(2, 1)
-    sys.stdout = sys.stderr
-    w = Worker()
-    for line in sys.stdin.buffer:
-        try:
-            req = json.loads(line)
-            cmd = req.pop("cmd")
-            if cmd == "close":
-                break
-            if cmd == "render":
-                data = w.render(req["camera"], int(req["width"]), int(req["height"]))
-                out.write((json.dumps({"ok": True, "nbytes": len(data), "shape": [int(req["height"]), int(req["width"]), 3]}) + "\n").encode())
-                out.write(data)
-                out.flush()
-                continue
-            if cmd.startswith("_"):
-                raise ValueError(f"unknown command {cmd!r}")
-            res = getattr(w, cmd)(**req)
-            out.write((json.dumps({"ok": True, "result": res}) + "\n").encode())
-        except Exception as e:  # noqa: BLE001
-            import traceback
-
-            out.write((json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}", "tb": traceback.format_exc()[-1500:]}) + "\n").encode())
-        out.flush()
-
-
-if __name__ == "__main__":
-    main()
+        return np.ascontiguousarray(img, dtype=np.uint8)

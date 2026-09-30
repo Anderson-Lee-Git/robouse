@@ -29,12 +29,12 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import config
+from ..workers.client import StdioWorker
 from .base import StepInfo
 from .embodied import ActionGroup, Budget, Embodiment, EmbodiedBackend, Oracle, Sensor, Skill, SkillArg, wrap
 
 WORKER = Path(__file__).with_name("humanoidbench_worker.py")
-DEFAULT_PY = Path.home() / ".cache" / "robouse" / "humanoidbench-venv" / "bin" / "python"
-DEFAULT_POLICY = Path.home() / ".cache" / "robouse" / "humanoidbench" / "h1_motion.pt"
 CONTROL_DT = 0.02
 MAX_FWD, MAX_LEFT, MAX_TURN = 1.0, 0.5, 1.0
 HAND_STEP = 0.02
@@ -68,16 +68,11 @@ class HumanoidBenchBackend(EmbodiedBackend):
         self.camera = spec.get("camera", "cam_default")
         self.render_size = tuple(spec.get("render_size", (480, 480)))
         self.decl = self._declare()
-        py = os.environ.get("ROBOUSE_HUMANOIDBENCH_PYTHON", str(DEFAULT_PY))
-        if not Path(py).exists():
-            raise RuntimeError(f"HumanoidBench virtualenv not found at {py}; see docs/suites/humanoidbench.md")
-        self.policy_path = os.environ.get("ROBOUSE_HUMANOIDBENCH_POLICY", str(DEFAULT_POLICY))
+        self.policy_path = str(config.path("ROBOUSE_HUMANOIDBENCH_POLICY", config.cache_dir() / "humanoidbench" / "h1_motion.pt"))
         if not Path(self.policy_path).exists():
             raise RuntimeError(f"Unitree H1 locomotion policy not found at {self.policy_path}; see docs/suites/humanoidbench.md")
         # run from the worker's own folder so no stray module in the cwd shadows the stdlib
-        self.proc = subprocess.Popen([py, str(WORKER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=str(WORKER.parent),
-                                     env={**os.environ, "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"},
-                                     stderr=subprocess.DEVNULL if os.environ.get("ROBOUSE_HUMANOIDBENCH_QUIET", "1") == "1" else None)
+        self.worker = StdioWorker("humanoidbench", config.sim_python("humanoidbench", "humanoidbench"), WORKER, setup="docs/suites/humanoidbench.md", env={"MKL_NUM_THREADS": "1"})
         self._state = None
         self.last_judge: dict = {}
         self.meta: dict = {}
@@ -137,31 +132,8 @@ class HumanoidBenchBackend(EmbodiedBackend):
 
     # ---- worker ------------------------------------------------------------------------------------------------
     def _call(self, cmd: str, **kw):
-        if self.proc.poll() is not None:
-            self._dead(f"exit code {self.proc.returncode}")
-        try:
-            self.proc.stdin.write((json.dumps({"cmd": cmd, **kw}) + "\n").encode())
-            self.proc.stdin.flush()
-            line = self.proc.stdout.readline()
-            if not line:
-                raise EOFError("no reply")
-            hdr = json.loads(line)
-            if hdr.get("ok") and cmd == "render":
-                h, w, c = hdr["shape"]
-                data = self.proc.stdout.read(hdr["nbytes"])
-                if len(data) != hdr["nbytes"]:
-                    raise EOFError("truncated image")
-                return np.frombuffer(data, dtype=np.uint8).reshape(h, w, c)
-        except (BrokenPipeError, EOFError, OSError, ValueError) as e:
-            self._dead(f"{type(e).__name__}: {e}")
-        if not hdr.get("ok"):
-            raise RuntimeError(f"HumanoidBench worker: {hdr.get('error')}")
-        return hdr["result"]
+        return self.worker.call(cmd, **kw)
 
-    def _dead(self, why: str):
-        self._state = None
-        raise RuntimeError(f"simulator worker died ({why}); the episode cannot continue "
-                           "(run with ROBOUSE_HUMANOIDBENCH_QUIET=0 to see the worker's stderr)")
 
     # ---- episode -----------------------------------------------------------------------------------------------
     def reset(self, seed: int) -> None:
@@ -217,14 +189,7 @@ class HumanoidBenchBackend(EmbodiedBackend):
         return self._call("render", width=int(w), height=int(h), camera=self.camera or "cam_default")
 
     def close(self) -> None:
-        if self.proc.poll() is not None:
-            return
-        try:
-            self.proc.stdin.write(b'{"cmd": "close"}\n')
-            self.proc.stdin.flush()
-            self.proc.wait(timeout=10)
-        except Exception:
-            self.proc.kill()
+        self.worker.close()
 
     # ---- skills ------------------------------------------------------------------------------------------------
     def _robot(self) -> dict:

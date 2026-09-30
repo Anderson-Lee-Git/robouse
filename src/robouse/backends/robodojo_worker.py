@@ -15,7 +15,8 @@ and queries, checked after every action by `reward_manager.step()` and `is_episo
 reward reaches 1 (all stages passed in order, no query violated) within `step_lim` actions.
 
 RPC (POST /rpc, JSON {"method": ..., "args": {...}}, header X-Robouse-Secret): info, reset, step, observe, render,
-success, debug_exec (only with ROBOUSE_ROBODOJO_DEBUG=1).
+success, debug_exec (only with ROBOUSE_ROBODOJO_DEBUG=1). The worker does not start without ROBOUSE_ROBODOJO_SECRET.
+Copy robouse's `workers/wire.py` next to this script (the shared HTTP server).
 """
 from __future__ import annotations
 
@@ -27,7 +28,6 @@ import os
 import sys
 import time
 import traceback
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 ROOT = os.path.abspath(os.environ.get("ROBODOJO_ROOT", os.getcwd()))
 sys.path.insert(0, ROOT)
@@ -66,6 +66,11 @@ from env.global_configs import BENCHMARK, ENV_CONFIG_PATH  # noqa: E402
 from utils.cluttered_generator import UnStableError  # noqa: E402
 from utils.load_file import load_yaml  # noqa: E402
 from utils.pipeline_utils import process_config, process_randomization  # noqa: E402
+
+try:
+    from wire import serve_http  # noqa: E402  robouse/workers/wire.py, copied next to this script
+except ImportError:
+    from robouse.workers.wire import serve_http  # noqa: E402
 
 SECRET = os.environ.get("ROBOUSE_ROBODOJO_SECRET", "")
 GRIPPER_BIAS = 0.145  # RoboDojo's x5 robot_config.yml gripper_bias: link6 origin to the grasp point, along link6 +x
@@ -355,58 +360,24 @@ W: Worker | None = None
 RESTART = False
 
 
-class Handler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-
-    def log_message(self, *a):
-        pass
-
-    def _send(self, code: int, obj: dict):
-        body = json.dumps(obj).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_GET(self):
-        self._send(200, {"ok": True, "task": args.task, "ready": W is not None})
-
-    def do_POST(self):
-        n = int(self.headers.get("Content-Length", 0))
-        raw = self.rfile.read(n)
-        if SECRET and self.headers.get("X-Robouse-Secret") != SECRET:
-            return self._send(403, {"ok": False, "error": "forbidden"})
-        try:
-            req = json.loads(raw)
-            m, a = req.get("method"), req.get("args") or {}
-            if m == "debug_exec":
-                if not DEBUG:
-                    raise PermissionError("debug_exec is disabled")
-                g = {"W": W, "np": np, "env": W.env}
-                exec(a["code"], g)
-                res = {"out": repr(g.get("out"))[:20000]}
-            elif m in ("info", "reset", "step", "observe", "render", "status"):
-                res = getattr(W, m)(**a)
-            elif m == "success":
-                res = W.status()
-            else:
-                raise ValueError(f"unknown method {m!r}")
-            self._send(200, {"ok": True, "result": res})
-            if RESTART:
-                self.close_connection = True  # end this kept-alive connection so the server loop can restart
-        except Exception as e:
-            traceback.print_exc()
-            self._send(200, {"ok": False, "error": f"{type(e).__name__}: {e}"[:1000]})
+def handle(req: dict):
+    m, a = req.get("method"), req.get("args") or {}
+    if m == "debug_exec":
+        if not DEBUG:
+            raise PermissionError("debug_exec is disabled")
+        g = {"W": W, "np": np, "env": W.env}
+        exec(a["code"], g)
+        return {"out": repr(g.get("out"))[:20000]}
+    if m in ("info", "reset", "step", "observe", "render", "status"):
+        return getattr(W, m)(**a)
+    if m == "success":
+        return W.status()
+    raise ValueError(f"unknown method {m!r}")
 
 
 if __name__ == "__main__":
     W = Worker(args.task)
     print(f"[robodojo_worker] {args.task}: {W.layouts} layouts, loaded in {W.load_s}s; listening on {args.port}", flush=True)
-    srv = HTTPServer(("0.0.0.0", args.port), Handler)
-    srv.timeout = 1.0
-    while not RESTART:
-        srv.handle_request()
-    srv.server_close()
+    serve_http(handle, args.port, SECRET, name=f"robodojo worker ({args.task})", stop=lambda: RESTART)
     print("[robodojo_worker] restarting for a fresh episode", flush=True)
     os.execv(sys.executable, [sys.executable] + sys.argv)

@@ -23,7 +23,6 @@ import math
 import os
 import sys
 
-sys.path = [p for p in sys.path if os.path.abspath(p or ".") != os.path.dirname(os.path.abspath(__file__))]
 
 import numpy as np  # noqa: E402
 
@@ -561,40 +560,3 @@ class Worker:
     def close(self):
         if self.env is not None:
             self.env.close()
-
-
-def main(out):
-    w = Worker()
-    for line in sys.stdin.buffer:
-        if not line.strip():
-            continue
-        try:
-            req = json.loads(line)
-            cmd = req.pop("cmd")
-            if cmd == "close":
-                w.close()
-                out.write(b'{"ok": true}\n')
-                out.flush()
-                break
-            if cmd == "render":
-                img = w.render(req["width"], req["height"], req.get("camera", "topdown"), float(req.get("scale", 5.0)))
-                data = img.tobytes()
-                out.write((json.dumps({"ok": True, "nbytes": len(data), "shape": list(img.shape)}) + "\n").encode())
-                out.write(data)
-                out.flush()
-                continue
-            res = getattr(w, cmd)(**req)
-            out.write((json.dumps({"ok": True, "result": res}) + "\n").encode())
-        except Exception as e:  # report and keep serving
-            import traceback
-
-            out.write((json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}", "trace": traceback.format_exc()[-2000:]}) + "\n").encode())
-        out.flush()
-
-
-if __name__ == "__main__":
-    # the protocol gets a private copy of fd 1; anything MetaDrive, panda3d or pygame prints (Python or C level) goes to stderr
-    proto = os.fdopen(os.dup(1), "wb")
-    os.dup2(2, 1)
-    sys.stdout = sys.stderr
-    main(proto)
