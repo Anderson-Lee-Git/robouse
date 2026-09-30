@@ -71,7 +71,7 @@ class HumanoidBenchBackend(EmbodiedBackend):
             config.path("ROBOUSE_HUMANOIDBENCH_POLICY", config.cache_dir() / "humanoidbench" / "h1_motion.pt")
         )
         if not Path(self.policy_path).exists():
-            raise RuntimeError(
+            raise FileNotFoundError(
                 f"Unitree H1 locomotion policy not found at {self.policy_path}; see docs/suites/humanoidbench.md"
             )
         # run from the worker's own folder so no stray module in the cwd shadows the stdlib
