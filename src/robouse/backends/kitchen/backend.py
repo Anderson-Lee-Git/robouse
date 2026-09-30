@@ -434,9 +434,9 @@ def oracle_main(env: str) -> None:
     from robouse.agent_cli import _send
 
     try:
-        st = _state()
+        _state()
         for sub in TASKS[env]:
-            st = SOLVERS[sub](_state())
+            SOLVERS[sub](_state())
         _act(0, 0, 0, 0, -1, 5)
     except _Finished:
         return

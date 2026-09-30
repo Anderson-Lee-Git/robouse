@@ -119,7 +119,7 @@ def generate_instance(seed, split="development"):
 
     def sample():
         for _ in range(1000):
-            pattern = {label: list(cell) for label, cell in zip(LABELS, rng.sample(cells, len(LABELS)))}
+            pattern = {label: list(cell) for label, cell in zip(LABELS, rng.sample(cells, len(LABELS)), strict=False)}
             if rule.apply(pattern) is not None:
                 return pattern
         raise RuntimeError("Could not sample an in-bounds pattern")

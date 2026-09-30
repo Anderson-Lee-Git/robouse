@@ -271,7 +271,7 @@ def quality(sim, scene, monitor):
         "both_arms_factor": both,
         "arms_used": sorted(placed_by),
         "correct_squares": int(sum(1 for s in placement if s > 0.5)),
-        "per_piece": {k: round(v, 4) for k, v in zip(states, placement)},
+        "per_piece": {k: round(v, 4) for k, v in zip(states, placement, strict=False)},
         "quality": combined * both,
     }
 

@@ -76,7 +76,7 @@ class Simulation:
         for side, arm in scene.arms.items():
             self.joint_ids[side] = np.array([self.model.joint(j).id for j in arm.joints])
             self.actuator_ids[side] = np.array([self.model.actuator(a).id for a in arm.actuators])
-            for joint, q in zip(arm.joints, arm.home):
+            for joint, q in zip(arm.joints, arm.home, strict=False):
                 self.data.joint(joint).qpos[0] = q
                 self._dofs.append(self.model.joint(joint).dofadr[0])
             for joint in arm.finger_joints:
@@ -85,9 +85,9 @@ class Simulation:
         # The ready pose is part of the reset, not an evaluated movement.
         for side, arm in scene.arms.items():
             q = solve_ik(self.model, self.data, arm, [BOWL_X[side], BOWL_Y, READY_Z])
-            for joint, value in zip(arm.joints, q):
+            for joint, value in zip(arm.joints, q, strict=False):
                 self.data.joint(joint).qpos[0] = value
-            for actuator, value in zip(arm.actuators, q):
+            for actuator, value in zip(arm.actuators, q, strict=False):
                 self.data.actuator(actuator).ctrl[0] = value
             self.data.actuator(arm.gripper_actuator).ctrl[0] = arm.open_ctrl
             mujoco.mj_forward(self.model, self.data)

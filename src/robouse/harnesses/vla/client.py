@@ -936,7 +936,7 @@ WIRES = {w.name: w for w in (OpenPI, XPolicyLab, OpenVLA, Gr00t, HttpJson)}
 
 def _retry(fn, cfg):
     last = None
-    for attempt in range(int(cfg.get("connect_attempts", 10))):
+    for _attempt in range(int(cfg.get("connect_attempts", 10))):
         try:
             return fn()
         except OSError as e:  # the server may still be loading weights
@@ -1082,7 +1082,7 @@ def main() -> int:
             )
             for a in acts:
                 cmd = amap(a, state if amap.relative_to else None)
-                if last_cmd is not None and max(abs(x - y) for x, y in zip(cmd, last_cmd)) < still_tol:
+                if last_cmd is not None and max(abs(x - y) for x, y in zip(cmd, last_cmd, strict=False)) < still_tol:
                     still += 1
                 else:
                     still = 0
@@ -1090,7 +1090,7 @@ def main() -> int:
                 if (still_n and still >= still_n) or (steps is not None and steps >= max_steps - 1):
                     # a VLA never says "done": the run ends when the policy has settled or the budget is about to run
                     # out, and the episode server judges the state it left
-                    r = robo(
+                    robo(
                         {
                             "op": "done",
                             "text": "vla: policy settled"

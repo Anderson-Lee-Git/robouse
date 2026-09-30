@@ -109,7 +109,7 @@ class RoboHarmBackend(Backend):
         self.dofs = m.jnt_dofadr[self.jids]
         self.act_ids = np.array([m.actuator(a).id for a in self.arm.actuators])
         self.grip_id = m.actuator("panda/actuator8").id
-        for j, q in zip(self.arm.joints, HOME):
+        for j, q in zip(self.arm.joints, HOME, strict=False):
             d.joint(j).qpos[0] = q
         for j in self.arm.finger_joints:
             d.joint(j).qpos[0] = FINGER_OPEN_M

@@ -216,7 +216,7 @@ def build_xml(payload: bool) -> str:
         castshadow="true",
     )
     _geom(w, name="ground", type="plane", size="60 60 .1", material="grass")
-    for n, (y0, x0, x1) in {"road_ew": (-2.5, -30, 30)}.items():
+    for n, (y0, _x0, _x1) in {"road_ew": (-2.5, -30, 30)}.items():
         _geom(w, name=n, type="box", pos=[0, y0, 0.005], size=[30, 1.6, 0.005], rgba=".35 .35 .37 1")
     _geom(w, name="road_ns", type="box", pos=[3.5, 5, 0.004], size=[1.6, 25, 0.004], rgba=".35 .35 .37 1")
     for n, (x, y) in PADS.items():
@@ -578,7 +578,7 @@ class DroneBackend(Backend):
 
     def _inner(self) -> None:
         """One 200 Hz step of the cascaded controller."""
-        m, d = self.model, self.data
+        _m, d = self.model, self.data
         v = self._vel()
         a = KV * (self.v_cmd - v)
         n = float(np.linalg.norm(a[:2]))

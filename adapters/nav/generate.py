@@ -108,7 +108,7 @@ def make_home(seed: int) -> dict:
         door = find(a) != find(b) or rng.random() < 0.3
         if find(a) != find(b):
             parent[find(a)] = find(b)
-        (i, j), (i2, j2) = a, b
+        (i, j), (i2, _j2) = a, b
         if i2 == i + 1:
             wall_with_door(xs[i + 1], ys[j], xs[i + 1], ys[j + 1], door)
         else:

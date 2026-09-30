@@ -1037,11 +1037,11 @@ class DexHandBackend(EmbodiedBackend):
             fxyz, rpy = goal_fn(k)
             cur_rpy = np.array(self._rpy_of(self.pt))
             dpos = np.clip(np.asarray(fxyz) - self.pt[:3], -speed, speed)
-            drot = np.array([wrap(g - c) for g, c in zip(rpy, cur_rpy)])
+            drot = np.array([wrap(g - c) for g, c in zip(rpy, cur_rpy, strict=False)])
             drot = np.clip(drot, -rot_speed, rot_speed)
             q = self._pq()
             err = float(np.linalg.norm(np.asarray(fxyz) - q[:3]))
-            rerr = max(abs(wrap(g - c)) for g, c in zip(rpy, self._rpy_of(q)))
+            rerr = max(abs(wrap(g - c)) for g, c in zip(rpy, self._rpy_of(q), strict=False))
             tgt_there = np.linalg.norm(np.asarray(fxyz) - self.pt[:3]) < 1e-4 and np.max(np.abs(drot)) < 1e-4
             if (
                 tgt_there
@@ -1087,7 +1087,7 @@ class DexHandBackend(EmbodiedBackend):
         def goal_fn(k):
             # advance an internal orientation setpoint and keep the palm point where it was
             r = cur["rpy"]
-            step = np.clip(np.array([wrap(g - v) for g, v in zip(goal, r)]), -w, w)
+            step = np.clip(np.array([wrap(g - v) for g, v in zip(goal, r, strict=False)]), -w, w)
             cur["rpy"] = r + step
             return P0 - _R(cur["rpy"]) @ c, tuple(cur["rpy"])
 

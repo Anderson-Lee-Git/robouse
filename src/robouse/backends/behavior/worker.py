@@ -412,7 +412,7 @@ class Worker:
         import torch as th
         from omnigibson.utils.transform_utils import euler2quat
 
-        held = self._held()
+        self._held()
         center = [float(v) for v in obj.aabb_center]
         lo, hi = obj.aabb
         half = [(float(hi[0]) - float(lo[0])) / 2, (float(hi[1]) - float(lo[1])) / 2]

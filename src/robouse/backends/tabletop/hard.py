@@ -334,7 +334,7 @@ def _hanoi(tid: str, rb: dict, title_extra: str, max_steps: int, tags: list[str]
     )
     objs = [
         _box(n, c, -0.2, 0.04, half=[s, s, 0.01], z=0.01 + 0.0205 * i)
-        for i, (n, c, s) in enumerate(zip(names, cols, sizes))
+        for i, (n, c, s) in enumerate(zip(names, cols, sizes, strict=False))
     ]
     pads = {k: f"pad_{k}" for k in "abc"}
     task(
@@ -1170,7 +1170,7 @@ task(
         "be centred on the one below within 6 mm.",
         "objects": [
             _box(n, c, x, y, half=[h, h, 0.006])
-            for (n, c, h), (x, y) in zip(_PL, [(0.2, -0.15), (-0.2, -0.12), (0.05, -0.18), (-0.22, 0.12)])
+            for (n, c, h), (x, y) in zip(_PL, [(0.2, -0.15), (-0.2, -0.12), (0.05, -0.18), (-0.22, 0.12)], strict=False)
         ],
         "fixtures": [{"name": "grey_pad", "kind": "pad", "pos": [0.12, 0.12], "size": [0.05, 0.05], "color": "grey"}],
         "goals": [{"type": "stack", "order": [p[0] for p in _PL], "pad": "grey_pad", "tol": 0.006}]

@@ -55,7 +55,7 @@ def build(seed, conditions, embodiment=EMBODIMENT, **params):
     _add_cylinder(world, TARGET, source, quaternion, TARGET_RADIUS, TARGET_HEIGHT, mass, friction, ".92 .28 .12 1")
     offsets = ((-0.045, 0.0), (0.045, 0.0), (0.0, -0.045), (0.0, 0.045))
     neighbours = []
-    for name, (dx, dy) in zip(NEIGHBOURS, offsets):
+    for name, (dx, dy) in zip(NEIGHBOURS, offsets, strict=False):
         position = (centre[0] + dx, centre[1] + dy, 0.0081)
         position, quat = jitter_pose(
             jitter, position, radius=conditions["pose_jitter_m"] * 0.25, yaw=conditions["pose_jitter_rad"]

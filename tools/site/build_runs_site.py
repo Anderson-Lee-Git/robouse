@@ -1475,7 +1475,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
         by_task[t["task"]].append(t)
     by_suite = defaultdict(list)
     for task in sorted(by_task):
-        if any(x["video"] if "video" in x else True for x in by_task[task]):
+        if any(x.get("video", True) for x in by_task[task]):
             by_suite[by_task[task][0]["suite"]].append(task)
     order = [s for s in SUITES if s in by_suite] + sorted(set(by_suite) - set(SUITES))
     tasks = []
@@ -1540,9 +1540,9 @@ def synth_site(site: Path, chosen: dict) -> None:
         if src.exists() and not dst.exists() and not dst.is_symlink():
             dst.symlink_to(src)
     pairs = []
-    for i, p in enumerate(HM):
+    for _i, p in enumerate(HM):
         solved = scored = 0
-        for (h, m, task), ts in chosen.items():
+        for (h, m, _task), ts in chosen.items():
             if (h, m) == (p["harness"], p["model"]):
                 for t in ts:
                     if not t["infra"] and not t["partial"]:

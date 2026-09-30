@@ -421,7 +421,7 @@ class MobileManipBackend(EmbodiedBackend):
         r.grip(float(u["g"]))
         r.control_update()
         m, d = self.model, self.data
-        for i in range(N_SUB):
+        for _i in range(N_SUB):
             r.substep(PHYS_DT)
             mujoco.mj_step(m, d)
             if self.monitor_armed:
@@ -490,9 +490,7 @@ class MobileManipBackend(EmbodiedBackend):
     def posture_busy(self) -> bool:
         if self.posture is None:
             return False
-        if self.rkey != "stretch" and self.robot.arm.joints_done():
-            return False
-        return True
+        return not (self.rkey != "stretch" and self.robot.arm.joints_done())
 
     # ---- monitor -----------------------------------------------------------------------------------------------
     def _monitor_contacts(self) -> None:
@@ -712,10 +710,7 @@ class MobileManipBackend(EmbodiedBackend):
         for k, where in t.get("place", {}).items():
             if not self._in_place(k, where):
                 return False
-        for k, where in t.get("keep", {}).items():
-            if not self._in_place(k, where):
-                return False
-        return True
+        return all(self._in_place(k, where) for k, where in t.get("keep", {}).items())
 
     # ---- skills (generators over the public action) ------------------------------------------------------------
     def _act(
@@ -955,7 +950,7 @@ class MobileManipBackend(EmbodiedBackend):
                 break
             yield self._act(lift=float(np.clip(dz / LIFT_STEP, -1, 1)))
         # 2) base along its heading so the point lies on the arm's line
-        for k in range(200):
+        for _k in range(200):
             dx = float(r.to_base(target)[0] - r.to_base(r.ee_pos())[0])
             if abs(dx) < 0.006:
                 break

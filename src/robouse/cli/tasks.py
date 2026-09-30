@@ -300,7 +300,7 @@ def _compose(a) -> int:
         return 0
     # --grid: one row per combination as it finishes, then the totals
     keys = ["embodiment", "scene", "task", "seed"] + [k for k, *_ in MODS]
-    combos = [dict(zip(keys, c)) for c in itertools.product(*(vals[k] for k in keys))]
+    combos = [dict(zip(keys, c, strict=False)) for c in itertools.product(*(vals[k] for k in keys))]
 
     def label(c: dict) -> str:
         return " + ".join(
@@ -338,7 +338,11 @@ def _same(x, y) -> bool:
     if isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
         return len(x) == len(y) and all(_same(u, v) for u, v in zip(x, y, strict=True))
     if isinstance(x, float) or isinstance(y, float):
-        return isinstance(x, (int, float)) and isinstance(y, (int, float)) and math.isclose(x, y, rel_tol=1e-9, abs_tol=1e-12)
+        return (
+            isinstance(x, (int, float))
+            and isinstance(y, (int, float))
+            and math.isclose(x, y, rel_tol=1e-9, abs_tol=1e-12)
+        )
     return x == y
 
 

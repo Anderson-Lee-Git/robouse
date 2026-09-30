@@ -366,7 +366,7 @@ class Worker:
         a = np.asarray(action, float)
         if self.terminated or self.steps >= self.max_episode_steps:
             return self._summary()
-        m, d = self.model, self.data
+        _m, d = self.model, self.data
         self.cmd = np.clip(a[:3], -1, 1) * MAX_CMD
         cmd = self.cmd.copy()
         if not np.any(self.cmd):
@@ -445,7 +445,7 @@ class Worker:
 
     # ---- observation -----------------------------------------------------------------------------------------------
     def observe(self):
-        m, d = self.model, self.data
+        _m, d = self.model, self.data
         b, yaw = self.base()
         rob = self.u.robot
         v = rob.center_of_mass_velocity()
@@ -487,7 +487,7 @@ class Worker:
         return st
 
     def scene(self) -> dict:
-        m, d, t = self.model, self.data, self.task_id
+        _m, d, t = self.model, self.data, self.task_id
         if t == "push":
             box = d.qpos[-7:-4]
             return {

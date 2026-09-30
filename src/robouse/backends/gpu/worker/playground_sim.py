@@ -107,7 +107,7 @@ def _layout(kind: str, rng: np.random.Generator) -> dict:
         pts = [(0.0, 0.0), (3.0, 0.0), (3.0, 2.5 * (1 if rng.random() < 0.5 else -1)), (6.0, 0.0)]
         pts[3] = (6.0, pts[2][1])
         walls = []
-        for (x0, y0), (x1, y1) in zip(pts[:-1], pts[1:]):
+        for (x0, y0), (x1, y1) in zip(pts[:-1], pts[1:], strict=False):
             if abs(y1 - y0) < 1e-6:  # along x
                 cx, hx = (x0 + x1) / 2, abs(x1 - x0) / 2 + w
                 walls += [(cx, y0 + w + 0.05, hx, 0.05, 0.6), (cx, y0 - w - 0.05, hx, 0.05, 0.6)]
@@ -120,7 +120,7 @@ def _layout(kind: str, rng: np.random.Generator) -> dict:
         # three lanes crossing the path; in each, a block slides back and forth across the path
         goal = (9.0, 0.0)
         movers = []
-        for i, x in enumerate((2.0, 4.5, 7.0)):
+        for _i, x in enumerate((2.0, 4.5, 7.0)):
             movers.append(
                 dict(cx=x, hx=0.35, hy=0.5, amp=1.8, period=rng.uniform(8.0, 12.0), phase=rng.uniform(0, 2 * math.pi))
             )
@@ -179,7 +179,7 @@ def _carve(walls, pts, w):
     """Remove the wall pieces that block the corridor's own turns (keep only wall parts outside every leg)."""
 
     def inside_leg(x, y):
-        for (x0, y0), (x1, y1) in zip(pts[:-1], pts[1:]):
+        for (x0, y0), (x1, y1) in zip(pts[:-1], pts[1:], strict=False):
             if (
                 min(x0, x1) - w - 1e-6 <= x <= max(x0, x1) + w + 1e-6
                 and min(y0, y1) - w - 1e-6 <= y <= max(y0, y1) + w + 1e-6

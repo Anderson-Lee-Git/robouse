@@ -196,7 +196,9 @@ class LegKinematics:
         d = self.d
         d.qpos[self.qadr.ravel()] = q.ravel()
         self.mj.mj_kinematics(self.m, d)
-        return np.array([d.xpos[b] + d.xmat[b].reshape(3, 3) @ o for b, o in zip(self.foot_body, self.foot_off)])
+        return np.array(
+            [d.xpos[b] + d.xmat[b].reshape(3, 3) @ o for b, o in zip(self.foot_body, self.foot_off, strict=False)]
+        )
 
     def ik(self, targets: np.ndarray, iters: int = 3) -> np.ndarray:
         """Joint angles (4 x 3) putting each foot centre at its target (base frame); warm-started from the last call."""

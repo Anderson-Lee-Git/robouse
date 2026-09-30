@@ -679,7 +679,7 @@ class MSTask:
             delta = env.goal_pose.sp * off * env.peg.pose.sp.inv()
             pre = delta * pre
             yield self._mv(pre, speed=0.3)
-        d = self._axis(env.goal_pose.sp)
+        self._axis(env.goal_pose.sp)
         depth = 0.0
         while depth < 0.01 + L + 0.015:  # push in slowly; the commanded pose integrates the peg's remaining error
             depth += self.cfg.get("fine_step", 0.004) if depth < 0.018 else 0.025  # small steps across the entrance

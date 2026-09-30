@@ -162,7 +162,9 @@ class LeRobotArmDriver(ArmDriver):
         return out
 
     def send(self, q) -> None:
-        self.robot.send_action({f"{n}.pos": float(v) for n, v in zip(self.profile.joints, np.asarray(q, dtype=float))})
+        self.robot.send_action(
+            {f"{n}.pos": float(v) for n, v in zip(self.profile.joints, np.asarray(q, dtype=float), strict=False)}
+        )
 
     def disconnect(self, release_torque: bool) -> None:
         for c in self._cams.values():

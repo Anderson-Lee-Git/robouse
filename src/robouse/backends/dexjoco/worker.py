@@ -193,7 +193,10 @@ class Worker:
             "cameras": cams,
             "bimanual": self.bimanual,
             "hand_ranges": {
-                a: [[round(float(l), 3), round(float(h), 3)] for l, h in zip(self.hand_lo[a], self.hand_hi[a])]
+                a: [
+                    [round(float(l), 3), round(float(h), 3)]
+                    for l, h in zip(self.hand_lo[a], self.hand_hi[a], strict=False)
+                ]
                 for a in self.arms
             },
         }

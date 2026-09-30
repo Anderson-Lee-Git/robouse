@@ -456,7 +456,7 @@ def _fragile_kit(bot: Bot, env: str):
 def _route_around(bot: Bot, env: str):
     s = bot.state
     side = s["arm"]
-    src, dst = np.asarray(s["source_pad_center"]), np.asarray(s["delivery_pad_center"])
+    _src, dst = np.asarray(s["source_pad_center"]), np.asarray(s["delivery_pad_center"])
     col = np.asarray(s["column_center_xy"])
     hover = 0.16
     p = bot.pos("payload")

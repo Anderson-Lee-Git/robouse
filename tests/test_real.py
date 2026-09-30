@@ -67,7 +67,7 @@ def test_oracle_style_move_and_pose_verdict(tmp_path):
     ep = _episode("real-metal-reach", tmp_path)
     r = ep.handle({"op": "skill", "name": "move_to", "args": ["0.30", "-0.10", "0.08"]})
     assert r["ok"] and r["result"]["reached"], r
-    res = ep.finish("done", "")
+    ep.finish("done", "")
     assert ep.result["success"] and ep.result["embodiment_mode"] == "hil-mock"
     ep.close()
 
@@ -103,7 +103,7 @@ def test_estop_ends_episode_with_safety_stop(tmp_path):
 def test_refused_arm_gate_stops_before_motion(tmp_path, monkeypatch):
     monkeypatch.setenv("ROBOUSE_OPERATOR_SCRIPT", "arm=no")
     ep = _episode("real-metal-reach", tmp_path)
-    r = ep.handle({"op": "observe"})
+    ep.handle({"op": "observe"})
     assert ep.finished and ep.outcome == "safety_stop" and ep.steps == 0
     ep.close()
 

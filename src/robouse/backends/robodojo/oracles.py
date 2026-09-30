@@ -532,7 +532,7 @@ def plan_sort_nesting_dolls_by_size(o):
     dolls = [ob[f"doll{i}"] for i in range(5)]
     ranked = sorted(dolls, key=lambda d: int(d["model_id"]) % 5, reverse=True)  # left to right
     table_z = min(d["bbox_min"][2] for d in dolls)
-    for d, spot in sorted(zip(ranked, DOLL_SPOTS), key=lambda p: -abs(p[1][0])):
+    for d, spot in sorted(zip(ranked, DOLL_SPOTS, strict=False), key=lambda p: -abs(p[1][0])):
         move_object_to(o, d["label"], spot, table_z, depth=0.02)
     home_both(o)
 

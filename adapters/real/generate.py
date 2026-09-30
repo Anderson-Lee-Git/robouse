@@ -195,7 +195,9 @@ TASKS = [
 
 def instruction(t: dict) -> str:
     p = prof_of(t)
-    joints = ", ".join(f"{n} [{lo:g}, {hi:g}] {u}" for n, lo, hi, u in zip(p.joints, p.low, p.high, p.units))
+    joints = ", ".join(
+        f"{n} [{lo:g}, {hi:g}] {u}" for n, lo, hi, u in zip(p.joints, p.low, p.high, p.units, strict=False)
+    )
     cams = (
         f"Cameras: {', '.join('`' + c + '`' for c in t['cameras'])} (`robo observe --image` shows all of them side by side; "
         "`--camera NAME` shows one)."

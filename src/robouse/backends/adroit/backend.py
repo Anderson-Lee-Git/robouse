@@ -133,8 +133,8 @@ class AdroitBackend(Backend):
         out = {
             "palm_pos": _R(self.palm_pos()),
             "fingertips": {f: _R(d.site_xpos[s]) for f, s in self._tips.items()},
-            "joints": {n: round(float(d.qpos[q]), 4) for n, q in zip(self.act_names, self.jnt_qadr)},
-            "targets": {n: round(float(t), 4) for n, t in zip(self.act_names, self.target)},
+            "joints": {n: round(float(d.qpos[q]), 4) for n, q in zip(self.act_names, self.jnt_qadr, strict=False)},
+            "targets": {n: round(float(t), 4) for n, t in zip(self.act_names, self.target, strict=False)},
         }
         if self.kind == "door":
             hinge = float(d.qpos[u.door_hinge_addrs])
@@ -192,7 +192,7 @@ class AdroitBackend(Backend):
         return {
             "actuators": {
                 n: {"range": [round(float(lo), 6), round(float(hi), 6)], "unit": "m" if n.startswith("ART") else "rad"}
-                for n, lo, hi in zip(self.act_names, self.lo, self.hi)
+                for n, lo, hi in zip(self.act_names, self.lo, self.hi, strict=False)
             },
             "step_seconds": round(float(self.u.dt), 4),
             "named_skills": [
@@ -253,7 +253,7 @@ class AdroitBackend(Backend):
         if not pairs or len(pairs) % 2:
             raise ValueError("usage: set NAME VALUE [NAME VALUE ...] [steps=N]")
         goal = self.target.copy()
-        for n, v in zip(pairs[::2], pairs[1::2]):
+        for n, v in zip(pairs[::2], pairs[1::2], strict=False):
             goal[self._index(n)] = float(v)
         yield from self._ramp(goal, steps)
         return {"targets": {n.removeprefix("A_"): round(float(self.target[self._index(n)]), 4) for n in pairs[::2]}}

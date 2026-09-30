@@ -258,7 +258,7 @@ def fragile_kit(seed, conditions, embodiment="dual_panda", **params):
                 )
     sources = [("left", (-0.36, -0.075, 0.0082)), ("right", (0.36, -0.075, 0.0082)), ("left", (-0.36, -0.18, 0.0082))]
     vials, assign = [], {}
-    for i, (side, src) in enumerate(sources):
+    for i, (_side, src) in enumerate(sources):
         name = f"vial_{i}"
         assign[name] = labels[i]
         b = _body(world, name, src)

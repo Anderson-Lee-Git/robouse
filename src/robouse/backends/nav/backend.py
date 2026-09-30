@@ -474,13 +474,13 @@ class NavBackend(EmbodiedBackend):
 
     # ---- metrics ------------------------------------------------------------------------------------------------------
     def episode_metrics(self) -> dict:
-        p = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(self.path, self.path[1:]))
+        p = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(self.path, self.path[1:], strict=False))
         l = self.l_ref
         s = 1.0 if self.arrived() else 0.0
         d_final = self.geodesic(self.pos)
         ref = self.nav.get("reference") or []
         ref_turn = 0.0
-        for a, b, c in zip(ref, ref[1:], ref[2:]):
+        for a, b, c in zip(ref, ref[1:], ref[2:], strict=False):
             h1, h2 = math.atan2(b[1] - a[1], b[0] - a[0]), math.atan2(c[1] - b[1], c[0] - b[0])
             ref_turn += abs((h2 - h1 + math.pi) % (2 * math.pi) - math.pi)
         return {

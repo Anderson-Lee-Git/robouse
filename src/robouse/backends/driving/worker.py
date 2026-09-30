@@ -255,7 +255,7 @@ class Worker:
     # ---- geometry helpers ----------------------------------------------------------------------------------------
     def _route_roads(self):
         ck = self.nav.checkpoints
-        return list(zip(ck[:-1], ck[1:]))
+        return list(zip(ck[:-1], ck[1:], strict=False))
 
     def _road_pos(self) -> int:
         """Index (in the route's road list) of the road the navigation module currently tracks."""
@@ -379,7 +379,7 @@ class Worker:
         # cutting in front of (or braking hard in front of) a vehicle: something behind in the car's lane closes in with a
         # time gap under CUT_OFF_S (MetaDrive's IDM followers keep about 10 m + 1.5 s, so this only happens when forced)
         h, ve = v.heading_theta, v.speed_km_h / 3.6
-        for name, obj in self.env.engine.get_objects().items():
+        for _name, obj in self.env.engine.get_objects().items():
             if obj is v or type(obj).__name__ not in KIND or getattr(obj, "break_down", False):
                 continue
             fx, fy = self._ego_frame(obj.position)
@@ -406,7 +406,7 @@ class Worker:
             a, b = self._route_roads()[jj]
             if f"{a}->{b}" == rule["road"]:  # checked on every step while the car is on the entry road
                 cp = np.asarray(rule["point"], dtype=float)
-                for name, obj in self.env.engine.get_objects().items():
+                for _name, obj in self.env.engine.get_objects().items():
                     if obj is v or type(obj).__name__ not in KIND:
                         continue
                     d = np.asarray(obj.position) - cp

@@ -718,7 +718,7 @@ def _sc_knife(b):
         size=[0.17, 0.11, 0.006],
         rgba=".72 .55 .35 1",
     )
-    kb = free_box(
+    free_box(
         b,
         "knife",
         [-0.12, -0.12, 0.024],

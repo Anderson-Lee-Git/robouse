@@ -136,7 +136,7 @@ class ReplayRobot:
         if not self.connected:
             raise RuntimeError("not connected")
         self._update_bus()
-        out = {f"{n}.pos": float(v) for n, v in zip(self.prof.joints, self.q)}
+        out = {f"{n}.pos": float(v) for n, v in zip(self.prof.joints, self.q, strict=False)}
         for cam in self.cameras:
             img = self.fx.image(cam, self.q)
             if img is not None:
@@ -208,7 +208,7 @@ class ReplayPiperSDK:
 
     def GripperCtrl(self, pos, effort, code, zero):
         q = list(getattr(self, "_pending", self.robot.q[:6])) + [pos / 1000.0]
-        self.robot.send_action({f"{n}.pos": v for n, v in zip(self.robot.prof.joints, q)})
+        self.robot.send_action({f"{n}.pos": v for n, v in zip(self.robot.prof.joints, q, strict=False)})
 
 
 # ------------------------------------------------------------------------------------------------------------------
@@ -264,7 +264,7 @@ def conformance(fx: Fixture, prof: Profile, overrides: dict | None = None) -> di
         "clamp_events": sum(1 for e in events if e["kind"] == "clamp"),
         "guard_changed_steps": int(sum(1 for d in deltas if d > 0.05)),
         "max_guard_change_deg": round(max(deltas) if deltas else 0.0, 3),
-        "guard_changed_steps_by_joint": {n: int(c) for n, c in zip(prof.joints, per_joint) if c},
+        "guard_changed_steps_by_joint": {n: int(c) for n, c in zip(prof.joints, per_joint, strict=False) if c},
         "tracking_one_step_rms_deg": round(float(np.sqrt(np.mean(one_step[:, prof.arm_idx] ** 2))), 3),
         "tracking_open_loop_rms_deg": round(float(np.sqrt(np.mean(err**2))), 3),
         "tracking_open_loop_max_deg": round(float(err.max()), 3),

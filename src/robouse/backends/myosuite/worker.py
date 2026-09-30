@@ -99,7 +99,8 @@ class Worker:
             "muscles": self.muscles,
             "joints": self.jnames,
             "joint_ranges": {
-                n: [round(float(lo), 4), round(float(hi), 4)] for n, lo, hi in zip(self.jnames, self.jlo, self.jhi)
+                n: [round(float(lo), 4), round(float(hi), 4)]
+                for n, lo, hi in zip(self.jnames, self.jlo, self.jhi, strict=False)
             },
             "dt": float(self.u.dt),
             "tips": tips,
@@ -150,7 +151,7 @@ class Worker:
         self.ramp_len = max(1, int(ramp))
         self.ramp_left = self.ramp_len
         return {
-            "targets": {n: round(float(t), 4) for n, t in zip(self.jnames, self.targets)},
+            "targets": {n: round(float(t), 4) for n, t in zip(self.jnames, self.targets, strict=False)},
             "clipped_to_range": clipped,
         }
 
@@ -228,7 +229,7 @@ class Worker:
             mujoco.mj_kinematics(m, s)
             mujoco.mj_comPos(m, s)
             errs, Js = [], []
-            for sid, gpos in zip(sids, goal):
+            for sid, gpos in zip(sids, goal, strict=False):
                 errs.append(gpos - s.site_xpos[sid])
                 J = np.zeros((3, m.nv))
                 mujoco.mj_jacSite(m, s, J, None, sid)
@@ -240,7 +241,7 @@ class Worker:
             dq = J.T @ np.linalg.solve(J @ J.T + 1e-4 * np.eye(len(e)), e)
             q[self.qadr] = np.clip(q[self.qadr] + dq, self.jlo, self.jhi)
         return {
-            "joint_targets": {n: round(float(v), 4) for n, v in zip(self.jnames, q[self.qadr])},
+            "joint_targets": {n: round(float(v), 4) for n, v in zip(self.jnames, q[self.qadr], strict=False)},
             "residual_m": {t: round(float(np.linalg.norm(e[3 * i : 3 * i + 3])), 4) for i, t in enumerate(names)},
         }
 
@@ -266,15 +267,17 @@ class Worker:
 
         m, d, u = self.m, self.d, self.u
         out = {
-            "joint_angles_rad": {n: round(float(v), 4) for n, v in zip(self.jnames, d.qpos[self.qadr])},
-            "joint_velocities_rad_s": {n: round(float(v), 3) for n, v in zip(self.jnames, d.qvel[self.dadr])},
+            "joint_angles_rad": {n: round(float(v), 4) for n, v in zip(self.jnames, d.qpos[self.qadr], strict=False)},
+            "joint_velocities_rad_s": {
+                n: round(float(v), 3) for n, v in zip(self.jnames, d.qvel[self.dadr], strict=False)
+            },
             "muscle_activations": r(d.act, 3),
-            "joint_targets_rad": {n: round(float(v), 4) for n, v in zip(self.jnames, self.targets)},
+            "joint_targets_rad": {n: round(float(v), 4) for n, v in zip(self.jnames, self.targets, strict=False)},
         }
-        od = u.get_obs_dict(m, d)
+        u.get_obs_dict(m, d)
         if self.kind == "pose":
             tgt = np.asarray(u.target_jnt_value, dtype=np.float64)
-            out["target_pose_rad"] = {n: round(float(tgt[a]), 4) for n, a in zip(self.jnames, self.qadr)}
+            out["target_pose_rad"] = {n: round(float(tgt[a]), 4) for n, a in zip(self.jnames, self.qadr, strict=False)}
         elif self.kind == "reach":
             for i, sid in enumerate(u.tip_sids):
                 nm = m.site(int(sid)).name

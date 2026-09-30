@@ -291,7 +291,7 @@ def solve_nut(link: Link, kind: str) -> None:
     along = handle[:2] - center[:2]
     # fingers close across the handle: finger line perpendicular to the handle's long axis
     hy = np.degrees(np.arctan2(along[1], along[0]))
-    off = pick(
+    pick(
         link,
         arm,
         key,
@@ -314,7 +314,7 @@ def solve_nut(link: Link, kind: str) -> None:
     drive(link, [(arm, arm.pos())], tol=0.03, max_n=80, yaw_tol=2.0)
     arm.rot_max = 1.0
     table = link.st["table_height"]
-    for attempt in range(3):
+    for _attempt in range(3):
         servo_obj(link, arm, key, peg[:2], table + 0.15, kind, tol=0.004, max_n=120)  # nut hovering above the peg
         # lower the nut onto the peg while keeping its centre over the peg
         servo_obj(link, arm, key, peg[:2], table + 0.02, kind, tol=0.006, max_n=150, descend=True)
@@ -330,7 +330,7 @@ def servo_obj(
     link: Link, arm: Arm, key: str, xy, z_obj: float, kind: str, tol: float, max_n: int, descend: bool = False
 ) -> None:
     """Move the held nut (not the hand) so its centre reaches (xy, z_obj); square nuts also keep yaw = 0 mod 90."""
-    for n in range(max_n):
+    for _n in range(max_n):
         if link.finished:
             return
         st = link.st

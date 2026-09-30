@@ -337,7 +337,7 @@ class RealArmBackend(EmbodiedBackend):
     def observe(self) -> dict:
         p = self.prof
         out = {
-            "joint_pos": {n: round(float(v), 2) for n, v in zip(p.joints, self.q)},
+            "joint_pos": {n: round(float(v), 2) for n, v in zip(p.joints, self.q, strict=False)},
             "target": [round(float(v), 2) for v in (self.target if self.target is not None else self.q)],
             "telemetry": {
                 "max_temp_c": round(

@@ -112,7 +112,12 @@ def build(jobs: list[Path], by: list[str]) -> dict:
     out = {"groups": [], "by": by, "trials": len(rows)}
     for key, rs in group(rows, by).items():
         out["groups"].append(
-            {"group": dict(zip(by, key)), **aggregate(rs), **pass_k(rs), "tasks": len({r["task"] for r in rs})}
+            {
+                "group": dict(zip(by, key, strict=False)),
+                **aggregate(rs),
+                **pass_k(rs),
+                "tasks": len({r["task"] for r in rs}),
+            }
         )
     return out
 

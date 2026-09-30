@@ -578,7 +578,7 @@ def _manip_fk(q) -> tuple[np.ndarray, list[np.ndarray]]:
     """Planar manipulator forward kinematics: joint angles about -y, 0 = link pointing up (+z); returns the grasp site
     and the joint positions."""
     p, Q, pts = MANIP_ROOT.copy(), 0.0, [MANIP_ROOT.copy()]
-    for qi, li in zip(q, MANIP_L):
+    for qi, li in zip(q, MANIP_L, strict=False):
         Q += qi
         p = p + li * np.array([-math.sin(Q), math.cos(Q)])
         pts.append(p.copy())
@@ -595,7 +595,7 @@ def _manip_ik(goal, hand_angle: float, q0, w_angle: float = 0.3) -> np.ndarray:
     W = np.diag([1.0, 1.0, w_angle])
     for _ in range(80):
         Q = np.cumsum(q)
-        p = MANIP_ROOT + sum(li * np.array([-math.sin(Qi), math.cos(Qi)]) for li, Qi in zip(MANIP_L, Q))
+        p = MANIP_ROOT + sum(li * np.array([-math.sin(Qi), math.cos(Qi)]) for li, Qi in zip(MANIP_L, Q, strict=False))
         e = np.array([*(goal - p), _wrap(hand_angle - Q[-1])])
         if np.linalg.norm(e[:2]) < 1e-4 and abs(e[2]) < 1e-3:
             break

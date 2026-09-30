@@ -34,7 +34,7 @@ def summarize(trial: Path) -> str:
                 errors.append(f"{(row.get('req') or {}).get('op')}: {resp['error'][:200]}")
         tail = [json.dumps(row.get("req"))[:160] for row in rows[-5:]]
     if errors:
-        lines += ["", "## Errors the robot returned", ""] + [f"- {e}" for e in dict.fromkeys(errors).keys()][:10]
+        lines += ["", "## Errors the robot returned", ""] + [f"- {e}" for e in dict.fromkeys(errors)][:10]
     if tail:
         lines += ["", "## Last requests", ""] + [f"- `{t}`" for t in tail]
     lines += ["", "## For the next attempt", ""]

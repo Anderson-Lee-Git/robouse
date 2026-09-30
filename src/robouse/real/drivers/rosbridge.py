@@ -136,7 +136,7 @@ class RosbridgeDriver(ArmDriver):
             msg = m.get("msg") or {}
             if m.get("topic") == state_topic:
                 with self._lock:
-                    for name, pos in zip(msg.get("name", []), msg.get("position", [])):
+                    for name, pos in zip(msg.get("name", []), msg.get("position", []), strict=False):
                         self._state[name] = float(pos)
                     self._state_t = time.time()
             elif m.get("topic") in cams:

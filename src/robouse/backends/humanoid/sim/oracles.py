@@ -86,7 +86,7 @@ def g1_drawer_stow(o) -> None:
     o.skill("reach", "right", 0.2, -0.2, 0.94)
     # 2. left hand: the soap into the open part of the tray
     st = o.state()
-    tray = st["scene"]["drawer"]["tray_inside"]
+    st["scene"]["drawer"]["tray_inside"]
     soap = _obj(o, "soap")
     half_h = soap[2] - st["scene"]["table"]["top_height"]
     g1_pick(o, "left", "soap")
@@ -173,7 +173,7 @@ def apollo_box_into_bin(o) -> None:
     st = o.state()
     b = st["scene"]["bin"]
     # lift high enough to clear the bin wall with the box bottom
-    box = st["objects"]["box"]
+    st["objects"]["box"]
     lift = b["wall_height"] + 0.06
     squeeze_carry(
         o, "box", b["center"][:2], b["floor_height"], APOLLO_HALF_PALM, squeeze=0.02, clear=0.06, lift=lift, over=0.1

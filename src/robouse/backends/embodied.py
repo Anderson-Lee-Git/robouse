@@ -87,7 +87,7 @@ class Skill:
         kws = dict(r.split("=", 1) for r in raw if "=" in r)
         if len(pos) > len(self.args):
             raise ValueError(f"{self.name} takes at most {len(self.args)} arguments: {self.signature()}")
-        for a, v in zip(self.args, pos):
+        for a, v in zip(self.args, pos, strict=False):
             vals[a.name] = v
         for k, v in kws.items():
             k = k.lower().lstrip("-")

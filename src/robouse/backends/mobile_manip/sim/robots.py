@@ -630,7 +630,7 @@ class GoogleRobot(Robot):
     def init_state(self) -> None:
         d = self.d
         x, y, yaw = self.start
-        for a, v in zip(self.base_adr, (x, y, yaw)):
+        for a, v in zip(self.base_adr, (x, y, yaw), strict=False):
             d.qpos[a] = v
         adr = [self.m.jnt_qposadr[self.j(n).id] for n in self.ARM]
         d.qpos[adr] = self.STOW

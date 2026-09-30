@@ -126,7 +126,7 @@ class MockRosbridge:
                     msg = m.get("msg") or {}
                     if "points" in msg:
                         names = msg.get("joint_names") or self.joints
-                        pos = dict(zip(names, msg["points"][0]["positions"]))
+                        pos = dict(zip(names, msg["points"][0]["positions"], strict=False))
                         tgt = [float(pos.get(j, self.target[i])) for i, j in enumerate(self.joints)]
                     else:
                         tgt = [float(x) for x in msg.get("data", self.target)]
@@ -154,7 +154,10 @@ class MockRosbridge:
     def _tick(self) -> None:
         k = 0
         while not self._stop.is_set():
-            self.q = [q + max(-self.vmax, min(self.vmax, self.gain * (t - q))) for q, t in zip(self.q, self.target)]
+            self.q = [
+                q + max(-self.vmax, min(self.vmax, self.gain * (t - q)))
+                for q, t in zip(self.q, self.target, strict=False)
+            ]
             now = time.time()
             js = json.dumps(
                 {
