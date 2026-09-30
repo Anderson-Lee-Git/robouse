@@ -23,7 +23,20 @@ Options:
 Model harnesses run in a sandbox, so the agent cannot read the reference solution, the job folder or other trials. The reference solution and the no-op control run without it.
 
 - **macOS**: the system's Seatbelt sandbox (`sandbox-exec`); nothing to install.
-- **Linux**: bubblewrap. Install it first, for example `sudo apt-get install bubblewrap`.
+- **Linux**: bubblewrap. Install it first, for example `sudo apt-get install bubblewrap`. Ubuntu 24.04 blocks the user namespaces bubblewrap needs unless an AppArmor profile allows them; if `robouse run` stops with "no sandbox for the agent on this machine", add the profile and load it:
+
+```sh
+sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+```
 
 `ROBOUSE_SANDBOX_DENY` adds paths the agent may not read or write, separated by colons, such as credential files. `ROBOUSE_SANDBOX=0` runs the agent without a sandbox; use it only on a machine you trust, since the agent can then read the reference solution.
 
