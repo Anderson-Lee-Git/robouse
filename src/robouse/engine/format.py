@@ -36,6 +36,8 @@ _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "bundled_t
 def _module_file(mod: str) -> Path | None:
     """robouse.backends.remix -> PKG/backends/remix.py (or the package's __init__.py)."""
     rel = Path(*mod.split(".")[1:])
+    if not rel.parts:  # `import robouse` or `from robouse import x`
+        return PKG / "__init__.py"
     for cand in (PKG / rel.with_suffix(".py"), PKG / rel / "__init__.py"):
         if cand.is_file():
             return cand
