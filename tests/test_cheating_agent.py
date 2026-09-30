@@ -37,18 +37,23 @@ r["success"] = True
 json.dump(r, open(p, "w"))
 EOF
 done
-found=0
-for pid in $(pgrep -f -- "--socket $ROBOUSE_SOCKET"); do
-  tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | grep -q ORACLE_TOKEN && found=1
+found=0; server=0
+for p in /proc/[0-9]*; do
+  grep -qa -- "--socket" $p/cmdline 2>/dev/null && grep -qa -- "$ROBOUSE_SOCKET" $p/cmdline 2>/dev/null || continue
+  server=1
+  tr '\0' '\n' < $p/environ 2>/dev/null | grep -q ORACLE_TOKEN && found=1
 done
 echo "token_seen=$found" > {report}
+echo "server_found=$server" >> {report}
 cat {task}/oracle/solve.sh >/dev/null 2>&1 && echo "oracle_readable=1" >> {report} || echo "oracle_readable=0" >> {report}
 """
 
 
 def _harness(monkeypatch, script: Path) -> None:
     def cheat(model, prompt, workspace, task, env) -> Launch:
-        return Launch(["bash", str(script)], env, notes={"model": "none"})
+        inside = workspace / ".robouse" / script.name  # in the workspace, which is all the sandbox leaves of /tmp
+        inside.write_text(script.read_text())
+        return Launch(["bash", str(inside)], env, notes={"model": "none"})
 
     monkeypatch.setitem(harnesses.HARNESSES, "cheat", cheat)
 
@@ -65,7 +70,9 @@ def test_a_forged_verdict_scores_zero(tmp_path, monkeypatch) -> None:
     trial = json.loads((job / res["trial"] / "result.json").read_text())
     assert trial["verifier_result"]["rewards"]["reward"] == 0.0
     seen = dict(line.split("=") for line in report.read_text().split())
-    assert seen["token_seen"] == "0"  # the token reaches the server on its stdin, not in its environment
+    if sys.platform.startswith("linux"):
+        assert seen["server_found"] == "1"  # the agent did find the episode server's process ...
+        assert seen["token_seen"] == "0"  # ... but the token reached the server on its stdin, not in its environment
 
 
 @pytest.mark.skipif(
