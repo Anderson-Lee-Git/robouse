@@ -7,7 +7,7 @@ Each component is a folder with a `component.yaml` manifest:
   components/tasks/<id>/component.yaml         goal, capability tags, difficulty, requirements (variants), scene needs
   components/modifiers/<id>/component.yaml     observation mode, budget, perturbation, safety overlay, roles, seed
 
-Composable components are implemented by the `components` backend (robouse.backends.components_sim); `export()` writes their
+Composable components are implemented by the `components` backend (robouse.backends.components); `export()` writes their
 manifests from what that code declares plus the prose in catalog.py, so the manifests cannot drift from the runtime
 (tests/test_components.py checks that the checked-in manifests equal a fresh export). Fixed components describe the
 robots and scenes of the existing suites, so upstream and fixed task sets can be browsed by the same tags.
@@ -68,8 +68,8 @@ def load(root: str | Path | None = None) -> Registry:
 # ---------------------------------------------------------------------------------------------------------------------
 
 def _embodiment(key: str) -> dict:
-    from ..backends.components_sim import robots as R
-    from ..backends.components_sim import scenes as S
+    from ..backends.components.sim import robots as R
+    from ..backends.components.sim import scenes as S
 
     cls = R.DRIVERS[key]
     drv = cls(S.get("tabletop"))
@@ -80,18 +80,18 @@ def _embodiment(key: str) -> dict:
     out = {"id": key, "type": "embodiment", "version": C.VERSION, "title": cat["title"], "summary": cat["summary"],
            "track": cat["track"], "kind": cls.kind, "placement": cls.mount, "capabilities": list(cls.caps),
            "grasp": cls.grasp_mode, "max_grip_m": cls.max_grip, "payload_kg": cat["payload_kg"], "assets": list(cls.assets), "licence": cat["licence"],
-           "composable": True, "runtime": f"robouse.backends.components_sim.robots:{cls.__name__}",
+           "composable": True, "runtime": f"robouse.backends.components.sim.robots:{cls.__name__}",
            "arms": list(cls.arms) if cls.arms else [], "action_groups": groups, "skills": skills,
            "cameras": drv.cameras(), "suites": suites}
-    from ..backends.components_sim.templates import FLOOR_REACH
+    from ..backends.components.sim.templates import FLOOR_REACH
     if key in FLOOR_REACH:
         out["reach"] = {"grasp_heights_m": list(FLOOR_REACH[key]["h"]), "standoff_m": FLOOR_REACH[key]["standoff"]}
     return out
 
 
 def _scene(sid: str) -> dict:
-    from ..backends.components_sim import scenes as S
-    from ..backends.components_sim import world as W
+    from ..backends.components.sim import scenes as S
+    from ..backends.components.sim import world as W
 
     L = S.get(sid)
     placements = [m for m in ("arm", "bimanual", "floor", "airspace") if m in L.mounts]
@@ -103,7 +103,7 @@ def _scene(sid: str) -> dict:
                     "grip_width_m": round(W.grip_width(k), 3), "height_m": round(2 * W.half_height(k), 3),
                     "pick_and_place": bool(pick)}
     return {"id": sid, "type": "scene", "version": C.VERSION, "title": L.title, "scenario": L.scenario,
-            "summary": C.SCENES[sid]["summary"], "composable": True, "runtime": f"robouse.backends.components_sim.scenes:{S.SCENES[sid].__name__}",
+            "summary": C.SCENES[sid]["summary"], "composable": True, "runtime": f"robouse.backends.components.sim.scenes:{S.SCENES[sid].__name__}",
             "placements": placements,
             "surfaces": {k: {"label": s.label, "height_m": s.top, "size_m": [round(2 * s.half[0], 3), round(2 * s.half[1], 3)],
                              "reachable_from": list(s.approach)} for k, s in L.surfaces.items()},
@@ -126,12 +126,12 @@ def _harm(scenario: str) -> list[str]:
 
 
 def _task(tid: str) -> dict:
-    from ..backends.components_sim.templates import TEMPLATES
+    from ..backends.components.sim.templates import TEMPLATES
 
     t = TEMPLATES[tid]
     return {"id": tid, "type": "task", "version": C.VERSION, "title": t.title, "summary": C.TASKS[tid]["summary"],
             "capabilities": list(t.capabilities), "difficulty": t.difficulty, "composable": True,
-            "runtime": f"robouse.backends.components_sim.templates:{type(t).__name__}",
+            "runtime": f"robouse.backends.components.sim.templates:{type(t).__name__}",
             "requires": [{"placements": list(v["mounts"]), "capabilities": list(v["caps"]),
                           **({"object": v["object"]} if "object" in v else {})} for v in t.variants],
             "needs": dict(t.needs), "perturbable": t.perturbable, "safety_levels": list(t.safety_levels),
@@ -157,9 +157,9 @@ def _fixed_scene(sid: str, m: dict) -> dict:
 
 def export(root: str | Path | None = None) -> list[Path]:
     """Write every manifest; returns the files written."""
-    from ..backends.components_sim import robots as R
-    from ..backends.components_sim import scenes as S
-    from ..backends.components_sim.templates import TEMPLATES
+    from ..backends.components.sim import robots as R
+    from ..backends.components.sim import scenes as S
+    from ..backends.components.sim.templates import TEMPLATES
 
     root = Path(root) if root else components_root()
     docs = {}

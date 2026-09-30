@@ -24,7 +24,7 @@ def _operator_dir(tmp_path, monkeypatch):
     importlib.reload(s)
     import robouse.real.operator as o
     importlib.reload(o)
-    import robouse.backends.real as r
+    import robouse.backends.real.backend as r
     importlib.reload(r)
     yield
 

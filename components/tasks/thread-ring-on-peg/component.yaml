@@ -9,7 +9,7 @@ capabilities:
 - contact-rich
 difficulty: hard
 composable: true
-runtime: robouse.backends.components_sim.templates:ThreadRing
+runtime: robouse.backends.components.sim.templates:ThreadRing
 requires:
 - placements:
   - arm

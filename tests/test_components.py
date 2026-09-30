@@ -149,7 +149,7 @@ def test_from_regenerates_the_recorded_instance(tmp_path, capsys) -> None:
 
 
 def test_pre_rename_keys_load_with_a_warning(tmp_path) -> None:
-    from robouse.backends.components import read_block
+    from robouse.backends.components.backend import read_block
 
     d = write("franka-panda", "tabletop", "put-in-container", modifiers({}), 1, tmp_path)
     spec = load_task(d).spec

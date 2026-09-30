@@ -21,7 +21,7 @@ assets:
 - google_robot
 licence: Apache-2.0 (MuJoCo Menagerie)
 composable: true
-runtime: robouse.backends.components_sim.robots:GoogleRobot
+runtime: robouse.backends.components.sim.robots:GoogleRobot
 arms:
 - arm
 action_groups:

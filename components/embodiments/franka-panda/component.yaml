@@ -19,7 +19,7 @@ assets:
 - franka_emika_panda
 licence: Apache-2.0 (MuJoCo Menagerie)
 composable: true
-runtime: robouse.backends.components_sim.robots:Panda
+runtime: robouse.backends.components.sim.robots:Panda
 arms:
 - arm
 action_groups:

@@ -30,11 +30,11 @@ from ..tasks import load_task
 PKG = Path(__file__).resolve().parents[1]  # the robouse package
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 METAWORLD_VERSION = "3.1.1"  # the version pinned in templates/sim/requirements.txt
-_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "bundled_tasks", "robocasa_episodes", "engine")
+_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "bundled_tasks", "engine")
 
 
 def _module_file(mod: str) -> Path | None:
-    """robouse.backends.remix -> PKG/backends/remix.py (or the package's __init__.py)."""
+    """robouse.backends.tabletop -> PKG/backends/tabletop.py (or the package's __init__.py)."""
     rel = Path(*mod.split(".")[1:])
     if not rel.parts:  # `import robouse` or `from robouse import x`
         return PKG / "__init__.py"
@@ -49,9 +49,9 @@ def _oracle_closure(backend: str) -> list[Path]:
     functions), plus the package __init__ files on the way; the rest of the package stays out of the task."""
     import ast
 
-    from ..oracle import ORACLE_MODULES
+    from ..oracle import oracle_module
 
-    roots = ["robouse.oracle", "robouse.agent_cli", ORACLE_MODULES.get(backend, f"robouse.backends.{backend}")]
+    roots = ["robouse.oracle", "robouse.agent_cli", oracle_module(backend)]
     seen: set[Path] = set()
     todo = [m for m in roots]
     while todo:

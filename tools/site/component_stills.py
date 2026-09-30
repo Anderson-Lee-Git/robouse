@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from robouse.backends.components import ComposedBackend
+from robouse.backends.components.backend import ComposedBackend
 from robouse.components.registry import load
 from robouse.components.compose import ComposeError, instantiate
 from robouse.components.resolve import check, modifiers

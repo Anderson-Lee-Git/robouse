@@ -45,9 +45,9 @@ def task_id(emb: str, scene: str, task: str, mods: dict, seed: int) -> str:
 # ---------------------------------------------------------------------------------------------------------------------
 
 def instantiate(emb: str, scene: str, task: str, mods: dict, seed: int) -> dict:
-    from ..backends.components_sim import robots as R
-    from ..backends.components_sim import scenes as S
-    from ..backends.components_sim import templates as T
+    from ..backends.components.sim import robots as R
+    from ..backends.components.sim import scenes as S
+    from ..backends.components.sim import templates as T
 
     L = S.get(scene)
     drv = R.DRIVERS[emb]
@@ -71,8 +71,8 @@ def instantiate(emb: str, scene: str, task: str, mods: dict, seed: int) -> dict:
 
 def _overlay(inst: dict, ctx, t, mods: dict) -> None:
     """Modifiers that change the instance: clutter and the safety overlay."""
-    from ..backends.components_sim import templates as T
-    from ..backends.components_sim import world as W
+    from ..backends.components.sim import templates as T
+    from ..backends.components.sim import world as W
 
     L = ctx.layout
     rng = ctx.rng
@@ -234,9 +234,9 @@ def _observation_text(drv, L, mods, cams) -> str:
 
 def write(emb: str, scene: str, task: str, mods: dict, seed: int, out: Path, reg: Registry | None = None) -> Path:
     from ..backends.embodied import VERIFY_SH, oracle_sh
-    from ..backends.components_sim import robots as R
-    from ..backends.components_sim import scenes as S
-    from ..backends.components_sim import templates as T
+    from ..backends.components.sim import robots as R
+    from ..backends.components.sim import scenes as S
+    from ..backends.components.sim import templates as T
     from ..prompts import EMBODIED_USAGE
     from ..tasks import write_task
 
@@ -302,7 +302,7 @@ The step budget is {steps} steps ({steps * .05:g} s of simulated time).
         "verifier": {"timeout_sec": 120},
         "robouse": block,
     }
-    note = f"the embodiment-agnostic {task} strategy (components_sim/strategies.py) with the declared skills."
+    note = f"the embodiment-agnostic {task} strategy (backends/components/sim/strategies.py) with the declared skills."
     d = Path(out) / tid
     write_task(d, meta, body, oracle_sh("components", tid, note), VERIFY_SH)
     return d

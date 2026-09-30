@@ -5,7 +5,7 @@ title: Warehouse aisle
 scenario: warehouse
 summary: 'A warehouse aisle: two blue racks with shelves at 0.6 m and 0.95 m, a packing station, a stack of pallets and a steel column; a 4 m ceiling.'
 composable: true
-runtime: robouse.backends.components_sim.scenes:warehouse
+runtime: robouse.backends.components.sim.scenes:warehouse
 placements:
 - arm
 - floor

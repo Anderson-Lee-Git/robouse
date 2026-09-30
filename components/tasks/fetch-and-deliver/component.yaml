@@ -9,7 +9,7 @@ capabilities:
 - pick-and-place
 difficulty: hard
 composable: true
-runtime: robouse.backends.components_sim.templates:FetchDeliver
+runtime: robouse.backends.components.sim.templates:FetchDeliver
 requires:
 - placements:
   - floor

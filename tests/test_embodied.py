@@ -64,7 +64,7 @@ def _bare(cls, **attrs):
 @pytest.mark.parametrize("bimanual", [False, True])
 def test_dexjoco_hand_embodiment(bimanual: bool) -> None:
     """DexJoCo runs in its own virtualenv; the embodiment only needs the action layout."""
-    from robouse.backends.dexjoco import HAND_LIM, POS_LIM, ROT_LIM, DexjocoBackend
+    from robouse.backends.dexjoco.backend import HAND_LIM, POS_LIM, ROT_LIM, DexjocoBackend
 
     arms = ["R_", "L_"] if bimanual else [""]
     names = [n for a in arms for n in [f"{a}DX", f"{a}DY", f"{a}DZ", f"{a}RX", f"{a}RY", f"{a}RZ"] + [f"{a}F{i}" for i in range(16)]]
@@ -79,7 +79,7 @@ def test_dexjoco_hand_embodiment(bimanual: bool) -> None:
 
 
 def test_behavior_is_skill_only() -> None:
-    from robouse.backends.behavior import BehaviorBackend
+    from robouse.backends.behavior.backend import BehaviorBackend
 
     b = _bare(BehaviorBackend, spec={}, camera="follow", max_steps=60, _skills={},
               action_spec=ActionSpec(["wait"], [0.0], [1.0]))

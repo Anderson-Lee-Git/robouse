@@ -1,5 +1,5 @@
 """Upload the GPU worker code to our sandbox, (re)start workers, and write the endpoints file.
-  up.py BOX push                       upload backends/gpu_worker/*.py and workers/wire.py to /root/gw
+  up.py BOX push                       upload backends/gpu/worker/*.py and workers/wire.py to /root/gw
   up.py BOX start SIM PORT [PYTHON]    (re)start one worker in a session
   up.py BOX links SIM=PORT ...         write runs/_gpu/remote.json (0600) with preview URLs
   up.py BOX sh 'cmd'                   run a shell command (prints output)
@@ -8,7 +8,7 @@ import json, os, secrets, sys, time
 from pathlib import Path
 from dt import d
 from box import ours
-SRC = Path(__file__).resolve().parents[2] / "src" / "robouse" / "backends" / "gpu_worker"
+SRC = Path(__file__).resolve().parents[2] / "src" / "robouse" / "backends" / "gpu" / "worker"
 WIRE = Path(__file__).resolve().parents[2] / "src" / "robouse" / "workers" / "wire.py"
 REMOTE = Path(__file__).resolve().parents[2] / "runs" / "_gpu" / "remote.json"
 SECRET = Path(__file__).resolve().parents[2] / "runs" / "_gpu" / "secret"

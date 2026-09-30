@@ -8,7 +8,7 @@ capabilities:
 - pick-and-place
 difficulty: medium
 composable: true
-runtime: robouse.backends.components_sim.templates:SortByColor
+runtime: robouse.backends.components.sim.templates:SortByColor
 requires:
 - placements:
   - arm

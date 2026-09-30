@@ -256,7 +256,7 @@ def _from(a) -> int:
     the recorded one."""
     import yaml
 
-    from .backends.components import read_block
+    from .backends.components.backend import read_block
     from .components.registry import load
     from .tasks import load_task
 
@@ -303,7 +303,7 @@ def check_task(d: Path, level: str = "structural", run: bool = True, keep_runs: 
         if "[REPLACE" in (d / "task.md").read_text():
             problems.append("task.md still has [REPLACE: ...] placeholders")
         if t.spec.get("backend") in ("components", "remix"):
-            from .backends.components import read_block
+            from .backends.components.backend import read_block
 
             read_block(t.spec)
         print(f"schema: {'ok' if not problems else 'problems'} ({t.id}, backend {t.spec.get('backend')})")

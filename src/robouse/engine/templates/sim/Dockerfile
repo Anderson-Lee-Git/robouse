@@ -33,7 +33,7 @@ COPY robouse/ /opt/robouse/
 ENV PYTHONPATH=/opt/benchflow_embodied:/opt/robouse/src
 RUN chmod 755 /usr/local/bin/embodied-sim-entry \
  && mkdir -p /rpc /episode /task /logs/verifier \
- && python -c "import benchflow.embodied.server, robouse.embodied, robouse.backends.metaworld_backend"
+ && python -c "import benchflow.embodied.server, robouse.embodied, robouse.backends.metaworld"
 
 WORKDIR /episode
 CMD ["embodied-sim-entry"]

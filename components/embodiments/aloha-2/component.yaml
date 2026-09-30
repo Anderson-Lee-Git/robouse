@@ -20,7 +20,7 @@ assets:
 - aloha
 licence: BSD-3-Clause (MuJoCo Menagerie)
 composable: true
-runtime: robouse.backends.components_sim.robots:Aloha
+runtime: robouse.backends.components.sim.robots:Aloha
 arms:
 - left
 - right

@@ -10,13 +10,10 @@ import shutil
 from . import config
 from .harnesses import credentials
 
+# backend -> (virtualenv name, $ROBOUSE_<NAME>_PYTHON) for simulators that run as workers in their own virtualenv
 WORKER_VENVS = {"dexjoco": "dexjoco", "driving": "metadrive", "dmcontrol": "dmcontrol", "myosuite": "myosuite",
                 "humanoidbench": "humanoidbench", "maniskill": "maniskill", "robocasa": "robocasa"}
-BACKEND_MODULES = {"tabletop": "tabletop", "metaworld": "metaworld_backend", "gymrobotics": "gymrobotics", "libero": "libero",
-                   "robosuite": "robosuite_backend", "menagerie": "menagerie", "roboharm": "roboharm", "drone": "drone",
-                   "quadruped": "quadruped", "humanoid": "humanoid", "mobile_manip": "mobile_manip", "dexhand": "dexhand",
-                   "crazyflie": "crazyflie", "kitchen": "kitchen", "adroit": "adroit", "nav": "nav", "cubepick": "cubepick",
-                   "real": "real"}
+REMOTE = {"behavior", "gpu", "robodojo"}  # simulators on remote GPU workers
 UPSTREAM_PKGS = {"metaworld": "metaworld", "gymrobotics": "gymnasium_robotics", "libero": "libero", "robosuite": "robosuite",
                  "kitchen": "gymnasium_robotics", "adroit": "gymnasium_robotics"}
 
@@ -27,7 +24,11 @@ def _ok(flag: bool) -> str:
 
 def run() -> int:
     print("Simulator backends")
-    for b, mod in BACKEND_MODULES.items():
+    from .backends import BACKENDS
+
+    for b, (mod, _cls) in BACKENDS.items():
+        if b in WORKER_VENVS or b in REMOTE or b == "remix":
+            continue
         try:
             importlib.import_module(f"robouse.backends.{mod}")
             pkg = UPSTREAM_PKGS.get(b)
@@ -36,7 +37,7 @@ def run() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"  -- {b} ({type(e).__name__}: {str(e)[:80]})")
     for b, v in WORKER_VENVS.items():
-        py = config.sim_python("metadrive" if b == "driving" else b, v)
+        py = config.sim_python(v)
         print(f"  {_ok(py.exists())}{b} (worker virtualenv {py})")
     print("Harnesses")
     for h, exe in (("claude-code, claude-code-glm", "claude"), ("codex, codex-glm", "codex"), ("mini-swe-agent-glm", "mini")):
