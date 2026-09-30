@@ -131,7 +131,16 @@ class Skill:
 
 
 # the embodiment family -> BenchFlow's embodiment kind
-SPEC_KIND = {"aerial": "drone", "dexterous_hand": "hand", "wheeled": "vehicle", "mobile_base": "vehicle"}
+SPEC_KIND = {"aerial": "drone", "dexterous_hand": "hand", "wheeled": "vehicle", "mobile_base": "vehicle",
+             "bimanual_arm": "bimanual", "planar_arm": "arm"}
+
+
+def spec_kind(family: str) -> str:
+    """The embodiment spec's kind for a robouse family; families the spec has no kind for are "other"."""
+    from ..core.embodiment_spec import KINDS
+
+    kind = SPEC_KIND.get(family, family)
+    return kind if kind in KINDS else "other"
 
 
 @dataclass
@@ -248,7 +257,7 @@ class Embodiment:
         return {
             "spec_version": "1",
             "name": self.robot,
-            "kind": SPEC_KIND.get(self.family, self.family),
+            "kind": spec_kind(self.family),
             "assets": list(self.assets),
             "step_s": self.budget.control_dt,
             "action_groups": groups,
