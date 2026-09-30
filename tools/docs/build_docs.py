@@ -28,6 +28,7 @@ import html
 import importlib.util
 import posixpath
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -39,6 +40,38 @@ GITHUB = "https://github.com/benchflow-ai/robouse"
 # Absolute links to docs in the repository (README uses them so they work on PyPI) map to the generated pages.
 GITHUB_DOC_RE = re.compile(re.escape(GITHUB) + r"/(?:blob|tree)/main/((?:docs/|README\.md).*)$")
 MARKER = ".build_docs"  # written into --out so a rebuild only ever clears a directory this script owns
+
+
+WRAP_AT = 56  # the docs code column fits about 64 monospace characters at desktop width
+WRAP_CMD = re.compile(r"^(\$ )?(robouse (run|run-many|tasks init)|bench eval run)\s")
+
+
+def wrap_command(line: str) -> list[str]:
+    """Put a long robouse/bench command on one flag per line, with backslash continuations.
+
+    Only simple commands are touched: no pipes, chains, comments, redirects or existing continuations.
+    """
+    if len(line) <= WRAP_AT or not WRAP_CMD.match(line) or re.search(r"&&|\|\||[|;<>#]|\\$", line):
+        return [line]
+    prompt = "$ " if line.startswith("$ ") else ""
+    lex = shlex.shlex(line[len(prompt):], posix=False)
+    lex.whitespace_split, lex.commenters = True, ""
+    toks = list(lex)
+    first = next((i for i, t in enumerate(toks) if t.startswith("-")), None)
+    if first is None:
+        return [line]
+    groups, cur = [" ".join(toks[:first])], []
+    for t in toks[first:]:
+        if t.startswith("-") or len(cur) >= 2:  # a flag and at most one value per line
+            if cur:
+                groups.append(" ".join(cur))
+            cur = [t]
+        else:
+            cur.append(t)
+    groups.append(" ".join(cur))
+    ind = " " * (len(prompt) + 2)
+    return [prompt + groups[0] + " \\"] + [ind + g + " \\" for g in groups[1:-1]] + [ind + groups[-1]]
+
 
 class Source:
     """Reads docs from a git revision (default HEAD, so the site matches the repository) or the working tree."""
@@ -265,6 +298,8 @@ class Converter:
                     out.append('<div class="gallery">' + "".join(items) + "</div>")
                     continue
                 cls = f' class="language-{lang}"' if lang else ""
+                if lang in ("console", "sh", "bash"):
+                    body = [w for row in body for w in wrap_command(row)]
                 out.append(f'<div class="code"><pre><code{cls}>{html.escape(chr(10).join(body), quote=False)}</code></pre></div>')
                 continue
             m = self.HEAD_RE.match(line)
@@ -763,13 +798,20 @@ document.querySelectorAll(".code").forEach(function (box) {
   var code = box.querySelector("code");
   var text = code.textContent;
   var console = code.classList.contains("language-console");
-  if (console) {  // "$ cmd" lines are commands, the rest is output; copy only the commands
+  // In console blocks, "$ cmd" lines are commands and the rest is output. A command continues onto
+  // the next line while its line ends in a backslash. Copy only the commands.
+  var cmd = [];
+  if (console) {
+    var cont = false;
     code.innerHTML = text.split("\n").map(function (l) {
       var esc = l.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-      return l.indexOf("$ ") === 0 ? '<span class="p">$ </span>' + esc.slice(2) : '<span class="o">' + esc + "</span>";
+      var isCmd = l.indexOf("$ ") === 0, isCont = !isCmd && cont;
+      if (isCmd) cmd.push(l.slice(2)); else if (isCont) cmd.push(l);
+      cont = (isCmd || isCont) && /\\$/.test(l);
+      return isCmd ? '<span class="p">$ </span>' + esc.slice(2) : isCont ? esc : '<span class="o">' + esc + "</span>";
     }).join("\n");
   }
-  var copyText = console ? text.split("\n").filter(function (l) { return l.indexOf("$ ") === 0; }).map(function (l) { return l.slice(2); }).join("\n") : text;
+  var copyText = console ? cmd.join("\n") : text;
   var b = document.createElement("button");
   b.type = "button"; b.className = "copy"; b.textContent = "Copy"; b.setAttribute("aria-live", "polite");
   b.addEventListener("click", function () {
