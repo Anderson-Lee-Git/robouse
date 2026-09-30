@@ -2,9 +2,11 @@
 # Run the release gate (tools/gate.py) for every CPU suite inside the image of its simulator runtime (tools/gate_images.sh).
 #
 #   tools/gate_run.sh OUT [PER_SUITE] [SUITE ...]      default: 3 tasks per suite, every CPU suite
-# Writes OUT/<suite>/{oracle,noop}/ trial folders and OUT/<runtime>.summary.json; prints one line per suite.
+# Writes OUT/<runtime>/<suite>/{oracle,noop}/ trial folders and OUT/<runtime>/summary.json; prints one line per suite.
+# GATE_REPO=DIR runs the gate on another checkout (e.g. an older commit, for a before/after comparison).
 set -uo pipefail
-REPO=$(cd "$(dirname "$0")/.." && pwd)
+HERE=$(cd "$(dirname "$0")" && pwd)
+REPO=$(cd "${GATE_REPO:-$HERE/..}" && pwd)
 OUT=$(mkdir -p "$1" && cd "$1" && pwd); shift
 PER=${1:-3}; [ $# -gt 0 ] && shift
 declare -A RT=(
@@ -23,7 +25,7 @@ declare -A BY
 for s in "${SUITES[@]}"; do BY[${RT[$s]}]+="${BY[${RT[$s]}]:+,}$s"; done
 status=0
 for rt in "${!BY[@]}"; do
-  docker run --rm -v "$REPO":/src:ro -v "$OUT":/out "robouse-gate-$rt" \
-    python tools/gate.py --repo /src --out "/out/$rt" --per-suite "$PER" --concurrency 4 --suites "${BY[$rt]}" || status=1
+  docker run --rm -e HOME=/tmp -v "$REPO":/src:ro -v "$HERE/gate.py":/gate.py:ro -v "$OUT":/out "robouse-gate-$rt" \
+    python /gate.py --repo /src --out "/out/$rt" --per-suite "$PER" --concurrency 4 --suites "${BY[$rt]}" || status=1
 done
 exit $status
