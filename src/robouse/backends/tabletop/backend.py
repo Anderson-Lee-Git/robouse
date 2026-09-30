@@ -1111,9 +1111,10 @@ class _Finished(Exception):
     pass
 
 
-def _target_xyz(st: dict, sc: dict, obj: str, tgt: dict) -> tuple[np.ndarray, float]:
-    """Return (xy target for the object's centre, surface z it should rest on)."""
-    fx = st["fixtures"]
+def target_of(st: dict, tgt: dict, xy_z: bool = False) -> tuple[np.ndarray, float]:
+    """(xy target for the object's centre, surface z it should rest on). With `xy_z`, an explicit `xy` target may
+    carry its own surface height `z`."""
+    fx = st.get("fixtures", {})
     off = np.array(tgt.get("offset", [0.0, 0.0]), float)
     if "pad" in tgt:
         return np.array(fx[tgt["pad"]]["pos"][:2]) + off, fx[tgt["pad"]]["pos"][2]
@@ -1131,9 +1132,9 @@ def _target_xyz(st: dict, sc: dict, obj: str, tgt: dict) -> tuple[np.ndarray, fl
         return np.array(b["pos"][:2]) + off, b["pos"][2] + b["half_height"]
     if "cell" in tgt:
         r, c = tgt["cell"]
-        return np.array(st["grid"]["cell_centers"][r][c]), 0.0
+        return np.array(st["grid"]["cell_centers"][r][c][:2]), 0.0
     if "xy" in tgt:
-        return np.array(tgt["xy"], float), 0.0
+        return np.array(tgt["xy"], float), (tgt.get("z", 0.0) if xy_z else 0.0)
     raise ValueError(tgt)
 
 
@@ -1154,7 +1155,7 @@ def _pick_place(rb: _Robot, sc: dict, obj: str, tgt: dict, opt: dict) -> None:
     o = st["objects"][obj]
     hand = np.array(st["hand_pos"])
     offset = np.array(o["pos"]) - hand
-    xy, surf = _target_xyz(st, sc, obj, tgt)
+    xy, surf = target_of(st, tgt)
     want_z = surf + o["half_height"] + opt.get("drop", 0.004)
     hx, hy = xy - offset[:2]
     hz = want_z - offset[2]

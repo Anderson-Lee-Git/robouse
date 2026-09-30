@@ -17,6 +17,7 @@ from collections.abc import Callable
 import numpy as np
 
 from .backend import DR_TRAVEL, HAND_HI, HAND_LO, _box, _cyl, _meta
+from .backend import target_of as _target_of
 
 HARD_SCENARIOS: dict[str, dict] = {}
 
@@ -163,28 +164,7 @@ def place(bot: ActBot, name: str, xy, surf_z: float, opt: dict | None = None) ->
 
 
 def target_of(st: dict, tgt: dict):
-    fx = st.get("fixtures", {})
-    off = np.array(tgt.get("offset", [0.0, 0.0]), float)
-    if "pad" in tgt:
-        return np.array(fx[tgt["pad"]]["pos"][:2]) + off, fx[tgt["pad"]]["pos"][2]
-    if "fixture" in tgt:
-        f = fx[tgt["fixture"]]
-        if f["kind"] == "plate":
-            return np.array(f["pos"][:2]) + off, f["top_z"]
-        if f["kind"] == "drawer":
-            return np.array(f["interior_center"][:2]) + off, f["interior_center"][2]
-        if f["kind"] == "socket":
-            return np.array(f["pos"][:2]) + off, 0.0
-        return np.array(f["pos"][:2]) + off, f["floor_z"]
-    if "on" in tgt:
-        b = st["objects"][tgt["on"]]
-        return np.array(b["pos"][:2]) + off, b["pos"][2] + b["half_height"]
-    if "cell" in tgt:
-        r, c = tgt["cell"]
-        return np.array(st["grid"]["cell_centers"][r][c][:2]), 0.0
-    if "xy" in tgt:
-        return np.array(tgt["xy"], float), tgt.get("z", 0.0)
-    raise ValueError(tgt)
+    return _target_of(st, tgt, xy_z=True)
 
 
 def pick_place(bot: ActBot, name: str, tgt: dict, opt: dict | None = None) -> None:
