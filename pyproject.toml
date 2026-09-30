@@ -127,6 +127,7 @@ exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]
 line-length = 120
 target-version = "py311"
 extend-exclude = ["tasks", "components", "assets"]
+per-file-target-version = { "tools/**" = "py312" }  # maintainer tools run on the development environment
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "BLE", "SIM", "PLE", "RUF100"]
@@ -147,7 +148,7 @@ ignore = [
 quote-style = "preserve"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"  # numpy's stubs need 3.12 syntax; the package itself supports 3.11
 ignore_missing_imports = true
 follow_imports = "silent"
 check_untyped_defs = true
