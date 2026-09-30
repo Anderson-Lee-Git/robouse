@@ -31,7 +31,7 @@ from ..tasks import load_task
 PKG = Path(__file__).resolve().parents[1]  # the robouse package
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 METAWORLD_VERSION = "3.1.1"  # the version pinned in templates/sim/requirements.txt
-_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "bundled_tasks", "engine")
+_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "bundled_tasks", "templates")  # engine/sim.py runs there
 
 
 def _module_file(mod: str) -> Path | None:
