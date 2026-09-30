@@ -12,3 +12,4 @@ capabilities:
 composable: false
 suites:
 - humanoid
+- humanoidbench

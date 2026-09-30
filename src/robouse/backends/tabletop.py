@@ -350,11 +350,39 @@ class TabletopBackend(Backend):
         self.steps = 0
 
     # ---- lifecycle -----------------------------------------------------------------------
+    def _placements(self, seed: int) -> dict:
+        """Seeded start offsets for the movable objects (placement.py); only for scenes without a cell grid."""
+        pl = self.spec.get("placement") or {}
+        if not pl.get("split"):
+            return {}
+        if self.grid:
+            raise ValueError("placement splits need free placements; this task places objects on a grid")
+        from ..placement import offset
+
+        placed, out = [], {}
+        for n, o in self._objs.items():
+            base = np.asarray(_resolved_obj(o, self.grid)["pos"][:2], dtype=float)
+            rad = float(max(o.get("size", [0.02])[:2])) if o.get("kind") != "sphere" else float(o["size"][0])
+            for attempt in range(20):
+                dx, dy = offset(pl["split"], seed, n, attempt)
+                p = base + (dx, dy)
+                inside = abs(p[0]) < TABLE_HX - rad - 0.02 and abs(p[1]) < TABLE_HY - rad - 0.02
+                free = all(np.linalg.norm(p - q) > rad + r2 + 0.01 for q, r2 in placed)
+                if inside and free:
+                    break
+            placed.append((p, rad))
+            out[n] = [round(float(dx), 4), round(float(dy), 4)]
+        self.placement_record = {"split": pl["split"], "seed": seed, "offsets_m": out}
+        return out
+
     def reset(self, seed: int) -> None:
         mj, m, d = self._mj, self.model, self.data
         mj.mj_resetData(m, d)
+        offs = self._placements(seed)
         for n, o in self._objs.items():
             o = _resolved_obj(o, self.grid)
+            if n in offs:
+                o = {**o, "pos": [o["pos"][0] + offs[n][0], o["pos"][1] + offs[n][1], *o["pos"][2:]]}
             a = self._obj_qadr[n]
             z = o.get("z", _obj_rest_half(o)) + 0.0005
             yaw = math.radians(o.get("yaw", 0.0))

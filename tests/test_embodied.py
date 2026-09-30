@@ -7,15 +7,16 @@ import json
 from pathlib import Path
 
 import pytest
-from benchflow.embodied.spec import Embodiment
 
 from robouse.backends import make_backend
-from robouse.backends.base import ActionSpec
+from robouse.backends.base import ActionSpec, embodiment_of
+from robouse.embodiment_spec import Embodiment
 from robouse.tasks import find_tasks
 
 ROOT = Path(__file__).resolve().parents[1] / "tasks"
 LOCAL_SUITES = ["arc-style", "hard", "vision", "safety", "robo-use-families", "metaworld", "gymrobotics", "drone",
                 "menagerie", "roboharm"]
+HAVE_BENCHFLOW = importlib.util.find_spec("benchflow") is not None
 HAVE_SIM = all(importlib.util.find_spec(m) for m in ("mujoco", "metaworld", "gymnasium_robotics"))
 
 
@@ -25,7 +26,7 @@ def _tasks():
 
 
 def _check(backend) -> Embodiment:
-    e = backend.embodiment().validate()
+    e = embodiment_of(backend).validate()
     assert e.dim == backend.action_spec.dim
     assert e.flat_names() == list(backend.action_spec.names)
     assert e.flat_low() == [float(x) for x in backend.action_spec.low]
@@ -80,7 +81,7 @@ def test_dexjoco_hand_embodiment(bimanual: bool) -> None:
 def test_behavior_is_skill_only() -> None:
     from robouse.backends.behavior import BehaviorBackend
 
-    b = _bare(BehaviorBackend, camera="follow", max_steps=60, _skills={},
+    b = _bare(BehaviorBackend, spec={}, camera="follow", max_steps=60, _skills={},
               action_spec=ActionSpec(["wait"], [0.0], [1.0]))
     e = _check(b)
     assert e.kind == "skill_only" and e.dim == 1
@@ -88,7 +89,7 @@ def test_behavior_is_skill_only() -> None:
     assert all(s.impl == "backend" for s in e.skills)
 
 
-@pytest.mark.skipif(not HAVE_SIM, reason="needs robouse[metaworld,gymrobotics]")
+@pytest.mark.skipif(not (HAVE_SIM and HAVE_BENCHFLOW), reason="needs robouse[metaworld,gymrobotics,benchflow]")
 def test_bimanual_menagerie_act_by_group(tmp_path) -> None:
     from robouse.embodied import episode_from_spec
     from robouse.tasks import load_task
@@ -109,7 +110,7 @@ def test_bimanual_menagerie_act_by_group(tmp_path) -> None:
     assert rows[0]["action"]["right.ee_delta"] == [0.0, 0.0, 0.0]
 
 
-@pytest.mark.skipif(not HAVE_SIM, reason="needs robouse[metaworld,gymrobotics]")
+@pytest.mark.skipif(not (HAVE_SIM and HAVE_BENCHFLOW), reason="needs robouse[metaworld,gymrobotics,benchflow]")
 def test_metaworld_oracle_parity_in_process(tmp_path) -> None:
     """The Meta-World scripted expert through the new server ends exactly as on protocol 1 (step 51)."""
     import numpy as np

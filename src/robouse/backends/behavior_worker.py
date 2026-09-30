@@ -16,17 +16,24 @@ symbolic set leaves out, so the agent still has to plan the household task:
   - navigate_to OBJ: teleport the robot base to a free spot next to OBJ (traversability map), facing it.
   - grasp OBJ: a kinematic carry. The object's gravity is switched off and it rides 0.45 m in front of the base at
     1.1 m height until it is placed or released. (Sticky/assisted grasp joints kept dropping objects during
-    teleport-based navigation.)
+    teleport-based navigation.) Task objects resting inside or on top of the grasped object (food on a plate, items in
+    a box) are carried along at their relative pose, as a tray or a box carries its contents.
   - place_on_top / place_inside OBJ: release, then BEHAVIOR's own kinematic sampler (object_states OnTop / Inside
-    set_value) puts the object in the relation; physics settles; the relation is re-checked.
+    set_value) puts the object in the relation; carried contents are put back at their relative pose; physics settles;
+    the relation is re-checked.
   - reach: grasp/place/open/close/toggle fail unless the robot is within REACH_M of the target (navigate first).
   - grasp fails on objects that are fixed, too big, or inside a closed container; the hand holds one object, and
     open/close/toggle need an empty hand.
   - place_inside fails if the container is openable and closed.
 Success is BEHAVIOR's own BDDL goal check (the task's PredicateGoal termination condition).
 
+Task instances: instance 0 is the challenge's cached activity scene (`*_0_0_template.json`). Any other instance k loads
+that scene and then applies the challenge's instance file `*_0_k_template-tro_state.json` (task-relevant object states
+and the robot's start pose) the way BEHAVIOR's challenge evaluator does, and makes that the state `reset` restores.
+
 Usage (on the GPU machine):
-  OMNIGIBSON_HEADLESS=1 python behavior_worker.py --activity turning_on_radio --port 8765
+  OMNIGIBSON_HEADLESS=1 python behavior_worker.py --activity turning_on_radio --scene house_double_floor_lower \
+    --instance 0 --port 8765
 """
 from __future__ import annotations
 
@@ -43,9 +50,11 @@ import types
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 REACH_M = 1.25          # max horizontal distance from the robot base to a target object's bounding box
-NAV_OFFSETS = (0.35, 0.5, 0.7, 0.9)   # stand-off distances (m) from the target's bounding box tried by navigate_to
+NAV_OFFSETS = (0.35, 0.5, 0.7, 0.9, 1.1)   # stand-off distances (m) from the target's bounding box tried by navigate_to
 ROBOT_RADIUS_M = 0.38   # clearance checked on the traversability map around a candidate base position
-MAX_GRASP_EXTENT_M = 1.0
+PLACE_ATTEMPTS = 4     # placement sampler draws before place_on_top / place_inside reports failure
+PLACE_BUDGET_S = 60    # ... or fewer, once the draws have taken this long
+MAX_GRASP_EXTENT_M = float(os.environ.get("ROBOUSE_BEHAVIOR_MAX_GRASP_M", "2.5"))
 FRAME_EVERY = 3         # during a skill, keep one video frame every N env steps
 MAX_FRAMES_PER_SKILL = 12
 IMG_W, IMG_H = 640, 480
@@ -111,7 +120,7 @@ class Worker:
                       "load_room_types": None, "load_room_instances": rooms, "include_robots": False},
             "robots": [robot_cfg],
             "task": {"type": "BehaviorTask", "activity_name": activity, "activity_definition_id": 0,
-                     "activity_instance_id": instance, "online_object_sampling": False,
+                     "activity_instance_id": 0, "online_object_sampling": False,
                      "use_presampled_robot_pose": True, "highlight_task_relevant_objects": False,
                      "termination_config": {"max_steps": 100000}, "include_obs": False},
         }
@@ -128,14 +137,44 @@ class Worker:
         self.P = SymbolicSemanticActionPrimitiveSet
         self.prims = SymbolicSemanticActionPrimitives(self.env, self.robot)
         self.prims._settle_robot = types.MethodType(_short_settle, self.prims)
-        self.load_s = round(time.time() - t, 1)
         self._frames: list[str] = []
         self.cam = og.sim.viewer_camera
         self.cam.add_modality("rgb")
-        self.env.reset()
-        self._settle(30)
         self.scope_names = [n for n, e in self.env.task.object_scopes[0].items()
                             if e is not None and not n.startswith("agent") and hasattr(e, "aabb")]
+        if instance:
+            self._load_instance(scene_model, activity, instance)
+        self.env.reset()
+        self._settle(30)
+        self.load_s = round(time.time() - t, 1)
+
+    def _load_instance(self, scene_model: str, activity: str, instance: int) -> None:
+        """Apply the challenge's task-instance file (task-relevant object states + robot start pose) on top of the
+        cached instance-0 scene, as omnigibson.eval.evaluator does, and make it the state that reset() restores."""
+        from omnigibson.utils.python_utils import recursively_convert_to_torch
+
+        root = os.path.join(self.og.macros.gm.DATA_PATH, "2026-challenge-task-instances", "scenes", scene_model, "json",
+                            f"{scene_model}_task_{activity}_instances",
+                            f"{scene_model}_task_{activity}_0_{instance}_template-tro_state.json")
+        with open(root) as f:
+            tro = recursively_convert_to_torch(json.load(f))
+        scope = self.env.task.object_scopes[0]
+        self.robot.reset()
+        for key, state in tro.items():
+            if key == "robot_poses":
+                poses = {k.lower(): v for k, v in state.items()}
+                pose = (poses.get("robot") or poses[self.robot.model.lower()])[0]
+                self.robot.set_position_orientation(pose["position"], pose["orientation"], frame="scene")
+                self.scene.write_task_metadata(key=key, data=state)
+            elif scope.get(key) is not None:
+                scope[key].load_state(state, serialized=False)
+        self.og.sim.update_handles() if hasattr(self.og.sim, "update_handles") else None
+        for _ in range(25):
+            self.og.sim.step_physics()
+            for n, e in scope.items():
+                if e is not None and n in self.scope_names:
+                    e.keep_still()
+        self.scene.update_initial_file()
 
     # ---- helpers ---------------------------------------------------------------------------------------------------
     def _scope(self) -> dict:
@@ -200,8 +239,58 @@ class Worker:
         obj.set_position_orientation(position=self._carry_pose())
         obj.set_linear_velocity(th.zeros(3))
         obj.set_angular_velocity(th.zeros(3))
+        self._pose_riders(obj)
+
+    def _riders_of(self, obj) -> list:
+        """Movable task objects resting inside or on top of obj, transitively (a pizza on a plate, items in a box)."""
+        from omnigibson import object_states as S
+
+        out, frontier = [], [obj]
+        movable = [e for e in self._scope().values() if not getattr(e, "fixed_base", False) and e is not obj]
+        while frontier:
+            base = frontier.pop()
+            for e in movable:
+                if e in out:
+                    continue
+                try:
+                    on = (S.Inside in e.states and e.states[S.Inside].get_value(base)) or \
+                         (S.OnTop in e.states and e.states[S.OnTop].get_value(base))
+                except Exception:
+                    on = False
+                if on:
+                    out.append(e)
+                    frontier.append(e)
+        return out
+
+    def _pose_riders(self, obj):
+        """Keep carried contents at their pose relative to obj."""
+        import torch as th
+        import omnigibson.utils.transform_utils as T
+
+        riders = getattr(self, "_riders", [])
+        if not riders:
+            return
+        bp, bq = obj.get_position_orientation()
+        for e, (rp, rq) in riders:
+            p, q = T.pose_transform(bp, bq, rp, rq)
+            e.set_position_orientation(position=p, orientation=q)
+            e.set_linear_velocity(th.zeros(3))
+            e.set_angular_velocity(th.zeros(3))
 
     def _pick(self, obj):
+        import omnigibson.utils.transform_utils as T
+
+        riders = self._riders_of(obj)
+        bp, bq = obj.get_position_orientation()
+        inv_p, inv_q = T.invert_pose_transform(bp, bq)
+        self._riders = []
+        for e in riders:
+            p, q = e.get_position_orientation()
+            self._riders.append((e, T.pose_transform(inv_p, inv_q, p, q)))
+            try:
+                e.disable_gravity()
+            except Exception:
+                pass
         self._carry = obj
         try:
             obj.disable_gravity()
@@ -212,11 +301,13 @@ class Worker:
 
     def _drop(self):
         obj, self._carry = self._held(), None
-        if obj is not None:
-            try:
-                obj.enable_gravity()
-            except Exception:
-                pass
+        riders, self._riders = getattr(self, "_riders", []), []
+        for e in [obj] + [r[0] for r in riders]:
+            if e is not None:
+                try:
+                    e.enable_gravity()
+                except Exception:
+                    pass
         return obj
 
     def _box_dist_xy(self, obj) -> float:
@@ -236,10 +327,12 @@ class Worker:
             return None
 
     def _room(self, obj) -> str | None:
+        """The room obj is in now. `in_rooms` is scene metadata, so it holds only for fixed objects (a movable
+        object keeps the room it was loaded in)."""
         rooms = getattr(obj, "in_rooms", None)
-        if rooms:
+        if rooms and getattr(obj, "fixed_base", False):
             return rooms[0]
-        return self._room_of_point([float(v) for v in obj.aabb_center[:2]])
+        return self._room_of_point([float(v) for v in obj.aabb_center[:2]]) or (rooms[0] if rooms else None)
 
     def _free(self, xy, floor: int = 0) -> bool:
         import torch as th
@@ -294,6 +387,23 @@ class Worker:
         target_room = self._room(obj)
         rx, ry, _ = self._robot_xy_yaw()
         cands = []
+        if min(half) > 1.5:  # a floor, a lawn or another room-sized object: stand on it, in its room, nearest first
+            step = 0.5
+            nx, ny = int(2 * half[0] / step), int(2 * half[1] / step)
+            for i in range(1, nx):
+                for j in range(1, ny):
+                    p = [float(lo[0]) + i * step, float(lo[1]) + j * step]
+                    if self._free(p) and (not target_room or self._room_of_point(p) == target_room):
+                        cands.append((0.0, math.hypot(p[0] - rx, p[1] - ry), p))
+            if cands:
+                cands.sort(key=lambda c: c[1])
+                p = cands[0][2]
+                z = float(self.robot.get_position_orientation()[0][2])
+                yaw = math.atan2(p[1] - ry, p[0] - rx)
+                self.robot.set_position_orientation(th.tensor([p[0], p[1], z], dtype=th.float32),
+                                                    euler2quat(th.tensor([0.0, 0.0, yaw], dtype=th.float32)))
+                self._settle(10, record=True)
+                return
         for off in NAV_OFFSETS:
             for k in range(32):
                 a = 2 * math.pi * k / 32
@@ -327,14 +437,67 @@ class Worker:
         held = self._held()
         pred = S.Inside if how == "place_inside" else S.OnTop
         held_name = self._name(held)
+        riders = list(getattr(self, "_riders", []))
         self._drop()
-        ok = bool(held.states[pred].set_value(target, True))
-        self._settle(20, record=True)
-        if not ok or not held.states[pred].get_value(target):
+        ok, t0 = False, time.time()
+        for attempt in range(PLACE_ATTEMPTS):  # the sampler is random: a failed or unstable spot gets another draw
+            if attempt and time.time() - t0 > PLACE_BUDGET_S:  # keep a skill well inside the robo client's timeout
+                break
+            if pred is S.OnTop and attempt == 0 and self._room_sized(target):
+                # putting something down on a floor or lawn: set it down in front of the robot, not at a random spot
+                if not self._set_down_in_front(held, target):
+                    continue
+            elif pred is S.OnTop and attempt == 0 and not getattr(target, "fixed_base", False):
+                self._set_down_centred(held, target)  # stacking on a movable object: centred on its top
+            elif not held.states[pred].set_value(target, True):
+                continue
+            if riders:  # carried contents go back to their pose relative to the placed object
+                self._riders = riders
+                self._pose_riders(held)
+                self._riders = []
+            self._settle(20, record=True)
+            ok = bool(held.states[pred].get_value(target))
+            if ok:
+                break
+        if not ok:
             where = "inside" if how == "place_inside" else "on top of"
             raise SkillError(f"could not place {held_name} {where} {target_name} (no free spot found or it fell off); "
                              f"it was released and is no longer held")
         return {"message": f"{how} {target_name}: ok ({held_name})"}
+
+    @staticmethod
+    def _room_sized(obj) -> bool:
+        lo, hi = obj.aabb
+        return min(float(hi[0]) - float(lo[0]), float(hi[1]) - float(lo[1])) > 3.0
+
+    def _set_down_in_front(self, held, target) -> bool:
+        """Put `held` on the floor-like `target` 0.5 m beyond its own half-length in front of the base, if that spot
+        is free on the traversability map and lies over the target."""
+        import torch as th
+
+        x, y, yaw = self._robot_xy_yaw()
+        lo, hi = held.aabb
+        half = max(float(hi[0]) - float(lo[0]), float(hi[1]) - float(lo[1])) / 2
+        pos = held.get_position_orientation()[0]
+        base_to_bottom = float(pos[2]) - float(lo[2])
+        tlo, thi = target.aabb
+        for d in (0.5 + half, 0.8 + half, 0.3 + half):
+            px, py = x + d * math.cos(yaw), y + d * math.sin(yaw)
+            if not (float(tlo[0]) <= px <= float(thi[0]) and float(tlo[1]) <= py <= float(thi[1])):
+                continue
+            held.set_position_orientation(position=th.tensor([px, py, float(thi[2]) + base_to_bottom + 0.01],
+                                                             dtype=th.float32))
+            return True
+        return False
+
+    def _set_down_centred(self, held, target) -> None:
+        import torch as th
+
+        lo, _ = held.aabb
+        pos = held.get_position_orientation()[0]
+        c, (_, thi) = target.aabb_center, target.aabb
+        held.set_position_orientation(position=th.tensor(
+            [float(c[0]), float(c[1]), float(thi[2]) + float(pos[2]) - float(lo[2]) + 0.01], dtype=th.float32))
 
     def skill(self, name: str, args: list[str]) -> dict:
         self._frames = []
@@ -429,6 +592,9 @@ class Worker:
                     d["relations"] = rel
             objs[n] = d
         out["objects"] = objs
+        # names only: what a vision-only task shows (obs_mode vision, visible_fields robot + object_names), so the
+        # agent can address objects in skills while their poses, states and relations must be read from the cameras
+        out["object_names"] = list(scope)
         return out
 
     def success(self) -> dict:

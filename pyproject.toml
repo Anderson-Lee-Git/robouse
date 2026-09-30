@@ -7,7 +7,7 @@ name = "robouse"
 version = "0.1.1"
 description = "Agent as a policy for embodied agents"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Xiangyi Li", email = "xiangyi@benchflow.ai" }]
@@ -20,15 +20,15 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# The base install: the task loader, the `robouse` / `robo` commands and BenchFlow, which runs every trial
-# (robouse tasks are a BenchFlow task format; see src/robouse/engine). `robo` (the agent-facing command) uses only
-# the standard library. Simulators are extras; a BenchFlow run needs none of them on the host (the simulator
-# runs in its own container).
-dependencies = ["numpy>=1.24", "pyyaml>=6", "benchflow>=0.7.9.dev0"]
+# The base install is light: the task loader, the episode server and the `robouse` / `robo` commands. `robo` (the
+# agent-facing command) uses only the standard library. Simulators are extras, and so is BenchFlow (`--engine
+# benchflow`: every trial in Docker, the simulator in its own container).
+dependencies = ["numpy>=1.24", "pyyaml>=6"]
 
 [project.optional-dependencies]
 # MuJoCo and video recording: the built-in tabletop, ARC-style, hard, safety, vision, robo-use-families, RoboHarm,
@@ -43,6 +43,9 @@ gymrobotics = ["robouse[sim]", "gymnasium-robotics>=1.4"]
 # (docs/suites/libero.md) because it needs --no-deps.
 robosuite = ["robouse[sim]", "robosuite>=1.5,<1.6"]
 dexjoco = ["robouse[sim]", "scipy>=1.10"]
+# BenchFlow runs trials in Docker and loads robouse task folders as a native task format. Needs Python 3.12 and, until
+# BenchFlow releases the task-format hook, BenchFlow from its `robouse` branch (see [tool.uv.sources]).
+benchflow = ["benchflow>=0.7.9.dev0; python_version >= '3.12'"]
 all = ["robouse[sim,metaworld,gymrobotics,robosuite,dexjoco]"]
 
 [project.urls]
@@ -65,31 +68,39 @@ benchflow = { git = "https://github.com/benchflow-ai/benchflow", branch = "robou
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robouse"]
-# robocasa_episodes are recorded, machine-specific scene files for the RoboCasa suite (not yet bundled as tasks).
-exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes"]
+exclude = ["**/__pycache__", "**/*.pyc"]
 
 # The task folders ship inside the wheel as robouse/bundled_tasks, so `robouse tasks` and
 # `robouse run --task <id>` work without a checkout.
 [tool.hatch.build.targets.wheel.force-include]
-# One entry per suite that is self-contained. Left out: robocasa (its recorded episode layouts are machine-specific
-# and not distributed) and any suite still in development.
+# One entry per suite. Left out: behavior (its simulator runs on a remote GPU worker) and any suite still in development.
+# Suites whose simulator needs its own virtualenv (dexjoco, driving, dmcontrol, myosuite, humanoidbench, maniskill,
+# robocasa) still need that setup; docs/suites.md says how.
+"tasks/adroit" = "robouse/bundled_tasks/adroit"
 "tasks/arc-style" = "robouse/bundled_tasks/arc-style"
 "tasks/crazyflie" = "robouse/bundled_tasks/crazyflie"
 "tasks/dexhand" = "robouse/bundled_tasks/dexhand"
 "tasks/dexjoco" = "robouse/bundled_tasks/dexjoco"
-"tasks/drone" = "robouse/bundled_tasks/drone"
+"tasks/dmcontrol" = "robouse/bundled_tasks/dmcontrol"
 "tasks/driving" = "robouse/bundled_tasks/driving"
+"tasks/drone" = "robouse/bundled_tasks/drone"
 "tasks/gymrobotics" = "robouse/bundled_tasks/gymrobotics"
 "tasks/hard" = "robouse/bundled_tasks/hard"
 "tasks/humanoid" = "robouse/bundled_tasks/humanoid"
+"tasks/humanoidbench" = "robouse/bundled_tasks/humanoidbench"
+"tasks/kitchen" = "robouse/bundled_tasks/kitchen"
 "tasks/libero" = "robouse/bundled_tasks/libero"
+"tasks/libero-90" = "robouse/bundled_tasks/libero-90"
 "tasks/libero-style" = "robouse/bundled_tasks/libero-style"
+"tasks/maniskill" = "robouse/bundled_tasks/maniskill"
 "tasks/menagerie" = "robouse/bundled_tasks/menagerie"
 "tasks/metaworld" = "robouse/bundled_tasks/metaworld"
 "tasks/mobile-manip" = "robouse/bundled_tasks/mobile-manip"
+"tasks/myosuite" = "robouse/bundled_tasks/myosuite"
 "tasks/quadruped" = "robouse/bundled_tasks/quadruped"
 "tasks/composed" = "robouse/bundled_tasks/composed"
 "tasks/robo-use-families" = "robouse/bundled_tasks/robo-use-families"
+"tasks/robocasa" = "robouse/bundled_tasks/robocasa"
 "tasks/roboharm" = "robouse/bundled_tasks/roboharm"
 "tasks/robosuite" = "robouse/bundled_tasks/robosuite"
 "tasks/safety" = "robouse/bundled_tasks/safety"
@@ -98,7 +109,9 @@ exclude = ["**/__pycache__", "**/*.pyc", "src/robouse/backends/robocasa_episodes
 "assets/menagerie/provenance.json" = "robouse/assets_provenance/menagerie.json"
 "assets/menagerie/skydio_x2/PROVENANCE.json" = "robouse/assets_provenance/skydio_x2.json"
 "assets/menagerie/embodiments.json" = "robouse/assets_provenance/embodiments.json"
+"assets/humanoidbench/provenance.json" = "robouse/assets_provenance/humanoidbench.json"
+"assets/robocasa/provenance.json" = "robouse/assets_provenance/robocasa.json"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/README.md", "/LICENSE", "/pyproject.toml"]
-exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/src/robouse/backends/robocasa_episodes", "/tasks/robocasa", "/tasks/behavior"]
+include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/assets/humanoidbench/provenance.json", "/assets/robocasa/provenance.json", "/README.md", "/LICENSE", "/pyproject.toml"]
+exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]

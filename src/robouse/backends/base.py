@@ -1,12 +1,12 @@
 """Backend interface: one simulator family (Meta-World, custom MuJoCo scenes, ...) behind a common API.
 
-The episode server (BenchFlow's `benchflow.embodied.server`, through `robouse.embodied.RobouseSim`) only talks to
-this interface. A backend exposes:
+The episode server (`robouse.session`, or BenchFlow's through `robouse.engine.sim.RobouseSim`) only talks to this
+interface. A backend exposes:
 - a low-level action: a fixed-length vector with documented bounds (`action_spec`), which the backend's
-  embodiment splits into named action groups (`embodiment()`, see docs/embodied.md in BenchFlow),
+  embodiment splits into named action groups (`embodiment()`, `robouse.embodiment_spec`),
 - a public observation (named fields the agent may see, plus camera images),
 - a success predicate evaluated by the trusted server, never by the agent.
-Skills (move_to, grip) are BenchFlow's built-in controllers on top of `hand_pos()` and the low-level action.
+Skills (move_to, grip) are built-in controllers on top of `hand_pos()` and the low-level action.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from benchflow.embodied.spec import (
+from ..embodiment_spec import (
     ActionGroup,
     Budgets,
     Camera,
@@ -102,7 +102,7 @@ class Backend:
     action_spec: ActionSpec
     max_steps: int = 500
     camera: str = ""
-    robot_kind: str = "arm"  # one of benchflow.embodied.spec.KINDS
+    robot_kind: str = "arm"  # one of embodiment_spec.KINDS
     robot_name: str = ""
     dense_reward: str = "sparse"  # "shaped" when step() returns the simulator's own shaped reward
     proprioception: tuple[str, ...] = ("hand_pos", "gripper_open")
@@ -121,6 +121,50 @@ class Backend:
 
     def render(self, width: int = 320, height: int = 320) -> np.ndarray:
         raise NotImplementedError
+
+    # ---- episode video at a chosen size (ROBOUSE_RECORD_SIZE) -----------------------------------------------------
+    # The recording uses its own renderer, so the images the agent sees (`render()`, `robo observe --image`) are
+    # unchanged. The frame keeps the backend's camera; a wider frame shows more of the scene sideways (the camera's
+    # vertical field of view is fixed), never a stretched image.
+    def render_record(self, width: int, height: int) -> np.ndarray | None:
+        """A video frame at width x height, or None when this backend can only record at its native size."""
+        md = getattr(self, "mj_model_data", None)
+        md = md() if callable(md) else None
+        if not md:
+            # worker-process backends (dm_control, MyoSuite, HumanoidBench, ManiSkill, MetaDrive, ...) declare
+            # render(width=None, height=None) and forward the size to their worker, which renders at any size
+            import inspect
+
+            p = inspect.signature(type(self).render).parameters
+            if "width" in p and "height" in p and p["width"].default is None and p["height"].default is None:
+                return self.render(width, height)
+            return None
+        model, data = md
+        return self._mj_record(model, data, self.record_camera(), width, height, self.record_scene_option(),
+                               bool(getattr(self, "image_flipped", False)))
+
+    def record_camera(self) -> Any:
+        return getattr(self, "camera", None)
+
+    def record_scene_option(self) -> Any:
+        return None
+
+    def _mj_record(self, model, data, camera, width: int, height: int, scene_option=None, flip: bool = False) -> np.ndarray:
+        import mujoco
+
+        cache = self.__dict__.setdefault("_record_renderers", {})
+        key = (id(model), width, height)
+        if key not in cache:
+            g = model.vis.global_  # the offscreen buffer must hold the frame; visual-only, no effect on physics
+            g.offwidth, g.offheight = max(g.offwidth, width), max(g.offheight, height)
+            cache[key] = mujoco.Renderer(model, height=height, width=width)
+        r = cache[key]
+        if scene_option is not None:
+            r.update_scene(data, camera=camera, scene_option=scene_option)
+        else:
+            r.update_scene(data, camera=camera)
+        img = r.render()
+        return (img[::-1] if flip else img).copy()
 
     def success(self) -> bool:
         raise NotImplementedError
@@ -184,3 +228,27 @@ def behavior_skill_specs(names: list[str]) -> list[Skill]:
                  doc=f"BEHAVIOR symbolic primitive {n}; one skill call is one step of the budget") for n in names]
     out.append(Skill("release", impl="backend", doc="open the hand and drop what it holds"))
     return out
+
+
+def embodiment_of(backend: Backend) -> Embodiment:
+    """A backend's embodiment as a spec object. Backends return either an `Embodiment` or a spec dict
+    (`backends/embodied.py`); a skill's per-call step cap, which the spec has no field for, goes into its doc."""
+    emb = backend.embodiment()
+    if isinstance(emb, Embodiment):
+        return emb
+    d = dict(emb)
+    skills = []
+    for sk in d.get("skills", []):
+        sk = dict(sk)
+        cap = sk.pop("max_steps", None)
+        if cap:
+            sk["doc"] = f"{sk.get('doc', '')} (at most {cap} steps per call)".strip()
+        skills.append(sk)
+    d["skills"] = skills
+    return Embodiment.from_dict(d)
+
+
+def embodiment_dict(backend: Backend) -> dict:
+    """A backend's embodiment as the spec dict `robo info` reports."""
+    emb = backend.embodiment()
+    return emb.to_dict() if isinstance(emb, Embodiment) else dict(emb)

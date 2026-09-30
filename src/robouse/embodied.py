@@ -18,7 +18,7 @@ from benchflow.embodied.server import LEGACY_VISIBLE, EpisodeConfig, EpisodeServ
 from benchflow.embodied.spec import Embodiment
 
 from .backends import make_backend
-from .backends.base import Backend
+from .backends.base import Backend, embodiment_of
 
 _FORWARD = ("judge", "run_skill", "start_skill", "pop_frames", "workspace_images", "privileged_state")
 
@@ -39,8 +39,7 @@ class RobouseSim:
             fn = getattr(backend, attr, None)
             if callable(fn):
                 setattr(self, attr, fn)
-        emb = backend.embodiment()
-        self._embodiment = emb if isinstance(emb, Embodiment) else embodiment_from_dict(emb)
+        self._embodiment = Embodiment.from_dict(embodiment_of(backend).to_dict())
         # embodiment backends (backends/embodied.py) say what "hold still" is for their action groups
         self._hold = getattr(backend, "hold_action", None)
 
@@ -105,20 +104,6 @@ class RobouseSim:
     def close(self) -> None:
         self.b.close()
 
-
-def embodiment_from_dict(d: dict) -> Embodiment:
-    """BenchFlow's Embodiment from a spec dict written by an embodiment backend (`Embodiment.to_spec`): a skill's
-    per-call step cap goes into its doc (the spec has no per-skill field for it)."""
-    d = dict(d)
-    skills = []
-    for sk in d.get("skills", []):
-        sk = dict(sk)
-        cap = sk.pop("max_steps", None)
-        if cap:
-            sk["doc"] = f"{sk.get('doc', '')} (at most {cap} steps per call)".strip()
-        skills.append(sk)
-    d["skills"] = skills
-    return Embodiment.from_dict(d)
 
 
 def episode_from_spec(spec: dict, run_dir: Path, workspace: Path | None = None, seed: int | None = None,

@@ -43,6 +43,12 @@ def metaworld_oracle(env_name: str, steps: int) -> None:
 ORACLE_MODULES = {"robosuite": "robouse.backends.robosuite_backend", "metaworld": "robouse.oracle"}
 
 
+def _upstream() -> dict:
+    from .backends import UPSTREAM
+
+    return UPSTREAM
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="robouse-oracle")
     ap.add_argument("--backend", required=True)
@@ -52,7 +58,8 @@ def main(argv=None) -> int:
     if a.backend == "metaworld":
         metaworld_oracle(a.env, a.steps)
     elif a.backend in ("tabletop", "tabletop_hard", "gymrobotics", "libero", "menagerie", "robocasa", "behavior", "roboharm", "drone", "dexjoco",
-                       "quadruped", "humanoid", "mobile_manip", "dexhand", "crazyflie", "driving", "remix", "components"):
+                       "quadruped", "humanoid", "mobile_manip", "dexhand", "crazyflie", "driving", "real", "nav", "remix", "gpu",
+                       "components"):
         import importlib
 
         # each backend module provides oracle_main(env: str) that drives the robot through the socket
@@ -61,6 +68,10 @@ def main(argv=None) -> int:
         from .backends.robosuite_backend import oracle_main
 
         oracle_main(a.env)
+    elif a.backend in _upstream():  # backends/__init__.py UPSTREAM: module name may differ from the backend name
+        import importlib
+
+        importlib.import_module(f".backends.{_upstream()[a.backend][0]}", __package__).oracle_main(a.env)
     else:
         print(f"no oracle for backend {a.backend}")
         return 2

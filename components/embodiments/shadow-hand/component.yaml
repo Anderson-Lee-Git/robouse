@@ -9,5 +9,6 @@ capabilities:
 - dexterous
 composable: false
 suites:
+- adroit
 - dexhand
 - gymrobotics

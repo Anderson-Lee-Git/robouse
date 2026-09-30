@@ -1,0 +1,46 @@
+{
+  "cover_blocks": {
+    "instruction": "Cover the blocks from left to right, remember their colors, then uncover them in the order: red, green, and blue.",
+    "layout": 0
+  },
+  "general_pickup": {
+    "instruction": "Pick up the mint green scissors by 10 cm.",
+    "layout": 0
+  },
+  "press_by_number": {
+    "instruction": "Press the two red buttons the required number of times according to the number cards, then press the blue button to confirm.",
+    "layout": 0
+  },
+  "put_bottles_into_dustbin": {
+    "instruction": "Pick up the bottles and throw them into the dustbin, using handover when needed.",
+    "layout": 0
+  },
+  "solve_equation": {
+    "instruction": "Complete the equation by selecting the correct missing number or operator and placing it on the pad, then reset the robot arm.",
+    "layout": 0
+  },
+  "stack_blocks": {
+    "instruction": "Stack the three blocks with different textures.",
+    "layout": 0
+  },
+  "stack_blocks_by_language": {
+    "instruction": "stack the blocks from bottom to top in the order of blue, yellow, and orange, then reset the robot arm.",
+    "layout": 0
+  },
+  "stack_blocks_random": {
+    "instruction": "Stack the three blocks with different textures.",
+    "layout": 0
+  },
+  "stack_bowls": {
+    "instruction": "Stack the three bowls together.",
+    "layout": 0
+  },
+  "stack_bowls_random": {
+    "instruction": "Stack the three bowls together.",
+    "layout": 0
+  },
+  "swap_blocks": {
+    "instruction": "Swap the two blocks using the empty mat, pressing the button after each move.",
+    "layout": 0
+  }
+}

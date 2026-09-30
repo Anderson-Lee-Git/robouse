@@ -5,22 +5,39 @@
 ```console
 $ robouse --help
 usage: robouse [-h] [--version]
-               {serve,run,run-many,export,tasks,components,fetch-assets} ...
+               {serve,run,run-many,estop,operator,hil-check,robots,report,grade,doctor,summarize,tasks,fetch-assets,export,components}
+               ...
 
 Robo Use: agent as a policy for embodied agents. Runs robot tasks with an
 agent harness as the policy. https://robouse.ai
 
 positional arguments:
-  {serve,run,run-many,export,tasks,components,fetch-assets}
+  {serve,run,run-many,estop,operator,hil-check,robots,report,grade,doctor,summarize,tasks,fetch-assets,export,components}
     serve               run one trusted episode server (used by `run`)
     run                 run one trial end to end
     run-many            run a set of trials
-    export              write robouse tasks as native BenchFlow task packages
-                        (a movable bundle)
+    estop               latch the real-robot e-stop (every real episode stops
+                        at its next command); --clear releases it
+    operator            answer a pending operator gate or verdict, or send the
+                        policy a remark
+    hil-check           strict replay of recorded real sessions through the
+                        safety guard + tracking-model fit
+    robots              list real-robot profiles, drivers and hardware-in-the-
+                        loop fixtures
+    report              metrics with 95% confidence intervals over job
+                        folders, grouped by trial attributes
+    grade               VLM second opinion on finished trials from their video
+                        frames (writes <trial>/grader/vlm.json)
+    doctor              what this machine can run: backends, harnesses,
+                        credentials, VLA, real-robot SDKs, plugins
+    summarize           distil a trial into learnings (markdown) for --prior-
+                        learnings
     tasks               list, compose (init), scaffold and check tasks;
                         `robouse tasks --help`
     fetch-assets        download the MuJoCo Menagerie robot models (Menagerie-
                         based suites and composed tasks)
+    export              write robouse tasks as native BenchFlow task packages
+                        (a movable bundle)
     components          list, show and check components; `robouse components
                         --help`
 
@@ -33,95 +50,182 @@ options:
 
 ```console
 $ robouse run --help
-usage: robouse run [-h] --task TASK --agent AGENT [--model MODEL] --out OUT
-                   [--timeout TIMEOUT] [--seed SEED] [--seeds SEEDS]
-                   [--engine {benchflow,local}] [--sandbox SANDBOX]
+usage: robouse run [-h] --task TASK --harness HARNESS [--model MODEL] --out
+                   OUT [--timeout TIMEOUT] [--record-size WxH] [--seed SEED]
+                   [--rig RIG] [--split SPLIT]
+                   [--extra-instruction EXTRA_INSTRUCTION]
+                   [--prior-learnings PRIOR_LEARNINGS] [--seeds SEEDS]
+                   [--engine {local,benchflow}] [--sandbox SANDBOX]
                    [--reasoning-effort REASONING_EFFORT] [--job-name JOB_NAME]
 
 options:
   -h, --help            show this help message and exit
   --task TASK           task folder or bundled task id
-  --agent AGENT, --harness AGENT
-                        BenchFlow agent (oracle, noop, claude, codex, ... see
-                        `bench agent list`; claude-code is an alias for
-                        claude); with --engine local, a robouse harness:
+  --harness HARNESS, --agent HARNESS
                         oracle, noop, claude-code, codex, claude-code-glm,
-                        codex-glm, mini-swe-agent-glm or molmoact2 (see
-                        https://robouse.ai/docs/harnesses/)
-  --model MODEL         model for the agent (default: the agent's default)
-  --out OUT             jobs folder; the BenchFlow job is written to
-                        OUT/<job>/<task>__<id>/ (--engine local:
-                        OUT/<task>__<harness>__<id>/)
+                        codex-glm, mini-swe-agent-glm, molmoact2 or vla (see
+                        https://robouse.ai/docs/harnesses/); with --engine
+                        benchflow, a BenchFlow agent (see `bench agent list`)
+  --model MODEL         model for the harness (default: the harness's default)
+  --out OUT             job folder; the trial is written to
+                        OUT/<task>__<harness>__<id>/
   --timeout TIMEOUT     agent wall-clock limit in seconds (default: the task's
                         agent.timeout_sec)
+  --record-size WxH     render the episode video at this size, e.g. 1280x720
+                        (agent images unchanged; default: native size; also
+                        $ROBOUSE_RECORD_SIZE)
   --seed SEED           override the task's seed
-  --seeds SEEDS         seeded rollouts (BenchFlow engine): one trial per task
-                        and seed, e.g. 0-4 or 0,3,7; summary.json gets pass@k,
-                        mean and std per task
-  --engine {benchflow,local}
-                        benchflow (default): BenchFlow with Docker; local:
-                        host processes, macOS Seatbelt sandbox, no Docker
-  --sandbox SANDBOX     BenchFlow sandbox (default docker)
+  --rig RIG             real-robot rig file (YAML, keyed by robot): runs real
+                        tasks on live hardware instead of the mock
+  --split SPLIT         placement split: nominal, interpolation or
+                        extrapolation (tabletop pick-and-place tasks)
+  --extra-instruction EXTRA_INSTRUCTION
+                        text appended to the task instruction (recorded in
+                        config.json)
+  --prior-learnings PRIOR_LEARNINGS
+                        markdown notes (e.g. from `robouse summarize`)
+                        appended to the instruction
+  --seeds SEEDS         (--engine benchflow) one trial per seed, e.g. 0-4 or
+                        0,3,7
+  --engine {local,benchflow}
+                        local (default): host processes, macOS Seatbelt
+                        sandbox, no Docker; benchflow: one BenchFlow job in
+                        Docker (needs robouse[benchflow])
+  --sandbox SANDBOX     (--engine benchflow) BenchFlow sandbox (default
+                        docker)
   --reasoning-effort REASONING_EFFORT
-                        agent reasoning effort (BenchFlow agents that expose
-                        one)
-  --job-name JOB_NAME   BenchFlow job name (default: a timestamp)
+                        (--engine benchflow) agent reasoning effort, for
+                        agents that expose one
+  --job-name JOB_NAME   (--engine benchflow) BenchFlow job name (default: a
+                        timestamp)
 ```
 
-`--model` matters only for `claude-code` and `codex`; the other harnesses ignore it. The command prints a JSON summary (`trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`). A non-null `exception` means the trial could not start; it is not a score.
+`--model` names the model for model harnesses and the preset for `vla` ([VLA policies](vla.md)). `--rig` runs a real-robot task on live hardware instead of the hardware-in-the-loop mock ([Real robots](real-robots.md)). The command prints a JSON summary (`trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`). A non-null `exception` means the trial could not start; it is not a score.
 
 ## robouse run-many
 
 ```console
 $ robouse run-many --help
-usage: robouse run-many [-h] [--tasks TASKS] --agent AGENT [--model MODEL]
-                        --out OUT [--timeout TIMEOUT] [--seed SEED]
-                        [--seeds SEEDS] [--engine {benchflow,local}]
+usage: robouse run-many [-h] [--tasks TASKS] --harness HARNESS [--model MODEL]
+                        --out OUT [--filter FILTER] [--limit LIMIT]
+                        [--concurrency CONCURRENCY] [--timeout TIMEOUT]
+                        [--task-list TASK_LIST] [--record-size WxH] [--resume]
+                        [--rig RIG] [--include INCLUDE] [--exclude EXCLUDE]
+                        [--sample SAMPLE] [--sample-seed SAMPLE_SEED]
+                        [--seeds SEEDS] [--epochs EPOCHS] [--retries RETRIES]
+                        [--split SPLIT] [--mode {sim,real}]
+                        [--extra-instruction EXTRA_INSTRUCTION]
+                        [--prior-learnings PRIOR_LEARNINGS] [--dry-run]
+                        [--seed SEED] [--engine {local,benchflow}]
                         [--sandbox SANDBOX]
                         [--reasoning-effort REASONING_EFFORT]
-                        [--job-name JOB_NAME] [--filter FILTER]
-                        [--limit LIMIT] [--concurrency CONCURRENCY]
-                        [--task-list TASK_LIST] [--resume]
+                        [--job-name JOB_NAME]
 
 options:
   -h, --help            show this help message and exit
   --tasks TASKS         task root (default: the bundled tasks)
-  --agent AGENT, --harness AGENT
-                        BenchFlow agent (oracle, noop, claude, codex, ... see
-                        `bench agent list`; claude-code is an alias for
-                        claude); with --engine local, a robouse harness:
+  --harness HARNESS, --agent HARNESS
                         oracle, noop, claude-code, codex, claude-code-glm,
-                        codex-glm, mini-swe-agent-glm or molmoact2 (see
-                        https://robouse.ai/docs/harnesses/)
-  --model MODEL         model for the agent (default: the agent's default)
-  --out OUT             jobs folder; the BenchFlow job is written to
-                        OUT/<job>/<task>__<id>/ (--engine local:
-                        OUT/<task>__<harness>__<id>/)
-  --timeout TIMEOUT     agent wall-clock limit in seconds (default: each
-                        task's)
-  --seed SEED           override the task's seed
-  --seeds SEEDS         seeded rollouts (BenchFlow engine): one trial per task
-                        and seed, e.g. 0-4 or 0,3,7; summary.json gets pass@k,
-                        mean and std per task
-  --engine {benchflow,local}
-                        benchflow (default): BenchFlow with Docker; local:
-                        host processes, macOS Seatbelt sandbox, no Docker
-  --sandbox SANDBOX     BenchFlow sandbox (default docker)
-  --reasoning-effort REASONING_EFFORT
-                        agent reasoning effort (BenchFlow agents that expose
-                        one)
-  --job-name JOB_NAME   BenchFlow job name (default: a timestamp)
+                        codex-glm, mini-swe-agent-glm, molmoact2 or vla (see
+                        https://robouse.ai/docs/harnesses/); with --engine
+                        benchflow, a BenchFlow agent (see `bench agent list`)
+  --model MODEL         model for the harness (default: the harness's default)
+  --out OUT             job folder; one trial folder per task
   --filter FILTER       only task ids containing this substring
   --limit LIMIT         run at most this many tasks (0: all)
   --concurrency CONCURRENCY
                         trials run in parallel (default 1)
+  --timeout TIMEOUT     agent wall-clock limit per trial in seconds (default:
+                        each task's)
   --task-list TASK_LIST
                         file with one task id per line (subset of --tasks)
-  --resume              (--engine local) skip tasks that already have a
-                        finished, non-infra-failed trial in --out
+  --record-size WxH     render the episode video at this size, e.g. 1280x720
+                        (agent images unchanged; default: native size; also
+                        $ROBOUSE_RECORD_SIZE)
+  --resume              skip tasks that already have a finished, non-infra-
+                        failed trial in --out
+  --rig RIG             real-robot rig file (YAML, keyed by robot): real tasks
+                        run on live hardware, one at a time
+  --include INCLUDE     only task ids matching this glob (repeatable), e.g.
+                        'libero-10-*'
+  --exclude EXCLUDE     skip task ids matching this glob (repeatable)
+  --sample SAMPLE       run a seeded random sample of N tasks
+  --sample-seed SAMPLE_SEED
+                        seed for --sample (default 0)
+  --seeds SEEDS         episode seeds per task, e.g. 0-4 or 0,3,7 (default:
+                        the task's own seed); gives pass@k
+  --epochs EPOCHS       repeat each (task, seed) N times (real robots:
+                        repeated trials)
+  --retries RETRIES     rerun a trial up to N times after an infrastructure
+                        failure (exponential backoff; the failed trial is kept
+                        in OUT/_infra_failed)
+  --split SPLIT         placement split: nominal, interpolation or
+                        extrapolation (identical placements per seed)
+  --mode {sim,real}     only simulated or only real-robot tasks
+  --extra-instruction EXTRA_INSTRUCTION
+                        text appended to every task instruction
+  --prior-learnings PRIOR_LEARNINGS
+                        markdown notes appended to every instruction (retry
+                        with learning)
+  --dry-run             print the resolved trial plan and exit
+  --seed SEED           override every task's seed
+  --engine {local,benchflow}
+                        local (default): host processes, macOS Seatbelt
+                        sandbox, no Docker; benchflow: one BenchFlow job in
+                        Docker (needs robouse[benchflow])
+  --sandbox SANDBOX     (--engine benchflow) BenchFlow sandbox (default
+                        docker)
+  --reasoning-effort REASONING_EFFORT
+                        (--engine benchflow) agent reasoning effort, for
+                        agents that expose one
+  --job-name JOB_NAME   (--engine benchflow) BenchFlow job name (default: a
+                        timestamp)
 ```
 
-`--tasks` is searched recursively. The command prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved.
+`--tasks` is searched recursively. The command prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved. Seeds, epochs, splits, sampling and retries: [Metrics, splits, repeats and reports](metrics.md).
+
+## robouse report
+
+```console
+$ robouse report --help
+usage: robouse report [-h] [--by BY] [--metrics METRICS] [--json JSON]
+                      [--cost-quality COST_QUALITY] [--svg SVG]
+                      jobs [jobs ...]
+
+positional arguments:
+  jobs                  job folders (run-many --out)
+
+options:
+  -h, --help            show this help message and exit
+  --by BY               group keys, comma-separated (repeatable): harness,
+                        model, suite, category, difficulty, task, split, seed,
+                        mode, job, regime, released (default harness,model)
+  --metrics METRICS     metrics to show, comma-separated (default: the nine
+                        robot metrics + cost)
+  --json JSON           write the full report as JSON
+  --cost-quality COST_QUALITY
+                        write cost-vs-success points (JSON) for groups with a
+                        known cost
+  --svg SVG             write a cost-vs-success scatter (SVG)
+```
+
+Metrics with 95% intervals over job folders; see [Metrics](metrics.md).
+
+## robouse summarize
+
+```console
+$ robouse summarize --help
+usage: robouse summarize [-h] [-o OUT] trial
+
+positional arguments:
+  trial              trial folder (OUT/<task>__<harness>__<id>)
+
+options:
+  -h, --help         show this help message and exit
+  -o OUT, --out OUT  output file (default: <trial>/learnings.md; - for stdout)
+```
+
+A deterministic digest of one trial (outcome, judge detail, safety events, robot errors, last requests) as markdown, for `--prior-learnings`.
 
 ## robouse tasks
 
@@ -276,6 +380,66 @@ options:
 
 Writes each task as a native BenchFlow task package under `OUT/tasks/`, plus the simulator runtime they build from, so `bench eval run --tasks-dir OUT/tasks` runs them.
 
+## robouse robots
+
+```console
+$ robouse robots --help
+usage: robouse robots [-h]
+
+options:
+  -h, --help  show this help message and exit
+```
+
+Real-robot profiles, drivers and hardware-in-the-loop fixtures ([Real robots](real-robots.md)).
+
+## robouse estop
+
+```console
+$ robouse estop --help
+usage: robouse estop [-h] [--clear] [reason]
+
+positional arguments:
+  reason
+
+options:
+  -h, --help  show this help message and exit
+  --clear
+```
+
+Latches the e-stop: every real-robot episode stops at its next command and the arm holds. `--clear` releases it.
+
+## robouse operator
+
+```console
+$ robouse operator --help
+usage: robouse operator [-h] [--note NOTE] {status,answer,say} [value]
+
+positional arguments:
+  {status,answer,say}
+  value
+
+options:
+  -h, --help           show this help message and exit
+  --note NOTE
+```
+
+The operator's side of an attended real-robot run: `status` (the pending gate or verdict), `answer` (yes / no / partial / skip or a rubric stage), `say` (a remark the policy sees in its next observation).
+
+## robouse hil-check
+
+```console
+$ robouse hil-check --help
+usage: robouse hil-check [-h] [fixtures ...]
+
+positional arguments:
+  fixtures    fixture names under assets/hil (default: all)
+
+options:
+  -h, --help  show this help message and exit
+```
+
+Strict replay of recorded real sessions through the safety guard, and the fitted tracking model's error.
+
 ## robouse fetch-assets
 
 ```console
@@ -298,7 +462,8 @@ Downloads the MuJoCo Menagerie robot models that the Menagerie-based suites and 
 $ robouse serve --help
 usage: robouse serve [-h] --task TASK --run-dir RUN_DIR --socket SOCKET
                      [--workspace WORKSPACE] [--seed SEED]
-                     [--max-wall-s MAX_WALL_S] [--ready-file READY_FILE]
+                     [--max-wall-s MAX_WALL_S] [--record-size WxH]
+                     [--ready-file READY_FILE] [--split SPLIT]
 
 options:
   -h, --help            show this help message and exit
@@ -311,8 +476,13 @@ options:
   --seed SEED           override the task's seed
   --max-wall-s MAX_WALL_S
                         wall-clock budget in seconds (default 1800)
+  --record-size WxH     render the episode video at this size, e.g. 1280x720
+                        (agent images unchanged; default: native size; also
+                        $ROBOUSE_RECORD_SIZE)
   --ready-file READY_FILE
                         file created once the server is listening
+  --split SPLIT         placement split for backends with seeded placements:
+                        nominal, interpolation or extrapolation
 ```
 
 Runs one episode server on a Unix socket until the episode ends, then prints the verdict as JSON. `run` starts it for you; use it directly to drive a robot by hand with `robo` (set `ROBOUSE_SOCKET` to the socket path).

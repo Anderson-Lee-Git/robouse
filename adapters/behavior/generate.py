@@ -1,62 +1,84 @@
-"""BEHAVIOR-1K (Stanford Vision and Learning Lab; OmniGibson on NVIDIA Isaac Sim) -> robouse tasks.
+"""BEHAVIOR-1K (Stanford Vision and Learning Lab; OmniGibson on NVIDIA Isaac Sim) -> Robo Use tasks.
 
-Five long-horizon household activities from the 2026 BEHAVIOR Challenge task list, each in its challenge scene with
-the challenge's task instance 0 (the cached `*_0_0_template` activity scene) and the R1Pro mobile manipulator.
-The agent drives the robot with BEHAVIOR's symbolic action primitives (`robo skill ...`, see
+Activities from the 2026 BEHAVIOR Challenge task list (challenge_tasks.json: all 100, with the challenge's scene, loaded
+rooms and instruction) whose BDDL goal the skill set can reach, each in its challenge scene with the Galaxea R1Pro
+mobile manipulator. The agent drives the robot with symbolic skills (`robo skill ...`, see
 src/robouse/backends/behavior.py); success is BEHAVIOR's BDDL goal. The simulator runs remotely on an RTX GPU; see
 docs/suites/behavior.md.
 
-The reference solution is a scripted primitive sequence (oracle/plan.json) sent through the robo socket.
+Variants written per activity (plans.py holds the plans and instructions; the lists below pick the variants):
+  behavior-<activity>               the challenge's task instance 0, full state in `robo observe`
+  behavior-<activity>-instance-<k>  challenge task instance k (other object placements and robot start), full state
+  behavior-<activity>-vision        instance 0, vision only: `robo observe` gives the robot's own state and the task
+                                    objects' names; poses, open/on states and relations come from the cameras
+The reference solution is a scripted skill sequence (oracle/plan.json) sent through the robo socket.
 
-Usage: python adapters/behavior/generate.py --out tasks/behavior
+Usage: python adapters/behavior/generate.py --out tasks/behavior [--bddl <BEHAVIOR-1K>/bddl3/bddl/activity_definitions]
 """
 from __future__ import annotations
 
 import argparse
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from robouse.tasks import write_task
 
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from plans import TASKS  # noqa: E402
+
 SOURCE = "BEHAVIOR-1K (Li et al. 2022/2024), 2026 BEHAVIOR Challenge task list; OmniGibson 3.9.3 on Isaac Sim 5.1"
+CHALLENGE = json.loads((HERE / "challenge_tasks.json").read_text())
 
-# id, activity, scene, rooms loaded, difficulty, budget (skills), official challenge instruction, oracle plan
-TASKS = [
-    dict(activity="turning_on_radio", scene="house_double_floor_lower", difficulty="easy", max_steps=20,
-         instruction="Turn on the radio receiver that's on the table in the living room.",
-         plan=[["navigate_to", "radio_receiver.n.01_1"], ["toggle_on", "radio_receiver.n.01_1"]]),
-    dict(activity="picking_up_trash", scene="house_double_floor_lower", difficulty="medium", max_steps=40,
-         instruction="Put the three cans of soda from the living room inside the trash can in the kitchen.",
-         plan=[step for i in (1, 2, 3) for step in (
-             ["navigate_to", f"can__of__soda.n.01_{i}"], ["grasp", f"can__of__soda.n.01_{i}"],
-             ["navigate_to", "ashcan.n.01_1"], ["place_inside", "ashcan.n.01_1"])]),
-    dict(activity="rearranging_kitchen_furniture", scene="house_double_floor_lower", difficulty="medium", max_steps=45,
-         instruction="Move the toaster, food processor, and French press from the kitchen countertop into the same kitchen "
-                     "cabinet, and make sure that cabinet is closed at the end.",
-         plan=[["navigate_to", "cabinet.n.01_1"], ["open", "cabinet.n.01_1"]] + [step for o in (
-             "toaster.n.02_1", "food_processor.n.01_1", "french_press.n.01_1") for step in (
-             ["navigate_to", o], ["grasp", o], ["navigate_to", "cabinet.n.01_1"], ["place_inside", "cabinet.n.01_1"])]
-         + [["close", "cabinet.n.01_1"]]),
-    dict(activity="bringing_water", scene="house_single_floor", difficulty="medium", max_steps=40,
-         instruction="Retrieve the two bottles from the refrigerator in the kitchen, bring them to the living room, and "
-                     "place both on the coffee table. Make sure the refrigerator is closed at the end.",
-         plan=[["navigate_to", "electric_refrigerator.n.01_1"], ["open", "electric_refrigerator.n.01_1"],
-               ["grasp", "bottle.n.01_1"], ["navigate_to", "coffee_table.n.01_1"], ["place_on_top", "coffee_table.n.01_1"],
-               ["navigate_to", "electric_refrigerator.n.01_1"], ["grasp", "bottle.n.01_2"],
-               ["navigate_to", "coffee_table.n.01_1"], ["place_on_top", "coffee_table.n.01_1"],
-               ["navigate_to", "electric_refrigerator.n.01_1"], ["close", "electric_refrigerator.n.01_1"]]),
-    dict(activity="putting_dishes_away_after_cleaning", scene="house_single_floor", difficulty="hard", max_steps=90,
-         instruction="In the kitchen, gather all eight plates from the two countertops, place them all inside a single "
-                     "cabinet (either one), and make sure all cabinets are closed when you are done.",
-         plan=[["navigate_to", "cabinet.n.01_2"], ["open", "cabinet.n.01_2"]] + [step for i in range(1, 9) for step in (
-             ["navigate_to", f"plate.n.04_{i}"], ["grasp", f"plate.n.04_{i}"], ["navigate_to", "cabinet.n.01_2"],
-             ["place_inside", "cabinet.n.01_2"])] + [["close", "cabinet.n.01_2"]]),
-]
-ROOMS = {"house_double_floor_lower": ["corridor_0", "garden_0", "kitchen_0", "living_room_0"],
-         "house_single_floor": ["corridor_0", "dining_room_0", "entryway_0", "garden_0", "kitchen_0", "living_room_0",
-                                "living_room_1"]}
+# activities whose oracle did not pass in BEHAVIOR's own goal check, with the reason (kept out of the suite)
+DROPPED: dict[str, str] = {
+    "clearing_food_from_table_into_fridge": "place_inside finds no spot for the half chicken inside either tupperware "
+                                            "container (BEHAVIOR's Inside sampler, 4 draws), so the goal cannot be reached",
+    "boxing_books_up_for_storage": "the six books do not reliably fit into the box: in 3 of 4 reference runs one book "
+                                   "found no spot inside it",
+    "can_meat": "the two hinged jars do not fit back inside the cabinet (Inside sampler), and the bratwursts on the "
+                "chopping board are out of reach from every free spot next to the counter",
+    "preparing_lunch_box": "the bottle of tea does not fit inside the packing box (Inside sampler, 4 draws), in "
+                           "either order of packing",
+    "sorting_bottles_cans_and_paper": "the newspaper and the magazine do not fit inside a bucket (Inside sampler)",
+    "assembling_gift_baskets": "every skill succeeds, but the placed items do not stay inside the small wicker baskets "
+                               "on the floor: after settling none of the 16 items counts as inside",
+    "outfit_a_basic_toolbox": "the toolbox lid falls shut again after `open` (place_inside then reports it closed), and "
+                              "the drill finds no spot inside the toolbox",
+    "sorting_vegetables": "the mixing bowls cannot hold the vegetables: with two bok choy in a bowl, placing the third "
+                          "found no spot and the sampler ran past the robo client's 120 s timeout",
+    "make_rose_centerpieces": "the roses do not fit inside the vase: the second rose found no spot (Inside sampler)",
+    "bringing_paper_to_recycling": "the newspaper finds no spot inside the recycling bin (Inside sampler)",
+    "clean_up_your_desk": "the child's room is too cramped for the base: navigate_to finds no free spot (0.38 m "
+                          "clearance) within reach of the desk, the bookcase or the items on them",
+    "cleaning_up_branches_and_twigs": "the branches find no spot inside the recycling bin (Inside sampler; 4 of 4 "
+                                      "branches failed with the bin open)",
+    "put_together_a_basic_pruning_kit": "the shears find no spot inside the toolbox (Inside sampler)",
+    "packing_meal_for_delivery": "the three paper sacks do not fit on top of the storage container: the second found "
+                                 "no spot (OnTop sampler)",
+    "store_batteries": "the battery on the kitchen countertop is out of reach: navigate_to finds no free spot next to it",
+    "make_gift_bags_for_baby_showers": "the wafers find no spot inside the paper sacks (Inside sampler)",
+    "organizing_school_stuff": "the folder finds no spot inside the tote bag (Inside sampler)",
+    "boxing_food_after_dinner": "the second plate finds no spot on the kitchen sink (OnTop sampler)",
+    "composting_waste": "the half banana finds no spot inside the kitchen trash can (Inside sampler; 2 of 2 runs)",
+    "dispose_of_batteries": "every skill succeeds, but after settling the goal (batteries inside the trash can, the "
+                            "can on the copy-room floor) does not hold",
+}
+# extra challenge instances written for these activities (generalisation across object placements / start poses)
+INSTANCES = {"picking_up_trash": [1], "bringing_water": [1, 2], "store_produce": [1],
+             "turning_out_all_lights_before_sleep": [1]}
+# vision-only variants (instance 0)
+VISION = ["picking_up_trash", "rearranging_kitchen_furniture",
+          "putting_dishes_away_after_cleaning", "bringing_water",
+          "turning_out_all_lights_before_sleep", "tidying_bathroom", "store_produce",
+          "freeze_fruit"]
 
+OBSERVE_STATE = ("robo observe                       # robot pose, held object, and every task object (name, category, "
+                 "room, position, distance, open/on state, inside/on-top relations)\n")
+OBSERVE_VISION = ("robo observe                       # the robot's own state (position, heading, room, held object), the "
+                  "task objects' names, and one picture per camera\n")
 USAGE = """\
 ## How to control the robot
 
@@ -64,11 +86,10 @@ You are the robot's high-level policy. You act only through the `robo` command i
 
 ```
 robo info                          # skills, step budget
-robo observe                       # robot pose, held object, and every task-relevant object (name, category, room, position, distance, open/on state, inside/on-top relations)
-robo observe --image               # also saves a third-person camera image and prints its path (open it to look)
+{observe}robo observe --image               # also saves a third-person camera image and prints its path (open it to look)
 robo observe --image --camera head # the robot's own head camera instead
 robo skill navigate_to OBJ         # drive next to OBJ (a held object comes along)
-robo skill grasp OBJ               # pick up OBJ (hand must be empty, OBJ within reach)
+robo skill grasp OBJ               # pick up OBJ (hand must be empty, OBJ within reach); things resting in or on OBJ come along
 robo skill place_on_top OBJ        # put the held object on top of OBJ
 robo skill place_inside OBJ        # put the held object inside OBJ (open OBJ first if it has a door or lid)
 robo skill open OBJ                # open OBJ (hand must be empty)
@@ -81,10 +102,15 @@ robo give-up "reason"              # end the episode without claiming success
 ```
 
 - OBJ is an object name exactly as `robo observe` lists it (BEHAVIOR's BDDL instance names, e.g. `bottle.n.01_1`). Identical objects are numbered `_1`, `_2`, ...
-- The robot is an R1Pro wheeled mobile manipulator that carries one object at a time. Manipulation skills only work on objects within reach (`in_reach` in `robo observe`, about 1.25 m); use `navigate_to` first. Objects inside a closed container must be taken out after opening it.
+- The robot is an R1Pro wheeled mobile manipulator that carries one object at a time. Manipulation skills only work on objects within reach (about 1.25 m from the robot base); use `navigate_to` first. Objects inside a closed container must be taken out after opening it.
 - A skill can fail (the response says why, with `ok: False`); a failed skill still costs one step. Every skill call counts against the step budget (`robo info`).
 - Success is judged after you call `robo done`, with the robot holding still: every goal condition must hold at that moment. Call `robo done` exactly once when finished.
 """
+VISION_NOTE = ("Vision only: `robo observe` does not report where objects are, whether they are open or switched on, or "
+               "what they rest on or in. It lists the task objects' names (what skills take) and the robot's own state, "
+               "and saves one picture from each camera (`follow`, behind the robot, and `head`, the robot's own view). "
+               "Look at the pictures to find out the state of the scene; skill responses also say when an action fails "
+               "and why.\n\n")
 
 VERIFY = """\
 #!/bin/bash
@@ -103,8 +129,8 @@ EOF
 
 ORACLE = """\
 #!/bin/bash
-# Reference solution: a scripted sequence of BEHAVIOR symbolic primitives (plan.json), sent through the robo socket
-# exactly like an agent's `robo skill` calls.
+# Reference solution: a scripted sequence of BEHAVIOR skills (plan.json), sent through the robo socket exactly like an
+# agent's `robo skill` calls.
 set -euo pipefail
 ROBOUSE_BEHAVIOR_PLAN="$(dirname "$0")/plan.json" python -m robouse.oracle --backend behavior --env {activity}
 """
@@ -117,34 +143,56 @@ def bddl_goal(activity: str, bddl_root: Path | None) -> str:
     return text[text.index("(:goal"):].rstrip().rstrip(")").rstrip()
 
 
+def budget(plan: list) -> int:
+    """About twice the reference plan plus 15, rounded up to a multiple of 5 (at least 20)."""
+    return max(20, 5 * -(-(2 * len(plan) + 15) // 5))
+
+
+def difficulty(plan: list) -> str:
+    return "easy" if len(plan) <= 6 else "medium" if len(plan) <= 20 else "hard"
+
+
 def instruction(t: dict, goal: str) -> str:
     name = t["activity"].replace("_", " ")
-    s = f"# BEHAVIOR: {name}\n\n{t['instruction']}\n\n"
-    s += (f"This is the BEHAVIOR-1K activity `{t['activity']}` in the `{t['scene']}` house (rooms loaded: "
-          f"{', '.join(ROOMS[t['scene']])}). The robot starts where the BEHAVIOR Challenge places it. "
-          f"The step budget is {t['max_steps']} skill calls.\n\n")
+    s = f"# BEHAVIOR: {name}{' (vision only)' if t['vision'] else ''}\n\n{t['instruction']}\n\n"
+    s += (f"This is the BEHAVIOR-1K activity `{t['activity']}` in the `{t['scene']}` scene (rooms loaded: "
+          f"{', '.join(t['rooms'])}), BEHAVIOR Challenge task instance {t['instance']}. The robot starts where the "
+          f"challenge places it for that instance. The step budget is {t['max_steps']} skill calls.\n\n")
+    if t["vision"]:
+        s += VISION_NOTE
     if goal:
         s += ("BEHAVIOR's formal goal (BDDL; `?x` are variables, `_1`, `_2` number objects of one category) is:\n\n"
               f"```\n{goal}\n```\n\n")
-    return s + USAGE
+    return s + USAGE.format(observe=OBSERVE_VISION if t["vision"] else OBSERVE_STATE)
+
+
+def task_id(activity: str, instance: int, vision: bool) -> str:
+    tid = "behavior-" + activity.replace("_", "-").lower()
+    return tid + (f"-instance-{instance}" if instance else "") + ("-vision" if vision else "")
 
 
 def write(t: dict, out: Path, bddl_root: Path | None) -> str:
-    tid = "behavior-" + t["activity"].replace("_", "-").lower()
+    tid = task_id(t["activity"], t["instance"], t["vision"])
+    tags = ["behavior-1k", "omnigibson", "isaac-sim", "r1pro", "mobile-manipulation", "symbolic-skills", "remote-gpu",
+            "gpu-required"] + (["vision-only"] if t["vision"] else [])
+    block = {"id": tid, "backend": "behavior", "env": t["activity"], "scene": t["scene"], "rooms": t["rooms"],
+             "instance": t["instance"], "seed": 0, "max_steps": t["max_steps"], "camera": "follow",
+             "cameras": ["follow", "head"], "skills": True, "success_mode": "final", "obs_mode": "state",
+             "frame_every": 1, "linger_s": 5, "ready_timeout_s": 900, "rpc_timeout_s": 600}
+    if t["vision"]:
+        block.update(obs_mode="vision", visible_fields=["robot", "object_names"])
     meta = {
         "task": {"name": f"robouse/{tid}", "description": t["instruction"]},
         "metadata": {"source_benchmark": SOURCE, "source_task": t["activity"], "suite": "behavior",
-                     "behavior_scene": t["scene"], "behavior_instance": 0, "category": "household-long-horizon",
-                     "difficulty": t["difficulty"], "language_instruction": t["instruction"],
-                     "tags": ["behavior-1k", "omnigibson", "isaac-sim", "r1pro", "mobile-manipulation", "symbolic-primitives",
-                              "remote-gpu"],
-                     "reference_solution": f"scripted primitive plan, {len(t['plan'])} skills (oracle/plan.json)"},
-        "agent": {"timeout_sec": 1800},
+                     "behavior_scene": t["scene"], "behavior_instance": t["instance"],
+                     "behavior_challenge_task_id": t["index"], "challenge_instruction": t["official"],
+                     "category": "household-long-horizon", "difficulty": difficulty(t["plan"]),
+                     "language_instruction": t["instruction"], "tags": tags,
+                     "requires_gpu": "NVIDIA RTX GPU with RT cores, for the remote simulator worker",
+                     "reference_solution": f"scripted skill plan, {len(t['plan'])} skills (oracle/plan.json)"},
+        "agent": {"timeout_sec": 2400 if t["vision"] else 1800},
         "verifier": {"timeout_sec": 120},
-        "robouse": {"id": tid, "backend": "behavior", "env": t["activity"], "scene": t["scene"],
-                    "rooms": ROOMS[t["scene"]], "instance": 0, "seed": 0, "max_steps": t["max_steps"],
-                    "camera": "follow", "cameras": ["follow", "head"], "skills": True, "success_mode": "final",
-                    "obs_mode": "state", "frame_every": 1, "linger_s": 5, "ready_timeout_s": 900, "rpc_timeout_s": 600},
+        "robouse": block,
     }
     d = out / tid
     if d.exists():
@@ -154,20 +202,31 @@ def write(t: dict, out: Path, bddl_root: Path | None) -> str:
     return tid
 
 
+def variants():
+    for act, t in TASKS.items():
+        if act in DROPPED:
+            continue
+        c = CHALLENGE[act]
+        base = {"activity": act, "scene": c["scene"], "rooms": c["rooms"], "index": c["index"], "official": c["official"],
+                "instruction": t["instruction"], "max_steps": t.get("max_steps") or budget(t["plan"])}
+        yield {**base, "plan": t["plan"], "instance": 0, "vision": False}
+        for k in INSTANCES.get(act, []):
+            yield {**base, "plan": t.get("plans_by_instance", {}).get(k, t["plan"]), "instance": k, "vision": False}
+        if act in VISION:
+            yield {**base, "plan": t["plan"], "instance": 0, "vision": True}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="tasks/behavior")
     ap.add_argument("--bddl", default="", help="path to bddl3/bddl/activity_definitions of a BEHAVIOR-1K checkout "
                                                "(to include the formal goal in the instruction)")
-    ap.add_argument("--plans", default="", help="JSON file {activity: plan} overriding the built-in plans")
     a = ap.parse_args()
-    extra = json.loads(Path(a.plans).read_text()) if a.plans else {}
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    for t in TASKS:
-        t = {**t, "plan": extra.get(t["activity"], t["plan"])}
-        if not t["plan"]:
-            raise SystemExit(f"no plan for {t['activity']}")
+    for old in out.glob("behavior-*"):  # the generator owns the whole suite folder
+        shutil.rmtree(old)
+    for t in variants():
         print(write(t, out, Path(a.bddl) if a.bddl else None))
 
 
