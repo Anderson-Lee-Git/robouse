@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 import mujoco
 import numpy as np
 
-from ..layout import BOARD_Y, BOWL_X, BOWL_Y, SQUARE_SIZE, board_xy
+from ..layout import BOWL_X, BOWL_Y, SQUARE_SIZE, board_xy
 from ..scene_common import Scene, add_chessboard, add_desk, geom, jitter_pose, mark_square, new_root, object_rng
 
 TASK_ID = "dual-panda-precise-landing"

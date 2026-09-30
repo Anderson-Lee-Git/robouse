@@ -1,6 +1,7 @@
 """Every backend whose simulator this environment has: start one bundled task, take one step, observe, render and close.
 Backends whose simulator (package, virtualenv, robot models or remote worker) is missing are skipped, not failed; the
 release gate (tools/gate.py) runs the reference solutions in each simulator's own image."""
+
 from __future__ import annotations
 
 import json

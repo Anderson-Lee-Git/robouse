@@ -23,7 +23,6 @@ runner's sandbox profile.
 from __future__ import annotations
 
 import json
-import os
 import time
 import uuid
 from pathlib import Path
@@ -43,9 +42,7 @@ class Operator:
             raise ValueError(f"unknown operator channel {channel!r} (tty, file or script)")
         self.channel, self.timeout_s = channel, float(timeout_s)
         self.log = log or (lambda _kind, **kw: None)
-        self._script = dict(
-            p.split("=", 1) for p in config.env("ROBOUSE_OPERATOR_SCRIPT").split(",") if "=" in p
-        )
+        self._script = dict(p.split("=", 1) for p in config.env("ROBOUSE_OPERATOR_SCRIPT").split(",") if "=" in p)
         self._feedback_seen = 0
         self.feedback_file = OPERATOR_DIR / "feedback.jsonl"
         if self.feedback_file.exists():  # remarks written before this episode are not delivered

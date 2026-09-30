@@ -32,8 +32,6 @@ HIL_DIR = Path(__file__).resolve().with_name("fixtures")
 
 
 def fixture_dir(name: str) -> Path:
-    import os
-
     p = Path(name)
     if p.is_dir():
         return p

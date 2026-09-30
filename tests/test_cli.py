@@ -1,4 +1,5 @@
 """The `robouse` command line: every command parses, and the planning paths work without a simulator."""
+
 from __future__ import annotations
 
 import json
@@ -9,8 +10,21 @@ import pytest
 from robouse.cli import main, parser
 
 ROOT = Path(__file__).resolve().parents[1]
-COMMANDS = ["run", "run-many", "serve", "export", "fetch-assets", "report", "grade", "summarize", "doctor", "estop",
-            "operator", "hil-check", "robots"]
+COMMANDS = [
+    "run",
+    "run-many",
+    "serve",
+    "export",
+    "fetch-assets",
+    "report",
+    "grade",
+    "summarize",
+    "doctor",
+    "estop",
+    "operator",
+    "hil-check",
+    "robots",
+]
 
 
 @pytest.mark.parametrize("cmd", COMMANDS)
@@ -28,8 +42,22 @@ def test_top_level_help_names_every_command(capsys) -> None:
 
 
 def test_run_many_dry_run(capsys) -> None:
-    rc = main(["run-many", "--tasks", str(ROOT / "tasks" / "arc-style"), "--harness", "oracle", "--out", "/tmp/unused",
-               "--sample", "2", "--seeds", "0-1", "--dry-run"])
+    rc = main(
+        [
+            "run-many",
+            "--tasks",
+            str(ROOT / "tasks" / "arc-style"),
+            "--harness",
+            "oracle",
+            "--out",
+            "/tmp/unused",
+            "--sample",
+            "2",
+            "--seeds",
+            "0-1",
+            "--dry-run",
+        ]
+    )
     plan = json.loads(capsys.readouterr().out)
     assert rc == 0 and len(plan["tasks"]) == 2 and plan["trials"] == 4
 

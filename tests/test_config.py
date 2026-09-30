@@ -1,4 +1,5 @@
 """The settings layer: every ROBOUSE_* variable is declared, and paths resolve in the documented order."""
+
 from __future__ import annotations
 
 import json

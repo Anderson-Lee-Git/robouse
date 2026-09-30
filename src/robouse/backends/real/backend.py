@@ -19,7 +19,6 @@ operator's yes/no after `robo done`). Safety stops score 0.
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 
@@ -485,7 +484,7 @@ class RealArmBackend(EmbodiedBackend):
 
             def done(v=e.value):
                 return v
-                yield  # noqa: unreachable - makes this a generator
+                yield  # unreachable: makes this function a generator
 
             return done()
         except Veto as v:

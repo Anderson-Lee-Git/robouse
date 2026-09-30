@@ -30,8 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .. import config
-from .. import harnesses
+from .. import config, harnesses
 from ..core.protocol import RUNNER_PREFIX
 from ..tasks import Task
 from .cost import trial_cost
@@ -268,7 +267,9 @@ def run_trial(
             _send(
                 {
                     "op": "give_up",
-                    "text": f"{RUNNER_PREFIX} agent timed out" if timed_out else f"{RUNNER_PREFIX} agent exited without robo done",
+                    "text": f"{RUNNER_PREFIX} agent timed out"
+                    if timed_out
+                    else f"{RUNNER_PREFIX} agent exited without robo done",
                 }
             )
         try:

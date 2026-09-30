@@ -1,4 +1,5 @@
 """The backend registry, reference-solution dispatch, harness launchers and trial selection."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -81,12 +82,22 @@ def test_seeds_selection_and_cost(tmp_path, monkeypatch) -> None:
     all_ids = [t.id for t in find_tasks(root)]
     picked = select_tasks(root, include=["arc-*"], exclude=[all_ids[0]], sample=3, sample_seed=1)
     assert len(picked) == 3 and all_ids[0] not in [t.id for t in picked]
-    assert [t.id for t in picked] == [t.id for t in select_tasks(root, include=["arc-*"], exclude=[all_ids[0]], sample=3,
-                                                                  sample_seed=1)]
+    assert [t.id for t in picked] == [
+        t.id for t in select_tasks(root, include=["arc-*"], exclude=[all_ids[0]], sample=3, sample_seed=1)
+    ]
     tdir = tmp_path / "trial"
     (tdir / "agent").mkdir(parents=True)
-    (tdir / "agent" / "trajectory.json").write_text(json.dumps({"final_metrics": {
-        "total_prompt_tokens": 1_000_000, "total_completion_tokens": 100_000, "total_cached_tokens": 0}}))
+    (tdir / "agent" / "trajectory.json").write_text(
+        json.dumps(
+            {
+                "final_metrics": {
+                    "total_prompt_tokens": 1_000_000,
+                    "total_completion_tokens": 100_000,
+                    "total_cached_tokens": 0,
+                }
+            }
+        )
+    )
     prices = tmp_path / "prices.json"
     prices.write_text(json.dumps({"m": {"input": 1.0, "output": 10.0, "source": "test"}}))
     monkeypatch.setenv("ROBOUSE_PRICING", str(prices))

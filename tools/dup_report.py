@@ -1,7 +1,8 @@
 """Which files share duplicated code (the windows tools/metrics.py counts), most shared first.
 
-    python tools/dup_report.py [--repo .] [--top 30]
+python tools/dup_report.py [--repo .] [--top 30]
 """
+
 from __future__ import annotations
 
 import argparse

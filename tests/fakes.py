@@ -1,4 +1,5 @@
 """A dependency-free backend for testing the episode server: a point hand that moves toward a goal."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -30,7 +31,11 @@ class FakeBackend(Backend):
         return StepInfo(success=self.success())
 
     def observe(self) -> dict:
-        return {"hand_pos": [round(float(x), 4) for x in self.pos], "gripper_open": self._grip < 0, "goal": list(self.goal)}
+        return {
+            "hand_pos": [round(float(x), 4) for x in self.pos],
+            "gripper_open": self._grip < 0,
+            "goal": list(self.goal),
+        }
 
     def render(self) -> np.ndarray:
         img = np.zeros((32, 48, 3), dtype=np.uint8)

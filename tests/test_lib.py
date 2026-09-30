@@ -1,4 +1,5 @@
 """Shared helpers: pinned downloads, the video recorder, camera calibration, placement splits."""
+
 from __future__ import annotations
 
 import hashlib
@@ -52,7 +53,8 @@ def test_mujoco_camera_projects_its_look_at_point_to_the_image_centre() -> None:
 
     m = mujoco.MjModel.from_xml_string(
         '<mujoco><worldbody><camera name="c" pos="0 -1 1" xyaxes="1 0 0 0 0.7071 0.7071" fovy="45"/>'
-        '<geom type="sphere" size="0.01" pos="0 0 0"/></worldbody></mujoco>')
+        '<geom type="sphere" size="0.01" pos="0 0 0"/></worldbody></mujoco>'
+    )
     d = mujoco.MjData(m)
     mujoco.mj_forward(m, d)
     cam = mujoco_camera(m, d, "c", 64, 48)

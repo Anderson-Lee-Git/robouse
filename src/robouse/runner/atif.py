@@ -602,7 +602,9 @@ def _steps_from_trace(entries: list[int], trace: list[dict], harness: str) -> li
 
 def _is_runner_entry(e: dict) -> bool:
     req = e.get("req") or {}
-    return req.get("op") == "status" or (req.get("op") == "give_up" and str(req.get("text", "")).startswith(RUNNER_PREFIX))
+    return req.get("op") == "status" or (
+        req.get("op") == "give_up" and str(req.get("text", "")).startswith(RUNNER_PREFIX)
+    )
 
 
 def _entry_sig(e: dict) -> tuple | None:

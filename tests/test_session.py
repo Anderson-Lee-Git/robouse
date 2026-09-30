@@ -1,4 +1,5 @@
 """The episode server: request handling, budgets, judging, privileged state, recording and the socket protocol."""
+
 from __future__ import annotations
 
 import json
@@ -122,8 +123,11 @@ def test_serve_over_the_socket(tmp_path, monkeypatch) -> None:
     sock = str(tmp_path / "s.sock")
     ready = tmp_path / "ready"
     out: dict = {}
-    th = threading.Thread(target=lambda: out.update(S.serve({"id": "t", "backend": "fake", "linger_s": 0}, tmp_path / "run",
-                                                            sock, ready_file=ready)))
+    th = threading.Thread(
+        target=lambda: out.update(
+            S.serve({"id": "t", "backend": "fake", "linger_s": 0}, tmp_path / "run", sock, ready_file=ready)
+        )
+    )
     th.start()
     for _ in range(200):
         if ready.exists():
