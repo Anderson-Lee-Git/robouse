@@ -15,8 +15,8 @@ import shutil
 from pathlib import Path
 
 from robouse.backends.embodied import VERIFY_SH
-from robouse.backends.maniskill import TASKS
-from robouse.prompts import ROBO_USAGE
+from robouse.backends.maniskill.backend import TASKS
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import write_task
 
 ROOT = Path(__file__).resolve().parents[2]

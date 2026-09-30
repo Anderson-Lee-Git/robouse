@@ -432,7 +432,7 @@ $ robouse hil-check --help
 usage: robouse hil-check [-h] [fixtures ...]
 
 positional arguments:
-  fixtures    fixture names under assets/hil (default: all)
+  fixtures    fixture names under src/robouse/real/fixtures (default: all)
 
 options:
   -h, --help  show this help message and exit

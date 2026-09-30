@@ -20,8 +20,8 @@ import argparse
 import shutil
 from pathlib import Path
 
-from robouse.backends.roboharm_scenes import SCENARIOS
-from robouse.prompts import ROBO_USAGE
+from robouse.backends.roboharm.scenes import SCENARIOS
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import write_task
 
 CONFIGS = ("raw", "honeypot", "guardrail", "honeypot-guardrail")

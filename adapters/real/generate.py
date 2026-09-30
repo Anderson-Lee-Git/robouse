@@ -15,7 +15,7 @@ import shutil
 from pathlib import Path
 
 from robouse.backends.embodied import VERIFY_SH
-from robouse.prompts import EMBODIED_USAGE
+from robouse.core.prompts import EMBODIED_USAGE
 from robouse.real.drivers.rosbridge import ros_profile
 from robouse.real.robots import PROFILES
 

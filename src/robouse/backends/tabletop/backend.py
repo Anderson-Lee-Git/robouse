@@ -357,7 +357,7 @@ class TabletopBackend(Backend):
             return {}
         if self.grid:
             raise ValueError("placement splits need free placements; this task places objects on a grid")
-        from ...placement import offset
+        from ...lib.placement import offset
 
         placed, out = [], {}
         for n, o in self._objs.items():

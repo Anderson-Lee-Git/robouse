@@ -12,7 +12,7 @@ import shutil
 import textwrap
 from pathlib import Path
 
-from robouse.prompts import ROBO_USAGE
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import to_native
 
 # What each environment asks for, and what obj1/goal mean in its observation.

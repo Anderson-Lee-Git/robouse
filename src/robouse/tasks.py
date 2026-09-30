@@ -102,7 +102,7 @@ def resolve_task_path(arg: str | Path) -> Path:
         return hits[0]
     if len(hits) > 1:
         raise SystemExit(f"task id {arg!r} is ambiguous in {root}: " + ", ".join(str(h.relative_to(root)) for h in hits))
-    raise SystemExit(f"no task folder {arg!r}, and no bundled task with that id (list them with `robouse tasks`)")
+    raise SystemExit(f"no task folder {arg!r}, and no bundled task with that id (list them with `robouse tasks list`)")
 
 
 def find_tasks(root: str | Path) -> list[Task]:

@@ -24,7 +24,7 @@ result blocks in its output (loops print one block per call); then the state pri
 (hand_pos and steps_used) is looked up in the trace to correct the end point. Requests the runner made
 itself (status, the closing give_up) are not the agent's and become a final system step.
 
-  python -m robouse.atif TRIAL_DIR [TRIAL_DIR ...]     (re)build both files for existing trials
+  python -m robouse.runner.atif TRIAL_DIR [TRIAL_DIR ...]     (re)build both files for existing trials
 """
 from __future__ import annotations
 
@@ -683,7 +683,7 @@ def _prompt(trial: Path, cfg: dict, harness: str) -> str:
     tp = cfg.get("task_path")
     if tp:
         try:
-            from .tasks import load_task
+            from ..tasks import load_task
 
             instr = load_task(tp).instruction
         except Exception:
@@ -691,7 +691,7 @@ def _prompt(trial: Path, cfg: dict, harness: str) -> str:
     if harness in TRACE_HARNESSES:
         return instr or f"task {cfg.get('task')}"
     try:
-        from .harnesses import PROMPT_PREFIX
+        from ..harnesses import PROMPT_PREFIX
     except Exception:  # pragma: no cover
         PROMPT_PREFIX = ""
     return PROMPT_PREFIX + instr if instr else f"(prompt not recorded) task {cfg.get('task')}"

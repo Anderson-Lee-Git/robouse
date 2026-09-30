@@ -1,9 +1,9 @@
 """Backend interface: one simulator family (Meta-World, custom MuJoCo scenes, ...) behind a common API.
 
-The episode server (`robouse.session`, or BenchFlow's through `robouse.engine.sim.RobouseSim`) only talks to this
+The episode server (`robouse.core.session`, or BenchFlow's through `robouse.engine.sim.RobouseSim`) only talks to this
 interface. A backend exposes:
 - a low-level action: a fixed-length vector with documented bounds (`action_spec`), which the backend's
-  embodiment splits into named action groups (`embodiment()`, `robouse.embodiment_spec`),
+  embodiment splits into named action groups (`embodiment()`, `robouse.core.embodiment_spec`),
 - a public observation (named fields the agent may see, plus camera images),
 - a success predicate evaluated by the trusted server, never by the agent.
 Skills (move_to, grip) are built-in controllers on top of `hand_pos()` and the low-level action.
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from ..embodiment_spec import (
+from ..core.embodiment_spec import (
     ActionGroup,
     Budgets,
     Camera,

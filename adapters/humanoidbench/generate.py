@@ -14,9 +14,9 @@ import shutil
 from pathlib import Path
 
 from robouse.backends.embodied import write_embodied_task
-from robouse.backends.humanoidbench import CONTROL_DT, TASKS, HumanoidBenchBackend
-from robouse.backends.humanoidbench_oracles import ORACLES
-from robouse.prompts import EMBODIED_USAGE
+from robouse.backends.humanoidbench.backend import CONTROL_DT, TASKS, HumanoidBenchBackend
+from robouse.backends.humanoidbench.oracles import ORACLES
+from robouse.core.prompts import EMBODIED_USAGE
 
 _SETTLE = ("- Success is judged about 10 steps after you call `robo done`, with the robot holding still (each action group's hold value: "
            "zero for velocity and delta commands, full brake for a car), so the goal must still be true when the robot stops.")

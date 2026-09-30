@@ -15,7 +15,6 @@
 """
 from __future__ import annotations
 
-import concurrent.futures as cf
 import json
 import os
 import re
@@ -29,32 +28,14 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import config, harnesses
-from .tasks import Task, find_tasks
+from .. import config, harnesses
+from ..tasks import Task
+from .cost import trial_cost
+from .sandbox import sandbox_profile
 
-AGENT_CLI = Path(__file__).with_name("agent_cli.py")
+AGENT_CLI = Path(__file__).resolve().parents[1] / "agent_cli.py"
+SRC = Path(__file__).resolve().parents[2]  # the folder holding the robouse package
 
-
-def sandbox_profile(workspace: str | Path | None = None, local_ports: tuple[int, ...] = ()) -> str:
-    """macOS Seatbelt profile for agent processes. Everything is allowed except:
-
-    - reading or writing private settings, the real-robot operator channel, the maintainers' folders and the paths
-      in ROBOUSE_SANDBOX_DENY (`config.sandbox_denied_paths`);
-    - reading any robo-use source or install (a `robouse` package directory anywhere, e.g. another venv under /tmp);
-    - reading other trials' workspaces (only this trial's workspace is allowed);
-    - TCP connections to this machine, except `local_ports` (a harness's own local proxy). This keeps agents away
-      from local viewers and servers (e.g. a runs viewer on localhost) while the episode Unix socket and the
-      network (model APIs) stay reachable.
-    Set ROBOUSE_SANDBOX=0 to disable."""
-    denied = [os.path.realpath(os.path.expanduser(d)) for d in config.sandbox_denied_paths()]  # Seatbelt matches resolved paths (/tmp -> /private/tmp)
-    rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in dict.fromkeys(denied))
-    rules += '(deny file-read* (regex #"/site-packages/robouse(/|$)") (regex #"/src/robouse(/|$)"))'
-    rules += '(deny file-read* file-write* (regex #"/robouse-ws-[^/]*(/|$)"))'
-    if workspace:
-        rules += f'(allow file-read* file-write* (subpath "{os.path.realpath(workspace)}"))'
-    rules += '(deny network-outbound (remote ip "localhost:*"))'
-    rules += "".join(f'(allow network-outbound (remote ip "localhost:{p}"))' for p in local_ports)
-    return "(version 1)(allow default)" + rules
 
 
 def provenance() -> dict:
@@ -62,11 +43,11 @@ def provenance() -> dict:
     import importlib.metadata as md
     import platform
 
-    from . import __version__
+    from .. import __version__
 
     out = {"robouse": __version__, "python": platform.python_version(), "platform": platform.platform()}
     try:
-        root = Path(__file__).resolve().parents[2]
+        root = SRC.parent
         rev = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)
         dirty = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"], capture_output=True,
                                text=True, timeout=5)
@@ -98,7 +79,7 @@ def _variant(task: Task, split: str | None, extra: str, learnings: str | None) -
     return Task(task.path, meta, body)
 
 
-def _now() -> str:
+def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -142,7 +123,7 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
     ws = _make_workspace(task)
     sock = f"/tmp/robouse-{uuid.uuid4().hex[:10]}.sock"
     ready = ws / ".robouse" / "ready"
-    started = _now()
+    started = now()
     t0 = time.time()
     cfg = {"task": task.id, "task_path": str(task.path), "harness": harness, "model": model, "seed": seed,
            "agent_timeout_s": timeout, "trial_name": trial_name, "started_at": started, "workspace": str(ws),
@@ -171,7 +152,7 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
         base_env["PATH"] = f"{ws / '.robouse' / 'bin'}:{Path(py).parent}:{base_env.get('PATH', '')}" if harness == "oracle" \
             else f"{ws / '.robouse' / 'bin'}:{base_env.get('PATH', '')}"
         base_env["ROBOUSE_SOCKET"] = sock
-        base_env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1]) if harness == "oracle" else ""
+        base_env["PYTHONPATH"] = str(SRC) if harness == "oracle" else ""
         base_env.pop("ROBOUSE_ORACLE_TOKEN", None)
         if harness == "oracle":  # only the reference solution may see privileged state in vision tasks
             base_env["ROBOUSE_ORACLE_TOKEN"] = oracle_token
@@ -198,7 +179,7 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
         exc = f"{type(e).__name__}: {e}"
     finally:
         # close the episode if the agent did not call `robo done`
-        from .agent_cli import _send
+        from ..agent_cli import _send
 
         os.environ["ROBOUSE_SOCKET"] = sock
         os.environ.pop("ROBOUSE_ORACLE_TOKEN", None)
@@ -247,7 +228,7 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
         "verifier_result": {"rewards": {"reward": reward}},
         "episode": episode, "agent_return_code": agent_rc, "agent_timed_out": timed_out,
         "exception_info": {"exception_type": exc.split(":")[0], "exception_message": exc} if exc else None,
-        "started_at": started, "finished_at": _now(), "wall_time_s": round(time.time() - t0, 1),
+        "started_at": started, "finished_at": now(), "wall_time_s": round(time.time() - t0, 1),
         "embodiment_mode": episode.get("embodiment_mode", "sim"), "cost": cost,
     }
     if launch and isinstance(launch.helper, dict):
@@ -258,117 +239,6 @@ def run_trial(task: Task, harness: str, model: str, job_dir: Path, timeout: floa
             "wall_s": res["wall_time_s"], "exception": exc}
 
 
-def trial_cost(tdir: Path, model: str, provider: str | None) -> dict:
-    """Tokens and USD for one trial, from the ATIF trajectory's final metrics; USD from the harness when it reports one,
-    else from pricing.json (per 1M tokens). Scripted harnesses (oracle, noop, VLAs) cost 0 model tokens."""
-    out = {"prompt_tokens": None, "completion_tokens": None, "cached_tokens": None, "cost_usd": None, "cost_source": None}
-    try:
-        fm = json.loads((tdir / "agent" / "trajectory.json").read_text()).get("final_metrics") or {}
-    except Exception:  # noqa: BLE001
-        fm = {}
-    out.update(prompt_tokens=fm.get("total_prompt_tokens"), completion_tokens=fm.get("total_completion_tokens"),
-               cached_tokens=fm.get("total_cached_tokens"))
-    prices = json.loads((Path(os.environ["ROBOUSE_PRICING"]) if os.environ.get("ROBOUSE_PRICING") else Path(__file__).with_name("pricing.json")).read_text())
-    price = prices.get(model)
-    if price and out["prompt_tokens"] is not None:
-        cached = out["cached_tokens"] or 0
-        inp = (out["prompt_tokens"] - cached) * price["input"] + cached * price.get("cached_input", price["input"])
-        out["cost_usd"] = round((inp + (out["completion_tokens"] or 0) * price["output"]) / 1e6, 5)
-        out["cost_source"] = f"pricing.json ({price.get('source', '')})"
-    elif fm.get("total_cost_usd") is not None and provider is None:
-        out["cost_usd"], out["cost_source"] = round(float(fm["total_cost_usd"]), 5), "harness"
-    elif out["prompt_tokens"] is None and (model in ("scripted", "none", "") or provider == "vla"):
-        out.update(prompt_tokens=0, completion_tokens=0, cost_usd=0.0, cost_source="no model")
-    return out
 
 
-def _parse_seeds(spec: str | None) -> list[int | None]:
-    """"0-4" -> [0..4]; "0,3,7" -> [0, 3, 7]; None -> [None] (the task's own seed)."""
-    if not spec:
-        return [None]
-    out: list[int | None] = []
-    for part in str(spec).split(","):
-        a, _, b = part.partition("-")
-        out += list(range(int(a), int(b) + 1)) if b else [int(a)]
-    return out
 
-
-def select_tasks(root: Path, filt: str = "", ids: list[str] | None = None, include: list[str] | None = None,
-                 exclude: list[str] | None = None, limit: int = 0, sample: int = 0, sample_seed: int = 0,
-                 mode: str | None = None) -> list[Task]:
-    """Task subset: substring filter, id list, glob include/exclude (fnmatch on the id, e.g. 'libero-10-*'), sim/real
-    mode, then a seeded random sample of N and/or the first `limit`."""
-    import fnmatch
-    import random
-
-    tasks = [t for t in find_tasks(root) if filt in t.id and (ids is None or t.id in ids)]
-    if include:
-        tasks = [t for t in tasks if any(fnmatch.fnmatch(t.id, g) for g in include)]
-    if exclude:
-        tasks = [t for t in tasks if not any(fnmatch.fnmatch(t.id, g) for g in exclude)]
-    if mode:
-        tasks = [t for t in tasks if (t.metadata.get("embodiment_mode") or ("real" if t.spec.get("backend") == "real" else "sim")) == mode]
-    if sample and sample < len(tasks):
-        tasks = sorted(random.Random(sample_seed).sample(tasks, sample), key=lambda t: t.id)
-    if limit:
-        tasks = tasks[:limit]
-    return tasks
-
-
-def run_many(root: Path, harness: str, model: str, job_dir: Path, filt: str = "", limit: int = 0,
-             concurrency: int = 1, timeout: float | None = None, ids: list[str] | None = None,
-             resume: bool = False, seeds: str | None = None, epochs: int = 1, include: list[str] | None = None,
-             exclude: list[str] | None = None, sample: int = 0, sample_seed: int = 0, retries: int = 0,
-             split: str | None = None, mode: str | None = None, extra_instruction: str = "",
-             prior_learnings: str | None = None) -> list[dict]:
-    tasks = select_tasks(root, filt, ids, include, exclude, limit, sample, sample_seed, mode)
-    runs = [(t, sd, ep) for t in tasks for sd in _parse_seeds(seeds) for ep in range(max(1, epochs))]
-    if resume:  # skip (task, seed, epoch) already finished in this job (an unfinished trial dir is left as evidence and rerun)
-        done = set()
-        for rj in job_dir.glob("*/result.json"):
-            try:
-                r = json.loads(rj.read_text())
-                c = json.loads((rj.parent / "config.json").read_text())
-            except Exception:
-                continue
-            if not r.get("exception_info") and (r.get("episode") or {}).get("outcome"):
-                done.add((r.get("task_name"), c.get("seed"), c.get("epoch", 0)))
-        runs = [x for x in runs if (x[0].id, x[1], x[2]) not in done]
-    job_dir.mkdir(parents=True, exist_ok=True)
-    (job_dir / "job.json").write_text(json.dumps({"harness": harness, "model": model, "tasks": len(tasks), "seeds": seeds,
-                                                  "epochs": epochs, "split": split, "include": include, "exclude": exclude,
-                                                  "sample": sample, "sample_seed": sample_seed, "retries": retries,
-                                                  "extra_instruction": extra_instruction, "prior_learnings": prior_learnings,
-                                                  "started_at": _now()}, indent=2))
-    log = open(job_dir / "run_log.jsonl", "a")
-    results = []
-
-    def one(item) -> dict:
-        t, sd, ep = item
-        for attempt in range(retries + 1):  # infrastructure failures only (a model's failure is a result, not retried)
-            r = run_trial(t, harness, model, job_dir, timeout=timeout, seed=sd, epoch=ep, split=split,
-                          extra_instruction=extra_instruction, prior_learnings=prior_learnings, attempt=attempt)
-            if not r["exception"]:
-                break
-            if attempt < retries:
-                bad = job_dir / r["trial"]
-                dest = job_dir / "_infra_failed"
-                dest.mkdir(exist_ok=True)
-                if bad.exists():
-                    shutil.move(str(bad), str(dest / bad.name))
-                time.sleep(min(60, 5 * 2 ** attempt))
-        r["task"] = t.id + (f"@seed{sd}" if sd is not None else "") + (f"#e{ep}" if epochs > 1 else "")
-        return r
-
-    with cf.ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:
-        futs = [ex.submit(one, x) for x in runs]
-        for fut in cf.as_completed(futs):
-            r = fut.result()
-            results.append(r)
-            log.write(json.dumps(r) + "\n")
-            log.flush()
-            print(f"{r['task']:<40} reward={r['reward']:.0f} outcome={r['outcome']} steps={r['steps']} {r['wall_s']}s"
-                  + (f" EXC {r['exception']}" if r["exception"] else ""), flush=True)
-    ok = sum(r["reward"] for r in results)
-    print(f"{harness}/{model or '-'}: {ok:.0f}/{len(results)} solved")
-    return results

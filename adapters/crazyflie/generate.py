@@ -10,9 +10,9 @@ import argparse
 import shutil
 from pathlib import Path
 
-from robouse.backends.crazyflie import GATES, PADS, SHELF, TASKS, WAYPOINTS, WINDOW, CrazyflieBackend
+from robouse.backends.crazyflie.backend import GATES, PADS, SHELF, TASKS, WAYPOINTS, WINDOW, CrazyflieBackend
 from robouse.backends.embodied import write_embodied_task
-from robouse.prompts import EMBODIED_USAGE
+from robouse.core.prompts import EMBODIED_USAGE
 
 SCENE = ("You fly {who} (MuJoCo Menagerie model; 27 g and 9 cm across each) in an indoor flight arena. World frame in metres: +x "
          "east, +y north, +z up, floor at z = 0. The arena is 8 m x 6 m (x from -4 to 4, y from -3 to 3) and 3 m high, closed by "

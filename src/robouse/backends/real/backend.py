@@ -422,7 +422,7 @@ class RealArmBackend(EmbodiedBackend):
             self.last_judge = {"verdict": "not_claimed", "outcome": outcome}
             return False
         if self.verdict_mode == "vlm":  # a vision-language model judges the final camera frames (rigs without an operator)
-            from ...grader import vlm_verdict
+            from ...analysis.grader import vlm_verdict
 
             frames = [self.images[c] for c in self.cameras_list if c in self.images]
             if not frames:

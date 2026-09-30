@@ -17,8 +17,8 @@ import shutil
 from pathlib import Path
 
 from robouse.backends.embodied import VERIFY_SH
-from robouse.backends.nav import NavBackend
-from robouse.prompts import EMBODIED_USAGE
+from robouse.backends.nav.backend import NavBackend
+from robouse.core.prompts import EMBODIED_USAGE
 from robouse.tasks import write_task
 
 WALL = 0.15

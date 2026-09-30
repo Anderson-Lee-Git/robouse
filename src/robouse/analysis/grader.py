@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import config
+from .. import config
 
 DEFAULT_MODEL = "moonshotai/Kimi-K3"
 DEFAULT_URL = "https://inference.baseten.co/v1"
@@ -50,7 +50,7 @@ def _png_b64(img: np.ndarray, max_side: int = 512) -> str:
 
 
 def _key() -> str:
-    from . import _maintainer
+    from .. import _maintainer
 
     k = config.env("ROBOUSE_GRADER_API_KEY") or os.environ.get("BASETEN_API_KEY") or _maintainer.baseten_key()
     if not k:
@@ -115,7 +115,7 @@ def _frames(trial: Path, n: int = 3) -> list[np.ndarray]:
 
 
 def _task_text(trial: Path) -> tuple[str, list[str] | None]:
-    from .tasks import load_task
+    from ..tasks import load_task
 
     cfg = json.loads((trial / "config.json").read_text())
     t = load_task(cfg["task_path"])

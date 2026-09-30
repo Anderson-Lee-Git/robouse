@@ -15,7 +15,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from .metrics import aggregate, pass_at_k
+from ..core.metrics import aggregate, pass_at_k
 
 KEYS = ("harness", "model", "suite", "category", "difficulty", "task", "split", "seed", "mode", "job", "regime", "released")
 

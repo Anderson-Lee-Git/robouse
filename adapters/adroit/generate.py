@@ -19,8 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
-from robouse.backends.adroit import AdroitBackend
-from robouse.prompts import EMBODIED_USAGE
+from robouse.backends.adroit.backend import AdroitBackend
+from robouse.core.prompts import EMBODIED_USAGE
 from robouse.tasks import write_task
 
 HF_REPO = "farama-minari/D4RL"

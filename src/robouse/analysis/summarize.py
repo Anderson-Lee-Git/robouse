@@ -33,9 +33,10 @@ def summarize(trial: Path) -> str:
         lines += ["", "## Errors the robot returned", ""] + [f"- {e}" for e in dict.fromkeys(errors).keys()][:10]
     if tail:
         lines += ["", "## Last requests", ""] + [f"- `{t}`" for t in tail]
-    lines += ["", "## For the next attempt", "",
-              "- Do not repeat requests that returned the errors above; read `robo info` for the limits.",
-              "- Success is judged only after `robo done` with the robot holding still: check the goal holds before calling it."]
+    lines += ["", "## For the next attempt", ""]
+    if errors:
+        lines.append("- Do not repeat requests that returned the errors above; read `robo info` for the limits.")
+    lines += ["- Success is judged only after `robo done` with the robot holding still: check the goal holds before calling it."]
     if not ep.get("success") and ep.get("outcome") in ("budget_exhausted", "agent_timeout"):
         lines.append("- The budget ran out: use skills or `--repeat` for long motions and plan fewer observation round trips.")
     return "\n".join(lines) + "\n"

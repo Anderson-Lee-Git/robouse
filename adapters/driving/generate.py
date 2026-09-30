@@ -11,9 +11,9 @@ import argparse
 import shutil
 from pathlib import Path
 
-from robouse.backends.driving import CONTROL_DT, MAX_KMH, TASKS, DrivingBackend
+from robouse.backends.driving.backend import CONTROL_DT, MAX_KMH, TASKS, DrivingBackend
 from robouse.backends.embodied import write_embodied_task
-from robouse.prompts import EMBODIED_USAGE
+from robouse.core.prompts import EMBODIED_USAGE
 
 SCENE = ("You drive a passenger car (MetaDrive's default sedan: 4.5 m long, 1.85 m wide, Bullet vehicle dynamics, no engine force "
          f"above {MAX_KMH:.0f} km/h) on a road map built by the MetaDrive driving simulator. Map frame in metres: `x`, `y` on the ground, "

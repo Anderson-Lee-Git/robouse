@@ -21,8 +21,8 @@ import types
 from pathlib import Path
 
 from robouse.backends.embodied import write_embodied_task
-from robouse.backends.myosuite_backend import CONTROL_DT, TASKS, MyoSuiteBackend
-from robouse.prompts import EMBODIED_USAGE
+from robouse.backends.myosuite.backend import CONTROL_DT, TASKS, MyoSuiteBackend
+from robouse.core.prompts import EMBODIED_USAGE
 
 VERSION = "MyoSuite 2.12.2"
 # which of the three NPG baseline seeds each policy-driven reference solution runs (checked to hold the goal through the settle)

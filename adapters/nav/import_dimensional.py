@@ -55,7 +55,7 @@ def main() -> int:
     out = Path(a.out)
     if out.exists():
         shutil.rmtree(out)
-    from robouse.backends.nav import NavBackend
+    from robouse.backends.nav.backend import NavBackend
 
     n = 0
     for tid in ids:

@@ -6,7 +6,7 @@ verifier and the rollout traces. robouse keeps the simulator backends; this modu
   RobouseSim             a robouse Backend as a `benchflow.embodied.SimBackend`
   episode_from_spec      the EpisodeServer for a task's `robouse:` block (used by `robouse serve`)
   episode_from_task      the same for a task folder; the simulator sidecar runs it through
-                         `python -m benchflow.embodied.serve --factory robouse.embodied:episode_from_task`
+                         `python -m benchflow.embodied.serve --factory robouse.engine.sim:episode_from_task`
 """
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ from benchflow.embodied.backend import StepResult
 from benchflow.embodied.server import LEGACY_VISIBLE, EpisodeConfig, EpisodeServer
 from benchflow.embodied.spec import Embodiment
 
-from .backends import make_backend
-from .backends.base import Backend, embodiment_of
+from ..backends import make_backend
+from ..backends.base import Backend, embodiment_of
 
 _FORWARD = ("judge", "run_skill", "start_skill", "pop_frames", "workspace_images", "privileged_state")
 
@@ -120,6 +120,6 @@ def episode_from_spec(spec: dict, run_dir: Path, workspace: Path | None = None, 
 
 def episode_from_task(task_dir: Path, *, run_dir: Path, workspace: Path | None = None, seed: int | None = None,
                       max_wall_s: float | None = None) -> EpisodeServer:
-    from .tasks import load_task
+    from ..tasks import load_task
 
     return episode_from_spec(load_task(task_dir).spec, run_dir, workspace, seed, max_wall_s)

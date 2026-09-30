@@ -43,7 +43,7 @@ Publishing safety, applied at build time and checked again on the output (the bu
 - the output is scanned for secret shapes and for words that must not appear (BANNED), and every internal link
   and data reference is checked; the build stops with a list of problems if anything is found.
 
-Standard library, Pillow (filmstrips) and ffmpeg (videos); src/robouse/atif.py is used for trials without a trajectory.
+Standard library, Pillow (filmstrips) and ffmpeg (videos); src/robouse/runner/atif.py is used for trials without a trajectory.
 """
 from __future__ import annotations
 
@@ -199,7 +199,7 @@ def trajectory(d: Path, harness: str) -> dict | None:
     t = rj(d / "agent" / "trajectory.json")
     if t is None and (d / "episode").exists():
         try:
-            from robouse.atif import build
+            from robouse.runner.atif import build
 
             t = build(d, harness)[0]
         except Exception:

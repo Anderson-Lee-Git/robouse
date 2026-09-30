@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robouse"
-version = "0.1.1"
+dynamic = ["version"]
 description = "Agent as a policy for embodied agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -66,6 +66,9 @@ robouse = "robouse.engine.format:RobouseTaskFormat"
 [tool.uv.sources]
 benchflow = { git = "https://github.com/benchflow-ai/benchflow", branch = "robouse" }
 
+[tool.hatch.version]
+path = "src/robouse/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/robouse"]
 exclude = ["**/__pycache__", "**/*.pyc"]
@@ -73,12 +76,15 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 # The task folders ship inside the wheel as robouse/bundled_tasks, so `robouse tasks` and
 # `robouse run --task <id>` work without a checkout.
 [tool.hatch.build.targets.wheel.force-include]
-# One entry per suite. Left out: behavior (its simulator runs on a remote GPU worker) and any suite still in development.
+# One entry per suite. Left out: behavior, robodojo and gpu-* (their simulators run on remote GPU workers), and
+# stationerybench (in development). The real suite runs on the hardware-in-the-loop mock unless a rig file is given.
 # Suites whose simulator needs its own virtualenv (dexjoco, driving, dmcontrol, myosuite, humanoidbench, maniskill,
 # robocasa) still need that setup; docs/suites.md says how.
 "tasks/adroit" = "robouse/bundled_tasks/adroit"
+"tasks/composed" = "robouse/bundled_tasks/composed"
 "tasks/arc-style" = "robouse/bundled_tasks/arc-style"
 "tasks/crazyflie" = "robouse/bundled_tasks/crazyflie"
+"tasks/cubepick" = "robouse/bundled_tasks/cubepick"
 "tasks/dexhand" = "robouse/bundled_tasks/dexhand"
 "tasks/dexjoco" = "robouse/bundled_tasks/dexjoco"
 "tasks/dmcontrol" = "robouse/bundled_tasks/dmcontrol"
@@ -97,8 +103,9 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "tasks/metaworld" = "robouse/bundled_tasks/metaworld"
 "tasks/mobile-manip" = "robouse/bundled_tasks/mobile-manip"
 "tasks/myosuite" = "robouse/bundled_tasks/myosuite"
+"tasks/nav" = "robouse/bundled_tasks/nav"
 "tasks/quadruped" = "robouse/bundled_tasks/quadruped"
-"tasks/composed" = "robouse/bundled_tasks/composed"
+"tasks/real" = "robouse/bundled_tasks/real"
 "tasks/robo-use-families" = "robouse/bundled_tasks/robo-use-families"
 "tasks/robocasa" = "robouse/bundled_tasks/robocasa"
 "tasks/roboharm" = "robouse/bundled_tasks/roboharm"

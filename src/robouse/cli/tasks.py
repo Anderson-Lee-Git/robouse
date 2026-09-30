@@ -69,13 +69,13 @@ def tasks_main(argv: list[str], prog: str = "robouse tasks") -> int:
     it.add_argument("--from", dest="src", metavar="DIR", help="regenerate the composed task in this folder from its recorded instance")
     it.add_argument("--upgrade", action="store_true", help="with --from: use the installed component versions if they differ")
     it.add_argument("--no-validate", action="store_true", help="write without running the reference solution and the no-op control")
-    it.add_argument("--keep-runs", metavar="DIR", help="keep the validation trials in this folder")
+    it.add_argument("--keep-trials", "--keep-runs", dest="keep_runs", metavar="DIR", help="keep the validation trials in this folder")
 
     ck = sub.add_parser("check", help="validate a task: schema, `bench tasks check`, reference solution 1, no-op control 0")
     ck.add_argument("dir", metavar="DIR", help="task folder")
     ck.add_argument("--level", default="structural", metavar="LEVEL", help="`bench tasks check` level (default structural)")
     ck.add_argument("--no-run", action="store_true", help="skip the reference solution and no-op control trials")
-    ck.add_argument("--keep-runs", metavar="DIR", help="keep the trials in this folder")
+    ck.add_argument("--keep-trials", "--keep-runs", dest="keep_runs", metavar="DIR", help="keep the trials in this folder")
 
     a = ap.parse_args(argv)
     if a.tcmd == "list":
@@ -94,7 +94,7 @@ def tasks_main(argv: list[str], prog: str = "robouse tasks") -> int:
 def _list(a) -> int:
     import os
 
-    from .tasks import bundled_tasks_root, find_tasks
+    from ..tasks import bundled_tasks_root, find_tasks
 
     if a.path:
         print(bundled_tasks_root())
@@ -149,7 +149,7 @@ exit 1
 
 def scaffold(d: Path) -> int:
     """A blank task folder in BenchFlow's native layout (the same shape as `bench tasks init`), for a custom backend."""
-    from .backends.embodied import VERIFY_SH
+    from ..backends.embodied import VERIFY_SH
 
     if d.exists() and any(d.iterdir()):
         return _err(f"{d} exists and is not empty")
@@ -175,9 +175,9 @@ def _values(a) -> dict[str, list[str]]:
 def compose_one(emb: str, scene: str, task: str, mods: dict, seed: int, out: Path, validate_it: bool = True,
                 keep_runs: str | None = None, quiet: bool = False) -> tuple[bool, str, Path | None]:
     """Check, write and (optionally) validate one composed task. Returns (accepted, message, folder)."""
-    from .components.compose import ComposeError, record_validation, validate, write
-    from .components.registry import load
-    from .components.resolve import check
+    from ..components.compose import ComposeError, record_validation, validate, write
+    from ..components.registry import load
+    from ..components.resolve import check
 
     reg = load()
     try:
@@ -195,8 +195,7 @@ def compose_one(emb: str, scene: str, task: str, mods: dict, seed: int, out: Pat
     if not validate_it:
         return True, "written (not validated)", d
     v = validate(d, Path(keep_runs) / d.name if keep_runs else None)
-    msg = (f"reference solution reward {v['oracle']['reward']} ({v['oracle']['outcome']}, {v['oracle']['steps']} steps); "
-           f"no-op control reward {v['noop']['reward']} ({v['noop']['outcome']})")
+    msg = _validation_message(v)
     if not v["accepted"]:
         shutil.rmtree(d, ignore_errors=True)
         return False, msg + "; rejected (the reference solution must score 1 and the no-op control 0); the folder was removed", None
@@ -204,8 +203,19 @@ def compose_one(emb: str, scene: str, task: str, mods: dict, seed: int, out: Pat
     return True, msg, d
 
 
+def _validation_message(v: dict) -> str:
+    """One line on the reference solution and no-op trials; a trial that could not run says why (e.g. missing robot
+    models, with the `robouse fetch-assets` command that installs them)."""
+    broken = [f"the {name} trial did not run: {v[key]['exception']}" for key, name in
+              (("oracle", "reference solution"), ("noop", "no-op control")) if v[key].get("exception")]
+    if broken:
+        return "; ".join(broken)
+    return (f"reference solution reward {v['oracle']['reward']} ({v['oracle']['outcome']}, {v['oracle']['steps']} steps); "
+            f"no-op control reward {v['noop']['reward']} ({v['noop']['outcome']})")
+
+
 def _compose(a) -> int:
-    from .components.resolve import modifiers
+    from ..components.resolve import modifiers
 
     vals = _values(a)
     missing = [k for k in ("embodiment", "scene", "task") if not vals[k]]
@@ -256,9 +266,9 @@ def _from(a) -> int:
     the recorded one."""
     import yaml
 
-    from .backends.components.backend import read_block
-    from .components.registry import load
-    from .tasks import load_task
+    from ..backends.components.backend import read_block
+    from ..components.registry import load
+    from ..tasks import load_task
 
     if not a.out:
         return _err("tasks init --from needs --out DIR", 2)
@@ -292,7 +302,7 @@ def _from(a) -> int:
 # ---- check ------------------------------------------------------------------------------------------------------------
 
 def check_task(d: Path, level: str = "structural", run: bool = True, keep_runs: str | None = None) -> int:
-    from .tasks import load_task
+    from ..tasks import load_task
 
     problems = []
     try:
@@ -303,7 +313,7 @@ def check_task(d: Path, level: str = "structural", run: bool = True, keep_runs: 
         if "[REPLACE" in (d / "task.md").read_text():
             problems.append("task.md still has [REPLACE: ...] placeholders")
         if t.spec.get("backend") in ("components", "remix"):
-            from .backends.components.backend import read_block
+            from ..backends.components.backend import read_block
 
             read_block(t.spec)
         print(f"schema: {'ok' if not problems else 'problems'} ({t.id}, backend {t.spec.get('backend')})")
@@ -328,11 +338,10 @@ def check_task(d: Path, level: str = "structural", run: bool = True, keep_runs: 
     except Exception as e:  # noqa: BLE001
         problems.append(f"bench tasks check could not run: {type(e).__name__}: {e}")
     if run and not problems:
-        from .components.compose import validate
+        from ..components.compose import validate
 
         v = validate(d, Path(keep_runs) if keep_runs else None)
-        print(f"reference solution: reward {v['oracle']['reward']} ({v['oracle']['outcome']}, {v['oracle']['steps']} steps)")
-        print(f"no-op control: reward {v['noop']['reward']} ({v['noop']['outcome']})")
+        print(_validation_message(v))
         if v["oracle"]["reward"] != 1:
             problems.append("the reference solution does not score 1")
         if v["noop"]["reward"] != 0:
@@ -370,9 +379,9 @@ def components_main(argv: list[str]) -> int:
     cm.add_argument("--out")
     a = ap.parse_args(argv)
 
-    from .components.compose import ComposeError, instantiate
-    from .components.registry import dump, export, load
-    from .components.resolve import check, modifiers
+    from ..components.compose import ComposeError, instantiate
+    from ..components.registry import dump, export, load
+    from ..components.resolve import check, modifiers
 
     if a.ccmd == "export":
         for f in export(a.root):
@@ -431,7 +440,7 @@ def components_main(argv: list[str]) -> int:
                 print(f"  - {r}")
         return 0 if rep.ok else 1
     if a.ccmd == "matrix":
-        from .components.matrix import build
+        from ..components.matrix import build
 
         out = json.dumps(build(reg), indent=1)
         if a.out:

@@ -30,7 +30,7 @@ import shutil
 import textwrap
 from pathlib import Path
 
-from robouse.prompts import ROBO_USAGE
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import write_task
 
 SUITES = {  # suite -> (short id, difficulty, agent timeout, task folder under tasks/)
@@ -79,7 +79,7 @@ def track_demo(suite: str, index: int, init_state: list, actions: list, ee_path:
     demonstration's own rotation and gripper commands. Returns the actions taken (up to first success or budget)."""
     import numpy as np
 
-    from robouse.backends.libero import LiberoBackend
+    from robouse.backends.libero.backend import LiberoBackend
 
     b = LiberoBackend({"suite": suite, "env": index, "init_state": init_state})
     ee = np.asarray(ee_path, dtype=float)
@@ -109,7 +109,7 @@ def track_demo(suite: str, index: int, init_state: list, actions: list, ee_path:
 
 def replay_ok(suite: str, index: int, init_state: list, actions: list, max_steps: int) -> int | None:
     """Replay in-process, exactly as the oracle will through the socket; steps to first success or None."""
-    from robouse.backends.libero import LiberoBackend
+    from robouse.backends.libero.backend import LiberoBackend
 
     b = LiberoBackend({"suite": suite, "env": index, "init_state": init_state})
     try:
@@ -127,7 +127,7 @@ def scene_problem(task) -> str:
     import os
     import re
 
-    from robouse.backends.libero import _quiet_imports
+    from robouse.backends.libero.backend import _quiet_imports
 
     _, get_libero_path, _ = _quiet_imports()
     bddl = open(os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)).read()
@@ -149,7 +149,7 @@ def pick_demo(suite: str, index: int) -> dict | None:
 
 
 def _pick_demo(suite: str, index: int) -> dict | None:
-    from robouse.backends.libero import SUITE_MAX_STEPS, libero_task
+    from robouse.backends.libero.backend import SUITE_MAX_STEPS, libero_task
 
     i, task, _ = libero_task(suite, index)
     problem = scene_problem(task)
@@ -274,7 +274,7 @@ def main() -> None:
     ap.add_argument("--suites", default=",".join(SUITES), help="comma-separated LIBERO suites to (re)generate")
     ap.add_argument("--workers", type=int, default=3)
     a = ap.parse_args()
-    from robouse.backends.libero import libero_task
+    from robouse.backends.libero.backend import libero_task
 
     out = Path(a.root)
     jobs = [(s, i) for s in a.suites.split(",") for i in range(libero_task(s, 0)[2].get_num_tasks())]

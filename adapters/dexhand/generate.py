@@ -12,10 +12,10 @@ import argparse
 import shutil
 from pathlib import Path
 
-from robouse.backends.dexhand import (BUTTON_CLICK, CONTROL_DT, LEAP_ACTS, SHADOW_ACTS, TASKS, DexHandBackend)
-from robouse.backends.dexhand_sim.scene import HANDS, TABLE_C, TABLE_HALF, TABLE_Z
+from robouse.backends.dexhand.backend import (BUTTON_CLICK, CONTROL_DT, LEAP_ACTS, SHADOW_ACTS, TASKS, DexHandBackend)
+from robouse.backends.dexhand.sim.scene import HANDS, TABLE_C, TABLE_HALF, TABLE_Z
 from robouse.backends.embodied import write_embodied_task
-from robouse.prompts import EMBODIED_USAGE
+from robouse.core.prompts import EMBODIED_USAGE
 
 HAND_TEXT = {
     "shadow": ("a right Shadow Dexterous Hand (MuJoCo Menagerie model `shadow_hand`, Apache-2.0: 24 joints driven by 20 position "

@@ -13,9 +13,9 @@ import argparse
 import shutil
 from pathlib import Path
 
-from robouse.backends.dmcontrol import DM_CONTROL_VERSION, DOMAINS, MUJOCO_VERSION, TASKS, DMControlBackend
+from robouse.backends.dmcontrol.backend import DM_CONTROL_VERSION, DOMAINS, MUJOCO_VERSION, TASKS, DMControlBackend
 from robouse.backends.embodied import write_embodied_task
-from robouse.prompts import EMBODIED_USAGE
+from robouse.core.prompts import EMBODIED_USAGE
 
 _SETTLE = ("- Success is judged about 10 steps after you call `robo done`, with the robot holding still (each action group's hold value: "
            "zero for velocity and delta commands, full brake for a car), so the goal must still be true when the robot stops.")

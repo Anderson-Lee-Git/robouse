@@ -51,9 +51,9 @@ SKILLS = [  # (name, takes an object, doc, preconditions)
 
 
 def r1pro_embodiment(max_steps: int, cameras: list[str], obs_mode: str = "state"):
-    """The R1Pro as an embodiment spec (robouse.embodiment_spec): a skill-only
+    """The R1Pro as an embodiment spec (robouse.core.embodiment_spec): a skill-only
     robot. Its one action group only waits; every manipulation is a backend skill that costs one budget step."""
-    from ...embodiment_spec import (ActionGroup, Budgets, Camera, Embodiment, Field, RewardSpec, Sensors, Skill, SkillArg)
+    from ...core.embodiment_spec import (ActionGroup, Budgets, Camera, Embodiment, Field, RewardSpec, Sensors, Skill, SkillArg)
 
     obj = [SkillArg("obj", "object", doc="BDDL instance name as listed by robo observe, e.g. cabinet.n.01_1")]
     CAMERAS = {"follow": Camera("follow", "body", 640, 480, calibrated=False,

@@ -11,8 +11,8 @@ import shutil
 from pathlib import Path
 
 from robouse.backends.embodied import write_embodied_task
-from robouse.backends.mobile_manip import BASE_HIT_N, HIT_N, TASKS, TIP_DEG, MobileManipBackend
-from robouse.prompts import EMBODIED_USAGE
+from robouse.backends.mobile_manip.backend import BASE_HIT_N, HIT_N, TASKS, TIP_DEG, MobileManipBackend
+from robouse.core.prompts import EMBODIED_USAGE
 
 ROBOT = {
     "stretch": ("a Hello Robot Stretch 3 (MuJoCo Menagerie `hello_robot_stretch_3`, Apache-2.0): a differential-drive base 0.34 m "

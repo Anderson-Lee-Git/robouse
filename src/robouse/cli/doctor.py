@@ -7,8 +7,8 @@ import importlib
 import importlib.util
 import shutil
 
-from . import config
-from .harnesses import credentials
+from .. import config
+from ..harnesses import credentials
 
 # backend -> (virtualenv name, $ROBOUSE_<NAME>_PYTHON) for simulators that run as workers in their own virtualenv
 WORKER_VENVS = {"dexjoco": "dexjoco", "driving": "metadrive", "dmcontrol": "dmcontrol", "myosuite": "myosuite",
@@ -24,7 +24,7 @@ def _ok(flag: bool) -> str:
 
 def run() -> int:
     print("Simulator backends")
-    from .backends import BACKENDS
+    from ..backends import BACKENDS
 
     for b, (mod, _cls) in BACKENDS.items():
         if b in WORKER_VENVS or b in REMOTE or b == "remix":
@@ -51,7 +51,7 @@ def run() -> int:
     print("Real robots")
     for name, pkg in (("lerobot (Metal, SO-100/101)", "lerobot"), ("piper_sdk (Piper)", "piper_sdk"), ("OpenCV (cameras)", "cv2")):
         print(f"  {_ok(importlib.util.find_spec(pkg) is not None)}{name}")
-    from .real.safety import estop_engaged
+    from ..real.safety import estop_engaged
 
     print(f"  {'!! ' if estop_engaged() else 'ok '}e-stop {'ENGAGED: ' + str(estop_engaged()) if estop_engaged() else 'clear'}")
     print(f"  {_ok(bool(config.env('ROBOUSE_RIG')))}rig file {config.env('ROBOUSE_RIG', '(none: real tasks use the hardware-in-the-loop mock)')}")

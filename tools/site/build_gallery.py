@@ -49,7 +49,7 @@ def final_message(d: Path, harness: str) -> str:
     if t is None and (d / "episode").exists():
         try:
             sys.path.insert(0, str(REPO / "src"))
-            from robouse.atif import build
+            from robouse.runner.atif import build
 
             t = build(d, harness)[0]
         except Exception:

@@ -346,10 +346,10 @@ def audit_trial(d: Path) -> dict:
 
 
 def _build_trajectory(d: Path, harness: str) -> dict | None:
-    """Trials whose runner loaded an older robouse.atif have no agent/trajectory.json: build it in memory."""
+    """Trials whose runner loaded an older robouse atif converter have no agent/trajectory.json: build it in memory."""
     try:
         sys.path.insert(0, str(REPO / "src"))
-        from robouse.atif import build
+        from robouse.runner.atif import build
 
         return build(d, harness)[0]
     except Exception:

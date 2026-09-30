@@ -13,8 +13,8 @@ import argparse
 import shutil
 from pathlib import Path
 
-from robouse.backends.kitchen import TASKS
-from robouse.prompts import ROBO_USAGE
+from robouse.backends.kitchen.backend import TASKS
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import write_task
 
 VERIFY = """\

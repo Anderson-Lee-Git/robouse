@@ -6,7 +6,7 @@ image, the compose topology (agent + trusted ``simulator`` sidecar), the physica
 from `benchflow.embodied.sidecar.EmbodiedTaskFormat` (BenchFlow's docs/embodied.md). robouse supplies:
 
   - the simulator image: templates/sim/Dockerfile + requirements.txt + this robouse package (the backends);
-  - the episode factory ``robouse.embodied:episode_from_task``;
+  - the episode factory ``robouse.engine.sim:episode_from_task``;
   - the reference solutions: oracle/solve.sh with the robouse oracle code vendored (and, for Meta-World, the
     scripted expert policies), driving the robot only through the socket.
 
@@ -85,13 +85,11 @@ def _oracle_closure(backend: str) -> list[Path]:
 
 
 def _asset_manifests() -> dict[str, Path]:
-    """Provenance manifests of the robot meshes (the image downloads the files at build time)."""
-    shipped = PKG / "assets_provenance"
-    if shipped.is_dir():
-        return {p.name: p for p in sorted(shipped.glob("*.json"))}
-    root = PKG.parents[1] / "assets" / "menagerie"
-    return {"menagerie.json": root / "provenance.json", "skydio_x2.json": root / "skydio_x2" / "PROVENANCE.json",
-            "embodiments.json": root / "embodiments.json"}  # the embodiment suites' and remix's robots
+    """Provenance manifests of the Menagerie robot meshes (the simulator image downloads the files at build time)."""
+    from ..assets import manifests
+
+    names = ("menagerie.json", "skydio_x2.json", "embodiments.json")
+    return dict(zip(names, manifests(), strict=True))
 
 
 def _metaworld_policies(dst: Path) -> None:
@@ -133,7 +131,7 @@ class RobouseTaskFormat(EmbodiedTaskFormat):
 
     name = "robouse"
     block_key = "robouse"
-    episode_factory = "robouse.embodied:episode_from_task"
+    episode_factory = "robouse.engine.sim:episode_from_task"
     format_version = "3"
     task_name_prefix = "robouse/"
     sim_cpus = "2"

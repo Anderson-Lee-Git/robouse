@@ -13,8 +13,8 @@ import argparse
 import shutil
 from pathlib import Path
 
-from robouse.backends.gymrobotics import TASKS
-from robouse.prompts import ROBO_USAGE
+from robouse.backends.gymrobotics.backend import TASKS
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import to_native
 
 

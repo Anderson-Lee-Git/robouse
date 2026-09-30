@@ -14,8 +14,8 @@ import importlib.util
 import shutil
 from pathlib import Path
 
-from robouse.backends.menagerie import TASKS, task_spec_extra
-from robouse.prompts import ROBO_USAGE
+from robouse.backends.menagerie.backend import TASKS, task_spec_extra
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import write_task
 
 ROOT = Path(__file__).resolve().parents[2]

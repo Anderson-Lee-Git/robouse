@@ -10,7 +10,7 @@ import pytest
 
 from robouse.backends import make_backend
 from robouse.backends.base import ActionSpec, embodiment_of
-from robouse.embodiment_spec import Embodiment
+from robouse.core.embodiment_spec import Embodiment
 from robouse.tasks import find_tasks
 
 ROOT = Path(__file__).resolve().parents[1] / "tasks"
@@ -91,7 +91,7 @@ def test_behavior_is_skill_only() -> None:
 
 @pytest.mark.skipif(not (HAVE_SIM and HAVE_BENCHFLOW), reason="needs robouse[metaworld,gymrobotics,benchflow]")
 def test_bimanual_menagerie_act_by_group(tmp_path) -> None:
-    from robouse.embodied import episode_from_spec
+    from robouse.engine.sim import episode_from_spec
     from robouse.tasks import load_task
 
     ep = episode_from_spec(load_task(ROOT / "menagerie" / "menagerie-aloha-opening-four").spec, tmp_path)
@@ -116,7 +116,7 @@ def test_metaworld_oracle_parity_in_process(tmp_path) -> None:
     import numpy as np
     from metaworld.policies import ENV_POLICY_MAP
 
-    from robouse.embodied import episode_from_spec
+    from robouse.engine.sim import episode_from_spec
     from robouse.tasks import load_task
 
     ep = episode_from_spec(load_task(ROOT / "metaworld" / "metaworld-reach").spec, tmp_path)

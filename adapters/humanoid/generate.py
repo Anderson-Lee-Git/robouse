@@ -12,9 +12,9 @@ import shutil
 from pathlib import Path
 
 from robouse.backends.embodied import write_embodied_task
-from robouse.backends.humanoid import CONTROL_DT, HumanoidBackend
-from robouse.backends.humanoid_sim.tasks import TASKS
-from robouse.prompts import EMBODIED_USAGE
+from robouse.backends.humanoid.backend import CONTROL_DT, HumanoidBackend
+from robouse.backends.humanoid.sim.tasks import TASKS
+from robouse.core.prompts import EMBODIED_USAGE
 
 FRAME = ("World frame in metres: +x points forward from the robot, +y to the robot's left, +z up; the floor is at z = 0 and "
          "the origin is on the floor below the robot's pelvis.")

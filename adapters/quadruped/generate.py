@@ -12,10 +12,10 @@ import shutil
 from pathlib import Path
 
 from robouse.backends.embodied import write_embodied_task
-from robouse.backends.quadruped import (BOARD, BUTTONS, CABINET, DOCK, INSPECT_STEPS, MAT, PLATFORM, PUMP, RAMP, TAG_MAX_DEPTH, TASKS,
+from robouse.backends.quadruped.backend import (BOARD, BUTTONS, CABINET, DOCK, INSPECT_STEPS, MAT, PLATFORM, PUMP, RAMP, TAG_MAX_DEPTH, TASKS,
                                         VALVE, QuadrupedBackend)
-from robouse.backends.quadruped_sim.gait import CFGS
-from robouse.prompts import EMBODIED_USAGE
+from robouse.backends.quadruped.sim.gait import CFGS
+from robouse.core.prompts import EMBODIED_USAGE
 
 SCENE = ("You control {who} (MuJoCo Menagerie model, {size}) in a small indoor plant. World frame in metres: +x east, +y north, +z up, "
          "floor at z = 0; headings are in degrees, 0 = facing +x (east), 90 = facing +y (north). The plant is 12 m x 8 m (x from -6 to 6, "

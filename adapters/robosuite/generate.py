@@ -16,7 +16,7 @@ import shutil
 import textwrap
 from pathlib import Path
 
-from robouse.prompts import ROBO_USAGE
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import write_task
 
 VERIFY = """\

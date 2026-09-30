@@ -237,7 +237,7 @@ def write(emb: str, scene: str, task: str, mods: dict, seed: int, out: Path, reg
     from ..backends.components.sim import robots as R
     from ..backends.components.sim import scenes as S
     from ..backends.components.sim import templates as T
-    from ..prompts import EMBODIED_USAGE
+    from ..core.prompts import EMBODIED_USAGE
     from ..tasks import write_task
 
     reg = reg or load()

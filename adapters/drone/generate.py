@@ -12,8 +12,8 @@ import argparse
 import shutil
 from pathlib import Path
 
-from robouse.backends.drone import TASKS
-from robouse.prompts import ROBO_USAGE
+from robouse.backends.drone.backend import TASKS
+from robouse.core.prompts import ROBO_USAGE
 from robouse.tasks import write_task
 
 SCENE = ("You fly a Skydio X2 quadrotor (1.3 kg, about 0.6 m across; MuJoCo Menagerie model) over a small town. The drone starts "
