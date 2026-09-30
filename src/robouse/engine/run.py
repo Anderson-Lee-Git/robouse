@@ -20,13 +20,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
 from ..tasks import Task, find_tasks
-from .format import materialize, task_format_root
+from .format import ORACLE_TOKEN_ENV, materialize, task_format_root
 
 AGENT_ALIASES = {"claude-code": "claude", "noop": "oracle"}
 
@@ -98,7 +99,17 @@ def run_job(
             reasoning_effort=reasoning_effort,
         )
         job_name = job_name or datetime.now().strftime("%Y-%m-%d__%H-%M-%S") + ("__noop" if noop else "")
-        res = asyncio.run(Evaluation(tasks_dir=staged, jobs_dir=out, config=cfg, job_name=job_name).run())
+        # The oracle token is chosen now, for this job only: the packages read it from the host environment (the
+        # simulator through compose, the reference solution through oracle.env). Other agents run with none.
+        saved_token = os.environ.pop(ORACLE_TOKEN_ENV, None)
+        if bf_agent == "oracle" and not noop:
+            os.environ[ORACLE_TOKEN_ENV] = secrets.token_hex(16)
+        try:
+            res = asyncio.run(Evaluation(tasks_dir=staged, jobs_dir=out, config=cfg, job_name=job_name).run())
+        finally:
+            os.environ.pop(ORACLE_TOKEN_ENV, None)
+            if saved_token is not None:
+                os.environ[ORACLE_TOKEN_ENV] = saved_token
     finally:
         shutil.rmtree(staged, ignore_errors=True)
     job = Path(out) / res.job_name
