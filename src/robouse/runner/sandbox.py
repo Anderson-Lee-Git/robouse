@@ -14,8 +14,10 @@ then read the reference solution).
 
 from __future__ import annotations
 
+import functools
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -72,6 +74,16 @@ def bwrap_args(workspace: Path, socket: str, deny: list[Path]) -> list[str]:
     return args
 
 
+@functools.cache
+def bwrap_works() -> bool:
+    """Whether bubblewrap can create its namespaces here (Ubuntu 24.04 blocks unprivileged user namespaces unless an
+    AppArmor profile allows bwrap)."""
+    if not shutil.which("bwrap"):
+        return False
+    probe = ["bwrap", "--bind", "/", "/", "--unshare-pid", "--dev", "/dev", "--proc", "/proc", "true"]
+    return subprocess.run(probe, capture_output=True, check=False).returncode == 0
+
+
 def wrap(
     cmd: list[str], workspace: Path, socket: str, deny: list[Path], local_ports: tuple[int, ...] = ()
 ) -> tuple[list[str], str]:
@@ -81,9 +93,10 @@ def wrap(
         return cmd, "none"
     if sys.platform == "darwin":
         return ["sandbox-exec", "-p", sandbox_profile(workspace, local_ports, deny), *cmd], "macos-seatbelt"
-    if sys.platform.startswith("linux") and shutil.which("bwrap"):
+    if sys.platform.startswith("linux") and bwrap_works():
         return [*bwrap_args(workspace, socket, deny), *cmd], "linux-bubblewrap"
     raise SandboxUnavailable(
-        "no sandbox for the agent on this machine: install bubblewrap (`bwrap`), or set "
-        "ROBOUSE_SANDBOX=0 to run without one (the agent can then read the reference solution)"
+        "no sandbox for the agent on this machine: install bubblewrap (`bwrap`; on Ubuntu 24.04 also an AppArmor "
+        "profile that allows it user namespaces), or set ROBOUSE_SANDBOX=0 to run without one (the agent can then "
+        "read the reference solution)"
     )

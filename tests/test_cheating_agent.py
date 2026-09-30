@@ -20,6 +20,7 @@ pytest.importorskip("mujoco")
 from robouse import harnesses
 from robouse.harnesses import Launch
 from robouse.runner import run_trial
+from robouse.runner.sandbox import bwrap_works
 from robouse.tasks import load_task
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,9 +76,7 @@ def test_a_forged_verdict_scores_zero(tmp_path, monkeypatch) -> None:
         assert seen["token_seen"] == "0"  # ... but the token reached the server on its stdin, not in its environment
 
 
-@pytest.mark.skipif(
-    not (sys.platform.startswith("linux") and shutil.which("bwrap")), reason="needs bubblewrap on Linux"
-)
+@pytest.mark.skipif(not (sys.platform.startswith("linux") and bwrap_works()), reason="needs working bubblewrap on Linux")
 def test_the_sandbox_hides_the_reference_solution_and_the_job(tmp_path, monkeypatch) -> None:
     task = load_task(ROOT / "tasks" / "arc-style" / "arc-gravity")
     job = tmp_path / "job"
