@@ -146,6 +146,8 @@ ignore = [
 
 [tool.ruff.format]
 quote-style = "preserve"
+# files other agents are editing on other branches this week; formatted once they have merged
+exclude = ["tools/site/build_runs_site.py", "tools/docs/build_docs.py", "tools/docs/cli_reference.py"]
 
 [tool.mypy]
 python_version = "3.12"  # numpy's stubs need 3.12 syntax; the package itself supports 3.11
