@@ -221,7 +221,7 @@ nav.tabs[role=tablist]{margin:var(--sp-24) 0 var(--sp-20)}
 .panel{min-width:0;min-height:560px}
 .skl{display:flex;flex-direction:column;gap:var(--sp-14);padding:var(--sp-4) 0}
 .player{position:sticky;top:var(--sp-16);min-width:0}
-.vbox{position:relative;aspect-ratio:1/1;border-radius:var(--r-md);background:var(--media-bg);overflow:hidden}
+.vbox{position:relative;aspect-ratio:var(--ar,1/1);border-radius:var(--r-md);background:var(--media-bg);overflow:hidden}
 .vbox video{display:block;width:100%;height:100%;object-fit:contain;border-radius:0}
 #vid{cursor:pointer}
 .vbox.novideo{display:grid;place-items:center;background:none}
