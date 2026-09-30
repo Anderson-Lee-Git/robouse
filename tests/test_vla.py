@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-spec = importlib.util.spec_from_file_location("vla_client", Path(__file__).resolve().parents[1] / "src/robouse/vla/client.py")
+spec = importlib.util.spec_from_file_location("vla_client", Path(__file__).resolve().parents[1] / "src/robouse/harnesses/vla/client.py")
 C = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(C)
 
@@ -60,7 +60,7 @@ def test_compat_check_catches_dimension_and_mode():
 
 
 def test_presets_resolve():
-    from robouse import vla
+    from robouse.harnesses import vla
 
     for name in vla.presets():
         cfg = vla.resolve(name)

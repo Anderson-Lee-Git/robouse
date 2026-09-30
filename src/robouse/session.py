@@ -342,7 +342,7 @@ class Episode:
             for cam in cams:
                 self._obs_count += 1
                 img = Image.fromarray(np.asarray(self._render(cam), dtype=np.uint8))
-                name = f"obs_{self._obs_count:03d}" + (f"_{cam}" if cam else "") + ".png"
+                name = f"obs_{self._obs_count:03d}" + (f"_{str(cam).replace('/', '_')}" if cam else "") + ".png"
                 (self.run_dir / "observations").mkdir(exist_ok=True)
                 img.save(self.run_dir / "observations" / name)
                 if self.workspace:

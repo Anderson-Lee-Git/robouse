@@ -36,6 +36,7 @@ def _mod_args(p: argparse.ArgumentParser) -> None:
 
 
 def _err(msg: str, code: int = 1) -> int:
+    sys.stdout.flush()  # keep "wrote ..." before the error when both streams go to one pipe
     print(f"robouse: {msg}", file=sys.stderr)
     return code
 
@@ -380,7 +381,7 @@ def components_main(argv: list[str]) -> int:
     reg = load()
     if a.ccmd == "list":
         for kind in ([a.kind] if a.kind else ["embodiments", "scenes", "tasks", "modifiers"]):
-            print(f"{kind}:")
+            print(f"{'task templates' if kind == 'tasks' else kind}:")
             for cid, m in sorted(getattr(reg, kind).items()):
                 if not m.get("composable") and not a.all:
                     continue

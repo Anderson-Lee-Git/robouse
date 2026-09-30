@@ -74,7 +74,7 @@ class RosbridgeDriver(ArmDriver):
         self.ws.send(json.dumps(msg))
 
     def connect(self) -> None:
-        from ...vla.client import WebSocket
+        from ...harnesses.vla.client import WebSocket
 
         self.ws = WebSocket(self.cfg["url"], timeout=float(self.cfg.get("timeout_s", 10)))
         self.ws.sock.settimeout(None)  # the reader blocks; staleness is detected from the joint-state timestamps
