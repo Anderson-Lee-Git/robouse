@@ -11,7 +11,7 @@ OUT=$(mkdir -p "$1" && cd "$1" && pwd); shift
 PER=${1:-3}; [ $# -gt 0 ] && shift
 declare -A RT=(
   [metaworld]=base [gymrobotics]=base [arc-style]=base [hard]=base [libero-style]=base [robo-use-families]=base
-  [safety]=base [vision]=base [kitchen]=base [adroit]=base [real]=base [stationerybench]=base
+  [safety]=base [vision]=base [kitchen]=base [adroit]=base [real]=base
   [nav]=light [cubepick]=light
   [menagerie]=menagerie [roboharm]=menagerie [drone]=menagerie
   [robosuite]=robosuite [libero]=libero [libero-90]=libero [dexjoco]=dexjoco
