@@ -82,4 +82,5 @@ UPSTREAM = {"kitchen": ("kitchen", "KitchenBackend"),  # Gymnasium-Robotics Fran
             "myosuite": ("myosuite_backend", "MyoSuiteBackend"),  # MyoSuite musculoskeletal models
             "humanoidbench": ("humanoidbench", "HumanoidBenchBackend"),  # HumanoidBench
             "maniskill": ("maniskill", "ManiSkillBackend"),  # ManiSkill3 (CPU backend)
-            "cubepick": ("cubepick", "CubePickBackend")}  # inspect-robots' CubePick mock world
+            "cubepick": ("cubepick", "CubePickBackend"),  # inspect-robots' CubePick mock world
+            "robodojo": ("robodojo", "RoboDojoBackend")}  # RoboDojo (Isaac Sim 5.1); remote GPU worker (robodojo_worker.py)
