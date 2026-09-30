@@ -35,6 +35,7 @@ BACKENDS: dict[str, tuple[str, str]] = {
     "nav": ("nav", "NavBackend"),  # object-goal navigation in homes (geometry only)
     "quadruped": ("quadruped", "QuadrupedBackend"),
     "real": ("real", "RealArmBackend"),  # real arms: live hardware or the hardware-in-the-loop mock
+    "rlebench": ("rlebench", "RLEBenchBackend"),  # RLE-Bench interactive-control tasks; simulator worker
     "robocasa": ("robocasa", "RobocasaBackend"),  # simulator worker
     "robodojo": ("robodojo", "RoboDojoBackend"),  # RoboDojo on Isaac Sim; remote GPU worker
     "roboharm": ("roboharm", "RoboHarmBackend"),
