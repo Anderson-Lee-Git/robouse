@@ -707,7 +707,7 @@
         getJSON("/runs/d/" + id + ".json").then(function (d) {
           var st = d.status, vd = d.verdict;
           body.setAttribute("aria-busy", "false");
-          body.innerHTML = '<div class="vbox">' + (d.video ? '<video src="' + h(d.video) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="auto"></video>' : '<div class="novideo empty-state"><b>No recording.</b>The episode ended before a frame was written.</div>') + "</div>" +
+          body.innerHTML = '<div class="vbox">' + (d.video ? '<video src="' + h(d.video) + '" poster="' + h(d.video.replace("/runs/v/", "/runs/p/").replace(/\.mp4$/, ".jpg")) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="metadata"></video>' : '<div class="novideo empty-state"><b>No recording.</b>The episode ended before a frame was written.</div>') + "</div>" +
             '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0])) + "</a></p>" +
             '<dl class="facts"><div><dt>Reward</dt><dd>' + rew(d.reward) + '</dd></div><div><dt>Outcome</dt><dd>' + h(oc(d.outcome)) + "</dd></div><div><dt>Steps</dt><dd>" + num(d.steps_used) + " / " + num(d.max_steps) +
             "</dd></div><div><dt>Time</dt><dd>" + dur(d.wall) + "</dd></div></dl>" +
