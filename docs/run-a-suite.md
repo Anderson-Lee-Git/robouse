@@ -1,48 +1,54 @@
-# Run a suite
+# Run a suite or dataset
 
-`robouse run-many` runs one harness on a set of tasks, several at a time. Like `robouse run`, it runs the trials on your machine by default (`--engine local`); `--engine benchflow` runs them as one BenchFlow job in Docker.
+`robouse run-many` runs one harness on many tasks from the package, on your machine. BenchFlow's `bench eval run -d` runs a published dataset in Docker.
 
 ## A suite
 
-A suite is a subfolder of the bundled tasks. This runs the first 4 Meta-World reference solutions, 4 at a time:
+A suite is a subfolder of `robouse tasks --path`. This runs the first 4 Meta-World reference solutions, 4 at a time:
 
 ```console
 $ robouse run-many --tasks "$(robouse tasks --path)/metaworld" --harness oracle --out runs/mw-oracle --concurrency 4 --limit 4
-metaworld-bin-picking                    reward=1 outcome=success_reached steps=131 9.0s
-metaworld-assembly                       reward=1 outcome=success_reached steps=93 9.1s
-metaworld-basketball                     reward=1 outcome=success_reached steps=91 9.1s
-metaworld-box-close                      reward=1 outcome=success_reached steps=105 9.2s
+metaworld-basketball                     reward=1 outcome=success_reached steps=91 7.6s
+metaworld-assembly                       reward=1 outcome=success_reached steps=93 7.7s
+metaworld-bin-picking                    reward=1 outcome=success_reached steps=131 7.8s
+metaworld-box-close                      reward=1 outcome=success_reached steps=105 7.9s
 oracle/-: 4/4 solved
 ```
 
-The suite folders are the subfolders of `robouse tasks --path`; [Suites](suites.md) says what each needs. Without `--tasks`, `run-many` runs all bundled tasks.
+Without `--tasks`, `run-many` runs every task in the package. Each finished trial is appended to `runs/mw-oracle/run_log.jsonl`. After an interruption, run the same command with `--resume`: tasks that already have a finished trial are skipped.
 
-## Pick tasks
+With a model harness each trial is one agent session, so cost and rate limits grow with `--concurrency`. A trial that ended in an infrastructure failure has an `EXC` note on its line; `--retries N` reruns it up to N times.
 
-```sh
-robouse run-many --filter drawer --harness oracle --out runs/drawer        # ids containing "drawer"
-robouse run-many --task-list picks.txt --harness noop --out runs/picks     # one task id per line
-robouse run-many --tasks mytasks --harness oracle --out runs/mine          # any folder of task folders
-```
-
-## Stop and resume
-
-With `--engine local`, each finished trial is appended to `<out>/run_log.jsonl`. After an interruption, run the same command with `--resume`: tasks that already have a finished trial in `--out` are skipped, and the rest run.
-
-## With an agent
+## Pick tasks and repeats
 
 ```sh
-robouse run-many --tasks "$(robouse tasks --path)/metaworld" --harness codex --model gpt-6-astra --out runs/mw-codex --concurrency 4
+robouse run-many --harness oracle --out runs/x \
+  --include 'libero-*' --exclude '*-drawer*' --sample 20 --sample-seed 1 \
+  --seeds 0-4 --split interpolation --dry-run
 ```
 
-Each trial is one agent session, so cost and rate limits grow with `--concurrency`. A trial that failed for an infrastructure reason has an `EXC` note on its line and `exception_info` in its `result.json`; with `--engine local`, rerunning with `--resume` retries it.
+- `--include`, `--exclude`: globs on task ids (repeatable). `--task-list FILE`: one task id per line. `--tasks DIR`: any folder of task folders.
+- `--sample N --sample-seed S`: a seeded random sample. `--limit N`: the first N.
+- `--seeds 0-4`: one trial per seed, which gives pass@k in reports. `--epochs N`: repeat each task and seed N times.
+- `--split nominal|interpolation|extrapolation`: seeded object placements for the tabletop pick-and-place tasks ([Metrics](metrics.md#splits)).
+- `--dry-run`: print the trial plan and exit.
 
-## Run under BenchFlow
+Compare jobs with `robouse report` ([Metrics](metrics.md#reports)).
 
-With `--engine benchflow`, `robouse run` and `run-many` run on BenchFlow (install `robouse[benchflow]`; Python 3.12). BenchFlow loads the task folders as they are and runs each trial in two Docker containers: the agent with only the `robo` client, and the simulator with no network. They share only the episode socket, and the verifier runs in the simulator container. The job is written to `OUT/<job>/`, one `<task>__<id>/` folder per trial. `bench eval run` runs the same task folders directly:
+## A dataset
 
-```sh
-bench eval run --tasks-dir "$(robouse tasks --path)/metaworld" --agent oracle --sandbox docker
+A dataset is a named, versioned set of tasks on the [hub](/hub/), for example `farama-foundation/metaworld@0.1`. A registry file pins each version to one commit of the hub repository and a digest of every task. `bench` checks the digests, then runs each task in two Docker containers: the agent with only the `robo` client, and the simulator with no network, which also runs the verifier.
+
+```console
+$ bench eval run -d farama-foundation/metaworld@0.1 --registry https://robouse.ai/hub/registry.json --agent oracle --include metaworld-reach --include metaworld-drawer-open
+✓ farama-foundation/metaworld@0.1: 50 tasks, digests verified (9e672aa1e7f0)
+...
+[PASS] metaworld-reach (reward=1.00, tools=0)
+[PASS] metaworld-drawer-open (reward=1.00, tools=0)
+Job complete: 2/2 (100.0%), mean_reward=1.00, errors=0, idle_timeouts=0, time=2.0min
 ```
 
-This needs Docker with Compose 2.24.4 or newer. `robouse export --tasks DIR --out DIR` writes the same tasks as BenchFlow packages, for a machine without Robo Use installed.
+- This needs Docker with Compose 2.24.4 or newer, and read access to the hub repository, `benchflow-ai/robohub`, which is private for now (for example after `gh auth login`).
+- On a Mac with Colima, run `bench` from a folder under your home folder: Docker can only mount paths there.
+- The first run of a dataset builds its simulator image, up to about 4 GB for LIBERO. Scenes render on the CPU inside the container, so some tasks are much slower than locally.
+- `--agent oracle` runs the reference solutions. `benchflow/robouse-noop-control@0.1` is the no-op control for `benchflow/robouse-core@0.1`: with `--agent oracle`, every task must score 0.
