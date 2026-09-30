@@ -500,3 +500,7 @@ table.list th:last-child .sb{margin-right:0}  /* the sort button's bleed must no
 table.list.rt th[scope="row"]{white-space:normal;width:55%;min-width:220px}
 a.rtk{font:500 var(--fs-small)/1.4 var(--sans);color:var(--ink)}
 table.list.rt td.oc{max-width:160px;white-space:normal}
+/* the controls row never widens the page: a phone's media query reads the widened layout viewport, so the row itself
+   wraps (the step label takes no room of its own) instead of relying on a width breakpoint */
+.ctl{flex-wrap:wrap;row-gap:var(--sp-6)}
+.ctl .now{flex:1 1 0}
