@@ -148,7 +148,7 @@ ignore = [
 "src/robouse/harnesses/*/client.py" = ["E402"]
 # maintainer tools, generators and test servers: best-effort loops over many files are fine
 "tests/*" = ["B011", "BLE001", "SIM115"]
-"tools/**" = ["BLE001", "SIM115", "B023"]
+"tools/**" = ["BLE001", "SIM115", "B023", "B007", "SIM401"]
 "adapters/**" = ["BLE001", "SIM115"]
 
 [tool.ruff.format]
