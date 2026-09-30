@@ -10,8 +10,8 @@ import pytest
 from robouse.cli import main, parser
 
 ROOT = Path(__file__).resolve().parents[1]
-VISIBLE = ["run", "run-many", "tasks", "components", "export", "fetch-assets", "report", "summarize", "doctor"]
-HIDDEN = ["serve", "grade", "estop", "operator", "hil-check", "robots"]
+VISIBLE = ["run", "run-many", "tasks", "components", "fetch-assets", "report", "summarize", "doctor"]
+HIDDEN = ["serve", "grade", "estop", "operator", "hil-check", "robots", "export"]
 COMMANDS = [c for c in VISIBLE + HIDDEN if c not in ("tasks", "components")]
 
 
@@ -26,7 +26,7 @@ def test_top_level_help_lists_only_the_tested_commands(capsys) -> None:
     with pytest.raises(SystemExit):
         main(["--help"])
     out = capsys.readouterr().out
-    listed = {line.split()[0] for line in out.splitlines() if line.startswith("    ") and line.split()}
+    listed = {line.split()[0] for line in out.splitlines() if line.startswith("    ") and not line.startswith("     ")}
     assert out.count("Robo Use") == 1 and listed == set(VISIBLE)
 
 
@@ -53,7 +53,7 @@ def test_run_many_dry_run(capsys) -> None:
 
 def test_local_run_rejects_seeds(capsys) -> None:
     rc = main(["run", "--task", "arc-gravity", "--harness", "oracle", "--out", "/tmp/unused", "--seeds", "0-2"])
-    assert rc == 2 and "--engine benchflow" in capsys.readouterr().err
+    assert rc == 2 and "run-many --seeds" in capsys.readouterr().err
 
 
 def test_tasks_list_and_robots(capsys) -> None:

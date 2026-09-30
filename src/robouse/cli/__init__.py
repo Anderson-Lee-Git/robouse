@@ -6,13 +6,12 @@
   robouse components list|show|check ...                                  the component registry
   robouse fetch-assets [--robot NAME | --all]                             download robot models (MuJoCo Menagerie)
   robouse report | summarize | doctor                                     results, learnings, what this machine can run
-  robouse export --tasks ROOT... --out DIR                                native BenchFlow task packages
 
-Not listed, but callable: `serve` (the episode server `run` starts), `grade`, and the real-robot commands `estop`,
-`operator`, `hil-check` and `robots` (the live-hardware path has not run through Robo Use yet).
+`run` and `run-many` run on this machine (the agent under a Seatbelt profile on macOS, bubblewrap on Linux).
 
-`run` and `run-many` run on this machine by default (`--engine local`: processes under a macOS Seatbelt profile, no
-Docker). `--engine benchflow` runs them as one BenchFlow job in Docker (needs robouse[benchflow]).
+Not listed, but callable: `serve` (the episode server `run` starts), `grade`, the real-robot commands `estop`,
+`operator`, `hil-check` and `robots` (the live-hardware path has not run through Robo Use yet), and `export` and
+`--engine benchflow` (they need a BenchFlow release with the task-format hook).
 
 TASK is a task folder or the id of a bundled task (e.g. `arc-gravity`); ROOT defaults to the bundled tasks.
 """

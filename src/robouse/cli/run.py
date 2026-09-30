@@ -13,8 +13,7 @@ from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_tas
 
 HARNESS_HELP = (
     "harness: oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or "
-    "vla (https://robouse.ai/docs/harnesses/); with --engine benchflow, a BenchFlow agent "
-    "(`bench agent list`)"
+    "vla (https://robouse.ai/docs/harnesses/)"
 )
 RECORD_SIZE_HELP = (
     "render the episode video at this size, e.g. 1280x720; agent images are unchanged "
@@ -28,16 +27,12 @@ SIM_HINT = (
 
 
 def _engine_opts(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "--engine",
-        choices=("local", "benchflow"),
-        default="local",
-        help="local (default): processes on this machine, macOS Seatbelt sandbox, no Docker; benchflow: one "
-        "BenchFlow job in Docker (needs robouse[benchflow])",
-    )
-    p.add_argument("--sandbox", default="docker", help="(--engine benchflow) BenchFlow sandbox (default docker)")
-    p.add_argument("--reasoning-effort", help="(--engine benchflow) agent reasoning effort, for agents that have one")
-    p.add_argument("--job-name", help="(--engine benchflow) BenchFlow job name (default: a timestamp)")
+    # The BenchFlow engine needs a BenchFlow release with the task-format hook (on BenchFlow's `robouse` branch today),
+    # so these options work but are not listed until that release exists.
+    p.add_argument("--engine", choices=("local", "benchflow"), default="local", help=argparse.SUPPRESS)
+    p.add_argument("--sandbox", default="docker", help=argparse.SUPPRESS)
+    p.add_argument("--reasoning-effort", help=argparse.SUPPRESS)
+    p.add_argument("--job-name", help=argparse.SUPPRESS)
 
 
 def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
@@ -83,7 +78,7 @@ def register(sub: argparse._SubParsersAction) -> None:
     r = sub.add_parser("run", help="run one trial end to end")
     r.add_argument("--task", required=True, help="task folder or bundled task id")
     r.add_argument("--out", required=True, help="job folder; the trial is written to OUT/<task>__<harness>__<id>/")
-    r.add_argument("--seeds", help="(--engine benchflow) one trial per seed, e.g. 0-4 or 0,3,7")
+    r.add_argument("--seeds", help=argparse.SUPPRESS)  # BenchFlow engine only
     _trial_opts(r, many=False)
     r.set_defaults(func=run)
 
@@ -123,7 +118,7 @@ def register(sub: argparse._SubParsersAction) -> None:
     _trial_opts(m, many=True)
     m.set_defaults(func=run_many)
 
-    ex = sub.add_parser("export", help="write tasks as native BenchFlow task packages (needs robouse[benchflow])")
+    ex = sub.add_parser("export")  # native BenchFlow packages; listed once BenchFlow releases the task-format hook
     ex.add_argument("--tasks", required=True, nargs="+", help="task folders, suite folders or a task root")
     ex.add_argument("--out", required=True, help="bundle folder: <out>/tasks/<id>/ and <out>/runtime-<hash>/")
     ex.add_argument("--filter", default="", help="comma-separated substrings; keep tasks whose id contains one")
@@ -186,7 +181,7 @@ def run(a: argparse.Namespace) -> int:
         return _run_benchflow(a, [load_task(resolve_task_path(a.task))])
     if a.seeds:
         print(
-            "robouse: --seeds needs --engine benchflow; with the local engine use run-many --seeds, or --seed",
+            "robouse: run takes one seed (--seed); use run-many --seeds for several",
             file=sys.stderr,
         )
         return 2
