@@ -58,7 +58,8 @@ def main(argv=None) -> int:
     if a.backend == "metaworld":
         metaworld_oracle(a.env, a.steps)
     elif a.backend in ("tabletop", "tabletop_hard", "gymrobotics", "libero", "menagerie", "robocasa", "behavior", "roboharm", "drone", "dexjoco",
-                       "quadruped", "humanoid", "mobile_manip", "dexhand", "crazyflie", "driving", "real", "nav", "remix", "gpu"):
+                       "quadruped", "humanoid", "mobile_manip", "dexhand", "crazyflie", "driving", "real", "nav", "remix", "gpu",
+                       "components"):
         import importlib
 
         # each backend module provides oracle_main(env: str) that drives the robot through the socket

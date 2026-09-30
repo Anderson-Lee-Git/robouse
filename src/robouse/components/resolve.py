@@ -40,8 +40,8 @@ def check(reg: Registry, emb: str, scene: str, task: str, mods: dict | None = No
     mods = modifiers(mods)
     reasons: list[str] = []
     for kind, m in (("embodiment", e), ("scene", s), ("task", t)):
-        if not m.get("remixable"):
-            reasons.append(f"{kind} {m['id']} is a fixed component (it describes an existing suite) and cannot be remixed")
+        if not m.get("composable"):
+            reasons.append(f"{kind} {m['id']} is a fixed component (it describes an existing suite) and cannot be composed into new tasks")
     if reasons:
         return Report(False, reasons)
     # 1. placement
@@ -92,10 +92,10 @@ def check(reg: Registry, emb: str, scene: str, task: str, mods: dict | None = No
     if needs.get("floor_slots") and s.get("floor_slots", 0) < needs["floor_slots"]:
         reasons.append(f"{s['title']} has no free floor area")
     if "grasp" in variant["capabilities"]:
-        from ..backends.remix_sim.templates import grasp_fits
+        from ..backends.components_sim.templates import grasp_fits
 
         g = e.get("grasp") or "top"
-        from ..backends.remix_sim.templates import CONTAINER_MAX_H
+        from ..backends.components_sim.templates import CONTAINER_MAX_H
 
         graspable = [k for k, v in kinds.items() if v["pick_and_place"]
                      and grasp_fits(v["grip_width_m"], v["height_m"], g, e.get("max_grip_m", 0))

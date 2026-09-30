@@ -5,14 +5,14 @@
 ```console
 $ robouse --help
 usage: robouse [-h] [--version]
-               {serve,run,run-many,estop,operator,hil-check,robots,report,grade,doctor,summarize,tasks,fetch-assets,export,remix,components}
+               {serve,run,run-many,estop,operator,hil-check,robots,report,grade,doctor,summarize,tasks,fetch-assets,export,components}
                ...
 
 Robo Use: agent as a policy for embodied agents. Runs robot tasks with an
 agent harness as the policy. https://robouse.ai
 
 positional arguments:
-  {serve,run,run-many,estop,operator,hil-check,robots,report,grade,doctor,summarize,tasks,fetch-assets,export,remix,components}
+  {serve,run,run-many,estop,operator,hil-check,robots,report,grade,doctor,summarize,tasks,fetch-assets,export,components}
     serve               run one trusted episode server (used by `run`)
     run                 run one trial end to end
     run-many            run a set of trials
@@ -32,15 +32,14 @@ positional arguments:
                         credentials, VLA, real-robot SDKs, plugins
     summarize           distil a trial into learnings (markdown) for --prior-
                         learnings
-    tasks               list tasks (default: the bundled tasks)
-    fetch-assets        download the MuJoCo Menagerie robot models (menagerie,
-                        RoboHarm, drone and embodiment suites)
+    tasks               list, compose (init), scaffold and check tasks;
+                        `robouse tasks --help`
+    fetch-assets        download the MuJoCo Menagerie robot models (Menagerie-
+                        based suites and composed tasks)
     export              write robouse tasks as native BenchFlow task packages
                         (a movable bundle)
-    remix               compose a task from an embodiment, a scene and a task
-                        component (+ modifiers)
-    components          list or show components (embodiments, scenes, tasks,
-                        modifiers)
+    components          list, show and check components; `robouse components
+                        --help`
 
 options:
   -h, --help            show this help message and exit
@@ -338,15 +337,89 @@ options:
 
 ```console
 $ robouse tasks --help
-usage: robouse tasks [-h] [--path] [root]
+usage: robouse tasks [-h] {list,init,check} ...
+
+list, compose, scaffold and check tasks
 
 positional arguments:
-  root        task root (default: the bundled tasks)
+  {list,init,check}
+    list             list tasks (default: the bundled tasks)
+    init             compose a task from components, regenerate one, or
+                     scaffold a blank task
+    check            validate a task: schema, `bench tasks check`, reference
+                     solution 1, no-op control 0
+
+options:
+  -h, --help         show this help message and exit
+```
+
+```console
+$ robouse tasks list --help
+usage: robouse tasks list [-h] [--path] [ROOT]
+
+positional arguments:
+  ROOT        task root (default: the bundled tasks)
 
 options:
   -h, --help  show this help message and exit
   --path      print the bundled task directory and exit
 ```
+
+```console
+$ robouse tasks init --help
+usage: robouse tasks init [-h] [--embodiment ID] [--scene ID] [--task ID]
+                          [--obs MODE] [--budget BUDGET] [--perturb KIND]
+                          [--safety LEVEL] [--roles ROLES] [--seed N]
+                          [--out DIR] [--grid] [--from DIR] [--upgrade]
+                          [--no-validate] [--keep-runs DIR]
+                          [DIR]
+
+compose a task from components and validate it (--embodiment, --scene,
+--task), regenerate a composed task from its recorded instance (--from), or
+scaffold a blank task (DIR)
+
+positional arguments:
+  DIR              blank task folder to create (scaffold mode)
+
+options:
+  -h, --help       show this help message and exit
+  --embodiment ID  embodiment component id (robouse components list)
+  --scene ID       scene component id
+  --task ID        task component id
+  --obs MODE       observation mode: state (default), vision or noisy
+  --budget BUDGET  step budget: normal (default), loose or tight
+  --perturb KIND   perturbation: none (default), push, dynamics or clutter
+  --safety LEVEL   safety overlay: none (default), direct, indirect or privacy
+  --roles ROLES    roles: single (default) or planner-operator
+  --seed N         instance seed (default 0)
+  --out DIR        folder to write the composed task folder(s) into
+  --grid           comma-separated values in any flag: compose every
+                   compatible combination
+  --from DIR       regenerate the composed task in this folder from its
+                   recorded instance
+  --upgrade        with --from: use the installed component versions if they
+                   differ
+  --no-validate    write without running the reference solution and the no-op
+                   control
+  --keep-runs DIR  keep the validation trials in this folder
+```
+
+```console
+$ robouse tasks check --help
+usage: robouse tasks check [-h] [--level LEVEL] [--no-run] [--keep-runs DIR]
+                           DIR
+
+positional arguments:
+  DIR              task folder
+
+options:
+  -h, --help       show this help message and exit
+  --level LEVEL    `bench tasks check` level (default structural)
+  --no-run         skip the reference solution and no-op control trials
+  --keep-runs DIR  keep the trials in this folder
+```
+
+`robouse tasks` alone lists the tasks: id, backend and simulator env id. `tasks init` composes a task from components and keeps it only if the reference solution scores 1 and the no-op control 0; with only `DIR` it scaffolds a blank task folder. `tasks check` re-runs those checks on any task folder ([Write or compose a task](write-a-task.md)).
 
 ## robouse fetch-assets
 
@@ -380,58 +453,24 @@ options:
   --noop                noop oracle (negative control: must score 0)
 ```
 
-## robouse remix
-
-```console
-$ robouse remix --help
-usage: robouse remix [-h] --embodiment EMBODIMENT --scene SCENE --task TASK
-                     [--obs OBS] [--budget BUDGET]
-                     [--perturbation PERTURBATION] [--safety SAFETY]
-                     [--roles ROLES] [--seed SEED] [--out OUT] [--check]
-                     [--json] [--no-validate] [--keep-runs KEEP_RUNS]
-
-options:
-  -h, --help            show this help message and exit
-  --embodiment EMBODIMENT
-                        embodiment component id (robouse components list)
-  --scene SCENE         scene component id
-  --task TASK           task component id
-  --obs OBS             observation mode: state (default), vision or noisy
-  --budget BUDGET       budget: normal (default), loose or tight
-  --perturbation PERTURBATION
-                        none (default), push, dynamics or clutter
-  --safety SAFETY       safety overlay: none (default), direct, indirect or
-                        privacy
-  --roles ROLES         single (default) or planner-operator
-  --seed SEED           instance seed (default 0)
-  --out OUT             folder to write the task folder into (not needed with
-                        --check)
-  --check               only report whether the components fit together, and
-                        why not
-  --json                with --check: print the report as JSON
-  --no-validate         skip the oracle (must score 1) and no-op (must score
-                        0) runs
-  --keep-runs KEEP_RUNS
-                        keep the validation trials in this folder
-```
-
 ## robouse components
 
 ```console
 $ robouse components --help
-usage: robouse components [-h] {list,show,export,matrix} ...
+usage: robouse components [-h] {list,show,check} ...
+
+the embodiments, scenes, task templates and modifiers composed tasks are built
+from
 
 positional arguments:
-  {list,show,export,matrix}
-    list                list components
-    show                print one component's manifest
-    export              (maintainers) rewrite components/ from the runtime
-                        declarations
-    matrix              the compatibility matrix of every embodiment x scene x
-                        task, as JSON
+  {list,show,check}
+    list             list components
+    show             print one component's manifest
+    check            whether an embodiment, a scene and a task template fit
+                     together, and why not
 
 options:
-  -h, --help            show this help message and exit
+  -h, --help         show this help message and exit
 ```
 
 ```console
@@ -451,23 +490,37 @@ options:
 
 ```console
 $ robouse components show --help
-usage: robouse components show [-h] [--compatible] id
+usage: robouse components show [-h] [--compatible] ID
 
 positional arguments:
-  id            component id
+  ID            component id
 
 options:
   -h, --help    show this help message and exit
-  --compatible  also list what it can be remixed with
+  --compatible  also list the combinations it composes into
 ```
 
 ```console
-$ robouse components matrix --help
-usage: robouse components matrix [-h] [--out OUT]
+$ robouse components check --help
+usage: robouse components check [-h] [--obs MODE] [--budget BUDGET]
+                                [--perturb KIND] [--safety LEVEL]
+                                [--roles ROLES] [--seed N] [--json]
+                                EMBODIMENT SCENE TASK
+
+positional arguments:
+  EMBODIMENT       embodiment component id
+  SCENE            scene component id
+  TASK             task component id
 
 options:
-  -h, --help  show this help message and exit
-  --out OUT   write it here (default: stdout)
+  -h, --help       show this help message and exit
+  --obs MODE       observation mode: state (default), vision or noisy
+  --budget BUDGET  step budget: normal (default), loose or tight
+  --perturb KIND   perturbation: none (default), push, dynamics or clutter
+  --safety LEVEL   safety overlay: none (default), direct, indirect or privacy
+  --roles ROLES    roles: single (default) or planner-operator
+  --seed N         instance seed to lay out (default 0)
+  --json           print the report as JSON
 ```
 
 ## robo

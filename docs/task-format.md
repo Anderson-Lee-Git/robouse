@@ -43,7 +43,8 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | `id` | required | task id, as used by `robouse run --task` |
 | `backend` | required | simulator backend, as in the second column of `robouse tasks` |
 | `env` | | the backend's scene or env id, e.g. `push-v3` |
-| `scenario` | | tabletop only: the whole scene (objects, fixtures, goals, constraints); see [Write a task](write-a-task.md) |
+| `scenario` | | tabletop only: the whole scene (objects, fixtures, goals, constraints); see [Write or compose a task](write-a-task.md#write-a-task-by-hand) |
+| `instance` | | composed tasks only (`backend: components`), written by `robouse tasks init`: the embodiment, scene and task template with their versions, the modifiers, the seed and the generated layout |
 | `seed` | 0 | object and goal layout; `--seed` overrides it |
 | `max_steps` | backend's | step budget; every simulated step counts, including skills |
 | `success_mode` | `final` | `final`: goal checked after `robo done` and 10 still steps. `first`: solved the first time the benchmark's success signal fires |

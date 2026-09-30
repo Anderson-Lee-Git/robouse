@@ -4,7 +4,7 @@
 
 - Backend: `src/robouse/backends/robocasa.py` (bridge, task table `TASKS`), `robocasa_worker.py` (runs the simulation), `robocasa_oracles.py` (reference solutions), `robocasa_episodes/` (recorded episode layouts).
 - Generator: `python adapters/robocasa/generate.py --out tasks/robocasa`.
-- Setup: `scripts/setup_robocasa.sh`. Asset manifest: `assets/robocasa/provenance.json`.
+- Setup: `tools/setup/setup_robocasa.sh`. Asset manifest: `assets/robocasa/provenance.json`.
 - Hub: dataset `robocasa/robocasa` version 0.1, simulator runtime `robocasa` (below).
 
 ## Licence
@@ -15,7 +15,7 @@
 
 ## Install (macOS works; about 4.7 GB)
 
-RoboCasa pins MuJoCo 3.3.1, numpy 2.2 and robosuite 1.5, which conflict with the main robouse virtualenv (robosuite 1.4 for LIBERO, MuJoCo 3.3.0). The simulation therefore runs in its own virtualenv (`~/.cache/robouse/robocasa-venv`, override with `ROBOUSE_ROBOCASA_PYTHON`) as a subprocess of the episode server; the backend talks to it over stdin/stdout (JSON lines, raw RGB bytes for renders). `scripts/setup_robocasa.sh` clones RoboCasa and robosuite at the pinned commits, installs them with pinned dependency versions but without RoboCasa's training dependencies (lerobot, torch, tianshou), and downloads a minimal asset subset:
+RoboCasa pins MuJoCo 3.3.1, numpy 2.2 and robosuite 1.5, which conflict with the main robouse virtualenv (robosuite 1.4 for LIBERO, MuJoCo 3.3.0). The simulation therefore runs in its own virtualenv (`~/.cache/robouse/robocasa-venv`, override with `ROBOUSE_ROBOCASA_PYTHON`) as a subprocess of the episode server; the backend talks to it over stdin/stdout (JSON lines, raw RGB bytes for renders). `tools/setup/setup_robocasa.sh` clones RoboCasa and robosuite at the pinned commits, installs them with pinned dependency versions but without RoboCasa's training dependencies (lerobot, torch, tianshou), and downloads a minimal asset subset:
 
 | Asset pack | Source (pinned revision) | Zips | Used for |
 |---|---|---|---|

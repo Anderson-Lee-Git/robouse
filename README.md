@@ -25,4 +25,4 @@ uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -e ".[metaworld,gymrobotics]"
 ```
 
-The public docs are built from `docs/` by `scripts/build_docs.py`; the pages it publishes are listed in its `PAGES`. `docs/dogfood.md` records the commands run to check them. The other files in `docs/` are internal notes.
+The public docs are built from `docs/` by `tools/docs/build_docs.py`; the pages it publishes are listed in its `PAGES`. `docs/dogfood.md` records the commands run to check them. The other files in `docs/` are internal notes.

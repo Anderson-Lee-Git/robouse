@@ -104,6 +104,36 @@ Each harness gets its prompt (one paragraph on how to use `robo`, then the task'
 
 A missing credential stops the trial before it starts, with an exception in `result.json`. An API error during the trial is not an exception: the harness exits and the episode scores 0.
 
+## Components
+
+A task can be composed from parts: an **embodiment** (the robot, its controllers and skills), a **scene** (the place, its surfaces and objects, and where a robot can stand or be mounted), a **task template** (a goal, a physical success check and a reference solution) and **modifiers** (observation, budget, disturbances, a safety overlay). How to compose one: [Write or compose a task](write-a-task.md#compose-a-task).
+
+```console
+$ robouse components list embodiments
+embodiments:
+  aloha-2                  0.1.0   ALOHA 2  (arm, bimanual)
+  crazyflie-2              0.1.0   Bitcraze Crazyflie 2  (aerial, airspace)
+  franka-panda             0.1.0   Franka Emika Panda  (arm, arm)
+  google-robot             0.1.0   Google Robot  (mobile-manipulation, floor)
+  pal-tiago                0.1.0   PAL TIAGo  (mobile-manipulation, floor)
+  unitree-go2              0.1.0   Unitree Go2  (move, floor)
+```
+
+The two words in brackets are the embodiment's track and the placement it needs from a scene: a mount on a work surface for one arm (`arm`) or two (`bimanual`), floor space (`floor`), or a take-off pad (`airspace`). `robouse components list` also lists the scenes, task templates and modifiers, and `robouse components show ID` prints one component's manifest.
+
+Every embodiment uses the same skill names where it has the capability: `move_to`, `grasp`, `release` and `home` for arms, `go_to`, `turn` and `look_at` for wheeled and legged bases, and `takeoff`, `fly_to`, `land`, `turn` and `look_at` for drones. One reference solution, or one prompt, works on several robots.
+
+`robouse components check` says whether an embodiment, a scene and a task template fit, and why not:
+
+```console
+$ robouse components check unitree-go2 tabletop put-in-container
+incompatible: unitree-go2 + tabletop + put-in-container
+  - put an object in a container needs capabilities reach, grasp; Unitree Go2 is placed on floor and has locomote, legged, head-camera, push
+$ robouse components check pal-tiago lab-bench put-in-container
+incompatible: pal-tiago + lab-bench + put-in-container
+  - PAL TIAGo reaches surfaces 0.5 to 0.85 m high from the floor; Lab bench has 0 such surfaces
+```
+
 ## The trial folder
 
 `robouse run --out runs/try` writes one folder per trial, `runs/try/<task>__<harness>__<id>/`:

@@ -54,6 +54,10 @@ def make_backend(spec: dict) -> Backend:
         from .dexjoco import DexjocoBackend
 
         return DexjocoBackend(spec)
+    if kind in ("components", "remix"):  # composed tasks (robouse tasks init): embodiment x scene x task x modifiers;
+        from .components import ComposedBackend  # "remix" is the pre-rename name, read for one release
+
+        return ComposedBackend(spec)
     if kind == "gpu":  # GPU track (ManiSkill3, Genesis, MuJoCo Playground, Isaac Lab); simulator in a remote GPU worker
         from .gpu import GpuBackend
 
