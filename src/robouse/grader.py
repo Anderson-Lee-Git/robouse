@@ -23,6 +23,8 @@ from pathlib import Path
 
 import numpy as np
 
+from . import config
+
 DEFAULT_MODEL = "moonshotai/Kimi-K3"
 DEFAULT_URL = "https://inference.baseten.co/v1"
 
@@ -48,11 +50,9 @@ def _png_b64(img: np.ndarray, max_side: int = 512) -> str:
 
 
 def _key() -> str:
-    k = os.environ.get("ROBOUSE_GRADER_API_KEY") or os.environ.get("BASETEN_API_KEY")
-    if not k:
-        from .harnesses import BASETEN_ENV, _read_env
+    from . import _maintainer
 
-        k = _read_env(BASETEN_ENV).get("BASETEN_API_KEY", "")
+    k = config.env("ROBOUSE_GRADER_API_KEY") or os.environ.get("BASETEN_API_KEY") or _maintainer.baseten_key()
     if not k:
         raise RuntimeError("no grader key: set BASETEN_API_KEY (or ROBOUSE_GRADER_API_KEY with ROBOUSE_GRADER_URL)")
     return k
@@ -64,7 +64,7 @@ def vlm_verdict(frames: list[np.ndarray], task: str, rubric: list[str] | None = 
     content = [{"type": "text", "text": text}] + [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + _png_b64(f)}}
                                                   for f in frames]
     body = {"model": model, "max_tokens": 8000, "messages": [{"role": "user", "content": content}]}
-    url = os.environ.get("ROBOUSE_GRADER_URL", DEFAULT_URL).rstrip("/") + "/chat/completions"
+    url = config.env("ROBOUSE_GRADER_URL", DEFAULT_URL).rstrip("/") + "/chat/completions"
     last = None
     for attempt in range(3):
         try:
