@@ -220,7 +220,18 @@
   }
 
   /* ---------------------------------------------------------------- shared step helpers */
+  // step text for people: long floats rounded, markdown marks dropped, the runner's episode line as a sentence
+  function tidy(t) {
+    t = String(t || "");
+    var m = t.match(/^episode: outcome=(\S+) success=(\S+)(?: steps_used=(\d+)\/(\d+))?/);
+    if (m) return "Episode ended: " + (m[2] === "True" ? "solved" : oc(m[1]).toLowerCase()) + (m[3] ? ", " + num(+m[3]) + " of " + num(+m[4]) + " steps" : "") + ".";
+    return t.replace(/-?\d+\.\d{4,}(e-?\d+)?/g, function (x) { return String(Math.round(parseFloat(x) * 1000) / 1000); })
+      .replace(/\*\*|__|`/g, "").replace(/^#+\s*/, "");
+  }
   function actionOf(s) {
+    var r = actionRaw(s); r.text = tidy(r.text); return r;
+  }
+  function actionRaw(s) {
     if (s.c && s.c.length) {
       var a = s.c[0].a.split("\n")[0];
       return {text: a + (s.c.length > 1 ? "  (+" + (s.c.length - 1) + ")" : ""), cls: ""};
@@ -240,7 +251,8 @@
       var a = actionOf(s), v = s.v;
       var x = s.env && s.env[1] > s.env[0] ? "+" + (s.env[1] - s.env[0]) + " steps" : "";
       return '<li data-i="' + s.i + '"' + (v ? ' data-t0="' + v[0] + '" tabindex="0" aria-label="Step ' + s.i + ", " + h(a.text.slice(0, 120)) + ", seek to " + t2(v[0]) + '"' : ' class="nov"') +
-        '><span class="i">' + s.i + '</span><span class="t">' + (v ? t2(v[0]) : "") +
+        '><span class="i">' + s.i + '</span><span class="t">' + (v && x && v[0] > 0 ? t2(v[0]) : "") +  // the recording time where this step moved the robot; blank for steps that did not move it
+
         '</span><span class="a ' + a.cls + '" title="' + h(a.text.slice(0, 400)) + '">' + h(a.text.slice(0, 220)) + '</span><span class="x' + (exitOf(s) ? " err" : "") + '">' + (exitOf(s) ? "exit≠0" : x) + "</span></li>";
     }).join("");
   }
@@ -437,7 +449,8 @@
         return '<section class="strip" id="filmstrip" aria-label="Camera images"><div class="rechead"><span>Camera images the agent looked at</span><span class="num">' +
           (sp.total > sp.n ? sp.n + " of " + sp.total + " shown" : sp.total) + '</span></div><div class="tiles" data-fade>' +
           d.obs.map(function (o) {
-            var lab = o[1] != null ? "step " + o[1] : o[0].replace(/\.png$/, "");
+            var cam = o[0].replace(/\.png$/, "").replace(/^obs_\d+_?/, "").replace(/^robot\d_/, "").replace(/_/g, " ");  // the camera, from the file name
+            var lab = o[1] != null ? "step " + o[1] + (cam && !/^\d+$/.test(cam) ? " · " + cam : "") : o[0].replace(/\.png$/, "");
             return '<button type="button" class="tile"' + (o[1] != null ? ' data-s="' + o[1] + '"' : "") + (o[3] != null ? ' data-seek="' + o[3] + '"' : "") + ' title="' + h(o[0]) + '" aria-label="Camera image ' + h(lab) + (o[3] != null ? ", seek the recording here" : "") + '"><i style="' + sprStyle(sp, o[2]) + '"></i><span>' + h(lab) + "</span></button>";
           }).join("") + "</div></section>";
       }

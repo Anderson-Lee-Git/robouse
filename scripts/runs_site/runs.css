@@ -487,3 +487,12 @@ table.matrix thead th a:hover .pm{color:var(--accent)}
 .xl .num{font-family:var(--mono);color:var(--muted);text-align:right}
 .stats + .xgs{margin-top:0}
 .who .mode{display:inline-flex;align-items:center;height:var(--ctl-xs);padding:0 var(--sp-8);border:1px solid var(--warn);border-radius:var(--r-xs);font:500 var(--fs-caption)/1 var(--mono);color:var(--warn-ink)}
+
+/* /runs/: the run list fits the page at every width: names and datasets wrap, the numbers stay on one line */
+table.list.runs th[scope="row"],table.list.runs td.sus{white-space:normal}
+table.list.runs td.sus{min-width:0;max-width:none;overflow-wrap:anywhere}
+.rtag{display:inline-block;margin-left:var(--sp-6);padding:0 var(--sp-6);border:1px solid var(--line);border-radius:var(--r-xs);font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted);white-space:nowrap}
+table.list th:last-child .sb{margin-right:0}  /* the sort button's bleed must not widen the table past its box */
+@media (max-width:560px){table.list.runs th:nth-child(3),table.list.runs td:nth-child(3),table.list.runs th:nth-child(4),table.list.runs td:nth-child(4){display:none}}
+@media (max-width:560px){table.list.rt th:nth-child(3),table.list.rt td:nth-child(3),table.list.rt th:nth-child(5),table.list.rt td:nth-child(5){display:none}}
+@media (max-width:560px){.rtag{display:table;margin:var(--sp-2) 0 0}table.list.runs th,table.list.runs td{padding-right:var(--sp-10)}}
