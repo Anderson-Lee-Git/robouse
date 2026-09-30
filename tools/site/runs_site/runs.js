@@ -143,7 +143,7 @@
       var b = $("button.sb", th); if (!b) return;
       b.addEventListener("click", function () {
         var idx = [].indexOf.call(th.parentNode.children, th), isNum = th.getAttribute("data-sort") === "num";
-        var cur = th.getAttribute("aria-sort"), dir = cur === "none" ? (isNum ? "descending" : "ascending") : cur === "descending" ? "ascending" : "descending";
+        var cur = th.getAttribute("aria-sort"), dir = cur === "none" ? (th.getAttribute("data-first") || (isNum ? "descending" : "ascending")) : cur === "descending" ? "ascending" : "descending";
         ths.forEach(function (x) { x.setAttribute("aria-sort", "none"); });
         th.setAttribute("aria-sort", dir);
         var sg = dir === "ascending" ? 1 : -1;

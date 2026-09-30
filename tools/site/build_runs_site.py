@@ -852,7 +852,7 @@ def model_mark(p: dict) -> str:
 
 def phtml(i: int) -> str:
     p = HM[i]
-    return f'<span class="pm">{model_mark(p)}{esc(p.get("model_label") or p["label"])}</span><span class="ph"> · {esc(p.get("harness_label") or p["harness"])}</span>'
+    return f'<span class="pm">{model_mark(p)}{esc(p.get("model_label") or p["label"])}</span> <span class="ph">·&nbsp;{esc(p.get("harness_label") or p["harness"])}</span>'
 
 
 def fnum(x) -> str:
@@ -1085,9 +1085,10 @@ def build_runs(runs: dict) -> str:
     """/runs/: every run (one model and harness on one dataset), newest first; sortable and filterable, each row opens
     the run's trials. Two runs of one model on one dataset differ by their label (zero-shot probe) and start time."""
     rows = []
-    # newest day first; runs of one day read by dataset, then model
+    # main runs first, newest day first, a day's runs by dataset, then model; zero-shot probes after them, in the same order
     order = sorted(runs.values(), key=lambda r: (r["ds"], plab(r["hm"]).lower()))
-    for r in sorted(order, key=lambda r: (r["start"] or "")[:10], reverse=True):
+    order = sorted(order, key=lambda r: (r["start"] or "")[:10], reverse=True)
+    for r in sorted(order, key=lambda r: bool(r["probe"])):
         i = r["hm"]
         rate = r["solved"] / r["scored"] if r["scored"] else -1
         tag = ' <span class="rtag">zero-shot probe</span>' if r["probe"] else ""
@@ -1111,7 +1112,8 @@ def build_runs(runs: dict) -> str:
 <div class="lst" data-list="jobs" data-limit="50" data-noun="runs">
 {ctrl}
 <div class="scroll tbl"><table class="list runs">
-  <thead><tr>{th_sort("Model · harness", "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('aria-sort="none"', 'aria-sort="descending"')}{th_sort("Trials", "num", "n")}{th_sort("Solve rate", "num", "n")}</tr></thead>
+  <caption class="vh">Main runs first, newest first; zero-shot probes after them. Sort by any column.</caption>
+  <thead><tr>{th_sort("Model · harness", "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort("Trials", "num", "n")}{th_sort("Solve rate", "num", "n")}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("runs", "Clear the search or the filters.")}

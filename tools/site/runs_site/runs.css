@@ -454,6 +454,8 @@ td.rs [data-res]{flex-direction:column;align-items:flex-start;gap:var(--sp-4)}
 
 /* pairs: model first, harness second (the hub's order) */
 .ph{color:var(--muted);font-weight:400}
+/* "· VLA" stays with the name: the dot never ends a line */
+.ph{white-space:nowrap}
 thead th .pm,thead th .ph{display:block}
 thead th .ph{font-size:var(--fs-micro)}
 table.matrix thead th a:hover .pm{color:var(--accent)}
