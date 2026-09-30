@@ -52,11 +52,14 @@ def _error(e: BaseException) -> dict:
 
 # ---- local workers: JSON lines over stdin/stdout ------------------------------------------------------------------
 
-def serve_stdio(worker: Any) -> None:
-    """Serve `worker`'s public methods on stdin/stdout until `close` or end of input."""
-    out = os.fdopen(os.dup(1), "wb")  # the protocol keeps the real stdout ...
-    os.dup2(2, 1)  # ... and everything else written to fd 1 (C libraries included) goes to stderr
+def serve_stdio(make_worker: Callable[[], Any]) -> None:
+    """Serve the public methods of `make_worker()` on stdin/stdout until `close` or end of input. The protocol keeps the
+    real stdout; from before the worker is made, everything else written to fd 1 (C libraries included) goes to
+    stderr."""
+    out = os.fdopen(os.dup(1), "wb")
+    os.dup2(2, 1)
     sys.stdout = sys.stderr
+    worker = make_worker()
     for line in sys.stdin.buffer:
         if not line.strip():
             continue
@@ -172,4 +175,4 @@ if __name__ == "__main__":
     sys.path[:] = [p for p in sys.path if os.path.abspath(p or ".") != here]
     if len(sys.argv) != 2:
         raise SystemExit("usage: python wire.py WORKER_SCRIPT")
-    serve_stdio(load_worker(sys.argv[1])())
+    serve_stdio(lambda: load_worker(sys.argv[1])())
