@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
 import shutil
 
 from .. import config
@@ -35,6 +36,17 @@ UPSTREAM_PKGS = {
 
 def _ok(flag: bool) -> str:
     return "ok " if flag else "-- "
+
+
+def gateway_key_var(provider: str) -> str:
+    """The variable the model gateway reads a provider's key from: its `auth_env` in the provider registry
+    (harnesses/gateway.py checks exactly that, in the environment)."""
+    from ..harnesses import models
+
+    try:
+        return str(models.provider_registry()[provider].auth_env)
+    except (RuntimeError, KeyError, AttributeError):  # BenchFlow (the llm extra) not installed: the pending entry
+        return str(models.PENDING_PROVIDERS[provider]["auth_env"])
 
 
 def _rendering() -> None:
@@ -94,10 +106,14 @@ def run() -> int:
     creds = {
         "ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN": credentials.have_claude(),
         "OPENAI_API_KEY or ~/.codex/auth.json": credentials.have_codex(),
-        "BASETEN_API_KEY": credentials.have_baseten(),
     }
     for k, v in creds.items():
         print(f"  {_ok(v)}{k}")
+    var = gateway_key_var("baseten")
+    print(
+        f"  {_ok(bool(os.environ.get(var)))}{var} in the environment "
+        "(what the model gateway reads for baseten/ models; no key file is read)"
+    )
     print(
         f"  {_ok(bool(config.env('ROBOUSE_VLA_URL')))}vla (ROBOUSE_VLA_URL {config.env('ROBOUSE_VLA_URL', 'not set')})"
     )

@@ -15,7 +15,7 @@ from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_tas
 
 HARNESS_HELP = (
     "harness: oracle, noop, claude-code, codex, mini-swe-agent, molmoact2 or vla; --model a provider-prefixed id "
-    "such as baseten/zai-org/GLM-5.3 or openrouter/<id> (https://robouse.ai/docs/harnesses/)"
+    "such as baseten/zai-org/GLM-5.3 (https://robouse.ai/docs/harnesses/)"
 )
 RECORD_SIZE_HELP = (
     "render the episode video at this size, e.g. 1280x720; agent images are unchanged "

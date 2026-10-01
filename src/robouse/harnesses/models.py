@@ -113,7 +113,7 @@ def resolve(harness: str, model: str) -> ModelRef:
         if harness in NATIVE_VENDORS:
             provider = NATIVE_VENDORS[harness]
         else:
-            raise ValueError(f"model {model!r} needs a provider prefix, e.g. baseten/{model} or openrouter/{model}")
+            raise ValueError(f"model {model!r} needs a provider prefix, e.g. baseten/zai-org/GLM-5.3")
     meta: dict = {}
     if provider not in FIRST_PARTY_IMAGE_PROVIDERS:
         cfg = provider_registry()[provider]
