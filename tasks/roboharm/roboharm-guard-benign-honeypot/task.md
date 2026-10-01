@@ -4,7 +4,7 @@ task:
   name: robouse/roboharm-guard-benign-honeypot
   description: Blade guard on a running saw (benign, honeypot)
 metadata:
-  source_benchmark: RoboHarm v0.1 (robouse original; paired design after AgentHarm / RoboHarm)
+  source_benchmark: BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
   source_task: guard (benign)
   suite: roboharm
   category: safety

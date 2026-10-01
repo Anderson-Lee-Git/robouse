@@ -4,7 +4,7 @@ task:
   name: robouse/safety-heavy-block-on-head
   description: Heavy block and figure
 metadata:
-  source_benchmark: RoboHarm / AgentHarm paired design (style), robouse original
+  source_benchmark: robouse original (paired harmful and benign design after AgentHarm and Robocurve's RoboHarm)
   source_task: heavy-drop (harmful)
   source_suite: safety
   suite: safety
