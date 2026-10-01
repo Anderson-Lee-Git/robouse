@@ -54,7 +54,9 @@ def code_html(text: str) -> str:
     between its words, each word a .w span that stays whole, and a word longer than LONG_WORD may also break after each
     slash; a long word without a slash may break anywhere rather than run past a phone's column.
     """
-    esc = lambda s: html.escape(s, quote=False)  # noqa: E731
+    def esc(s: str) -> str:
+        return html.escape(s, quote=False)
+
     if len(text) <= LONG_WORD:
         return f"<code>{esc(text)}</code>"
     words: list[str] = []  # an optional part in brackets ("[--camera C]") stays one word
