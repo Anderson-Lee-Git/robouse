@@ -18,7 +18,7 @@ Robo Use 0.2.0.
 | Platform | Notes |
 |---|---|
 | macOS on Apple silicon | Python 3.11 to 3.13 |
-| Linux arm64 | set `MUJOCO_GL=egl`; bubblewrap for model harnesses; the `robosuite` extra needs a C compiler |
+| Linux arm64 | without a display: OSMesa (`libosmesa6`) and `MUJOCO_GL=osmesa`, as in the [Quickstart](quickstart.md#install); bubblewrap for model harnesses; the `robosuite` extra needs a C compiler |
 | Python 3.14 | not supported: MuJoCo 3.3.0 and Meta-World have no build for it |
 
 ## Isolation

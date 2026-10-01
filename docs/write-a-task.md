@@ -81,7 +81,7 @@ The copied reference solution still moves the red block, so it must now score 0:
 ```console
 $ robouse run --task mytasks/blue-block-in-bowl --harness oracle --out runs/mine
 {
-  "trial": "blue-block-in-bowl__oracle__4528f5",
+  "trial": "blue-block-in-bowl__oracle__74f9bc",
   "reward": 0.0,
   "outcome": "done",
   ...
@@ -109,14 +109,14 @@ Then check both controls:
 ```console
 $ robouse run --task mytasks/blue-block-in-bowl --harness oracle --out runs/mine
 {
-  "trial": "blue-block-in-bowl__oracle__41cb4c",
+  "trial": "blue-block-in-bowl__oracle__e7e16d",
   "reward": 1.0,
   "outcome": "done",
   "steps": 198,
   ...
 $ robouse run --task mytasks/blue-block-in-bowl --harness noop --out runs/mine
 {
-  "trial": "blue-block-in-bowl__noop__aa263f",
+  "trial": "blue-block-in-bowl__noop__b104e6",
   "reward": 0.0,
   "outcome": "done",
   ...

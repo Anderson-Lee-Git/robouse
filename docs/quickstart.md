@@ -11,6 +11,15 @@ python3.12 -m venv .venv && source .venv/bin/activate
 pip install 'robouse[sim]'
 ```
 
+On Linux without a display, MuJoCo needs an offscreen renderer. Install OSMesa and select it:
+
+```sh
+sudo apt-get update && sudo apt-get install -y libosmesa6
+export MUJOCO_GL=osmesa
+```
+
+Without it, every trial stops with an infrastructure error, `episode server exited early`.
+
 This example runs Claude Code with Kimi K3, served by Baseten. You need [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on your `PATH` and a Baseten API key:
 
 ```sh
