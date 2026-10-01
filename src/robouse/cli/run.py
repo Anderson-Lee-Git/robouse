@@ -85,14 +85,14 @@ def register(sub: argparse._SubParsersAction) -> None:
 
     r = sub.add_parser("run", help="run one trial end to end")
     r.add_argument("--task", required=True, help="task folder or bundled task id")
-    r.add_argument("--out", required=True, help="job folder; the trial is written to OUT/<task>__<harness>__<id>/")
+    r.add_argument("--out", required=True, help="run folder; the trial is written to OUT/<task>__<harness>__<id>/")
     r.add_argument("--seeds", help=argparse.SUPPRESS)  # BenchFlow engine only
     _trial_opts(r, many=False)
     r.set_defaults(func=run)
 
     m = sub.add_parser("run-many", help="run a set of trials")
     m.add_argument("--tasks", help="task root (default: the bundled tasks)")
-    m.add_argument("--out", required=True, help="job folder; one trial folder per task")
+    m.add_argument("--out", required=True, help="run folder; one trial folder per task")
     m.add_argument("--filter", default="", help="only task ids containing this substring")
     m.add_argument("--task-list", help="file with one task id per line (a subset of --tasks)")
     m.add_argument(

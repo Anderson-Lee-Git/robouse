@@ -3,7 +3,7 @@
 In both, an agent cannot read or write:
   - private settings, the real-robot operator channel, the maintainers' folders and $ROBOUSE_SANDBOX_DENY
     (`config.sandbox_denied_paths`);
-  - the job folder (trial records, including the episode's result.json) and the task folder (its reference solution);
+  - the run folder (trial records, including the episode's result.json) and the task folder (its reference solution);
   - any robouse source or install (a `robouse` package directory);
   - other trials' workspaces.
 It keeps its own workspace, the episode socket and the network (model APIs). On macOS, TCP connections to this machine
