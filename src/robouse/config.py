@@ -65,7 +65,18 @@ ENV: dict[str, str] = {
     "ROBOUSE_CAPX_LIBERO_PYTHON": "Python of the CaP-X LIBERO virtualenv (default <cache>/capx-libero-venv/bin/python)",
     **{
         f"ROBOUSE_{b}_QUIET": f"0 shows the {b.lower()} worker's stderr (default 1)"
-        for b in ("DEXJOCO", "DMCONTROL", "HUMANOIDBENCH", "MANISKILL", "METADRIVE", "MYOSUITE", "ROBOCASA", "RLEBENCH", "CAPX", "CAPX_LIBERO")
+        for b in (
+            "DEXJOCO",
+            "DMCONTROL",
+            "HUMANOIDBENCH",
+            "MANISKILL",
+            "METADRIVE",
+            "MYOSUITE",
+            "ROBOCASA",
+            "RLEBENCH",
+            "CAPX",
+            "CAPX_LIBERO",
+        )
     },
     "ROBOUSE_MANISKILL_DEBUG": "1: the ManiSkill worker logs each request",
     "ROBOUSE_HUMANOIDBENCH_POLICY": "HumanoidBench low-level walking policy (default <cache>/humanoidbench/h1_motion.pt)",
