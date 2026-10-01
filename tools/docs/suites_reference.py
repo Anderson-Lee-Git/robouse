@@ -10,11 +10,11 @@ lines, and README.md gets the same "N tasks in M suites"; the rest of the page i
 the package (`robouse tasks --path`), so they cannot drift from the release; tests/test_counts.py checks all of it. A
 suite without trials in a job folder shows "-". Run it against the release users install, from its checkout.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-import re
 import shutil
 import subprocess
 import sys
@@ -36,18 +36,38 @@ HUB_FROM = {
 
 # What each suite is, in a few words (the task metadata's source strings are too long for a table).
 FROM = {
-    "metaworld": "Meta-World MT50", "gymrobotics": "Gymnasium-Robotics: Fetch, PointMaze", "kitchen": "Franka Kitchen",
-    "adroit": "Adroit hand", "libero": "LIBERO: Spatial, Object, Goal, Long", "libero-90": "LIBERO-90",
-    "robosuite": "robosuite 1.5, five arms", "libero-style": "LIBERO-like tabletop scenes", "arc-style": "ARC-style rules on a table",
-    "robo-use-families": "Robo Use task families", "safety": "harmful requests and benign twins",
-    "vision": "camera images, no coordinates", "hard": "low-level control, uncalibrated cameras",
-    "menagerie": "dual Franka Panda, ALOHA 2", "roboharm": "10 harm scenarios, 4 configurations", "drone": "Skydio X2 over a town",
-    "quadruped": "Unitree Go2 and Go1, Spot, ANYmal C", "humanoid": "Unitree G1 and H1, Apollo, Booster T1",
-    "mobile-manip": "Stretch 3, TIAGo, Google Robot", "dexhand": "Shadow Hand, LEAP Hand", "crazyflie": "Crazyflie 2, one or three",
-    "composed": "composed from components", "dexjoco": "DexJoCo: Allegro hand tool use", "driving": "MetaDrive car in traffic",
-    "dmcontrol": "dm_control: Control Suite, Jaco arm", "myosuite": "MyoSuite: muscle-driven arm and hand",
-    "humanoidbench": "HumanoidBench: H1 with two hands", "maniskill": "ManiSkill3 on the CPU", "robocasa": "RoboCasa kitchens",
-    "nav": "object-goal navigation in homes", "cubepick": "cube pick-and-reach", "real": "real arms, on the mock by default",
+    "metaworld": "Meta-World MT50",
+    "gymrobotics": "Gymnasium-Robotics: Fetch, PointMaze",
+    "kitchen": "Franka Kitchen",
+    "adroit": "Adroit hand",
+    "libero": "LIBERO: Spatial, Object, Goal, Long",
+    "libero-90": "LIBERO-90",
+    "robosuite": "robosuite 1.5, five arms",
+    "libero-style": "LIBERO-like tabletop scenes",
+    "arc-style": "ARC-style rules on a table",
+    "robo-use-families": "Robo Use task families",
+    "safety": "harmful requests and benign twins",
+    "vision": "camera images, no coordinates",
+    "hard": "low-level control, uncalibrated cameras",
+    "menagerie": "dual Franka Panda, ALOHA 2",
+    "roboharm": "10 harm scenarios, 4 configurations",
+    "drone": "Skydio X2 over a town",
+    "quadruped": "Unitree Go2 and Go1, Spot, ANYmal C",
+    "humanoid": "Unitree G1 and H1, Apollo, Booster T1",
+    "mobile-manip": "Stretch 3, TIAGo, Google Robot",
+    "dexhand": "Shadow Hand, LEAP Hand",
+    "crazyflie": "Crazyflie 2, one or three",
+    "composed": "composed from components",
+    "dexjoco": "DexJoCo: Allegro hand tool use",
+    "driving": "MetaDrive car in traffic",
+    "dmcontrol": "dm_control: Control Suite, Jaco arm",
+    "myosuite": "MyoSuite: muscle-driven arm and hand",
+    "humanoidbench": "HumanoidBench: H1 with two hands",
+    "maniskill": "ManiSkill3 on the CPU",
+    "robocasa": "RoboCasa kitchens",
+    "nav": "object-goal navigation in homes",
+    "cubepick": "cube pick-and-reach",
+    "real": "real arms, on the mock by default",
 }
 # What a suite needs beyond `pip install 'robouse[sim]'`, by backend.
 ASSETS = "`robouse fetch-assets`"
@@ -55,17 +75,38 @@ ASSETS_ALL = "`robouse fetch-assets --all`"
 VENV = "own virtualenv (below)"
 HUB = "[the hub](run-a-suite.md#a-dataset) only"
 NEEDS = {
-    "tabletop": "", "metaworld": "`[metaworld]`", "gymrobotics": "`[gymrobotics]`", "kitchen": "`[gymrobotics]`",
-    "adroit": "`[gymrobotics]`", "robosuite": "`[robosuite]`", "libero": "[LIBERO setup](#libero)",
-    "menagerie": ASSETS, "roboharm": ASSETS, "drone": ASSETS, "quadruped": ASSETS_ALL, "humanoid": ASSETS_ALL,
-    "mobile_manip": ASSETS_ALL, "dexhand": ASSETS_ALL, "crazyflie": ASSETS_ALL, "components": ASSETS_ALL,
-    "dexjoco": VENV, "driving": VENV, "dmcontrol": VENV, "myosuite": VENV, "humanoidbench": HUB, "maniskill": HUB,
-    "robocasa": HUB, "nav": "", "cubepick": "", "real": "",
+    "tabletop": "",
+    "metaworld": "`[metaworld]`",
+    "gymrobotics": "`[gymrobotics]`",
+    "kitchen": "`[gymrobotics]`",
+    "adroit": "`[gymrobotics]`",
+    "robosuite": "`[robosuite]`",
+    "libero": "[LIBERO setup](#libero)",
+    "menagerie": ASSETS,
+    "roboharm": ASSETS,
+    "drone": ASSETS,
+    "quadruped": ASSETS_ALL,
+    "humanoid": ASSETS_ALL,
+    "mobile_manip": ASSETS_ALL,
+    "dexhand": ASSETS_ALL,
+    "crazyflie": ASSETS_ALL,
+    "components": ASSETS_ALL,
+    "dexjoco": VENV,
+    "driving": VENV,
+    "dmcontrol": VENV,
+    "myosuite": VENV,
+    "humanoidbench": HUB,
+    "maniskill": HUB,
+    "robocasa": HUB,
+    "nav": "",
+    "cubepick": "",
+    "real": "",
 }
 
 
 def frontmatter(path: Path) -> dict:
     import yaml
+
     return yaml.safe_load(path.read_text(encoding="utf-8").split("\n---", 1)[0].removeprefix("---"))
 
 
@@ -94,10 +135,14 @@ def cell(ids: list[str], res: dict[str, list[float]], want: float) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--robouse", default=shutil.which("robouse", path=str(Path(sys.executable).parent)) or "robouse")
-    ap.add_argument("--oracle", type=Path, action="append", default=[], help="job folder(s) of a reference-solution sweep")
+    ap.add_argument(
+        "--oracle", type=Path, action="append", default=[], help="job folder(s) of a reference-solution sweep"
+    )
     ap.add_argument("--noop", type=Path, action="append", default=[], help="job folder(s) of a no-op sweep")
     a = ap.parse_args()
-    root = Path(subprocess.run([a.robouse, "tasks", "--path"], capture_output=True, text=True, check=True).stdout.strip())
+    root = Path(
+        subprocess.run([a.robouse, "tasks", "--path"], capture_output=True, text=True, check=True).stdout.strip()
+    )
     version = subprocess.run([a.robouse, "--version"], capture_output=True, text=True, check=True).stdout.strip()
     oracle, noop = defaultdict(list), defaultdict(list)
     for j in a.oracle:
@@ -114,13 +159,20 @@ def main() -> None:
         ids = [t["robouse"]["id"] for t in tasks]
         backends = Counter(t["robouse"]["backend"] for t in tasks)
         needs = sorted({NEEDS.get(b, "?") for b in backends} - {""})
-        rows.append(f"| `{d.name}` | {FROM.get(d.name, '')} | {len(ids)} | {', '.join(needs) or '-'} | "
-                    f"{cell(ids, oracle, 1.0)} | {cell(ids, noop, 0.0)} |")
+        rows.append(
+            f"| `{d.name}` | {FROM.get(d.name, '')} | {len(ids)} | {', '.join(needs) or '-'} | "
+            f"{cell(ids, oracle, 1.0)} | {cell(ids, noop, 0.0)} |"
+        )
         total += len(ids)
-    table = [f"{version} bundles {total} tasks in {len(rows)} suites. \"Needs\" is what a suite needs beyond "
-             "`pip install 'robouse[sim]'`. The last two columns count the tasks that scored 1 with the reference "
-             "solution and with the no-op control.", "",
-             "| Suite | What | Tasks | Needs | Reference solution | No-op control |", "|---|---|---|---|---|---|", *rows]
+    table = [
+        f"{version} bundles {total} tasks in {len(rows)} suites. \"Needs\" is what a suite needs beyond "
+        "`pip install 'robouse[sim]'`. The last two columns count the tasks that scored 1 with the reference "
+        "solution and with the no-op control.",
+        "",
+        "| Suite | What | Tasks | Needs | Reference solution | No-op control |",
+        "|---|---|---|---|---|---|",
+        *rows,
+    ]
     hub_rows = []
     for suite in counts.HUB_ONLY:  # not in the wheel: their task folders in this checkout
         tasks = [frontmatter(t) for t in sorted((counts.REPO / "tasks" / suite).rglob("task.md"))]
@@ -138,8 +190,10 @@ def main() -> None:
         text = head + begin + "\n" + "\n".join(lines) + "\n" + end + tail
     DOC.write_text(text, encoding="utf-8")
     changed = counts.rewrite()  # README.md says the same numbers
-    print(f"wrote the suites tables in {DOC}: {len(rows)} suites, {total} tasks, from {version}; "
-          f"{len(hub_rows)} hub-only suites; rewrote {', '.join(changed) or 'no other file'}")
+    print(
+        f"wrote the suites tables in {DOC}: {len(rows)} suites, {total} tasks, from {version}; "
+        f"{len(hub_rows)} hub-only suites; rewrote {', '.join(changed) or 'no other file'}"
+    )
 
 
 if __name__ == "__main__":
