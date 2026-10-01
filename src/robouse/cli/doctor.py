@@ -85,9 +85,10 @@ def run() -> int:
         print(f"  {_ok(py.exists())}{b} (worker virtualenv {py})")
     print("Harnesses")
     for h, exe in (
-        ("claude-code, claude-code-glm", "claude"),
-        ("codex, codex-glm", "codex"),
-        ("mini-swe-agent-glm", "mini"),
+        ("claude-code", "claude"),
+        ("codex", "codex"),
+        ("mini-swe-agent", "mini"),
+        ("model gateway (provider-prefixed models)", "litellm"),
     ):
         print(f"  {_ok(shutil.which(exe) is not None)}{h} (`{exe}` on PATH)")
     creds = {

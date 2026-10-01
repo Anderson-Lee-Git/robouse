@@ -70,7 +70,7 @@ def test_the_prompt_is_the_task_md_body_and_the_workspace_has_no_copy(tmp_path, 
     assert not any("instruction" in f for f in cfg["workspace_files"])
 
 
-@pytest.mark.parametrize("harness", ["mini-swe-agent-glm", "codex-glm", "codex", "claude-code"])
+@pytest.mark.parametrize("harness", ["mini-swe-agent-glm", "codex-glm", "claude-code-glm", "codex", "claude-code"])
 def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path, monkeypatch) -> None:
     """The workspace holds only robouse's internals (.robouse/) and observations/; the task reaches the agent only as
     its prompt (mini-swe-agent's harness used to write it to .robouse/task.txt as well)."""
@@ -80,6 +80,11 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path
     from robouse import harnesses
     from robouse.runner.trial import _make_workspace
 
+    from types import SimpleNamespace
+
+    # a model gateway stand-in: the real one starts a LiteLLM proxy for the trial (harnesses/gateway.py)
+    gw = SimpleNamespace(url="http://127.0.0.1:9", key="gw", model="m", stats=None, stop=None, stop_file=None)
+    monkeypatch.setattr(harnesses, "_gateway", lambda ref, env, protocol: gw)
     monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(tmp_path / "cache"))  # harness homes go to the cache
     stubs = tmp_path / "bin"  # the agent programs only need to exist: nothing is launched
     stubs.mkdir()

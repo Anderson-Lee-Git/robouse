@@ -24,7 +24,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 RUNS = REPO / "runs"
 FPS = 30
-LLM_HARNESSES = ("claude-code", "claude-code-glm", "codex", "codex-glm", "mini-swe-agent-glm")
+LLM_HARNESSES = ("claude-code", "claude-code-glm", "codex", "codex-glm", "mini-swe-agent", "mini-swe-agent-glm")
 NO_LLM = ("oracle", "noop")
 OUTCOMES = {
     "done",
@@ -34,19 +34,12 @@ OUTCOMES = {
     "wall_time_exhausted",
     "agent_exited",
     "agent_timeout",
+    "budget_stop",
 }
 MOTION_OPS = {"act", "move_to", "grip", "skill"}  # skill: named high-level skills (BEHAVIOR primitives)
 RUNNING_WINDOW_S = 20 * 60
-# what the harnesses run when config.json leaves the model empty (see src/robouse/harnesses.py)
-DEFAULT_MODELS = {
-    "claude-code": "claude-opus-5-5",
-    "codex": "gpt-6-astra",
-    "claude-code-glm": "zai-org/GLM-5.3",
-    "codex-glm": "zai-org/GLM-5.3",
-    "mini-swe-agent-glm": "zai-org/GLM-5.3",
-    "oracle": "scripted",
-    "noop": "none",
-}
+# what the harnesses ran when config.json leaves the model empty; the others come from robouse.harnesses.models
+DEFAULT_MODELS = {"claude-code": "claude-opus-5-5", "oracle": "scripted", "noop": "none"}
 FFPROBE = shutil.which("ffprobe") or (
     "/opt/homebrew/bin/ffprobe" if Path("/opt/homebrew/bin/ffprobe").exists() else None
 )
@@ -305,8 +298,13 @@ def audit_trial(d: Path) -> dict:
     model = (
         (((res or {}).get("agent_info") or {}).get("model_info") or {}).get("name")
         or cfg.get("model")
-        or DEFAULT_MODELS.get(harness, "?")
+        or DEFAULT_MODELS.get(harness, "")
     )
+    # one (harness, model) pair for old and new trial folders: codex-glm + zai-org/GLM-5.3 is codex +
+    # baseten/zai-org/GLM-5.3 (robouse.harnesses.models)
+    image_input = _models().recorded_image_input(harness, res, cfg)
+    harness, model = _models().canonical(harness, model)
+    model = model or "?"
     meta = cfg.get("metadata") or {}
     rec: dict = {
         "trial": d.name,
@@ -317,6 +315,8 @@ def audit_trial(d: Path) -> dict:
         "source_benchmark": meta.get("source_benchmark"),
         "harness": harness,
         "model": model,
+        "image_input": image_input,
+        "budget_stop": (res or {}).get("budget_stop"),
         "checks": {},
         "flags": [],
         "infra": [],
@@ -579,7 +579,7 @@ def audit_trial(d: Path) -> dict:
     ids = {i["id"] for i in rec["infra"]}
     agent_closed = any(o in ("done", "give_up") for o, _ in agent_ops)
     task_ended = outcome in ("success_reached", "budget_exhausted")
-    api_ended = session_failed or (harness == "mini-swe-agent-glm" and bool(ids & API_IDS))
+    api_ended = session_failed or (harness.startswith("mini-swe-agent") and bool(ids & API_IDS))
     soft = (
         harness in LLM_HARNESSES
         and not agent_closed
@@ -587,6 +587,11 @@ def audit_trial(d: Path) -> dict:
         and ((api_ended and bool(ids & API_IDS)) or (bool(ids - {"agent_exit_code"}) and n_motion == 0))
     )
     rec["infra_failure"] = bool(ids & hard) or soft
+    if rec["budget_stop"] and not (ids & hard):
+        # the gateway refused requests at the spend cap and the runner stopped the agent: a budget stop, which is
+        # neither an infrastructure failure nor the model failing on its own
+        rec["infra_failure"] = False
+        rec["outcome"] = "budget_stop"
     rec["infra_cause"] = infra_cause(rec["infra"]) if rec["infra_failure"] else None
     for i in rec["infra"]:
         flag(f"infra:{i['id']}", "high" if rec["infra_failure"] else "low", _clip(i["evidence"], 200))
@@ -608,6 +613,15 @@ def audit_trial(d: Path) -> dict:
     rec["solved"] = bool(reward)
     rec["running"] = running
     return rec
+
+
+def _models():
+    """robouse.harnesses.models from this checkout (standard library only at import)."""
+    if str(REPO / "src") not in sys.path:
+        sys.path.insert(0, str(REPO / "src"))
+    from robouse.harnesses import models
+
+    return models
 
 
 def _build_trajectory(d: Path, harness: str) -> dict | None:

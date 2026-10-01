@@ -14,8 +14,8 @@ from pathlib import Path
 from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_task_path
 
 HARNESS_HELP = (
-    "harness: oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or "
-    "vla (https://robouse.ai/docs/harnesses/)"
+    "harness: oracle, noop, claude-code, codex, mini-swe-agent, molmoact2 or vla; --model a provider-prefixed id "
+    "such as baseten/zai-org/GLM-5.3 or openrouter/<id> (https://robouse.ai/docs/harnesses/)"
 )
 RECORD_SIZE_HELP = (
     "render the episode video at this size, e.g. 1280x720; agent images are unchanged "
@@ -145,8 +145,9 @@ def _unknown_harness(name: str) -> int:
     from importlib.metadata import entry_points
 
     from ..harnesses import HARNESSES
+    from ..harnesses.models import LEGACY_HARNESSES
 
-    if name in HARNESSES or any(ep.name == name for ep in entry_points(group="robouse.harnesses")):
+    if name in HARNESSES or name in LEGACY_HARNESSES or any(ep.name == name for ep in entry_points(group="robouse.harnesses")):
         return 0
     print(f"robouse: unknown harness {name!r}; harnesses: {', '.join(HARNESSES)}", file=sys.stderr)
     return 2

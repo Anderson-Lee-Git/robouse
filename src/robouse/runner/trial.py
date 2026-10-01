@@ -6,7 +6,7 @@
   agent/stdout.jsonl          raw harness output (stream-json / codex --json / text)
   agent/stderr.txt
   agent/trajectory.json       ATIF trajectory converted from the raw output (see atif.py)
-  agent/mini_traj.json        mini-swe-agent's own trajectory (mini-swe-agent-glm only)
+  agent/mini_traj.json        mini-swe-agent's own trajectory (mini-swe-agent only)
   episode/                    trusted episode server output (result.json, trace.jsonl, frames.jsonl)
   verifier/reward.txt         0 or 1, written by the task's verifier/test.sh
   verifier/test-stdout.txt
@@ -158,6 +158,101 @@ def _verify(task: Task, episode: dict, tdir: Path) -> float:
     return reward
 
 
+# harnesses that drive a language model (the others run scripted code or a VLA policy)
+LLM_HARNESSES = ("claude-code", "codex", "mini-swe-agent")
+
+
+def image_input_plan(harness: str, model: str) -> dict:
+    """The canonical harness and model of a trial, and whether its model gets image input (`image_input`), with the
+    reason. Every task is open to every harness and model; this only records what the model could see.
+
+    No image input when the harness never passes images to its model (mini-swe-agent), the model registry lists the
+    model as text-only or does not describe it (harnesses/models.py), or ROBOUSE_AGENT_IMAGES=0 turns images off for
+    the run. The trial's model gateway then replaces every image part before it reaches the provider. The task itself
+    is unchanged: the agent's workspace still holds the camera images as files (code may read their pixels), and a
+    vision task never falls back to the object state it hides. Harnesses without a language model record None."""
+    from .. import config
+    from ..harnesses import models
+
+    canon, mid = models.legacy(harness, model)
+    if canon not in LLM_HARNESSES:
+        return {"harness": canon, "model": mid, "image_input": None, "image_input_reason": "no language model"}
+    mid = mid or models.DEFAULT_MODELS.get(canon, "")
+    ref = models.resolve(canon, mid)
+    accepts = models.accepts_images(ref)
+    plan = {"harness": canon, "model": ref.id if models.split(mid)[0] else mid, "accepts_images": accepts}
+    if canon in models.NO_IMAGE_HARNESSES:
+        plan.update(image_input=False, image_input_reason=f"{canon} passes no images to its model")
+    elif accepts is not True:
+        why = (
+            "the model registry lists it as text-only"
+            if accepts is False
+            else "the model registry lists no image input"
+        )
+        plan.update(image_input=False, image_input_reason=why)
+    elif not config.flag("ROBOUSE_AGENT_IMAGES", default=True):
+        plan.update(image_input=False, image_input_reason="images turned off for this run (ROBOUSE_AGENT_IMAGES=0)")
+    else:
+        plan.update(image_input=True, image_input_reason="the model takes images")
+    if not plan["image_input"] and models.NATIVE_VENDORS.get(canon) == ref.provider:
+        # a harness on its own vendor has no gateway, so nothing could remove the images
+        raise ValueError(f"{canon} with {ref.id} cannot run without image input: it does not use the model gateway")
+    return plan
+
+
+def spend_cap_usd() -> float:
+    """The per-trial model spend cap in USD (ROBOUSE_SPEND_CAP_USD, default 5; 0 turns it off). The model gateway
+    enforces it; harnesses on their own vendor (no gateway) are not capped."""
+    from .. import config
+
+    return max(0.0, float(config.env("ROBOUSE_SPEND_CAP_USD", "5")))
+
+
+def _secret_env_names() -> set[str]:
+    from ..harnesses import models
+
+    return models.secret_env_names()
+
+
+def _wait_agent(agent: subprocess.Popen, timeout: float, stop_file: Path | None) -> tuple[int | None, bool]:
+    """(return code, timed out). Waits for the agent; stops it at the timeout, or as soon as its model gateway writes
+    `stop_file` (the trial's spend cap is reached)."""
+    deadline = time.time() + timeout
+    while True:
+        try:
+            return agent.wait(timeout=max(0.0, min(1.0, deadline - time.time()))), False
+        except subprocess.TimeoutExpired:
+            if stop_file is not None and stop_file.exists():
+                _kill_group(agent)
+                return agent.returncode, False
+            if time.time() >= deadline:
+                _kill_group(agent)
+                return None, True
+
+
+def _kill_group(agent: subprocess.Popen) -> None:
+    for sig, wait in ((signal.SIGTERM, 15), (signal.SIGKILL, None)):
+        try:
+            os.killpg(agent.pid, sig)
+        except OSError:  # the group is gone already
+            pass
+        try:
+            agent.wait(timeout=wait)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def _read_budget_stop(stop_file: Path | None) -> dict | None:
+    """The gateway's record of a spend-cap stop ({cap_usd, spent_usd, ...}), or None."""
+    if stop_file is None or not stop_file.exists():
+        return None
+    try:
+        return json.loads(stop_file.read_text())
+    except (OSError, ValueError):
+        return {"cap_usd": None, "spent_usd": None}
+
+
 # Ctrl-C: the agents of the trials running now (their process groups), so an interrupt stops them all
 _ACTIVE_AGENTS: set[int] = set()
 INTERRUPTED = threading.Event()
@@ -216,6 +311,11 @@ def run_trial(
     prior_learnings: str | None = None,
     attempt: int = 0,
 ) -> dict:
+    plan = image_input_plan(harness, model)
+    cap = spend_cap_usd()
+    # recorded and launched under the canonical names: harness = the agent program, model = provider-prefixed id
+    requested = (harness, model)
+    harness, model = plan["harness"], plan["model"] or ""
     job_dir.mkdir(parents=True, exist_ok=True)
     if split or extra_instruction or prior_learnings:
         task = _variant(task, split, extra_instruction, prior_learnings)
@@ -245,6 +345,11 @@ def run_trial(
         "attempt": attempt,
         "extra_instruction": extra_instruction or None,
         "prior_learnings": prior_learnings,
+        "requested": {"harness": requested[0], "model": requested[1]} if requested != (harness, model) else None,
+        "image_input": plan["image_input"],
+        "image_input_reason": plan["image_input_reason"],
+        **({"accepts_images": plan["accepts_images"]} if "accepts_images" in plan else {}),
+        "spend_cap_usd": None,  # set once the model gateway is up (harnesses on their own vendor are not capped)
         "provenance": provenance(),
     }
     (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
@@ -288,16 +393,20 @@ def run_trial(
     launch = None
     agent_rc = None
     timed_out = False
+    budget_stop = None
     interrupted = False
     try:
         _wait_ready(
             ready, server, timeout=float(task.spec.get("ready_timeout_s", 300)), log=tdir / "episode" / "server.log"
         )
         (ws / ".robouse" / "socket").write_text(sock)
+        # no provider key reaches an agent: a harness adds its own vendor's login back; others use the gateway
+        secret_names = _secret_env_names()
         base_env = {
             k: v
             for k, v in os.environ.items()
-            if not k.startswith(("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN"))
+            if not k.startswith(("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN", "OPENROUTER"))
+            and k not in secret_names
         }
         base_env["PATH"] = (
             f"{ws / '.robouse' / 'bin'}:{Path(py).parent}:{base_env.get('PATH', '')}"
@@ -305,11 +414,16 @@ def run_trial(
             else f"{ws / '.robouse' / 'bin'}:{base_env.get('PATH', '')}"
         )
         base_env["ROBOUSE_SOCKET"] = sock
+        base_env["_ROBOUSE_TRIAL_DIR"] = str(tdir)  # read and removed by the harness builder (model gateway)
+        base_env["_ROBOUSE_IMAGE_INPUT"] = "0" if plan["image_input"] is False else "1"
+        base_env["_ROBOUSE_SPEND_CAP_USD"] = str(cap)
         base_env["PYTHONPATH"] = str(SRC) if harness == "oracle" else ""
         base_env.pop("ROBOUSE_ORACLE_TOKEN", None)
         if harness == "oracle":  # only the reference solution may see privileged state in vision tasks
             base_env["ROBOUSE_ORACLE_TOKEN"] = oracle_token
         launch = harnesses.build(harness, model, task.instruction, ws, task, base_env)
+        if launch.stop_file is not None:  # a model gateway: it enforces the spend cap
+            cfg["spend_cap_usd"] = cap or None
         if harness in ("oracle", "noop"):  # the trusted reference solution and the negative control
             cfg["sandbox"] = "none"
         else:
@@ -334,17 +448,11 @@ def run_trial(
             try:
                 if INTERRUPTED.is_set():  # started just as another trial was interrupted
                     raise KeyboardInterrupt
-                agent_rc = agent.wait(timeout=timeout)
-            except (subprocess.TimeoutExpired, KeyboardInterrupt) as e:
-                if isinstance(e, KeyboardInterrupt):
-                    interrupted = True
-                    interrupt_all()
-                else:
-                    timed_out = True
-                try:
-                    os.killpg(agent.pid, signal.SIGTERM)
-                except OSError:
-                    pass
+                # stops the agent at the timeout, or when its model gateway reaches the trial's spend cap
+                agent_rc, timed_out = _wait_agent(agent, timeout, launch.stop_file)
+            except KeyboardInterrupt:
+                interrupted = True
+                interrupt_all()
                 try:
                     agent.wait(timeout=15)
                 except subprocess.TimeoutExpired:
@@ -366,11 +474,15 @@ def run_trial(
         except OSError:  # the server is still busy (e.g. a slow remote simulator step); it ends on its own clock
             st = {}
         if st.get("ok") and not st["result"]["finished"]:
+            # the agent did not end the episode: a spend-cap stop when its gateway reached the cap
+            budget_stop = _read_budget_stop(launch.stop_file if launch is not None else None)
             try:
                 _send(
                     {
                         "op": "give_up",
-                        "text": f"{RUNNER_PREFIX} agent timed out"
+                        "text": f"{RUNNER_PREFIX} spend cap reached"
+                        if budget_stop
+                        else f"{RUNNER_PREFIX} agent timed out"
                         if timed_out
                         else f"{RUNNER_PREFIX} agent exited without robo done",
                     },
@@ -383,6 +495,8 @@ def run_trial(
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait()
+        if launch is not None and launch.stop is not None:
+            launch.stop()  # the model gateway: its request log is summarized into proxy_stats
 
     interrupted = interrupted or INTERRUPTED.is_set()
     episode, verified = _verdict(tdir / "episode" / "result.json", result_key)
@@ -390,10 +504,13 @@ def run_trial(
         exc = INTERRUPT_TEXT
     if not verified and exc is None:
         exc = "VerdictError: the episode's result.json is missing or does not carry the server's signature"
-    if exc is None and not timed_out:
+    if exc is None and not timed_out and not budget_stop:  # a harness stopped at the spend cap did not fail
         exc = _harness_error(tdir, harness, agent_rc, episode)
     if timed_out and episode.get("outcome") == "gave_up":
         episode["outcome"] = "agent_timeout"
+    if budget_stop and episode.get("outcome") in ("gave_up", "agent_timeout"):
+        # stopped at the spend cap: neither a model failure nor an infrastructure one
+        episode["outcome"] = "budget_stop"
     reward = _verify(task, episode, tdir) if verified else 0.0
 
     # artifacts: video + observation images the agent saw
@@ -402,7 +519,7 @@ def run_trial(
     for f in sorted((ws / "observations").glob("*.png")):
         (tdir / "artifacts" / "observations").mkdir(exist_ok=True)
         shutil.copy(f, tdir / "artifacts" / "observations" / f.name)
-    if harness == "mini-swe-agent-glm" and (ws / ".robouse" / "mini_traj.json").exists():
+    if harness.startswith("mini-swe-agent") and (ws / ".robouse" / "mini_traj.json").exists():
         shutil.copy(ws / ".robouse" / "mini_traj.json", tdir / "agent" / "mini_traj.json")
 
     try:
@@ -422,7 +539,13 @@ def run_trial(
         # run was interrupted. `run-many --resume` reruns error and cancelled trials
         "status": "cancelled" if interrupted else ("error" if exc else "completed"),
         "source": task.metadata.get("source_benchmark"),
-        "agent_info": {"name": harness, "model_info": {"name": (launch.notes.get("model") if launch else model)}},
+        "agent_info": {
+            "name": harness,
+            "model_info": {
+                "name": (launch.notes.get("model_id") or launch.notes.get("model") if launch else model),
+                "provider": launch.notes.get("provider") if launch else None,
+            },
+        },
         "verifier_result": {"rewards": {"reward": reward}},
         "episode": episode,
         "agent_return_code": agent_rc,
@@ -433,6 +556,8 @@ def run_trial(
         "wall_time_s": round(time.time() - t0, 1),
         "embodiment_mode": episode.get("embodiment_mode", "sim"),
         "cost": cost,
+        "image_input": plan["image_input"],
+        "budget_stop": budget_stop,
     }
     if launch and isinstance(launch.helper, dict):
         res["proxy_stats"] = launch.helper

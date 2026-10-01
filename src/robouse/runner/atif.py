@@ -3,7 +3,7 @@
 
 Inputs (all optional; missing or malformed files degrade to fewer steps, never to an exception):
   agent/stdout.jsonl       Claude Code stream-json, `codex exec --json` events, or plain text
-  agent/mini_traj.json     mini-swe-agent trajectory (mini-swe-agent-glm)
+  agent/mini_traj.json     mini-swe-agent trajectory
   episode/trace.jsonl      every robo request the episode server handled: {t, steps, req, resp}
   episode/frames.jsonl     one line per video frame: {i, t, step}; the video plays them at FPS
   episode/result.json      outcome, agent_text, wall_time_s
@@ -51,6 +51,7 @@ DEFAULT_MODELS = {
     "claude-code-glm": "zai-org/GLM-5.3",
     "codex-glm": "zai-org/GLM-5.3",
     "mini-swe-agent-glm": "zai-org/GLM-5.3",
+    "mini-swe-agent": "baseten/zai-org/GLM-5.3",
     "oracle": "scripted",
     "noop": "none",
 }

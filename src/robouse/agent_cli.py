@@ -114,12 +114,6 @@ def main(argv: list[str] | None = None) -> int:
         if cmd == "observe":
             args = rest
             cam = opt("--camera", None, str)
-            if os.environ.get("ROBOUSE_TEXT_ONLY") and ("--image" in args or cam):
-                print(
-                    "note: this harness's model cannot read images, so --image and --camera are ignored",
-                    file=sys.stderr,
-                )
-                return _print(_send({"op": "observe", "image": False, "camera": None}), as_json)
             return _print(_send({"op": "observe", "image": "--image" in args, "camera": cam}), as_json)
         if cmd == "act":
             args = rest

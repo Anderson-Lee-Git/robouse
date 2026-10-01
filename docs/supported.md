@@ -8,7 +8,7 @@ What Robo Use 0.1.1 supports, and how each item was tested. "Docs check": run fr
 |---|---|---|
 | `claude-sonnet-5` | `claude-code` | docs check: the [Quickstart](quickstart.md) trial |
 | `gpt-6-astra` | `codex` | v1 runs: 222 trials |
-| `zai-org/GLM-5.3` on Baseten | `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` | v1 runs: 221, 122 and 222 trials |
+| `baseten/zai-org/GLM-5.3` | `claude-code`, `codex`, `mini-swe-agent` | v1 runs: 221, 122 and 222 trials (run under the earlier names `claude-code-glm`, `codex-glm` and `mini-swe-agent-glm`) |
 | `allenai/MolmoAct2-LIBERO-LeRobot` | `molmoact2` | v1 runs: 30 trials; needs a GPU policy server |
 | VLA presets `openpi/pi05_libero`, `lerobot/groot_n1.7_libero`, `openpi/pi0_libero`, `lerobot/evo1_libero`, `lerobot/vla_jepa_libero`, `lerobot/smolvla_libero`, `lerobot/pi05_libero`, `lerobot/pi0fast_libero`, `lerobot/pi0_libero` | `vla` | GPU runs on the 40 LIBERO tasks: 38, 38, 36, 40, 38, 26, 37, 32 (of 39 scored) and 30 ([VLA policies](vla.md)); need a GPU policy server |
 
@@ -21,7 +21,7 @@ Other models work wherever the harness accepts them through `--model`; they were
 | `oracle`, `noop` | docs check: 392 of 392 reference solutions score 1, 392 of 392 no-op runs score 0 |
 | `claude-code` | docs check (Quickstart trial, with `CLAUDE_CODE_OAUTH_TOKEN`); v1 runs |
 | `codex` | v1 runs; command line checked against Codex 0.155.1, not re-run for these docs |
-| `claude-code-glm`, `codex-glm`, `mini-swe-agent-glm` | v1 runs |
+| `mini-swe-agent`; `claude-code` and `codex` with a provider-prefixed model (through the model gateway) | v1 runs, under the earlier names `claude-code-glm`, `codex-glm` and `mini-swe-agent-glm` |
 | `molmoact2` | v1 runs on LIBERO; needs a GPU policy server |
 
 What each needs: [Harnesses](harnesses.md).
