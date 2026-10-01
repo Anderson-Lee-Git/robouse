@@ -55,6 +55,7 @@ import argparse
 import html
 import importlib.util
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -344,6 +345,11 @@ def collect(audit_mod, prefixes: tuple[str, ...]) -> tuple[list[dict], dict]:
                 "image_input": a.get("image_input"), "budget": a.get("budget_stop"),
                 "started": res.get("started_at") or cfg.get("started_at") or "", "finished": res.get("finished_at") or "",
             }
+            # a VLA policy's runner calls done when the step budget runs out ("vla: step budget reached"): the episode
+            # ended on its budget, not because anyone said done
+            if (HM[t["hm"]].get("kind") == "vla" and t["outcome"] == "done" and t["steps_used"] is not None and t["max_steps"]
+                    and t["steps_used"] >= t["max_steps"] - 1):
+                t["outcome"] = "budget_exhausted"
             trials.append(t)
             jinfo["trials"] += 1
             jinfo["hm"] = t["hm"]
@@ -443,12 +449,14 @@ def result_note(t: dict) -> str:
         return "Run stopped"
     if st == "budget":
         return budget_text(t)
-    return "" if st == "ok" else outcome_text(t["outcome"])
+    return "" if st == "ok" else outcome_text(t["outcome"], HM[t["hm"]].get("kind") or "agent")
 
 
-def outcome_text(code: str | None) -> str:
-    """The runner's outcome code as words ("success_reached" -> "Goal reached"); the code stays in the trial's JSON."""
-    return OUTCOME_TEXT.get(code or "", (code or "").replace("_", " ").capitalize())
+def outcome_text(code: str | None, kind: str = "agent") -> str:
+    """The runner's outcome code as words ("success_reached" -> "Goal reached"); the code stays in the trial's JSON. A VLA
+    policy is never called an agent."""
+    text = OUTCOME_TEXT.get(code or "", (code or "").replace("_", " ").capitalize())
+    return re.sub(r"^Agent\b", "Policy", text) if kind == "vla" else text
 
 
 STATUS_TEXT = {"partial": "Stopped", "infra": "Infra failure", "ok": "Solved", "no": "Not solved", "budget": "Stopped at budget"}
@@ -615,7 +623,7 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
     withheld = t["withheld"]
     out = {
         "id": t["trial"], "task": t["task"], "title": t["title"], "suite": t["suite"], "hm": t["hm"], "pair": HM[t["hm"]]["key"], "label": plab(t["hm"]), "model_label": HM[t["hm"]].get("model_label") or "",
-        "harness_label": HM[t["hm"]].get("harness_label") or "", "job": t["job"], "seed": t.get("seed"),
+        "harness_label": HM[t["hm"]].get("harness_label") or "", "kind": HM[t["hm"]].get("kind") or "agent", "job": t["job"], "seed": t.get("seed"),
         "status": status(t), "counted": t["counted"], "others": t["others"], "reward": t["reward"], "outcome": t["outcome"],
         "image_input": t.get("image_input"), "spend_cap_usd": t["cfg"].get("spend_cap_usd"),
         "budget_stop": t.get("budget"), "earlier_condition": bool(t.get("earlier_condition")),
@@ -1008,6 +1016,21 @@ def fnum(x) -> str:
         return ""
 
 
+def pct_key(x: float) -> float:
+    """The whole percent a share (0 to 1) reads as: rounded half up (37 of 40 is 93); a share above 0 that would read 0
+    is 0.5 ("<1%"), one below 1 that would read 100 is 99.5 (">99%"). The one rule on every robouse.ai page: roboharm
+    tools/build_hub.py pct_key and /ui.js UI.pctKey are the same (the share to six decimals, as the hub's JSON has it)."""
+    v = round(x, 6)
+    p = math.floor(v * 100 + 0.5 + 1e-9)  # the epsilon keeps a binary 92.4999… that is 92.5 from rounding down
+    return 0.5 if p == 0 and v > 0 else 99.5 if p == 100 and v < 1 else p
+
+
+def pct(x: float) -> str:
+    """A share as the site shows it: "93%", "<1%", ">99%" (pct_key)."""
+    k = pct_key(x)
+    return "<1%" if k == 0.5 else ">99%" if k == 99.5 else f"{k}%"
+
+
 def freward(r) -> str:
     try:
         return f"{float(r):.1f}"
@@ -1016,6 +1039,7 @@ def freward(r) -> str:
 
 
 NOT_RECORDED = '<span class="vh">not recorded</span>'  # a blank cell that a screen reader still explains
+NOT_SCORED = '<span class="nsc">not scored</span>'  # /runs/: a run whose trials were all stopped or failed
 
 
 def steps_html(t: dict) -> str:
@@ -1175,7 +1199,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     st = status(t)
     label = plab(t["hm"])
     # the badge says solved or not; the outcome is shown when it gives the reason, the reward when it is not plainly 0 or 1
-    facts = [("Outcome", esc(budget_text(t) if st == "budget" else outcome_text(t["outcome"])))] if st not in ("ok", "infra") and t["outcome"] else []
+    facts = [("Outcome", esc(budget_text(t) if st == "budget" else outcome_text(t["outcome"], HM[t["hm"]].get("kind") or "agent")))] if st not in ("ok", "infra") and t["outcome"] else []
     if st == "infra" and t.get("infra_cause"):
         facts = [("Why", esc(t["infra_cause"]["text"].rstrip(".")))]
     try:
@@ -1196,7 +1220,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} controls muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls(noimg)}' if video
            else "")  # no recording: no player box at all (the stage gives the tabs the full width)
     tabs = [("recording", "Recording", ""), ("trajectory", "Trajectory", f" <span class=\"num\">{n_steps}</span>" if n_steps else ""), ("verdict", "Verdict", ""),
-            ("run", "Timing &amp; tokens", ""), ("files", "Files", "")]
+            ("run", "Timing" if HM[t["hm"]].get("kind") == "vla" else "Timing &amp; tokens", ""), ("files", "Files", "")]  # a policy has no tokens
     never_ran = st == "infra" and not video and not n_steps and not t["steps_used"]
     why = (t.get("infra_cause") or {}).get("text", "") if never_ran else ""
     # nothing was recorded: the header and one sentence why; no facts, tabs or empty boxes
@@ -1258,8 +1282,8 @@ def build_runs(runs: dict) -> str:
                     f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, False)}</a>{" " + noimg_tag() if r["noimg"] else ""}</th>'
                     f'<td class="sus" data-v="{esc(r["ds"])}">{ds_cell(r["ds"])}{tag}</td>'
                     f'<td class="muted num" data-v="{esc(r["start"])}">{esc(fmt_date(r["start"]))}{state}</td>'
-                    f'<td class="n num" data-v="{len(r["trials"])}">{len(r["trials"])}</td>'
-                    f'<td class="n num" data-v="{rate:.4f}">{f"{rate * 100:.0f}%" if rate >= 0 else "·"}</td></tr>')
+                    f'<td class="n num" data-v="{r["scored"]}">{r["scored"]}</td>'
+                    f'<td class="n num" data-v="{rate:.4f}">{pct(rate) if rate >= 0 else NOT_SCORED}</td></tr>')
     idxs = sorted({r["hm"] for r in runs.values()})
     harn = sorted({(hslug(i), HM[i].get("harness_label") or HM[i]["harness"]) for i in idxs}, key=lambda x: x[1].lower())
     dss = sorted({r["ds"] for r in runs.values()})
@@ -1274,7 +1298,7 @@ def build_runs(runs: dict) -> str:
 {ctrl}
 <div class="scroll tbl"><table class="list runs">
   <caption class="vh">Main runs first, newest first; zero-shot probes after them. Sort by any column.</caption>
-  <thead><tr>{th_sort('Model<span class="hh"> · harness</span>', "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort("Trials", "num", "n")}{th_sort('<span class="sl-l">Solve rate</span><span class="sl-s">Solved</span>', "num", "n")}</tr></thead>
+  <thead><tr>{th_sort('Model<span class="hh"> · harness</span>', "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort('<span class="sl-l">Scored trials</span><span class="sl-s">Scored</span>', "num", "n", title="Trials that count toward the solve rate; the run page lists every trial")}{th_sort('<span class="sl-l">Solve rate</span><span class="sl-s">Solved</span>', "num", "n")}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("runs", "Clear the search or the filters.")}
@@ -1297,6 +1321,7 @@ def build_run(r: dict) -> str:
     # a column most of whose rows have no value (trials that never ran) is left out; a single missing value is blank
     show_steps = sum(t["steps_used"] is not None for t in r["trials"]) * 2 > len(r["trials"])
     show_time = sum(t["wall"] is not None for t in r["trials"]) * 2 > len(r["trials"])
+    show_oc = any(result_note(t) for t in r["trials"])  # every trial solved: no Outcome column of blanks
     # the counted trial of each task first; an earlier trial of the same task says so, with its start time
     for t in sorted(r["trials"], key=lambda t: (t["title"], t["task"], not t["counted"], str(t.get("seed")), t["started"] or "")):
         st = status(t)
@@ -1308,7 +1333,7 @@ def build_run(r: dict) -> str:
         rows.append(f'<tr class="{"" if t["counted"] else "dim"}" data-outcome="{st}" data-counted="{int(t["counted"])}" data-q="{esc((t["task"] + " " + t["title"]).lower())}">'
                     f'<th scope="row" data-v="{esc(t["title"])}"><a class="rtk" href="/runs/t/{esc(t["trial"])}/">{title_html(t["title"])}</a>{seed}{f'<span class="oc2">{esc(result_note(t))}</span>' if result_note(t) else ""}</th>'
                     f'<td data-v="{ST_RANK[st]}"><span class="badge {st}">{STATUS_TEXT[st]}</span>{"" if t["counted"] else ' <span class="muted rnc">not counted</span>'}</td>'
-                    f'<td class="oc">{esc(result_note(t))}</td>'
+                    + (f'<td class="oc">{esc(result_note(t))}</td>' if show_oc else "")
                     + (f'<td class="n num stc" data-v="{num_attr(t["steps_used"])}">{steps_html(t)}</td>' if show_steps else "")
                     + (f'<td class="n num" data-v="{num_attr(t["wall"])}">{esc(fmt_s(t["wall"])) if t["wall"] is not None else NOT_RECORDED}</td>' if show_time else "") + "</tr>")
     states = {status(t) for t in r["trials"]}
@@ -1327,7 +1352,7 @@ def build_run(r: dict) -> str:
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
 {ctrl}
 <div class="scroll tbl"><table class="list rt">
-  <thead><tr>{th_sort("Task", "text", "tcol")}{th_sort("Result", "num")}{th_sort("Outcome", "text", "oc")}{th_sort("Steps", "num", "n stc") if show_steps else ""}{th_sort("Time", "num", "n") if show_time else ""}</tr></thead>
+  <thead><tr>{th_sort("Task", "text", "tcol")}{th_sort("Result", "num")}{th_sort("Outcome", "text", "oc") if show_oc else ""}{th_sort("Steps", "num", "n stc") if show_steps else ""}{th_sort("Time", "num", "n") if show_time else ""}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("trials", "Clear the search or the filter.")}
