@@ -59,8 +59,18 @@ class Gateway:
 
 
 def summarize(log: Path) -> dict:
-    out = {"requests": 0, "images_in": 0, "images_removed": 0, "upstream_calls": 0, "upstream_image_parts": 0,
-           "upstream_data_uris": 0, "failures": 0, "refused_over_cap": 0, "spent_usd": 0.0}
+    out = {
+        "requests": 0,
+        "images_in": 0,
+        "images_removed": 0,
+        "upstream_calls": 0,
+        "upstream_image_parts": 0,
+        "upstream_data_uris": 0,
+        "failures": 0,
+        "refused_over_cap": 0,
+        "spent_usd": 0.0,
+        "images_moved": 0,
+    }
     if not log.exists():
         return out
     for line in log.read_text().splitlines():
@@ -69,6 +79,7 @@ def summarize(log: Path) -> dict:
             out["requests"] += 1
             out["images_in"] += r["images_in"]
             out["images_removed"] += r["images_removed"]
+            out["images_moved"] += r.get("images_moved", 0)
         elif r["event"] == "upstream":
             out["upstream_calls"] += 1
             out["upstream_image_parts"] += r["image_parts"]
@@ -128,6 +139,7 @@ def start(
     images: bool,
     protocol: str | None = None,
     spend_cap_usd: float = 0.0,
+    move_tool_images: bool = False,
     timeout: float = 90,
 ) -> Gateway:
     import yaml
@@ -142,7 +154,10 @@ def start(
     conf = litellm_proxy_config(route, master_key=key, callback_module="gateway_hook")
     # a provider's rate limit (HTTP 429) is shared by everyone on the account: the gateway waits and retries (LiteLLM's
     # backoff, honouring Retry-After) instead of passing it to the harness, whose own few retries end the trial
-    conf.setdefault("router_settings", {})["retry_policy"] = {"RateLimitErrorRetries": 8, "InternalServerErrorRetries": 2}
+    conf.setdefault("router_settings", {})["retry_policy"] = {
+        "RateLimitErrorRetries": 8,
+        "InternalServerErrorRetries": 2,
+    }
     d = Path(run_dir) / "gateway"
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(HOOK, d / "gateway_hook.py")
@@ -164,6 +179,7 @@ def start(
         "ROBOUSE_GATEWAY_SPEND_CAP": str(spend_cap_usd),
         "ROBOUSE_GATEWAY_STOP_FILE": str(d / STOP_FILE),
         "ROBOUSE_GATEWAY_PRICE": json.dumps(price or {}),
+        "ROBOUSE_GATEWAY_MOVE_TOOL_IMAGES": "1" if move_tool_images else "0",
         "PYTHONPATH": str(d),
         **({"ROBOUSE_GATEWAY_BEARER_ENV": cfg.auth_env} if route.upstream_model.startswith("anthropic/") else {}),
         "DOCS_URL": "",
@@ -172,7 +188,11 @@ def start(
     log = open(d / "proxy.log", "w")  # noqa: SIM115 - the child keeps its own handle
     proc = subprocess.Popen(
         [exe, "--config", str(d / "config.yaml"), "--host", "127.0.0.1", "--port", str(port)],
-        env=penv, stdout=log, stderr=subprocess.STDOUT, cwd=d, start_new_session=True,
+        env=penv,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        cwd=d,
+        start_new_session=True,
     )
     url = f"http://127.0.0.1:{port}"
     deadline = time.time() + timeout
@@ -187,6 +207,17 @@ def start(
     else:
         proc.kill()
         raise TimeoutError("model gateway did not start")
-    return Gateway(url, key, route.model_alias, f"{route.model_alias}-responses-bridge", proc, d,
-                   {"image_cap": image_cap(ref, images), "route": route.upstream_model,
-                    "spend_cap_usd": spend_cap_usd or None})
+    return Gateway(
+        url,
+        key,
+        route.model_alias,
+        f"{route.model_alias}-responses-bridge",
+        proc,
+        d,
+        {
+            "image_cap": image_cap(ref, images),
+            "route": route.upstream_model,
+            "spend_cap_usd": spend_cap_usd or None,
+            "tool_images_moved_to_user_message": move_tool_images,
+        },
+    )

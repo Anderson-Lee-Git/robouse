@@ -68,14 +68,19 @@ class Stub(BaseHTTPRequestHandler):
     bodies: list = []
     usage = {"prompt_tokens": 1000, "completion_tokens": 10, "total_tokens": 1010}
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         Stub.bodies.append(body.decode())
-        out = json.dumps({
-            "id": "stub", "object": "chat.completion", "created": 0, "model": "stub/text-model",
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
-            "usage": Stub.usage,
-        }).encode()
+        out = json.dumps(
+            {
+                "id": "stub",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "stub/text-model",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+                "usage": Stub.usage,
+            }
+        ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(out)))
@@ -95,8 +100,12 @@ def stub_provider(tmp_path, monkeypatch):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_address[1]}/v1"
     entry = {
-        "name": "stubprov", "base_url": url, "api_protocol": "openai-completions", "auth_type": "api_key",
-        "auth_env": "STUBPROV_API_KEY", "endpoints": {"openai-completions": url},
+        "name": "stubprov",
+        "base_url": url,
+        "api_protocol": "openai-completions",
+        "auth_type": "api_key",
+        "auth_env": "STUBPROV_API_KEY",
+        "endpoints": {"openai-completions": url},
         "models": [{"id": "stub/text-model", "name": "Stub", "input": ["text"]}],
     }
     monkeypatch.setitem(models.PENDING_PROVIDERS, "stubprov", entry)

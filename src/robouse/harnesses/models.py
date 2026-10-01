@@ -53,7 +53,13 @@ PENDING_PROVIDERS: dict[str, dict] = {
         },
         "models": [
             {"id": "zai-org/GLM-5.3", "name": "GLM-5.3", "reasoning": True, "input": ["text", "image"], "maxImages": 8},
-            {"id": "moonshotai/Kimi-K3", "name": "Kimi K3", "reasoning": True, "input": ["text", "image"], "maxImages": 8},
+            {
+                "id": "moonshotai/Kimi-K3",
+                "name": "Kimi K3",
+                "reasoning": True,
+                "input": ["text", "image"],
+                "maxImages": 8,
+            },
         ],
     }
 }

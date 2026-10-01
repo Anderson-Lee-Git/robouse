@@ -78,6 +78,47 @@ def apply_cap(body: dict, cap: int) -> tuple[int, int]:
     return len(refs), k
 
 
+NOTE_MOVED = "[the image this tool returned follows in the next message]"
+
+
+def move_tool_images(body: dict) -> int:
+    """Responses API, native route: Baseten's Responses endpoint rejects an image inside a tool result
+    (function_call_output) but takes one in a user message. Each tool result's images move into a user message right
+    after it, and the tool result says so. The input list is changed in place (LiteLLM may hold it twice)."""
+    items = body.get("input")
+    if not isinstance(items, list):
+        return 0
+    out, moved = [], 0
+    for it in items:
+        out.append(it)
+        if not (
+            isinstance(it, dict) and it.get("type") == "function_call_output" and isinstance(it.get("output"), list)
+        ):
+            continue
+        imgs = [p for p in it["output"] if isinstance(p, dict) and p.get("type") == "input_image"]
+        if not imgs:
+            continue
+        it["output"] = [p for p in it["output"] if p not in imgs] + [{"type": "input_text", "text": NOTE_MOVED}]
+        intro = {"type": "input_text", "text": f"The image returned by tool call {it.get('call_id', '')}:"}
+        out.append({"type": "message", "role": "user", "content": [intro, *imgs]})
+        moved += len(imgs)
+    if moved:
+        items[:] = out
+    return moved
+
+
+def _dump(name: str, obj) -> None:
+    """Debugging only (ROBOUSE_GATEWAY_DUMP=<folder>): the request bodies, which hold the trial's content. Never on
+    for published runs. Headers and keys are left out."""
+    folder = os.environ.get("ROBOUSE_GATEWAY_DUMP")
+    if not folder or not isinstance(obj, dict):
+        return
+    drop = ("metadata", "proxy_server_request", "secret_fields", "headers", "extra_headers", "api_key", "user_api_key")
+    keep = {k: v for k, v in obj.items() if not k.startswith(("litellm_", "user_api_key")) and k not in drop}
+    with open(os.path.join(folder, f"{name}.jsonl"), "a") as f:
+        f.write(json.dumps({"t": round(time.time(), 3), **keep}, default=str) + "\n")
+
+
 def _chat_compatible_tools(tools: list) -> tuple[list, list]:
     """Tools a chat-completions backend accepts, for a Responses request bridged to chat completions. Chat completions
     takes only `function` tools; Codex also sends `namespace` groups (function tools nested under a name), which are
@@ -113,7 +154,9 @@ def usage_cost(usage: dict, price: dict) -> float:
     cached = int((details or {}).get("cached_tokens") or usage.get("cache_read_input_tokens") or 0)
     cached = min(cached, prompt)
     inp = float(price.get("input", 0))
-    return ((prompt - cached) * inp + cached * float(price.get("cached_input", inp)) + out * float(price.get("output", 0))) / 1e6
+    return (
+        (prompt - cached) * inp + cached * float(price.get("cached_input", inp)) + out * float(price.get("output", 0))
+    ) / 1e6
 
 
 class RobouseGateway(CustomLogger):
@@ -123,6 +166,7 @@ class RobouseGateway(CustomLogger):
         self.spend_cap = float(os.environ.get("ROBOUSE_GATEWAY_SPEND_CAP", "0") or 0)
         self.price = json.loads(os.environ.get("ROBOUSE_GATEWAY_PRICE") or "{}")
         self.stop_file = os.environ.get("ROBOUSE_GATEWAY_STOP_FILE", "")
+        self.move_tool_images = os.environ.get("ROBOUSE_GATEWAY_MOVE_TOOL_IMAGES") == "1"
         self.spent = 0.0
 
     def over_cap(self) -> bool:
@@ -143,27 +187,51 @@ class RobouseGateway(CustomLogger):
                 status_code=402,
                 detail=f"spend cap reached: this trial's model spend is ${self.spent:.2f} of its ${self.spend_cap:g} cap",
             )
+        _dump("in", data)
         n, k = apply_cap(data, self.cap)
+        moved = move_tool_images(data) if self.move_tool_images else 0
         bearer = os.environ.get("ROBOUSE_GATEWAY_BEARER_ENV")
         if bearer and os.environ.get(bearer):  # providers whose Anthropic endpoint wants a Bearer token, not x-api-key
-            data["extra_headers"] = {**(data.get("extra_headers") or {}), "Authorization": f"Bearer {os.environ[bearer]}"}
+            data["extra_headers"] = {
+                **(data.get("extra_headers") or {}),
+                "Authorization": f"Bearer {os.environ[bearer]}",
+            }
         tools = data.get("tools")
         dropped = []
         if isinstance(tools, list) and str(data.get("model", "")).endswith("-responses-bridge"):
             data["tools"], dropped = _chat_compatible_tools(tools)
-        _log({"event": "request", "call_type": str(call_type), "images_in": n, "images_removed": k,
-              "tool_types": sorted({str(t.get("type")) for t in tools if isinstance(t, dict)}) if isinstance(tools, list) else [],
-              "tools_dropped": dropped,
-              # names and keys only (no descriptions or schemas) of tools that are not plain functions
-              "tool_shapes": [{"type": t.get("type"), "name": t.get("name"), "keys": sorted(t),
-                               "inner": [(i.get("type"), i.get("name")) for i in t.get("tools", []) if isinstance(i, dict)]}
-                              for t in tools if isinstance(t, dict) and t.get("type") != "function"]
-              if isinstance(tools, list) else []})
+        _log(
+            {
+                "event": "request",
+                "call_type": str(call_type),
+                "images_in": n,
+                "images_removed": k,
+                "images_moved": moved,
+                "tool_types": sorted({str(t.get("type")) for t in tools if isinstance(t, dict)})
+                if isinstance(tools, list)
+                else [],
+                "tools_dropped": dropped,
+                # names and keys only (no descriptions or schemas) of tools that are not plain functions
+                "tool_shapes": [
+                    {
+                        "type": t.get("type"),
+                        "name": t.get("name"),
+                        "keys": sorted(t),
+                        "inner": [(i.get("type"), i.get("name")) for i in t.get("tools", []) if isinstance(i, dict)],
+                    }
+                    for t in tools
+                    if isinstance(t, dict) and t.get("type") != "function"
+                ]
+                if isinstance(tools, list)
+                else [],
+            }
+        )
         return data
 
     def log_pre_api_call(self, model, messages, kwargs):
         payload = {"messages": messages, "input": (kwargs.get("optional_params") or {}).get("input")}
         extra = (kwargs.get("additional_args") or {}).get("complete_input_dict")
+        _dump("upstream", extra if isinstance(extra, dict) else {"messages": messages})
         _log(
             {
                 "event": "upstream",

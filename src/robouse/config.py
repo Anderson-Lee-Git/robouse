@@ -39,6 +39,13 @@ ENV: dict[str, str] = {
     "ROBOUSE_GATEWAY_SPEND_CAP": "gateway process only: the trial's spend cap in USD (0: none)",
     "ROBOUSE_GATEWAY_PRICE": "gateway process only: the model's price, USD per 1M tokens (JSON, from pricing.json)",
     "ROBOUSE_GATEWAY_STOP_FILE": "gateway process only: the file it writes when the spend cap is reached",
+    "ROBOUSE_GATEWAY_CODEX_ROUTE": "how Codex reaches a provider-prefixed model: bridge (the Responses API bridged to "
+    "chat completions, the default) or native (the provider's own Responses endpoint; the gateway moves images out of "
+    "tool results into the next user message)",
+    "ROBOUSE_GATEWAY_MOVE_TOOL_IMAGES": "gateway process only: 1 moves images out of Responses tool results into the "
+    "next user message (the native Codex route)",
+    "ROBOUSE_GATEWAY_DUMP": "debugging only: a folder where the gateway writes every request body it receives and "
+    "sends (trial content; never for published runs)",
     # local runner sandbox
     "ROBOUSE_SANDBOX": "0 disables the macOS Seatbelt sandbox around agent processes (default 1)",
     "ROBOUSE_SANDBOX_DENY": "extra colon-separated paths agents may neither read nor write",

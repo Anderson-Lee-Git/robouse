@@ -32,8 +32,14 @@ def test_old_and_new_trials_of_a_pair_have_one_canonical_pair() -> None:
     assert models.canonical("codex-glm", "zai-org/GLM-5.3") == glm  # published folders
     assert models.canonical("codex-glm", "") == glm
     assert models.canonical("codex", "baseten/zai-org/GLM-5.3") == glm  # new folders
-    assert models.canonical("mini-swe-agent-glm", "moonshotai/Kimi-K3") == ("mini-swe-agent", "baseten/moonshotai/Kimi-K3")
-    assert models.canonical("codex", "openai/gpt-6-astra") == ("codex", "gpt-6-astra")  # first party: bare, as published
+    assert models.canonical("mini-swe-agent-glm", "moonshotai/Kimi-K3") == (
+        "mini-swe-agent",
+        "baseten/moonshotai/Kimi-K3",
+    )
+    assert models.canonical("codex", "openai/gpt-6-astra") == (
+        "codex",
+        "gpt-6-astra",
+    )  # first party: bare, as published
     assert models.canonical("claude-code", "claude-opus-5-5") == ("claude-code", "claude-opus-5-5")
     assert models.canonical("oracle", "") == ("oracle", "")
 
@@ -92,16 +98,46 @@ def test_gateway_hook_strips_every_image_for_a_text_only_model_in_every_protocol
 
     png = "data:image/png;base64,iVBORw0KGgo="
     bodies = {
-        "chat": {"messages": [{"role": "user", "content": [{"type": "text", "text": "q"}, {"type": "image_url", "image_url": {"url": png}}]}]},
-        "messages": {"messages": [{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "1", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}}]}]}]},
-        "responses": {"input": [{"type": "function_call_output", "call_id": "1", "output": [{"type": "input_image", "image_url": png}]}]},
+        "chat": {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "q"}, {"type": "image_url", "image_url": {"url": png}}],
+                }
+            ]
+        },
+        "messages": {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "1",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
+        "responses": {
+            "input": [
+                {"type": "function_call_output", "call_id": "1", "output": [{"type": "input_image", "image_url": png}]}
+            ]
+        },
     }
     for name, body in bodies.items():
         body["alias"] = body.get("messages") or body.get("input")  # the same list twice, as LiteLLM passes it
         assert H.apply_cap(body, 0) == (1, 1), name
         assert H._image_refs(body, []) == [] and "data:image/" not in json.dumps(body), name
-    capped = {"messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": png}}]} for _ in range(9)]}
+    capped = {
+        "messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": png}}]} for _ in range(9)]
+    }
     assert H.apply_cap(capped, 8) == (9, 5) and len(H._image_refs(capped, [])) == 4  # batches of 5, as the old proxy
 
 
@@ -111,9 +147,15 @@ def test_gateway_flattens_codex_namespace_tools_for_chat_completions() -> None:
     from robouse.harnesses.providers import gateway_hook as H
 
     fn = {"type": "function", "name": "shell", "parameters": {}}
-    tools = [fn, {"type": "namespace", "name": "multi_agent_v1", "tools": [
-        {"type": "function", "name": "spawn", "parameters": {}}, {"type": "custom", "name": "odd"}]},
-        {"type": "web_search"}]
+    tools = [
+        fn,
+        {
+            "type": "namespace",
+            "name": "multi_agent_v1",
+            "tools": [{"type": "function", "name": "spawn", "parameters": {}}, {"type": "custom", "name": "odd"}],
+        },
+        {"type": "web_search"},
+    ]
     kept, dropped = H._chat_compatible_tools(tools)
     assert [t["name"] for t in kept] == ["shell", "spawn"] and all(t["type"] == "function" for t in kept)
     assert sorted(dropped) == ["odd", "web_search"]
@@ -125,6 +167,41 @@ def test_gateway_flattens_codex_namespace_tools_for_chat_completions() -> None:
     assert len(asyncio.run(hook.async_pre_call_hook(None, None, data, "acompletion"))["tools"]) == 3
 
 
+def test_native_route_moves_tool_result_images_into_a_user_message() -> None:
+    """Baseten's Responses endpoint rejects an image inside function_call_output; the native Codex route moves it into a
+    user message right after the tool result, which that endpoint takes."""
+    pytest.importorskip("litellm")
+    from robouse.harnesses.providers import gateway_hook as H
+
+    png = "data:image/png;base64,iVBORw0KGgo="
+    body = {
+        "input": [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "look"}]},
+            {"type": "function_call", "call_id": "c1", "name": "view_image", "arguments": "{}"},
+            {"type": "function_call_output", "call_id": "c1", "output": [{"type": "input_image", "image_url": png}]},
+            {"type": "function_call", "call_id": "c2", "name": "shell", "arguments": "{}"},
+            {"type": "function_call_output", "call_id": "c2", "output": "ok"},
+        ]
+    }
+    alias = body["input"]  # LiteLLM can hold the same list twice
+    assert H.move_tool_images(body) == 1 and body["input"] is alias
+    kinds = [(i.get("type"), i.get("role")) for i in body["input"]]
+    assert kinds == [
+        ("message", "user"),
+        ("function_call", None),
+        ("function_call_output", None),
+        ("message", "user"),
+        ("function_call", None),
+        ("function_call_output", None),
+    ]
+    tool_out = body["input"][2]["output"]
+    assert all(p["type"] != "input_image" for p in tool_out) and H.NOTE_MOVED in json.dumps(tool_out)
+    moved = body["input"][3]["content"]
+    assert moved[-1] == {"type": "input_image", "image_url": png} and "c1" in moved[0]["text"]
+    assert body["input"][5]["output"] == "ok"  # text results untouched
+    assert H.move_tool_images({"messages": []}) == 0  # not a Responses body
+
+
 def test_gateway_spend_cap_counts_usage_and_refuses_requests_past_the_cap(tmp_path, monkeypatch) -> None:
     pytest.importorskip("litellm")
     from fastapi import HTTPException
@@ -132,7 +209,11 @@ def test_gateway_spend_cap_counts_usage_and_refuses_requests_past_the_cap(tmp_pa
     from robouse.harnesses.providers import gateway_hook as H
 
     price = {"input": 1.40, "output": 4.40}
-    usage = {"prompt_tokens": 1_000_000, "completion_tokens": 100_000, "prompt_tokens_details": {"cached_tokens": 500_000}}
+    usage = {
+        "prompt_tokens": 1_000_000,
+        "completion_tokens": 100_000,
+        "prompt_tokens_details": {"cached_tokens": 500_000},
+    }
     assert H.usage_cost(usage, price) == pytest.approx(1.40 + 0.44)  # cached input at the input price by default
     assert H.usage_cost(usage, {**price, "cached_input": 0.14}) == pytest.approx(0.70 + 0.07 + 0.44)
     stop = tmp_path / "budget_stop.json"

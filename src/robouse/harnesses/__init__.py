@@ -98,7 +98,7 @@ def _noop(model, prompt, workspace, task, env) -> Launch:
 PRIVATE_ENV = ("_ROBOUSE_TRIAL_DIR", "_ROBOUSE_IMAGE_INPUT", "_ROBOUSE_SPEND_CAP_USD")  # runner to builder only
 
 
-def _gateway(ref, env: dict, protocol: str):
+def _gateway(ref, env: dict, protocol: str, responses_route: str = "bridge"):
     """Start this trial's model gateway (harnesses/gateway.py). The runner passes the trial folder, the image-input
     decision and the spend cap in private variables, removed here so the agent never sees them."""
     from . import gateway
@@ -106,12 +106,25 @@ def _gateway(ref, env: dict, protocol: str):
     run_dir = Path(env.pop("_ROBOUSE_TRIAL_DIR"))
     images = env.pop("_ROBOUSE_IMAGE_INPUT", "1") == "1"
     cap = float(env.pop("_ROBOUSE_SPEND_CAP_USD", "0") or 0)
-    return gateway.start(ref, run_dir, images=images, protocol=protocol, spend_cap_usd=cap)
+    return gateway.start(
+        ref,
+        run_dir,
+        images=images,
+        protocol=protocol,
+        spend_cap_usd=cap,
+        move_tool_images=protocol == "openai-responses" and responses_route == "native",
+    )
 
 
 def _gateway_launch(gw, ref, cmd: list[str], env: dict) -> Launch:
-    return Launch(cmd, env, helper=gw.stats, stop=gw.stop, stop_file=gw.stop_file,
-                  notes={"model": ref.bare, "model_id": ref.id, "provider": ref.provider})
+    return Launch(
+        cmd,
+        env,
+        helper=gw.stats,
+        stop=gw.stop,
+        stop_file=gw.stop_file,
+        notes={"model": ref.bare, "model_id": ref.id, "provider": ref.provider},
+    )
 
 
 def _via_gateway(harness: str, model: str) -> object | None:
@@ -151,19 +164,31 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
 
     if model and (ref := _via_gateway("codex", model)) is not None:
         home = credentials.clean_codex_home("# model provider: the trial's gateway, set on the command line\n")
-        gw = _gateway(ref, env, "openai-responses")
+        route = config.env("ROBOUSE_GATEWAY_CODEX_ROUTE", "bridge")
+        if route not in ("bridge", "native"):
+            raise ValueError(f"ROBOUSE_GATEWAY_CODEX_ROUTE must be bridge or native, not {route!r}")
+        gw = _gateway(ref, env, "openai-responses", responses_route=route)
         env["ROBOUSE_GATEWAY_KEY"] = gw.key
         env["ROBOUSE_GATEWAY_URL"] = gw.url  # also lets the macOS sandbox allow this local port
         env["CODEX_HOME"] = home
         cfg = [
-            "-c", 'model_providers.robouse.name="Robo Use gateway"',
-            "-c", f'model_providers.robouse.base_url="{gw.url}/v1"',
-            "-c", 'model_providers.robouse.env_key="ROBOUSE_GATEWAY_KEY"',
-            "-c", 'model_providers.robouse.wire_api="responses"',
-            "-c", 'model_provider="robouse"',
+            "-c",
+            'model_providers.robouse.name="Robo Use gateway"',
+            "-c",
+            f'model_providers.robouse.base_url="{gw.url}/v1"',
+            "-c",
+            'model_providers.robouse.env_key="ROBOUSE_GATEWAY_KEY"',
+            "-c",
+            'model_providers.robouse.wire_api="responses"',
+            "-c",
+            'model_provider="robouse"',
         ]
-        # the Responses-to-chat bridge: Baseten's own Responses endpoint rejects an image inside a tool result
-        return _gateway_launch(gw, ref, _codex_cmd(prompt, gw.responses_model, workspace, cfg), env)
+        # bridge: the Responses API bridged to chat completions. native: the provider's own Responses endpoint, with the
+        # gateway moving any image out of a tool result into the next user message (Baseten rejects it in a tool result)
+        model_name = gw.responses_model if route == "bridge" else gw.model
+        launch = _gateway_launch(gw, ref, _codex_cmd(prompt, model_name, workspace, cfg), env)
+        launch.notes["codex_route"] = route
+        return launch
     m = (model or "gpt-6-astra").removeprefix("openai/")
     key = os.environ.get("OPENAI_API_KEY", "")
     env["CODEX_HOME"] = credentials.clean_codex_home(api_key=key)
@@ -187,8 +212,19 @@ def _mini_swe_agent(model, prompt, workspace, task, env) -> Launch:
             "MSWEA_COST_TRACKING": "ignore_errors",
         }
     )
-    cmd = [exe, "-y", "--exit-immediately", "-l", "0", "-m", f"openai/{gw.model}", "-t", PROMPT_PREFIX + prompt,
-           "-o", str(workspace / ".robouse" / "mini_traj.json")]
+    cmd = [
+        exe,
+        "-y",
+        "--exit-immediately",
+        "-l",
+        "0",
+        "-m",
+        f"openai/{gw.model}",
+        "-t",
+        PROMPT_PREFIX + prompt,
+        "-o",
+        str(workspace / ".robouse" / "mini_traj.json"),
+    ]
     return _gateway_launch(gw, ref, cmd, env)
 
 

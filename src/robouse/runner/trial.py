@@ -178,7 +178,11 @@ def image_input_plan(harness: str, model: str) -> dict:
     if canon in models.NO_IMAGE_HARNESSES:
         plan.update(image_input=False, image_input_reason=f"{canon} passes no images to its model")
     elif accepts is not True:
-        why = "the model registry lists it as text-only" if accepts is False else "the model registry lists no image input"
+        why = (
+            "the model registry lists it as text-only"
+            if accepts is False
+            else "the model registry lists no image input"
+        )
         plan.update(image_input=False, image_input_reason=why)
     elif not config.flag("ROBOUSE_AGENT_IMAGES", default=True):
         plan.update(image_input=False, image_input_reason="images turned off for this run (ROBOUSE_AGENT_IMAGES=0)")
@@ -497,7 +501,8 @@ def run_trial(
     if timed_out and episode.get("outcome") == "gave_up":
         episode["outcome"] = "agent_timeout"
     if budget_stop and episode.get("outcome") in ("gave_up", "agent_timeout"):
-        episode["outcome"] = "budget_stop"  # stopped at the spend cap: neither a model failure nor an infrastructure one
+        # stopped at the spend cap: neither a model failure nor an infrastructure one
+        episode["outcome"] = "budget_stop"
     reward = _verify(task, episode, tdir) if verified else 0.0
 
     # artifacts: video + observation images the agent saw
