@@ -17,7 +17,7 @@
 
 /* the scale fixture's label (only on --synthetic builds) */
 .synth{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-4) var(--sp-12);margin:0 0 var(--sp-32);padding:var(--sp-10) var(--sp-14);border:1px dashed var(--warn);
-  border-radius:var(--r-md);background:color-mix(in srgb,var(--warn) 8%,transparent);font:400 var(--fs-meta)/1.5 var(--sans);color:var(--ink2)}
+  border-radius:var(--r-md);background:var(--press);font:400 var(--fs-meta)/1.5 var(--sans);color:var(--ink2)}
 .synth b{font:500 var(--fs-caption)/1.5 var(--mono);color:var(--warn);letter-spacing:.06em}
 
 /* title block, section labels, sub navigation (the headings and breadcrumbs are /prose.css) */
@@ -34,8 +34,8 @@ ul.notes{margin:var(--sp-16) 0 0;padding:0;list-style:none;max-width:860px;font:
 ul.notes li{margin:var(--sp-4) 0}
 ul.notes b{font-weight:500;color:var(--ink2)}
 .tag{display:inline-flex;align-items:center;height:20px;margin-left:var(--sp-8);padding:0 var(--sp-6);border:1px solid currentColor;border-radius:var(--r-xs);
-  font:500 var(--fs-micro)/1 var(--sans);color:var(--warn);vertical-align:3px;white-space:nowrap}
-i.run{display:inline-block;width:6px;height:6px;margin-left:var(--sp-6);border-radius:50%;background:var(--warn);vertical-align:2px}
+  font:500 var(--fs-micro)/1 var(--sans);color:var(--ink2);vertical-align:3px;white-space:nowrap}
+i.run{display:inline-block;width:6px;height:6px;margin-left:var(--sp-6);border-radius:50%;background:var(--ink2);vertical-align:2px}
 ul.notes i.run{margin:0 var(--sp-4) 0 0}
 
 /* ---------------------------------------------------------------- tables */
@@ -103,7 +103,7 @@ th[aria-sort="descending"] .si::after{content:"↓";opacity:1;color:var(--ink)}
 .g.ok{color:var(--ok-ink);background:color-mix(in srgb,var(--ok) 10%,transparent)}
 .g.some{color:var(--ink2);background:color-mix(in srgb,var(--ok) 6%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ok) 40%,transparent)}
 .g.no{color:var(--no-ink);background:color-mix(in srgb,var(--no) 9%,transparent)}
-.g.infra,.g.partial{color:var(--warn-ink);background:color-mix(in srgb,var(--warn) 10%,transparent);font-weight:500}
+.g.infra,.g.partial{color:var(--ink2);background:var(--press);font-weight:500}
 .g.none{color:var(--faint)}
 a.g:hover{box-shadow:inset 0 0 0 1px currentColor}
 a.g:active{box-shadow:inset 0 0 0 2px currentColor}
@@ -143,8 +143,8 @@ td.m a:focus-visible{outline-offset:0}
 td.m b{min-width:3ch;font:500 var(--fs-meta)/var(--ctl) var(--sans);color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
 td.m a span{min-width:6ch;font:400 var(--fs-micro)/var(--ctl) var(--mono);color:var(--ink2);text-align:left;font-variant-numeric:tabular-nums}
 td.m.e{font:400 var(--fs-micro)/1 var(--mono);color:var(--faint);background:transparent}
-td.m.e:not(.inf) a{display:inline-flex;align-items:center;height:18px;padding:0 var(--sp-6);border:1px solid color-mix(in srgb,var(--warn) 55%,transparent);border-radius:var(--r-xs);font-family:var(--sans)}
-td.m.e a{height:auto;margin:0;background:none;color:var(--warn-ink);font:500 var(--fs-micro)/1 var(--sans)}
+td.m.e:not(.inf) a{display:inline-flex;align-items:center;height:18px;padding:0 var(--sp-6);border:1px solid var(--line-strong);border-radius:var(--r-xs);font-family:var(--sans)}
+td.m.e a{height:auto;margin:0;background:none;color:var(--ink2);font:500 var(--fs-micro)/1 var(--sans)}
 td.m.e a:hover{box-shadow:none;border-color:currentColor}
 table.matrix tfoot tr.all > *{border-top:var(--border)}
 table.matrix tfoot tr.all th{font-weight:500}
@@ -184,11 +184,10 @@ dl.facts dd{overflow-wrap:break-word}
 .badge{display:inline-flex;align-items:center;height:var(--ctl-xs);padding:0 var(--sp-8);border-radius:var(--r-xs);font:500 var(--fs-caption)/1 var(--sans);white-space:nowrap}
 .badge.ok{color:var(--ok-ink);background:color-mix(in srgb,var(--ok) 10%,transparent)}
 .badge.no{color:var(--no-ink);background:color-mix(in srgb,var(--no) 9%,transparent)}
-.badge.infra,.badge.partial,.badge.some{color:var(--warn-ink);background:color-mix(in srgb,var(--warn) 10%,transparent)}
+.badge.infra,.badge.partial,.badge.some{color:var(--ink2);background:var(--press)}
 .badge.budget{color:var(--ink2);background:color-mix(in srgb,var(--muted) 12%,transparent)}
-.tag.noimg{color:var(--muted)}
 .state{font:500 var(--fs-meta)/1 var(--sans);color:var(--muted)}
-.state.running{color:var(--warn)}
+.state.running{color:var(--ink2)}
 .chip{display:inline-flex;align-items:center;height:var(--ctl-xs);padding:0 var(--sp-8);border:var(--hairline);border-radius:var(--r-pill);font:400 var(--fs-caption)/1 var(--sans);color:var(--ink2)}
 .chip.tag{margin:0;color:var(--muted);border-color:var(--line);vertical-align:0}
 .tags,.chips{display:flex;flex-wrap:wrap;gap:var(--sp-6)}
@@ -212,6 +211,7 @@ table.mdt td,table.mdt th{white-space:normal}
 .head.trial{margin-bottom:0}
 .who{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-8) var(--sp-10);margin:var(--sp-8) 0 0;font-size:var(--fs-small);color:var(--ink2)}
 .who .tag{margin-left:0;vertical-align:0}
+.who .noimg{margin:0}  /* "no image input" on trial pages and in Compare: the line's gap spaces it */
 .who .cmp{margin-left:auto}
 .who a.wl{border-radius:var(--r-xs);transition:color var(--t-fast)}
 .who a.wl:hover{color:var(--accent)}
@@ -283,7 +283,7 @@ p.meta.tabnote{margin:0 0 var(--sp-20)}
 .slist .a.msg{font-family:var(--sans);color:var(--ink2)}
 .slist .a.msg a{color:var(--ink2);text-decoration:underline;text-decoration-color:var(--link-line);text-underline-offset:2px}
 .slist .a.msg a:hover{color:var(--accent);text-decoration-color:currentColor}
-.slist .a.sys{color:var(--warn)}
+.slist .a.sys{color:var(--ink2)}
 .slist .x{font:400 var(--fs-micro)/1 var(--mono);color:var(--muted)}
 .slist .x.err{color:var(--no)}
 
@@ -298,9 +298,9 @@ p.meta.tabnote{margin:0 0 var(--sp-20)}
 .tile:active i{opacity:.85}
 .tile.cur{color:var(--ink)}
 .tile.cur i{box-shadow:inset 0 0 0 2px var(--accent)}
-.withheld{max-width:var(--measure);margin:0 0 var(--sp-16);padding:var(--sp-14) var(--sp-16);border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);border-radius:var(--r-md);
-  background:color-mix(in srgb,var(--warn) 5%,transparent);font:400 var(--fs-meta)/1.55 var(--sans);color:var(--ink2)}
-.withheld b{display:block;margin:0 0 var(--sp-4);font:500 var(--fs-small)/1.4 var(--sans);color:var(--warn-ink)}
+.withheld{max-width:var(--measure);margin:0 0 var(--sp-16);padding:var(--sp-14) var(--sp-16);border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--press);font:400 var(--fs-meta)/1.55 var(--sans);color:var(--ink2)}
+.withheld b{display:block;margin:0 0 var(--sp-4);font:500 var(--fs-small)/1.4 var(--sans);color:var(--ink2)}
 .withheld p{margin:0}
 
 /* trajectory */
@@ -316,7 +316,7 @@ ol.traj{margin:0;padding:0;list-style:none}
 .st.flash{background:var(--accent-soft)}
 .sh{display:flex;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-6);font:400 var(--fs-micro)/1.4 var(--mono);color:var(--muted)}
 .sh .src{font:500 var(--fs-caption)/1.4 var(--sans);color:var(--ink2)}
-.st.system .sh .src{color:var(--warn)}
+.st.system .sh .src{color:var(--ink2)}
 .sh .seek{margin-left:auto;height:var(--ctl-xs);padding:0 var(--sp-8);border:var(--hairline);border-radius:var(--r-xs);background:none;font:inherit;color:var(--accent);cursor:pointer;
   transition:border-color var(--t-fast),background var(--t-fast)}
 .sh .seek:hover{border-color:var(--accent);background:var(--accent-soft)}
@@ -339,11 +339,11 @@ details.res{margin:var(--sp-2) 0 var(--sp-6)}
 .sums{margin:0 0 var(--sp-8)}
 .card{min-width:0}
 .card.wide{grid-column:1/-1}
-.card h3{margin:0 0 var(--sp-10);font:500 var(--fs-meta)/1.3 var(--sans);color:var(--muted)}
+.card h2,.card h3{margin:0 0 var(--sp-10);font:500 var(--fs-meta)/1.3 var(--sans);color:var(--muted)}
 .card .big{margin:0 0 var(--sp-8);font:500 var(--fs-h4)/1.3 var(--serif)}
 .card .big.ok{color:var(--ok)}
 .card .big.no{color:var(--no)}
-.card .big.warn{color:var(--warn)}
+.card .big.warn{color:var(--ink2)}
 .card .txt{max-height:260px;overflow:auto;font-size:var(--fs-meta);color:var(--ink2)}
 .card.sum p{margin:0 0 var(--sp-8);font-size:var(--fs-small);color:var(--ink2)}
 .card.sum p.muted{color:var(--muted)}
@@ -361,8 +361,8 @@ details.res{margin:var(--sp-2) 0 var(--sp-6)}
 .stats dd{font-size:var(--fs-lede);font-weight:500}
 .stats dd small{margin-left:var(--sp-4);font-size:var(--fs-caption);font-weight:400;color:var(--muted)}
 .chart{margin:0 0 var(--sp-32)}
-.chart h3{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-4) var(--sp-16);margin:0 0 var(--sp-10);font:500 var(--fs-meta)/1.4 var(--sans);color:var(--ink2)}
-.chart h3 span{font-weight:400;color:var(--muted)}
+.chart h2{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-4) var(--sp-16);margin:0 0 var(--sp-10);font:500 var(--fs-meta)/1.4 var(--sans);color:var(--ink2)}
+.chart h2 span{font-weight:400;color:var(--muted)}
 .tl{display:flex;gap:1px;height:var(--sp-24);border-radius:var(--r-xs);overflow:hidden}
 .tl i{display:block;height:100%;min-width:1px;background:color-mix(in srgb,var(--accent) 55%,transparent);cursor:pointer;transition:opacity var(--t-fast)}
 .tl i:hover{opacity:.6}
@@ -456,6 +456,7 @@ td.rs [data-res]{flex-direction:column;align-items:flex-start;gap:var(--sp-4)}
 
 /* pairs: model first, harness second (the hub's order) */
 .ph{color:var(--muted);font-weight:400}
+/* "· VLA" is bound to the model name and the harness with no-break spaces (build_runs_site.phtml): the dot never starts or ends a line */
 thead th .pm,thead th .ph{display:block}
 thead th .ph{font-size:var(--fs-micro)}
 table.matrix thead th a:hover .pm{color:var(--accent)}
@@ -477,27 +478,34 @@ table.matrix thead th a:hover .pm{color:var(--accent)}
 /* optional trial groups (metrics, placement, operator, safety, cost, policy inference): sans labels, tabular mono values */
 .xgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-16);margin:var(--sp-16) 0 var(--sp-28)}
 .xg{min-width:0;padding:var(--sp-14) var(--sp-16);border:var(--hairline);border-radius:var(--r-lg)}
-.xg h3{margin:0 0 var(--sp-10);font:500 var(--fs-meta)/1.3 var(--sans);color:var(--muted)}
+.xg h2{margin:0 0 var(--sp-10);font:500 var(--fs-meta)/1.3 var(--sans);color:var(--muted)}
 .xg dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:var(--sp-6) var(--sp-16);margin:0}
 .xg dl div{display:contents}
 .xg dt{font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted)}
-.xg dd{margin:0;font:400 var(--fs-caption)/1.5 var(--mono);color:var(--ink);font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
+.xg dd{margin:0;font:400 var(--fs-caption)/1.5 var(--sans);color:var(--ink);font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
 .xg .xu{font-family:var(--sans);color:var(--muted)}
 .xn{margin:var(--sp-10) 0 0;font:400 var(--fs-caption)/1.5 var(--sans);color:var(--ink2)}
 .xl{margin:var(--sp-10) 0 0;padding:var(--sp-8) 0 0;list-style:none;border-top:var(--hairline)}
 .xl li{display:grid;grid-template-columns:52px 64px minmax(0,1fr);gap:var(--sp-8);padding:var(--sp-2) 0;font:400 var(--fs-caption)/1.5 var(--sans);color:var(--ink2)}
 .xl .num{font-family:var(--mono);color:var(--muted);text-align:right}
 .stats + .xgs{margin-top:0}
-.who .mode{display:inline-flex;align-items:center;height:var(--ctl-xs);padding:0 var(--sp-8);border:1px solid var(--warn);border-radius:var(--r-xs);font:500 var(--fs-caption)/1 var(--mono);color:var(--warn-ink)}
+.who .mode{display:inline-flex;align-items:center;height:var(--ctl-xs);padding:0 var(--sp-8);border:1px solid var(--line-strong);border-radius:var(--r-xs);font:500 var(--fs-caption)/1 var(--mono);color:var(--ink2)}
 
 /* /runs/: the run list fits the page at every width: names and datasets wrap, the numbers stay on one line */
 table.list.runs th[scope="row"],table.list.runs td.sus{white-space:normal}
 table.list.runs td.sus{min-width:0;max-width:none;overflow-wrap:anywhere}
 .rtag{display:inline-block;margin-left:var(--sp-6);padding:0 var(--sp-6);border:1px solid var(--line);border-radius:var(--r-xs);font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted);white-space:nowrap}
+/* "no image input": quiet text, no box, so a column of them reads cleanly (build_runs_site.noimg_tag) */
+.noimg{margin-left:var(--sp-6);font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted);white-space:nowrap}
+.sl-s{display:none}
+/* a run's title with its marks: the marks a little smaller than the serif heading's text */
+.rh1 .model-mark{width:.78em;height:.78em;vertical-align:-.04em}
+/* who made the model and whose weights ran (tools/models.json `provenance`), under a run's title */
+.head .prov{margin:var(--sp-6) 0 0;max-width:720px;font:400 var(--fs-small)/1.5 var(--sans);color:var(--muted)}
 table.list th:last-child .sb{margin-right:0}  /* the sort button's bleed must not widen the table past its box */
 @media (max-width:560px){table.list.runs th:nth-child(3),table.list.runs td:nth-child(3),table.list.runs th:nth-child(4),table.list.runs td:nth-child(4){display:none}}
-@media (max-width:560px){table.list.rt th:nth-child(3),table.list.rt td:nth-child(3),table.list.rt th:nth-child(5),table.list.rt td:nth-child(5){display:none}}
-@media (max-width:560px){.rtag{display:table;margin:var(--sp-2) 0 0}table.list.runs th,table.list.runs td{padding-right:var(--sp-10)}}
+
+@media (max-width:560px){.rtag{display:table;border-collapse:separate;margin:var(--sp-2) 0 0}table.list.runs th,table.list.runs td{padding-right:var(--sp-10)}}
 /* a run's trials: task titles in the text face with room to breathe; the outcome column is narrow (exceptions only) */
 table.list.rt th[scope="row"]{white-space:normal;width:55%;min-width:220px}
 a.rtk{font:500 var(--fs-small)/1.4 var(--sans);color:var(--ink)}
@@ -506,3 +514,47 @@ table.list.rt td.oc{max-width:160px;white-space:normal}
    wraps (the step label takes no room of its own) instead of relying on a width breakpoint */
 .ctl{flex-wrap:wrap;row-gap:var(--sp-6)}
 .ctl .now{flex:1 1 0}
+/* verdict: one sentence, then a small plain table */
+.vd1{max-width:720px}
+.vline{margin:0 0 var(--sp-12);font:500 var(--fs-h4)/1.35 var(--serif);color:var(--ink)}
+.vline.ok{color:var(--ok)}.vline.no{color:var(--no)}.vline.warn{color:var(--ink2)}
+table.vt{border-collapse:collapse;font:400 var(--fs-meta)/1.5 var(--sans)}
+table.vt th{padding:var(--sp-4) var(--sp-24) var(--sp-4) 0;text-align:left;font-weight:400;color:var(--muted)}
+table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-nums}
+/* a trial without a recording: no empty player box; the tabs take the full width */
+.stage[data-novid]{grid-template-columns:minmax(0,1fr)}
+.stage[data-novid] .player{display:none}
+/* a trial that never ran: one sentence under the header says why */
+.head.trial .why{margin:var(--sp-12) 0 0;max-width:640px;font-size:var(--fs-body);line-height:1.55;color:var(--ink)}
+/* phones: the dataset's own name leads, its org under it in small type (as on the hub cards); desktop reads org/name */
+@media (max-width:640px){
+  table.list.runs td.sus .ds{display:flex;flex-direction:column}
+  table.list.runs td.sus .dss{display:none}
+  table.list.runs td.sus{max-width:26vw}
+  table.list.runs td.sus .dso{order:1;font-size:var(--fs-caption);line-height:1.4;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  table.list.runs .sl-l{display:none}table.list.runs .sl-s{display:inline}  /* phones: "Solved", one line like the other headings */
+}
+/* run page on phones: Task (with the outcome under its title), Result and Time; Outcome and Steps columns drop, no sideways scroll */
+.oc2{display:none}
+@media (max-width:640px){
+  table.list.rt th.oc,table.list.rt td.oc,table.list.rt .stc,table.list.rt .rnc{display:none}
+  table.list.rt th[scope="row"]{width:auto;min-width:0}
+  table.list.rt .oc2,table.list.rt .tmeta{display:block;margin-top:var(--sp-2);font-size:var(--fs-caption);line-height:1.4;color:var(--muted)}
+  table.list.rt .tvar{display:block}  /* the variant ("vision") under the title */
+  table.list.rt .tsep{display:none}  /* on its own line a note or variant needs no separator */
+  table.list.rt th,table.list.rt td{padding-right:var(--sp-8)}
+}
+@media (max-width:640px){table.list.runs .hh{display:none}}  /* phones: the column says "Model"; each row still names the harness */
+/* the narrowest phones (320 px): the runs list still fits without sideways scroll; names stay whole (they never break at
+   a hyphen), so the cells give up a little padding, the dataset a little width, the names a pixel of size, and an
+   unsorted numeric heading its arrow slot */
+@media (max-width:360px){
+  table.list.runs th,table.list.runs td{padding-right:var(--sp-6)}
+  table.list.runs td.sus{max-width:22vw}
+  table.list.runs tbody th{font-size:var(--fs-small)}
+  table.list.runs thead th.n[aria-sort="none"] .si{display:none}
+}
+/* marks and whole hyphenated names inside breadcrumbs: not the "/" separator's margin and colour (prose.css .crumbs span) */
+.crumbs .model-mark{margin:0 .4em 0 0;color:inherit}
+.crumbs .model-mark.hm{margin-right:.3em}
+.crumbs .nw{margin:0;color:inherit}

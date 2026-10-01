@@ -22,10 +22,18 @@ A result's text is exactly what the `robo` command prints. When the reply names 
 - stdio: `robo mcp`. The server finds the episode from `$ROBOUSE_SOCKET` (or `$ROBO_SOCKET`, or `.robouse/socket` in the working directory).
 - Streamable HTTP: `robo mcp --http 127.0.0.1:PORT --path /PATH`. Every POST is answered with JSON; there is no server-sent event stream and no session id. It listens on the given address only, answers only at the given path, and refuses requests whose `Origin` is not local. `--run CMD ...` serves while `CMD` runs and then exits with its return code.
 
-Any MCP client can use it. For example, a Claude Code or Claude Desktop entry:
+Any MCP client can use it: it runs `robo mcp` with `ROBOUSE_SOCKET` set to the episode's socket. `robouse run` makes one socket per trial, `/tmp/robouse-<id>.sock`, and gives the harness its path in `$ROBOUSE_SOCKET`. A Claude Code or Claude Desktop entry:
 
 ```json
-{"mcpServers": {"robo": {"command": "robo", "args": ["mcp"], "env": {"ROBOUSE_SOCKET": "/tmp/robouse-XXXX.sock"}}}}
+{
+  "mcpServers": {
+    "robo": {
+      "command": "robo",
+      "args": ["mcp"],
+      "env": {"ROBOUSE_SOCKET": "/tmp/robouse-<id>.sock"}
+    }
+  }
+}
 ```
 
 ## Choosing the interface
@@ -48,14 +56,18 @@ Leaving `robo` off the `PATH` states what the agent is offered; it is not a secu
 | `codex` | `-c mcp_servers.robo.*` on the command line |
 | `dimcode` | the HTTP transport at a random path, listed as dimcode's only MCP endpoint |
 | `oracle`, `noop` | every request goes through a `robo mcp` server |
-| others | no MCP client: `cli` only |
+| `mini-swe-agent`, `vla`, `molmoact2` | no MCP client: `cli` only |
 
 The trajectory converter treats a call of a `robo` MCP tool as the equivalent `robo` command, so trajectories and video indexes line up as they do for the CLI.
 
-```sh
-robouse run --task tasks/cubepick/cubepick-reach-layout-0 \
-  --harness claude-code \
-  --model baseten/zai-org/GLM-5.3 \
-  --interface mcp \
-  --out runs/mcp
+```console
+$ robouse run --task cubepick-reach-layout-0 --harness claude-code --model baseten/zai-org/GLM-5.3 --interface mcp --out runs/mcp
+{
+  "trial": "cubepick-reach-layout-0__claude-code__4e2813",
+  "reward": 1.0,
+  "outcome": "success_reached",
+  "steps": 7,
+  "wall_s": 15.7,
+  "exception": null
+}
 ```

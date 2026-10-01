@@ -11,13 +11,20 @@ python3.12 -m venv .venv && source .venv/bin/activate
 pip install 'robouse[sim,llm]'
 ```
 
-On Linux without a display, MuJoCo needs an offscreen renderer. Install OSMesa; Robo Use selects it when `MUJOCO_GL` is unset:
+On Linux without a display, MuJoCo renders offscreen with OSMesa or EGL; when `MUJOCO_GL` is unset, Robo Use picks the one that works. `robouse doctor` says whether it can:
+
+```console
+$ robouse doctor
+Offscreen rendering
+  ok MuJoCo renders offscreen (MUJOCO_GL=osmesa, chosen because it was unset)
+...
+```
+
+If it says MuJoCo cannot render offscreen, install OSMesa (without a renderer, a trial stops and says what to install):
 
 ```sh
 sudo apt-get update && sudo apt-get install -y libosmesa6
 ```
-
-Without one, a trial stops with a message that says what to install.
 
 This example runs Claude Code with Kimi K3, served by Baseten. You need [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on your `PATH` and a Baseten API key:
 
@@ -42,21 +49,23 @@ In `arc-gravity` the agent sees example grids of blocks before and after, works 
 ```console
 $ robouse run --task arc-gravity --harness claude-code --model baseten/moonshotai/Kimi-K3 --out runs/quickstart
 {
-  "trial": "arc-gravity__claude-code__88bacc",
+  "trial": "arc-gravity__claude-code__2363e1",
   "reward": 1.0,
   "outcome": "done",
-  "steps": 600,
-  "wall_s": 60.9,
+  "steps": 810,
+  "wall_s": 63.7,
   "exception": null
 }
 ```
 
-The agent observed the scene, moved the blocks with `robo move-to` and called `robo done`; the episode server then checked where the blocks were. The trial made 31 `robo` calls and cost about $1.27 at Baseten's list price, through the trial's model gateway.
+The agent observed the scene, moved the blocks with `robo move-to` and called `robo done`; the episode server then checked where the blocks were. The trial made 35 `robo` calls and cost about $0.82 at Baseten's list price, through the trial's model gateway.
 
 ## Look at the result
 
+The trial's folder is `runs/quickstart/` plus the `trial` name the run printed:
+
 ```console
-$ cd runs/quickstart/arc-gravity__claude-code__88bacc
+$ cd runs/quickstart/arc-gravity__claude-code__*/
 $ cat verifier/reward.txt
 1
 $ cat episode/result.json
@@ -67,16 +76,16 @@ $ cat episode/result.json
   "success_ever": true,
   "success_mode": "final",
   "outcome": "done",
-  "steps_used": 600,
+  "steps_used": 810,
   "max_steps": 1400,
-  "requests": 31,
-  "agent_text": "Applied gravity rule: every block fell to the lowest free cell in its column (blue [2,0], green [2,2], red [1,2] stacked above green, yellow [2,3])",
+  "requests": 35,
+  "agent_text": "Applied gravity rule: blocks fall toward the front row ...",
   ...
 }
 ```
 
 - `artifacts/recording.mp4`: the video.
-- `agent/trajectory.json`: what the agent said and ran. This one started with `robo info`, `robo observe`, then `robo move-to -0.12 0.08 0.12 --grip -1`.
+- `agent/trajectory.json`: what the agent said and ran. This one started with `robo info`, `robo observe`, then `robo move-to 0.04 0.0 0.12 --grip -1`.
 - `episode/trace.jsonl`: every `robo` request and its response.
 
 Every file in the folder: [Concepts](concepts.md#the-trial-folder).

@@ -41,7 +41,10 @@ Publishing safety, applied at build time and checked again on the output (the bu
 - secret shapes (API keys, tokens, passwords in assignments) are replaced by [redacted];
 - trials whose agent looked at files outside its workspace (home folder listings, find /, other projects) get
   their trajectory withheld: the page keeps the video, the camera images, the reward and the outcome, and says why;
-- the output is scanned for secret shapes and for words that must not appear (BANNED), and every internal link
+- the machine the trials ran on is replaced in agents' outputs: the account name becomes "user" (padded, so `ls -l`
+  columns stay aligned), the per-user temp folder (/var/folders/<2>/<id>) becomes <tmp>, the host name "host";
+- the output is scanned for secret shapes, for words that must not appear (BANNED) and for personal identifiers
+  (PERSONAL: the account name, a home folder, the per-user temp folder, the host name), and every internal link
   and data reference is checked; the build stops with a list of problems if anything is found.
 
 Standard library, Pillow (filmstrips) and ffmpeg (videos); src/robouse/runner/atif.py is used for trials without a trajectory.
@@ -98,6 +101,12 @@ def load_models(path: Path) -> None:
     HM[:] = [dict(p) for p in json.loads(path.read_text())["pairs"]]
     HM_KEY.clear()
     HM_KEY.update({canon(p["harness"], p["model"]): i for i, p in enumerate(HM)})
+    icons = path.parent.parent / "site" / "icons"
+    for p in HM:  # GPT-6 Astra · Codex: the harness's mark is the model's own file (OpenAI's Blossom), so it shows once
+        hi, mi = p.get("harness_icon"), p.get("icon")
+        a, b = icons / "harnesses" / f"{hi}.svg", icons / "models" / f"{mi}.svg"
+        if hi and mi and a.is_file() and b.is_file() and a.read_bytes() == b.read_bytes():
+            p.pop("harness_icon")
 
 
 def pair_of(harness: str, model: str) -> int:
@@ -142,12 +151,29 @@ WITHHELD_NOTE = ("Trajectory not published: during this trial the agent looked a
                  "listing the home folder or searching the whole disk), so its commands and their outputs may show unrelated "
                  "local files. The recording, the camera images, the reward and the outcome are shown.")
 HOME_REPO = "/Users/maintainer/benchflow/robouse/"
+# The machine the trials ran on, in agents' outputs: the account name (`ls -l` columns, `whoami`), the per-user temp
+# folder (/var/folders/<2>/<id>, where workspaces live) and the host name. Replaced, not withheld: `ls -l` keeps its
+# columns (the name becomes "user" padded to the same width), a temp path keeps its tail after "<tmp>".
+OWNER = "lixiangyi"
+PERSONAL_SUBS = [
+    (re.compile(r"(?:/private)?/var/folders/[A-Za-z0-9_]{2}/[A-Za-z0-9_+-]+(?:/T(?=/|\b))?"), "<tmp>"),
+    (re.compile(r"(?:/private)?/var/folders/[A-Za-z0-9_]{2}/"), "<tmp>/"),
+    (re.compile(r"(?i)xiangyis?-macbook-pro(?:-\d+)?(?:\.local)?"), "host"),
+    (re.compile(OWNER + r"(?= )"), "user" + " " * (len(OWNER) - len("user"))),
+    (re.compile(OWNER), "user"),
+]
+# what must never be in the output (checked by scan(), which fails the build): the account name, the home folder, the
+# per-user temp folder, the host name
+PERSONAL = re.compile(r"(?i)" + OWNER + r"|/Users/[A-Za-z0-9_.-]+/|/var/folders/[A-Za-z0-9_]{2}/|xiangyis?-macbook")
 
 
 def redact(s: str) -> str:
     for rx in SECRET_RES:
         s = rx.sub("[redacted]", s)
-    return BANNED.sub("[redacted]", s)
+    s = BANNED.sub("[redacted]", s)
+    for rx, sub in PERSONAL_SUBS:
+        s = rx.sub(sub, s)
+    return s
 
 
 def redact_all(x):
@@ -422,17 +448,20 @@ def result_note(t: dict) -> str:
 
 def outcome_text(code: str | None) -> str:
     """The runner's outcome code as words ("success_reached" -> "Goal reached"); the code stays in the trial's JSON."""
-    return OUTCOME_TEXT.get(code or "", (code or "–").replace("_", " ").capitalize())
+    return OUTCOME_TEXT.get(code or "", (code or "").replace("_", " ").capitalize())
 
 
 STATUS_TEXT = {"partial": "Stopped", "infra": "Infra failure", "ok": "Solved", "no": "Not solved", "budget": "Stopped at budget"}
 STATUS_LONG = {"partial": "Stopped before it finished, not scored", "infra": "Infrastructure failure, not scored",
                "ok": "Solved", "no": "Not solved", "budget": "Stopped at the model budget, counted as not solved"}
-NOIMG_TITLE = "The model received no image input in this trial: text only (camera images stayed files the agent could read with code)"
+# a column, run or trial whose model received no camera images (each trial's recorded image_input) carries this quiet
+# label in quiet text (.noimg in runs.css: no box, so a column of them reads cleanly); its tooltip is the hub leaderboard
+# footnote's sentence
+NOIMG_WHY = "The model received no camera images in these runs; vision tasks were attempted from text observations only."
 
 
-def noimg_tag(title: str = NOIMG_TITLE) -> str:
-    return f'<span class="tag noimg" title="{esc(title)}">no image input</span>'
+def noimg_tag(title: str = NOIMG_WHY) -> str:
+    return f'<span class="noimg" title="{esc(title)}">no image input</span>'
 
 
 def spend(x) -> str:
@@ -607,6 +636,7 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
         "steps": [], "prompt": "",
     }
     out["extra"] = t.get("fake_extra") or trial_extras(t, ep, res, clean)
+    # image_input false (runs.js): the "no image input" tag in Compare; the filmstrip says the model received no images
     # the camera images the agent looked at, each with the first step that mentions it
     step_of: dict[str, int] = {}
     if traj:
@@ -631,7 +661,9 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
         return out
     t_first = next((secs(s.get("timestamp")) for s in steps if secs(s.get("timestamp")) is not None), None)
     agent_ids = [s.get("step_id") for s in steps if s.get("source") == "agent"]
-    hide = set(agent_ids[40:-20]) if len(agent_ids) > 150 else set()  # MolmoAct2: hundreds of one-action steps
+    # a VLA policy's hundreds of one-action steps are trimmed in the middle; a model harness's steps are all listed
+    policy = HM[t["hm"]].get("harness") in ("vla", "molmoact2")
+    hide = set(agent_ids[40:-20]) if policy and len(agent_ids) > 150 else set()
     if hide:
         out["hidden"] = len(hide)
     for st in steps[1:]:
@@ -689,8 +721,8 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
 # Each group appears only when the trial folder has the data: episode metrics, placement, embodiment mode, the operator's
 # verdict, safety events and vetoes, the cost block, and VLA inference timing. Summary numbers only, never raw logs.
 
-EP_METRICS = [  # key, label, unit, better, kind (pct: fraction shown as %, bool: 0/1 shown as yes/no)
-    ("success", "Success", "", "higher", "bool"), ("progress", "Task progress", "% of stages", "higher", "pct"),
+EP_METRICS = [  # key, label, unit, better, kind (pct: fraction shown as %, bool: 0/1 shown as yes/no); success is the Verdict's sentence
+    ("progress", "Task progress", "% of stages", "higher", "pct"),
     ("excellent", "Execution quality", "", "higher", "bool"), ("execution_time_s", "Execution time", "s", "lower", "num"),
     ("execution_speed", "Execution speed", "stages/min", "higher", "num"), ("smoothness_sparc", "Smoothness (SPARC)", "", "closer to 0", "num"),
     ("avg_jerk", "Avg jerk", "m/s³", "lower", "num"), ("path_length_m", "Path length", "m", "", "num"),
@@ -743,7 +775,7 @@ def trial_extras(t: dict, ep: dict, res: dict, clean) -> dict:
     jd = ep.get("judge_detail")
     if isinstance(jd, dict) and str(jd.get("verdict", "")).startswith("operator"):
         rubric = jd.get("verdict") == "operator_rubric"
-        x["operator"] = {"verdict": (f'stage {jd.get("stage")} of {jd.get("of")}' if jd.get("stage") is not None else "skipped") if rubric else str(jd.get("answer") or "–"),
+        x["operator"] = {"verdict": (f'stage {jd.get("stage")} of {jd.get("of")}' if jd.get("stage") is not None else "skipped") if rubric else str(jd.get("answer") or ""),
                          "rubric": rubric, "channel": str(jd.get("channel") or ""), "note": clip(clean(str(jd.get("note") or "")), 300)}
     evs = rjl(d / "episode" / "session" / "events.jsonl")
     sev = [e for e in evs if str(e.get("event")) in SAFETY_KINDS]
@@ -809,7 +841,23 @@ def load_chrome(site: Path) -> None:
     CHROME["header"], CHROME["footer"], CHROME["bridge"], CHROME["link"] = mod.header("/runs/"), mod.FOOTER, mod.BRIDGE, mod.LINK
 
 
+# " · " between items: a no-break space binds the dot to the item before it ("A&nbsp;· B"), so a line never starts
+# with the dot (also across tags: " <span>· "); a model and its harness are bound on both sides where they are written.
+# A legend's "·" key (class "cell") is not a separator.
+_GLUE_BEFORE = re.compile(r'(?<=\S) (?=(?:<(?!span class="cell)[^>]+>)*·)')
+
+
+_COUNT_OF = re.compile(r"(?<=\d) of (?=\d)")
+_COUNT_NOUN = re.compile(r"(?<=\d) (?=(?:solved|scored|tasks?|trials?|runs?|models?|seeds?|steps?)\b)")
+
+
+def glue(html_text: str) -> str:
+    """Dots bound to the item before them; counts like "52 of 119 solved" never broken across lines."""
+    return _COUNT_NOUN.sub("\u00a0", _COUNT_OF.sub("\u00a0of\u00a0", _GLUE_BEFORE.sub("\u00a0", html_text)))
+
+
 def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str = "", data: str = "") -> str:
+    body = glue(body)
     synth = ('<div class="synth" role="note"><b>SYNTHETIC TEST DATA</b><span>Fabricated results that test how the viewer holds at scale '
              f'({len(HM)} harness + model pairs, several seeds per task). These are not real runs.</span></div>') if SYNTH else ""
     return f"""<!doctype html>
@@ -856,7 +904,13 @@ def hub_tasks(site: Path) -> dict[str, tuple[str, str]]:
     """Every task's page on the hub (the results, task and suite pages of /runs/ moved there). Run tools/build_hub.py first."""
     j = rj(site / "hub" / "search.json") or {"t": []}
     HUB_TITLE.update({t[0]: t[1] for t in j["t"] if t[1]})
-    return {t[0]: (t[2], t[4]) for t in j["t"]}
+    out = {t[0]: (t[2], t[4]) for t in j["t"]}
+    # a task only earlier dataset versions had (hub/former.json): its trials stay filed under the dataset, linked to its page
+    for tid, v in (rj(site / "hub" / "former.json") or {}).items():
+        out.setdefault(tid, (v[0], v[1]))
+        if len(v) > 2 and v[2]:
+            HUB_TITLE.setdefault(tid, v[2])
+    return out
 
 
 def runs_head(active: str) -> str:
@@ -876,7 +930,7 @@ def brk(s: str) -> str:
 
 def fmt_s(x) -> str:
     if x is None:
-        return "–"
+        return ""
     x = float(x)
     return f"{x:.0f} s" if x < 120 else f"{x / 60:.1f} min"
 
@@ -907,35 +961,68 @@ def plab(i: int) -> str:
 
 def model_mark(p: dict) -> str:
     """The model's mark (.model-mark in the site's /ui.css, the same as UI.modelMark in /ui.js and build_hub.model_mark):
-    its provider's icon from tools/models.json `icon`, or an empty slot; decorative, the name beside it is the text."""
+    its maker's icon from tools/models.json `icon`, or an empty slot; decorative, the name beside it is the text."""
     return (f'<span class="model-mark" style="--mm:url(/icons/models/{esc(p["icon"])}.svg)" aria-hidden="true"></span>' if p.get("icon")
             else '<span class="model-mark none" aria-hidden="true"></span>')
 
 
-def phtml(i: int, noimg: bool | None = None) -> str:
-    """A pair, model first, with a "no image input" label when its model got no images (a column-wide fact unless the
-    caller says otherwise for its own set of trials)."""
+def harness_mark(p: dict) -> str:
+    """The harness's mark beside the harness name (tools/models.json `harness_icon`, /icons/harnesses/), smaller and in the
+    harness name's quieter colour (.model-mark.hm in /ui.css, UI.harnessMark in /ui.js); nothing for a harness without one."""
+    return (f'<span class="model-mark hm" style="--mm:url(/icons/harnesses/{esc(p["harness_icon"])}.svg)" aria-hidden="true"></span>'
+            if p.get("harness_icon") else "")
+
+
+def nb(s: str) -> str:
+    """Escaped text whose hyphenated words never break at their hyphens ("GR00T N1.7-LIBERO", "mini-swe-agent"): each
+    such word is one .nw span (/ui.css), so a long name wraps only at its spaces."""
+    return " ".join(f'<span class="nw">{esc(w)}</span>' if "-" in w else esc(w) for w in str(s).split(" "))
+
+
+def pair_html(i: int) -> str:
+    """mark Model · mark Harness, for titles, breadcrumbs and who lines (phtml is the list cell); a model without a mark
+    gets no empty slot here, since nothing lines up with a title."""
     p = HM[i]
-    tag = noimg_tag("The model received no image input in these trials: text only") if (p.get("_noimg") if noimg is None else noimg) else ""
-    return f'<span class="pm">{model_mark(p)}{esc(p.get("model_label") or p["label"])}</span><span class="ph"> · {esc(p.get("harness_label") or p["harness"])}</span>{tag}'
+    return (f'{model_mark(p) if p.get("icon") else ""}{nb(p.get("model_label") or p["label"])} · '
+            f'{harness_mark(p)}{nb(p.get("harness_label") or p["harness"])}')
+
+
+def run_title_html(r: dict) -> str:
+    """A run's title with the model's and the harness's marks: "mark GLM-5.3 · mark Codex · robouse-menagerie"."""
+    return pair_html(r["hm"]) + f' · {esc(r["ds"].split("/")[-1])}' + (" · zero-shot probe" if r["probe"] else "")
+
+
+def phtml(i: int, noimg: bool | None = None) -> str:
+    """A pair, model first, with the "no image input" tag when its model got no images (a column-wide fact, the pair's
+    `_noimg`, unless the caller says otherwise for its own set of trials, e.g. a run)."""
+    p = HM[i]
+    tag = noimg_tag() if (p.get("_noimg") if noimg is None else noimg) else ""
+    return (f'<span class="pm">{model_mark(p)}{nb(p.get("model_label") or p["label"])}</span> <span class="ph">· {harness_mark(p)}{nb(p.get("harness_label") or p["harness"])}</span>'
+            + (" " + tag if tag else ""))
 
 
 def fnum(x) -> str:
     try:
         return f"{int(x):,}" if float(x) == int(float(x)) else f"{float(x):,}"
     except (TypeError, ValueError):
-        return "–"
+        return ""
 
 
 def freward(r) -> str:
     try:
         return f"{float(r):.1f}"
     except (TypeError, ValueError):
-        return "–"
+        return ""
+
+
+NOT_RECORDED = '<span class="vh">not recorded</span>'  # a blank cell that a screen reader still explains
 
 
 def steps_html(t: dict) -> str:
-    return f'{fnum(t["steps_used"])}<span class="muted"> / {fnum(t["max_steps"])}</span>'
+    """Steps used / budget; nothing to show for a trial whose episode never ran (a reader hears "not recorded")."""
+    if t["steps_used"] is None:
+        return NOT_RECORDED
+    return fnum(t["steps_used"]) + (f'<span class="muted"> / {fnum(t["max_steps"])}</span>' if t.get("max_steps") else "")
 
 
 DIFF_RANK = {"easy": 1, "medium": 2, "hard": 3}
@@ -989,10 +1076,10 @@ ICON = {
 }
 
 
-def player_controls() -> str:
+def player_controls(noimg: bool = False) -> str:
     speeds = "".join(f'<button type="button" data-speed="{s}" aria-pressed="false">{s}×</button>' for s in ("0.25", "0.5", "1"))
     return (f'<div class="pctl"><div class="lane" role="slider" tabindex="0" aria-label="Recording position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" '
-            f'title="Steps with robot motion; blue: steps that looked at a camera image"><span class="lane-tr"></span><span class="lane-mk"></span><b></b></div>'
+            f'title="Steps with robot motion; blue: steps that {"named a camera image file (the model received no images)" if noimg else "looked at a camera image"}"><span class="lane-tr"></span><span class="lane-mk"></span><b></b></div>'
             f'<div class="ctl"><button type="button" class="pb" data-k="prev" aria-label="Previous step" title="Previous step (←)" disabled>{ICON["prev"]}</button>'
             f'<button type="button" class="pb pp" data-k="play" aria-label="Play" title="Play or pause (space)" disabled>{ICON["play"]}{ICON["pause"]}</button>'
             f'<button type="button" class="pb" data-k="next" aria-label="Next step" title="Next step (→)" disabled>{ICON["next"]}</button>'
@@ -1039,17 +1126,17 @@ def group_runs(trials: list[dict], jobs: dict) -> dict[str, dict]:
         r["scored"] = len(inds)
         r["solved"] = sum(1 for t in inds if t["solved"])
         r["title"] = f'{plab(r["hm"])} · {r["ds"].split("/")[-1]}' + (" · zero-shot probe" if r["probe"] else "")
-        counted = [t for t in ts if t["counted"]]
-        r["noimg"] = bool(counted) and all(t.get("image_input") is False for t in counted)
+        # a run whose model got no image input in any of its trials says so, counted or not (a run superseded by a
+        # rerun under a new condition still was a run without images)
+        r["noimg"] = bool(ts) and all(t.get("image_input") is False for t in ts)
     return out
 
 
 def trial_crumbs(t: dict) -> str:
     """Runs / the run; the task title is the h1 right below."""
     r = RUN_OF.get(t.get("run", ""), {})
-    trail = [("Runs", "/runs/"), (r.get("title", t["job"]), f'/runs/r/{r["slug"]}/' if r else "")]
-    bits = [f'<a href="{h}">{esc(x)}</a>' if h else esc(x) for x, h in trail]
-    return '<nav class="crumbs" aria-label="Breadcrumb">' + "<span>/</span>".join(bits) + "</nav>"
+    run = f'<a href="/runs/r/{r["slug"]}/">{run_title_html(r)}</a>' if r else esc(t["job"])  # the run, with its marks
+    return f'<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{run}</nav>'
 
 
 def jpeg_size(p: Path) -> tuple[int, int] | None:
@@ -1099,28 +1186,35 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     if st == "budget":
         b = t["budget"] or {}
         facts.append(("Budget", f'{esc(spend(b.get("cap_usd")))} per trial; {esc(spend(b.get("spent_usd")))} spent when stopped'))
-    facts += [("Steps", steps_html(t)), ("Time", esc(fmt_s(t["wall"])))]
-    if t.get("image_input") is False:
-        facts.append(("Image input", "None: text only"))
+    facts += ([("Steps", steps_html(t))] if t["steps_used"] is not None else []) + ([("Time", esc(fmt_s(t["wall"])))] if t["wall"] is not None else [])
     if t.get("seed") is not None:
         facts.append(("Seed", esc(t["seed"])))
-    why = earlier_reason(t) if t.get("earlier_condition") else "infrastructure failure" if t["infra"] else "a later trial counts"
-    counted = "" if t["counted"] else f'<span class="tag">not counted: {why}</span>'
-    vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} controls muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls()}' if video
-           else '<div class="vbox novideo"><div class="empty-state"><b>No recording for this trial.</b>The episode ended before the simulator wrote a frame.</div></div>')
+    # the infrastructure badge already says "not scored"; another trial that does not count says why
+    nc_why = earlier_reason(t) if t.get("earlier_condition") else "a later trial counts"
+    counted = "" if t["counted"] or st == "infra" else f'<span class="tag">not counted: {nc_why}</span>'
+    noimg = t.get("image_input") is False  # the who line's tag says so; the filmstrip and lane say the model saw no image
+    vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} controls muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls(noimg)}' if video
+           else "")  # no recording: no player box at all (the stage gives the tabs the full width)
     tabs = [("recording", "Recording", ""), ("trajectory", "Trajectory", f" <span class=\"num\">{n_steps}</span>" if n_steps else ""), ("verdict", "Verdict", ""),
             ("run", "Timing &amp; tokens", ""), ("files", "Files", "")]
-    body = f"""
+    never_ran = st == "infra" and not video and not n_steps and not t["steps_used"]
+    why = (t.get("infra_cause") or {}).get("text", "") if never_ran else ""
+    # nothing was recorded: the header and one sentence why; no facts, tabs or empty boxes
+    head = f"""
 {trial_crumbs(t)}
 <section class="page-head head trial">
   <h1>{esc(t['title'])}</h1>
-  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl">{model_mark(HM[t["hm"]])}{esc(label)}</span>{noimg_tag() if t.get("image_input") is False else ""}{counted}<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t['trial'])}">Compare</a></p>
-  <dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>
+  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag() if noimg else ""}{counted}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
+  {f'<p class="why">{esc(why or "The harness or the model API ended the trial before the agent acted.")}</p>' if never_ran else f'<dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>'}
 </section>
-<nav class="tabs" role="tablist" aria-label="Trial views" data-fade>
+"""
+    if never_ran:
+        return page(f"{t['title']} · {label} · Runs · Robo Use", head, desc=f"{t['title']}: {label}, {STATUS_LONG[st].lower()}.",
+                    cls="trialpage compact", data=f' data-trial="{esc(t["trial"])}"', canonical=f"https://robouse.ai/runs/t/{t['trial']}/")
+    body = head + f"""<nav class="tabs" role="tablist" aria-label="Trial views" data-fade>
   {"".join(f'<a href="#{k}" role="tab" data-tab="{k}" aria-selected="false" aria-controls="panel">{x}{extra}</a>' for k, x, extra in tabs)}
 </nav>
-<div id="stage" class="stage t-recording">
+<div id="stage" class="stage t-recording"{"" if video else " data-novid"}>
   <div class="player" id="player">{vid}</div>
   <div id="panel" class="panel" role="tabpanel" aria-busy="true">{skeleton()}</div>
 </div>
@@ -1140,20 +1234,29 @@ def build_compare() -> str:
     return page("Compare · Runs · Robo Use", body, cls="comparepage", canonical="https://robouse.ai/runs/compare/")
 
 
+def ds_cell(ds: str) -> str:
+    """org/name on one line on desktop; on phones the name leads and the org sits under it in small type (runs.css)."""
+    org, _, name = ds.rpartition("/")
+    if not org:
+        return esc(ds)
+    return f'<span class="ds"><span class="dso" title="{esc(org)}">{esc(org)}</span><span class="dss">/</span><wbr><span class="dsn">{esc(name)}</span></span>'
+
+
 def build_runs(runs: dict) -> str:
     """/runs/: every run (one model and harness on one dataset), newest first; sortable and filterable, each row opens
     the run's trials. Two runs of one model on one dataset differ by their label (zero-shot probe) and start time."""
     rows = []
-    # newest day first; runs of one day read by dataset, then model
+    # main runs first, newest day first, a day's runs by dataset, then model; zero-shot probes after them, in the same order
     order = sorted(runs.values(), key=lambda r: (r["ds"], plab(r["hm"]).lower()))
-    for r in sorted(order, key=lambda r: (r["start"] or "")[:10], reverse=True):
+    order = sorted(order, key=lambda r: (r["start"] or "")[:10], reverse=True)
+    for r in sorted(order, key=lambda r: bool(r["probe"])):
         i = r["hm"]
         rate = r["solved"] / r["scored"] if r["scored"] else -1
         tag = ' <span class="rtag">zero-shot probe</span>' if r["probe"] else ""
         state = ' <span class="state running">running</span>' if r["state"] == "running" else ""
         rows.append(f'<tr {pair_attrs(i)} data-dataset="{esc(r["ds"])}" data-q="{esc((plab(i) + " " + r["ds"] + (" zero-shot probe" if r["probe"] else "")).lower())}">'
-                    f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, r["noimg"])}</a></th>'
-                    f'<td class="sus" data-v="{esc(r["ds"])}">{esc(r["ds"]).replace("/", "/<wbr>")}{tag}</td>'
+                    f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, False)}</a>{" " + noimg_tag() if r["noimg"] else ""}</th>'
+                    f'<td class="sus" data-v="{esc(r["ds"])}">{ds_cell(r["ds"])}{tag}</td>'
                     f'<td class="muted num" data-v="{esc(r["start"])}">{esc(fmt_date(r["start"]))}{state}</td>'
                     f'<td class="n num" data-v="{len(r["trials"])}">{len(r["trials"])}</td>'
                     f'<td class="n num" data-v="{rate:.4f}">{f"{rate * 100:.0f}%" if rate >= 0 else "·"}</td></tr>')
@@ -1170,7 +1273,8 @@ def build_runs(runs: dict) -> str:
 <div class="lst" data-list="jobs" data-limit="50" data-noun="runs">
 {ctrl}
 <div class="scroll tbl"><table class="list runs">
-  <thead><tr>{th_sort("Model · harness", "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('aria-sort="none"', 'aria-sort="descending"')}{th_sort("Trials", "num", "n")}{th_sort("Solve rate", "num", "n")}</tr></thead>
+  <caption class="vh">Main runs first, newest first; zero-shot probes after them. Sort by any column.</caption>
+  <thead><tr>{th_sort('Model<span class="hh"> · harness</span>', "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort("Trials", "num", "n")}{th_sort('<span class="sl-l">Solve rate</span><span class="sl-s">Solved</span>', "num", "n")}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("runs", "Clear the search or the filters.")}
@@ -1180,22 +1284,33 @@ def build_runs(runs: dict) -> str:
                 cls="jobs", canonical="https://robouse.ai/runs/")
 
 
+def title_html(title: str) -> str:
+    """A task title; its variant ("… · vision") in its own span, which takes its own line on phones (runs.css)."""
+    base, sep, var = title.rpartition(" · ")
+    if not sep:
+        return esc(title)
+    return f'{esc(base)}<span class="tvar"><span class="tsep"> · </span>{esc(var)}</span>'
+
+
 def build_run(r: dict) -> str:
     rows = []
+    # a column most of whose rows have no value (trials that never ran) is left out; a single missing value is blank
+    show_steps = sum(t["steps_used"] is not None for t in r["trials"]) * 2 > len(r["trials"])
+    show_time = sum(t["wall"] is not None for t in r["trials"]) * 2 > len(r["trials"])
     # the counted trial of each task first; an earlier trial of the same task says so, with its start time
     for t in sorted(r["trials"], key=lambda t: (t["title"], t["task"], not t["counted"], str(t.get("seed")), t["started"] or "")):
         st = status(t)
-        seed = f'<span class="muted"> · seed {esc(t["seed"])}</span>' if t.get("seed") is not None else ""
+        seed = f'<span class="muted tmeta"><span class="tsep"> · </span>seed {esc(t["seed"])}</span>' if t.get("seed") is not None else ""
         if not t["counted"]:
-            seed += f'<span class="muted"> · earlier trial, {esc(fmt_day(t["started"]))}</span>'
+            seed += f'<span class="muted tmeta"><span class="tsep"> · </span>earlier trial, {esc(fmt_day(t["started"]))}</span>'
         elif HUB and t["task"] not in HUB:
-            seed += '<span class="muted"> · pilot task, not in the dataset or its score</span>'
+            seed += '<span class="muted tmeta"><span class="tsep"> · </span>pilot task, not in the dataset or its score</span>'
         rows.append(f'<tr class="{"" if t["counted"] else "dim"}" data-outcome="{st}" data-counted="{int(t["counted"])}" data-q="{esc((t["task"] + " " + t["title"]).lower())}">'
-                    f'<th scope="row" data-v="{esc(t["title"])}"><a class="rtk" href="/runs/t/{esc(t["trial"])}/">{esc(t["title"])}</a>{seed}</th>'
-                    f'<td data-v="{ST_RANK[st]}"><span class="badge {st}">{STATUS_TEXT[st]}</span>{"" if t["counted"] else " <span class=muted>not counted</span>"}</td>'
+                    f'<th scope="row" data-v="{esc(t["title"])}"><a class="rtk" href="/runs/t/{esc(t["trial"])}/">{title_html(t["title"])}</a>{seed}{f'<span class="oc2">{esc(result_note(t))}</span>' if result_note(t) else ""}</th>'
+                    f'<td data-v="{ST_RANK[st]}"><span class="badge {st}">{STATUS_TEXT[st]}</span>{"" if t["counted"] else ' <span class="muted rnc">not counted</span>'}</td>'
                     f'<td class="oc">{esc(result_note(t))}</td>'
-                    f'<td class="n num" data-v="{num_attr(t["steps_used"])}">{steps_html(t)}</td>'
-                    f'<td class="n num" data-v="{num_attr(t["wall"])}">{esc(fmt_s(t["wall"]))}</td></tr>')
+                    + (f'<td class="n num stc" data-v="{num_attr(t["steps_used"])}">{steps_html(t)}</td>' if show_steps else "")
+                    + (f'<td class="n num" data-v="{num_attr(t["wall"])}">{esc(fmt_s(t["wall"])) if t["wall"] is not None else NOT_RECORDED}</td>' if show_time else "") + "</tr>")
     states = {status(t) for t in r["trials"]}
     opts = "".join(f'<option value="{k}">{v}</option>' for k, v in (("ok", "Solved"), ("no", "Not solved"), ("budget", "Stopped at budget"), ("infra", "Infrastructure failure"), ("partial", "Partial")) if k in states)
     ctrl = ('<div class="fbar"><div class="frow ctl-row">'
@@ -1203,15 +1318,16 @@ def build_run(r: dict) -> str:
             + (f'<select data-lf="outcome" aria-label="Result"><option value="">Any result</option>{opts}</select>' if len(states) > 1 else "")
             + '<span class="count push" data-lcount aria-live="polite"></span></div></div>')
     body = f"""
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{esc(r["title"])}</nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{run_title_html(r)}</nav>
 <section class="page-head head">
-  <h1>{esc(r["title"])}</h1>
-  <p class="meta">{esc(r["ds"])} · {esc(fmt_date(r["start"]))} · {f'{r["solved"]} of {r["scored"]} solved' if r["scored"] else "no scored trial"}{' · <span class="state running">running</span>' if r["state"] == "running" else ""}{noimg_tag("The model received no image input in this run: text only") if r["noimg"] else ""}</p>
+  <h1 class="rh1">{run_title_html(r)}</h1>
+  <p class="meta">{esc(r["ds"])} · {esc(fmt_date(r["start"]))} · {f'{r["solved"]} of {r["scored"]} solved' if r["scored"] else "no scored trial"}{' · <span class="state running">running</span>' if r["state"] == "running" else ""}{" " + noimg_tag() if r["noimg"] else ""}</p>
+  {f'<p class="prov">{esc(HM[r["hm"]]["provenance"])}</p>' if HM[r["hm"]].get("provenance") else ""}
 </section>
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
 {ctrl}
 <div class="scroll tbl"><table class="list rt">
-  <thead><tr>{th_sort("Task", "text", "tcol")}{th_sort("Result", "num")}{th_sort("Outcome")}{th_sort("Steps", "num", "n")}{th_sort("Time", "num", "n")}</tr></thead>
+  <thead><tr>{th_sort("Task", "text", "tcol")}{th_sort("Result", "num")}{th_sort("Outcome", "text", "oc")}{th_sort("Steps", "num", "n stc") if show_steps else ""}{th_sort("Time", "num", "n") if show_time else ""}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("trials", "Clear the search or the filter.")}
@@ -1229,7 +1345,7 @@ def scan(out: Path) -> list[str]:
         if p.suffix not in (".html", ".css", ".js", ".json", ".txt"):
             continue
         s = p.read_text(errors="replace")
-        for rx in SECRET_RES + [BANNED]:
+        for rx in SECRET_RES + [BANNED, PERSONAL]:
             for m in rx.finditer(s):
                 hits.append(f"{p.relative_to(out)}: {m.group(0)[:60]}")
     return hits
@@ -1489,7 +1605,8 @@ def main(argv: list[str] | None = None) -> int:
                 obs_map = {p.name: i for i, p in enumerate(shown)}
         data = trial_data(t, traj, spec, video, sprite, obs_map)
         data["files"] = files_of(d) if d.name != "empty-trial" else []
-        data["mark"] = model_mark(HM[t["hm"]])  # the model's mark beside its name in Compare
+        data["mark"] = model_mark(HM[t["hm"]]) if HM[t["hm"]].get("icon") else ""  # the marks beside the names in Compare
+        data["hmark"] = harness_mark(HM[t["hm"]])
         ws = str(t["cfg"].get("workspace") or "")
         data["result_json"] = sanitized_json(t["res"], ws) if t["res"] else ""
         data["config_json"] = sanitized_json({k: v for k, v in t["cfg"].items() if k not in ("workspace", "sandbox")}, ws)  # the sandbox rule names the operator's folders

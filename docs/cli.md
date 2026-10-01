@@ -164,6 +164,10 @@ options:
   -h, --help         show this help message and exit
 ```
 
+`robouse tasks` alone lists the tasks: id, backend and simulator env id. `tasks init` composes a task from components and keeps it only if the reference solution scores 1 and the no-op control 0; with only `DIR` it scaffolds a blank task folder. `tasks check` re-runs those checks on any task folder ([Write or compose a task](write-a-task.md)).
+
+### robouse tasks list
+
 ```console
 $ robouse tasks list --help
 usage: robouse tasks list [-h] [--path] [ROOT]
@@ -175,6 +179,8 @@ options:
   -h, --help  show this help message and exit
   --path      print the bundled task directory and exit
 ```
+
+### robouse tasks init
 
 ```console
 $ robouse tasks init --help
@@ -218,6 +224,8 @@ options:
                         keep the validation trials in this folder
 ```
 
+### robouse tasks check
+
 ```console
 $ robouse tasks check --help
 usage: robouse tasks check [-h] [--level LEVEL] [--no-run] [--keep-trials DIR]
@@ -233,8 +241,6 @@ options:
   --keep-trials DIR, --keep-runs DIR
                         keep the trials in this folder
 ```
-
-`robouse tasks` alone lists the tasks: id, backend and simulator env id. `tasks init` composes a task from components and keeps it only if the reference solution scores 1 and the no-op control 0; with only `DIR` it scaffolds a blank task folder. `tasks check` re-runs those checks on any task folder ([Write or compose a task](write-a-task.md)).
 
 ## robouse components
 
@@ -256,6 +262,8 @@ options:
   -h, --help         show this help message and exit
 ```
 
+### robouse components list
+
 ```console
 $ robouse components list --help
 usage: robouse components list [-h] [--all]
@@ -271,6 +279,8 @@ options:
                         robots and scenes)
 ```
 
+### robouse components show
+
 ```console
 $ robouse components show --help
 usage: robouse components show [-h] [--compatible] ID
@@ -282,6 +292,8 @@ options:
   -h, --help    show this help message and exit
   --compatible  also list the combinations it composes into
 ```
+
+### robouse components check
 
 ```console
 $ robouse components check --help
