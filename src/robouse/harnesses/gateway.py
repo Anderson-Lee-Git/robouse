@@ -165,7 +165,7 @@ def start(
         "RateLimitErrorRetries": 8,
         "InternalServerErrorRetries": 2,
     }
-    d = Path(run_dir) / "gateway"
+    d = Path(run_dir).resolve() / "gateway"  # absolute: the proxy runs in this folder and is given paths inside it
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(HOOK, d / "gateway_hook.py")
     (d / "config.yaml").write_text(yaml.safe_dump(conf, sort_keys=False))

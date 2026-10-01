@@ -28,7 +28,12 @@ LEGACY_DEFAULT_MODEL = "zai-org/GLM-5.3"
 NATIVE_VENDORS = {"claude-code": "anthropic", "codex": "openai"}
 FIRST_PARTY_IMAGE_PROVIDERS = {"anthropic", "openai"}
 # the model a harness runs when none is given
-DEFAULT_MODELS = {"claude-code": "claude-sonnet-5", "codex": "gpt-6-astra", "mini-swe-agent": "baseten/zai-org/GLM-5.3"}
+DEFAULT_MODELS = {
+    "claude-code": "claude-sonnet-5",
+    "codex": "gpt-6-astra",
+    "mini-swe-agent": "baseten/zai-org/GLM-5.3",
+    "dimcode": "baseten/zai-org/GLM-5.3",
+}
 # harnesses that never pass an image to their model (mini-swe-agent sends text only; its agent can still read image
 # files with code)
 NO_IMAGE_HARNESSES = {"mini-swe-agent"}

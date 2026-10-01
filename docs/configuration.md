@@ -25,3 +25,5 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 | `ROBOUSE_VLA_POLICY_CONFIG` | JSON file with overrides for the `vla` preset |
 | `ROBOUSE_MOLMOACT2_URL` | MolmoAct2 policy server for the `molmoact2` harness |
 | `ROBOUSE_MOLMOACT2_TOKEN` | bearer token for the MolmoAct2 server |
+| `ROBOUSE_DIMCODE` | the dimcode executable for the `dimcode` harness (default: `dimcode` on PATH) |
+| `ROBOUSE_DIMCODE_NODE` | Node 24 or 26 that runs dimcode (default: `node` on PATH) |

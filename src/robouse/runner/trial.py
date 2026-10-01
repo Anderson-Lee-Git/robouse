@@ -34,12 +34,14 @@ from typing import Any
 
 from .. import harnesses
 from ..core.protocol import RUNNER_PREFIX, verify_result
+from ..harnesses import interface as iface
 from ..lib.text import clip
 from ..tasks import Task
 from . import sandbox
 from .cost import trial_cost
 
 AGENT_CLI = Path(__file__).resolve().parents[1] / "agent_cli.py"
+MCP_SERVER = Path(__file__).resolve().parents[1] / "mcp_server.py"
 SRC = Path(__file__).resolve().parents[2]  # the folder holding the robouse package
 
 
@@ -105,6 +107,9 @@ def _make_workspace(task: Task) -> Path:
     shim = ws / ".robouse" / "bin" / "robo"
     shim.write_text("#!/usr/bin/env python3\n" + AGENT_CLI.read_text())
     shim.chmod(0o755)
+    # `robo mcp` (the MCP front end) and the client module it builds requests with, next to the shim
+    (ws / ".robouse" / "bin" / "robo_mcp.py").write_text(MCP_SERVER.read_text())
+    (ws / ".robouse" / "bin" / "robo_cli.py").write_text(AGENT_CLI.read_text())
     (ws / "observations").mkdir()
     return ws
 
@@ -159,7 +164,7 @@ def _verify(task: Task, episode: dict, tdir: Path) -> float:
 
 
 # harnesses that drive a language model (the others run scripted code or a VLA policy)
-LLM_HARNESSES = ("claude-code", "codex", "mini-swe-agent")
+LLM_HARNESSES = ("claude-code", "codex", "mini-swe-agent", "dimcode")
 
 
 def image_input_plan(harness: str, model: str) -> dict:
@@ -310,6 +315,7 @@ def run_trial(
     extra_instruction: str = "",
     prior_learnings: str | None = None,
     attempt: int = 0,
+    interface: str | None = None,
 ) -> dict:
     plan = image_input_plan(harness, model)
     cap = spend_cap_usd()
@@ -319,6 +325,8 @@ def run_trial(
     job_dir.mkdir(parents=True, exist_ok=True)
     if split or extra_instruction or prior_learnings:
         task = _variant(task, split, extra_instruction, prior_learnings)
+    interface = iface.resolve(task, interface)
+    iface.check(harness, interface)
     trial_name = trial_name or f"{task.id}__{harness}__{uuid.uuid4().hex[:6]}"
     tdir = job_dir / trial_name
     for sub in ("agent", "episode", "verifier", "artifacts"):
@@ -334,6 +342,7 @@ def run_trial(
         "task_path": str(task.path),
         "harness": harness,
         "model": model,
+        "interface": interface,
         "seed": seed,
         "agent_timeout_s": timeout,
         "trial_name": trial_name,
@@ -421,9 +430,11 @@ def run_trial(
         base_env.pop("ROBOUSE_ORACLE_TOKEN", None)
         if harness == "oracle":  # only the reference solution may see privileged state in vision tasks
             base_env["ROBOUSE_ORACLE_TOKEN"] = oracle_token
+        base_env["ROBOUSE_INTERFACE"] = interface
         launch = harnesses.build(harness, model, task.instruction, ws, task, base_env)
         if launch.stop_file is not None:  # a model gateway: it enforces the spend cap
             cfg["spend_cap_usd"] = cap or None
+        iface.apply(harness, launch, interface, ws, sock)
         if harness in ("oracle", "noop"):  # the trusted reference solution and the negative control
             cfg["sandbox"] = "none"
         else:
@@ -521,6 +532,10 @@ def run_trial(
         shutil.copy(f, tdir / "artifacts" / "observations" / f.name)
     if harness.startswith("mini-swe-agent") and (ws / ".robouse" / "mini_traj.json").exists():
         shutil.copy(ws / ".robouse" / "mini_traj.json", tdir / "agent" / "mini_traj.json")
+    for src, dst in (launch.notes.get("collect") or []) if launch else []:  # a harness's own transcript
+        found = sorted((ws / ".robouse" / src).rglob("*.jsonl"), key=lambda f: f.stat().st_mtime)
+        if found:
+            shutil.copy(found[-1], tdir / dst)
 
     try:
         from .atif import write_trajectory
@@ -545,6 +560,7 @@ def run_trial(
                 "name": (launch.notes.get("model_id") or launch.notes.get("model") if launch else model),
                 "provider": launch.notes.get("provider") if launch else None,
             },
+            "interface": interface,
         },
         "verifier_result": {"rewards": {"reward": reward}},
         "episode": episode,

@@ -103,6 +103,8 @@ def run() -> int:
         ("model gateway (provider-prefixed models)", "litellm"),
     ):
         print(f"  {_ok(shutil.which(exe) is not None)}{h} (`{exe}` on PATH)")
+    dim = config.env("ROBOUSE_DIMCODE") or shutil.which("dimcode")
+    print(f"  {_ok(bool(dim))}dimcode (" + (dim if dim else "`dimcode` on PATH, or ROBOUSE_DIMCODE") + ")")
     creds = {
         "ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN": credentials.have_claude(),
         "OPENAI_API_KEY or ~/.codex/auth.json": credentials.have_codex(),
