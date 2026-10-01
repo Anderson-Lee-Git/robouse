@@ -8,6 +8,8 @@ composable: false
 suites:
 - adroit
 - behavior
+- capx
+- capx-libero
 - cubepick
 - dexhand
 - dexjoco
@@ -27,6 +29,7 @@ suites:
 - myosuite
 - nav
 - real
+- rle-bench
 - robocasa
 - robodojo
 - robosuite
