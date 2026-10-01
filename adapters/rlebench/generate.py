@@ -176,7 +176,7 @@ Use the robot to {goal}. {txt['notes']}
 
 {TABLETOP_SCENE}
 
-**Scoring.** {txt['score']} The scene is submitted however the episode ends: `robo done`, running out of steps or time, or stopping without `robo done`; `robo give-up` scores 0.
+**Scoring.** {txt['score']} RLE-Bench itself has no pass mark: it reports this number as the score. The 0.5 pass mark is Robo Use's, because a Robo Use task scores 1 or 0. The scene is submitted however the episode ends: `robo done`, running out of steps or time, or stopping without `robo done`; `robo give-up` scores 0.
 
 You have **{t['max_steps']:,} control steps** in one attempt. Observe and experiment until satisfied, then call `robo done`.
 

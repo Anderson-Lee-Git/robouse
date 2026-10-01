@@ -15,7 +15,7 @@
 
 ## What is adapted
 
-- Robo Use rewards 1 or 0. A tabletop trial passes when RLE-Bench's quality is at least 0.5: a tower at least half the analytic optimum height, a cantilever overhang at least half the harmonic-stack optimum (more than one block alone reaches), or the heavy cube alone on the mat found with at most four weighings. `result.json` records the quality under `judge_detail`.
+- Robo Use rewards 1 or 0, and RLE-Bench has no pass mark (it reports the quality as the score). The pass mark is ours: a tabletop trial passes when RLE-Bench's quality is at least 0.5: a tower at least half the analytic optimum height, a cantilever overhang at least half the harmonic-stack optimum (more than one block alone reaches), or the heavy cube alone on the mat found with at most four weighings. `result.json` records the quality under `judge_detail`.
 - HiddenCOM is one task per box (RLE-Bench runs its three boxes in one attempt and scores the fraction correct, so the mean over the three tasks is RLE-Bench's score). Each box gets 20 minutes (RLE-Bench: one hour for all three), and the episode ends when the step budget is used up, so the agent must submit before then.
 - As in RLE-Bench, a tabletop scene is scored however the episode ends; `robo give-up` scores 0.
 - Rendering is on the CPU (OSMesa, with numba's JIT off, RLE-Bench's supported fallback); RLE-Bench renders with EGL on an NVIDIA GPU.
