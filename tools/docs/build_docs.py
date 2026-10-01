@@ -341,8 +341,9 @@ class Converter:
             if fm and (i + 1 >= n or not lines[i + 1].strip()):  # an image alone in its paragraph: a figure
                 cap, src = fm.group(1), fm.group(2)
                 svg = self.svg(src) if self.svg and src.endswith(".svg") else None
-                body = svg.replace("<svg ", f'<svg role="img" aria-label="{html.escape(plain(cap))}" ', 1) if svg else self._img(src, html.escape(plain(cap)))
-                out.append(f'<figure class="figure">{body}<figcaption>{self.inline(cap)}</figcaption></figure>')
+                body = svg.replace("<svg ", f'<svg role="img" aria-label="{html.escape(plain(cap))}" ') if svg else self._img(src, html.escape(plain(cap)))
+                cls = "figure has-narrow" if svg and "fig-narrow" in svg else "figure"
+                out.append(f'<figure class="{cls}">{body}<figcaption>{self.inline(cap)}</figcaption></figure>')
                 i += 1
                 continue
             para = [line.strip()]
@@ -533,10 +534,18 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
             if not (target.startswith("docs/") and source.exists(target)):
                 broken.append(f"{p.src}: missing figure {href}")
                 return None
-            s = source.read(target)
-            s = re.sub(r"<\?xml[^>]*>\s*|<!--.*?-->", "", s, flags=re.S).strip()
-            uid = posixpath.splitext(posixpath.basename(target))[0]
-            return re.sub(r'id="ah-([\w-]+)"', lambda m: f'id="{uid}-{m.group(1)}"', s).replace("url(#ah-", f"url(#{uid}-")
+
+            def one(t: str) -> str:
+                s = re.sub(r"<\?xml[^>]*>\s*|<!--.*?-->", "", source.read(t), flags=re.S).strip()
+                uid = posixpath.splitext(posixpath.basename(t))[0]
+                return re.sub(r'id="ah-([\w-]+)"', lambda m: f'id="{uid}-{m.group(1)}"', s).replace("url(#ah-", f"url(#{uid}-")
+
+            # X-narrow.svg, when there is one, is the same figure stacked for phones (docs.css shows one of the two)
+            narrow = target[:-len(".svg")] + "-narrow.svg"
+            if source.exists(narrow):
+                return (one(target).replace('class="fig"', 'class="fig fig-wide"', 1)
+                        + one(narrow).replace('class="fig"', 'class="fig fig-narrow"', 1))
+            return one(target)
 
         conv = Converter(link, {page_url(base, q.slug): q.label for q in pages}, svg)
         p.body = conv.blocks(md.splitlines())
@@ -731,6 +740,19 @@ article img { display: block; max-width: 100%; height: auto; margin: var(--sp-8)
 /* figures: inline SVG diagrams take the page's colours and type; stills are small webp images */
 .figure { margin: var(--sp-24) 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .figure > svg { display: block; width: 100%; min-width: 500px; height: auto; overflow: visible; }  /* small screens scroll rather than shrink the type */
+.figure > svg.fig-narrow { display: none; }
+/* a figure with a stacked variant shows that instead on phones, and wherever its column is narrower than the wide
+   drawing's 500 px (a tablet with the sidebar), at about the desktop's type size, so nothing scrolls sideways */
+.figure.has-narrow { container-type: inline-size; }
+@media (max-width: 640px) {
+  .figure.has-narrow { overflow-x: visible; }
+  .figure.has-narrow > svg.fig-wide { display: none; }
+  .figure.has-narrow > svg.fig-narrow { display: block; width: 100%; min-width: 0; max-width: 316px; }
+}
+@container (max-width: 499px) {
+  .figure.has-narrow > svg.fig-wide { display: none; }
+  .figure.has-narrow > svg.fig-narrow { display: block; width: 100%; min-width: 0; max-width: 316px; }
+}
 .figure img { margin: 0; }
 .fig { color: var(--ink); }
 .fig text { font-family: var(--sans); font-size: var(--fs-meta); fill: var(--ink2); }

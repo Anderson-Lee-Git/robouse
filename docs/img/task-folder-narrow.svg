@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 270 514" class="fig">
+  <defs><marker id="ah-t" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="fill"/></marker></defs>
+  <text x="1" y="14" class="m b">metaworld-push/</text>
+  <rect x="1" y="26" width="268" height="340" rx="8" class="box"/>
+  <text x="14" y="50" class="m b">task.md</text>
+  <rect x="14" y="62" width="242" height="72" rx="5" class="box2"/>
+  <text x="26" y="82" class="m">schema_version: '1.3'</text>
+  <text x="26" y="102" class="m">task:  metadata:</text>
+  <text x="26" y="122" class="m">agent:  verifier:</text>
+  <path d="M24,134 V156 H34" class="ln thin" marker-end="url(#ah-t)"/>
+  <text x="40" y="152" class="s">BenchFlow task fields</text>
+  <text x="40" y="168" class="k">name, source, time limits</text>
+  <rect x="14" y="178" width="242" height="72" rx="5" class="box2"/>
+  <text x="26" y="198" class="m">robouse:</text>
+  <text x="26" y="218" class="m">  backend: metaworld</text>
+  <text x="26" y="238" class="m">  max_steps: 500</text>
+  <path d="M24,250 V272 H34" class="ln thin" marker-end="url(#ah-t)"/>
+  <text x="40" y="268" class="s">Robo Use settings</text>
+  <text x="40" y="284" class="k">scene, budget, scoring</text>
+  <rect x="14" y="294" width="242" height="36" rx="5" class="box2"/>
+  <text x="26" y="317" class="m"># Push</text>
+  <text x="84" y="317" class="s">A Sawyer robot arm ...</text>
+  <path d="M24,330 V350 H34" class="ln thin" marker-end="url(#ah-t)"/>
+  <text x="40" y="354" class="s">what the agent reads</text>
+  <rect x="1" y="378" width="268" height="36" rx="8" class="box"/>
+  <text x="14" y="401" class="m b">oracle/solve.sh</text>
+  <path d="M24,414 V432 H34" class="ln thin" marker-end="url(#ah-t)"/>
+  <text x="40" y="436" class="s">reference solution</text>
+  <rect x="1" y="448" width="268" height="36" rx="8" class="box"/>
+  <text x="14" y="471" class="m b">verifier/test.sh</text>
+  <path d="M24,484 V502 H34" class="ln thin" marker-end="url(#ah-t)"/>
+  <text x="40" y="506" class="s">writes reward.txt</text>
+</svg>
