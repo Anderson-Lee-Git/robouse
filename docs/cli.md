@@ -1,6 +1,6 @@
 # CLIs
 
-`robouse` runs tasks, trials and runs; `robo` is the agent's only way to act. The help below is the output of `robouse 0.2.0`.
+`robouse` runs tasks, trials and runs; `robo` is the agent's only way to act. The help below is the output of `robouse 0.3.0`.
 
 ```console
 $ robouse --help
@@ -35,9 +35,9 @@ commands:
 ```console
 $ robouse run --help
 usage: robouse run [-h] --task TASK --out OUT --harness HARNESS
-                   [--model MODEL] [--timeout TIMEOUT] [--record-size WxH]
-                   [--seed SEED] [--split SPLIT]
-                   [--extra-instruction EXTRA_INSTRUCTION]
+                   [--model MODEL] [--interface {cli,mcp,both}]
+                   [--timeout TIMEOUT] [--record-size WxH] [--seed SEED]
+                   [--split SPLIT] [--extra-instruction EXTRA_INSTRUCTION]
                    [--prior-learnings PRIOR_LEARNINGS]
 
 options:
@@ -46,10 +46,15 @@ options:
   --out OUT             job folder; the trial is written to
                         OUT/<task>__<harness>__<id>/
   --harness HARNESS, --agent HARNESS
-                        harness: oracle, noop, claude-code, codex, claude-
-                        code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or
-                        vla (https://robouse.ai/docs/harnesses/)
+                        harness: oracle, noop, claude-code, codex, mini-swe-
+                        agent, dimcode, molmoact2 or vla; --model a provider-
+                        prefixed id such as baseten/zai-org/GLM-5.3
+                        (https://robouse.ai/docs/harnesses/)
   --model MODEL         model for the harness (default: the harness's)
+  --interface {cli,mcp,both}
+                        what the agent drives the robot with: the robo CLI,
+                        the robo MCP tools, or both (default: the task's
+                        robouse.interface, else cli)
   --timeout TIMEOUT     agent wall-clock limit in seconds (default: the task's
                         agent.timeout_sec)
   --record-size WxH     render the episode video at this size, e.g. 1280x720;
@@ -79,8 +84,9 @@ usage: robouse run-many [-h] [--tasks TASKS] --out OUT [--filter FILTER]
                         [--seeds SEEDS] [--epochs EPOCHS]
                         [--concurrency CONCURRENCY] [--retries RETRIES]
                         [--resume] [--dry-run] --harness HARNESS
-                        [--model MODEL] [--timeout TIMEOUT]
-                        [--record-size WxH] [--seed SEED] [--split SPLIT]
+                        [--model MODEL] [--interface {cli,mcp,both}]
+                        [--timeout TIMEOUT] [--record-size WxH] [--seed SEED]
+                        [--split SPLIT]
                         [--extra-instruction EXTRA_INSTRUCTION]
                         [--prior-learnings PRIOR_LEARNINGS]
 
@@ -111,10 +117,15 @@ options:
                         did not fail on infrastructure
   --dry-run             print the resolved trial plan and exit
   --harness HARNESS, --agent HARNESS
-                        harness: oracle, noop, claude-code, codex, claude-
-                        code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or
-                        vla (https://robouse.ai/docs/harnesses/)
+                        harness: oracle, noop, claude-code, codex, mini-swe-
+                        agent, dimcode, molmoact2 or vla; --model a provider-
+                        prefixed id such as baseten/zai-org/GLM-5.3
+                        (https://robouse.ai/docs/harnesses/)
   --model MODEL         model for the harness (default: the harness's)
+  --interface {cli,mcp,both}
+                        what the agent drives the robot with: the robo CLI,
+                        the robo MCP tools, or both (default: each task's
+                        robouse.interface, else cli)
   --timeout TIMEOUT     agent wall-clock limit in seconds (default: each
                         task's)
   --record-size WxH     render the episode video at this size, e.g. 1280x720;
@@ -307,7 +318,7 @@ options:
                  $ROBOUSE_MENAGERIE_ASSETS)
   --robot ROBOT  only this Menagerie robot folder (repeatable), e.g.
                  unitree_go2
-  --all          every robot the bundled suites use (about 2 GB)
+  --all          every robot the bundled suites use (about 390 MB)
 ```
 
 ## robouse report
@@ -376,6 +387,7 @@ request.
   robo skill NAME [ARG ...]          run a named high-level skill listed by `robo info` (only some tasks have them)
   robo done ["message"]              end the episode and ask for scoring
   robo give-up ["message"]           end the episode without claiming success
+  robo mcp [--http [HOST:]PORT]      serve these operations as MCP tools (stdio; --http: streamable HTTP)
 Add --json to any command for raw JSON output.
 ```
 
