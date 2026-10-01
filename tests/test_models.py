@@ -1,5 +1,5 @@
 """Model ids, providers and image input: naming, legacy aliases, the image-input record, the gateway's image rule, its
-Codex tool bridge and its spend accounting. The end-to-end checks (a real gateway between a scripted agent and a stub
+handling of Codex's Responses requests and its spend accounting. The end-to-end checks (a real gateway between a scripted agent and a stub
 provider) are in test_gateway_trials.py."""
 
 from __future__ import annotations
@@ -141,30 +141,36 @@ def test_gateway_hook_strips_every_image_for_a_text_only_model_in_every_protocol
     assert H.apply_cap(capped, 8) == (9, 5) and len(H._image_refs(capped, [])) == 4  # batches of 5, as the old proxy
 
 
-def test_gateway_flattens_codex_namespace_tools_for_chat_completions() -> None:
-    """Codex 0.159 sends a `namespace` tool group and a web_search tool; chat completions takes function tools only."""
+def test_gateway_hook_passes_a_codex_request_through_except_tool_result_images() -> None:
+    """Codex's Responses request reaches the provider as sent: reasoning effort, earlier reasoning items and every tool
+    (namespace groups and web_search included) stay; only an image inside a tool result moves to a user message."""
     pytest.importorskip("litellm")
     from robouse.harnesses.providers import gateway_hook as H
 
-    fn = {"type": "function", "name": "shell", "parameters": {}}
     tools = [
-        fn,
-        {
-            "type": "namespace",
-            "name": "multi_agent_v1",
-            "tools": [{"type": "function", "name": "spawn", "parameters": {}}, {"type": "custom", "name": "odd"}],
-        },
+        {"type": "function", "name": "exec_command", "parameters": {}},
+        {"type": "namespace", "name": "multi_agent_v1", "tools": [{"type": "function", "name": "spawn_agent"}]},
         {"type": "web_search"},
     ]
-    kept, dropped = H._chat_compatible_tools(tools)
-    assert [t["name"] for t in kept] == ["shell", "spawn"] and all(t["type"] == "function" for t in kept)
-    assert sorted(dropped) == ["odd", "web_search"]
-    hook = H.RobouseGateway()
-    data = {"model": "m-responses-bridge", "tools": tools, "input": "hi"}
-    out = asyncio.run(hook.async_pre_call_hook(None, None, data, "aresponses"))
-    assert [t["name"] for t in out["tools"]] == ["shell", "spawn"]
-    data = {"model": "m", "tools": list(tools), "messages": []}  # not the bridge: tools untouched
-    assert len(asyncio.run(hook.async_pre_call_hook(None, None, data, "acompletion"))["tools"]) == 3
+    reasoning_item = {"type": "reasoning", "id": "rs_1", "summary": [{"type": "summary_text", "text": "plan"}]}
+    data = {
+        "model": "m",
+        "reasoning": {"effort": "medium", "summary": "auto"},
+        "include": ["reasoning.encrypted_content"],
+        "store": False,
+        "tools": json.loads(json.dumps(tools)),
+        "input": [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "go"}]},
+            json.loads(json.dumps(reasoning_item)),
+            {"type": "function_call", "call_id": "c1", "name": "exec_command", "arguments": "{}"},
+            {"type": "function_call_output", "call_id": "c1", "output": "done"},
+        ],
+    }
+    before = json.loads(json.dumps(data))
+    out = asyncio.run(H.RobouseGateway().async_pre_call_hook(None, None, data, "aresponses"))
+    assert out == before  # nothing to move: the request is unchanged
+    assert out["reasoning"] == {"effort": "medium", "summary": "auto"} and out["input"][1] == reasoning_item
+    assert out["tools"] == tools
 
 
 def test_native_route_moves_tool_result_images_into_a_user_message() -> None:

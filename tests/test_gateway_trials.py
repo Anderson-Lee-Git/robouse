@@ -62,16 +62,42 @@ subprocess.run(["robo", "done", "scripted agent"], check=False)
 '''
 
 
+RESPONSE = {  # a minimal Responses API reply
+    "id": "resp_stub",
+    "object": "response",
+    "created_at": 0,
+    "status": "completed",
+    "model": "stub/text-model",
+    "output": [
+        {
+            "type": "message",
+            "id": "msg_stub",
+            "status": "completed",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "ok", "annotations": []}],
+        }
+    ],
+    "parallel_tool_calls": True,
+    "tool_choice": "auto",
+    "tools": [],
+    "usage": {"input_tokens": 1000, "output_tokens": 10, "total_tokens": 1010},
+}
+
+
 class Stub(BaseHTTPRequestHandler):
-    """An OpenAI-compatible chat completions endpoint that records what reaches it."""
+    """An OpenAI-compatible chat completions and Responses endpoint that records what reaches it."""
 
     bodies: list = []
+    paths: list = []
     usage = {"prompt_tokens": 1000, "completion_tokens": 10, "total_tokens": 1010}
 
     def do_POST(self) -> None:
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         Stub.bodies.append(body.decode())
-        out = json.dumps(
+        Stub.paths.append(self.path)
+        if self.path.endswith("/responses"):
+            return self._reply(RESPONSE)
+        self._reply(
             {
                 "id": "stub",
                 "object": "chat.completion",
@@ -80,7 +106,10 @@ class Stub(BaseHTTPRequestHandler):
                 "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
                 "usage": Stub.usage,
             }
-        ).encode()
+        )
+
+    def _reply(self, obj: dict) -> None:
+        out = json.dumps(obj).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(out)))
@@ -95,7 +124,7 @@ class Stub(BaseHTTPRequestHandler):
 def stub_provider(tmp_path, monkeypatch):
     """A provider `stubprov` in the registry, serving one text-only model from a local stub; its price in a pricing
     file; a scripted harness `stubagent` that reaches it through the trial's gateway."""
-    Stub.bodies = []
+    Stub.bodies, Stub.paths = [], []
     srv = ThreadingHTTPServer(("127.0.0.1", 0), Stub)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_address[1]}/v1"
@@ -105,7 +134,7 @@ def stub_provider(tmp_path, monkeypatch):
         "api_protocol": "openai-completions",
         "auth_type": "api_key",
         "auth_env": "STUBPROV_API_KEY",
-        "endpoints": {"openai-completions": url},
+        "endpoints": {"openai-completions": url, "openai-responses": url},
         "models": [{"id": "stub/text-model", "name": "Stub", "input": ["text"]}],
     }
     monkeypatch.setitem(models.PENDING_PROVIDERS, "stubprov", entry)
@@ -194,3 +223,76 @@ def test_the_spend_cap_stops_the_trial_as_a_budget_stop(stub_provider, tmp_path,
 
     rec = audit.audit_trial(job / res["trial"])
     assert rec["outcome"] == "budget_stop" and rec["infra_failure"] is False and rec["budget_stop"]
+
+
+def test_codex_requests_reach_the_provider_with_their_reasoning(stub_provider, tmp_path) -> None:
+    """Regression (2026-10-01): the Responses-to-chat bridge dropped Codex's reasoning effort and every earlier
+    reasoning item, and Codex on GLM-5.3 reasoned about a quarter as much. Codex now uses the provider's own Responses
+    endpoint: the request arrives as Codex sent it, except that an image in a tool result moves to a user message."""
+    import base64
+    import urllib.request
+
+    ws = tmp_path / "ws"
+    (ws / ".robouse").mkdir(parents=True)
+    env = {
+        "_ROBOUSE_TRIAL_DIR": str(tmp_path / "trial"),
+        "_ROBOUSE_IMAGE_INPUT": "1",
+        "_ROBOUSE_SPEND_CAP_USD": "0",
+        "PATH": "/usr/bin:/bin",
+    }
+    launch = harnesses.build("codex", MODEL, "solve it", ws, None, env)
+    try:
+        model = launch.cmd[launch.cmd.index("-m") + 1]
+        assert not any("bridge" in str(a) for a in launch.cmd)  # the plain alias: the provider's Responses endpoint
+        url = next(v for k, v in launch.env.items() if k == "ROBOUSE_GATEWAY_URL")
+        png = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
+        reasoning_item = {"type": "reasoning", "id": "rs_1", "summary": [{"type": "summary_text", "text": "the plan"}]}
+        tools = [
+            {"type": "function", "name": "exec_command", "parameters": {"type": "object", "properties": {}}},
+            {
+                "type": "namespace",
+                "name": "multi_agent_v1",
+                "description": "agents",
+                "tools": [
+                    {"type": "function", "name": "spawn_agent", "parameters": {"type": "object", "properties": {}}}
+                ],
+            },
+            {"type": "web_search"},
+        ]
+        body = {
+            "model": model,
+            "stream": False,
+            "store": False,
+            "reasoning": {"effort": "medium", "summary": "auto"},
+            "include": ["reasoning.encrypted_content"],
+            "tools": tools,
+            "input": [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "look"}]},
+                reasoning_item,
+                {"type": "function_call", "call_id": "c1", "name": "view_image", "arguments": "{}"},
+                {
+                    "type": "function_call_output",
+                    "call_id": "c1",
+                    "output": [{"type": "input_image", "image_url": png}],
+                },
+            ],
+        }
+        req = urllib.request.Request(
+            url + "/v1/responses",
+            json.dumps(body).encode(),
+            {"Content-Type": "application/json", "Authorization": "Bearer " + launch.env["ROBOUSE_GATEWAY_KEY"]},
+        )
+        with urllib.request.urlopen(req, timeout=60) as r:
+            assert r.status == 200
+    finally:
+        launch.stop()
+    assert Stub.paths[-1].endswith("/responses")  # Responses, not chat completions
+    sent = json.loads(Stub.bodies[-1])
+    assert sent["reasoning"] == {"effort": "medium", "summary": "auto"}
+    assert [i for i in sent["input"] if i.get("type") == "reasoning"] == [reasoning_item]
+    assert sent["include"] == ["reasoning.encrypted_content"] and sent["store"] is False
+    assert [t.get("type") for t in sent["tools"]] == ["function", "namespace", "web_search"]
+    out = next(i for i in sent["input"] if i.get("type") == "function_call_output")
+    assert "input_image" not in json.dumps(out["output"])  # Baseten rejects an image in a tool result ...
+    user = sent["input"][sent["input"].index(out) + 1]
+    assert user["role"] == "user" and user["content"][-1]["image_url"] == png  # ... and takes it in a user message

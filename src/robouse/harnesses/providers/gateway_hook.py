@@ -7,6 +7,9 @@ capability, read from ROBOUSE_GATEWAY_MAX_IMAGES:
   N   at most N images per request: the oldest are replaced, in batches of 5 so the prompt prefix (and the provider's
       prompt cache) stays the same for several turns (the rule of the earlier Baseten proxy)
   -1  no limit
+In a Responses request (Codex) it then moves every image left in a tool result (function_call_output) into a user
+message right after it: Baseten's Responses endpoint rejects an image inside a tool result and takes it in a user
+message. Nothing else in the request changes (reasoning effort and earlier reasoning items pass through as sent).
 Right before the upstream call it counts the image parts that actually leave the gateway, and appends one line per
 request to $ROBOUSE_GATEWAY_LOG (JSON: call type, images in, removed, sent upstream). No request content is logged.
 
@@ -119,25 +122,6 @@ def _dump(name: str, obj) -> None:
         f.write(json.dumps({"t": round(time.time(), 3), **keep}, default=str) + "\n")
 
 
-def _chat_compatible_tools(tools: list) -> tuple[list, list]:
-    """Tools a chat-completions backend accepts, for a Responses request bridged to chat completions. Chat completions
-    takes only `function` tools; Codex also sends `namespace` groups (function tools nested under a name), which are
-    flattened, and tool kinds with no chat equivalent (e.g. web_search), which are dropped and logged by name."""
-    kept, dropped = [], []
-    for t in tools:
-        if not isinstance(t, dict):
-            continue
-        if t.get("type") == "function":
-            kept.append(t)
-        elif t.get("type") == "namespace" and isinstance(t.get("tools"), list):
-            inner, lost = _chat_compatible_tools(t["tools"])
-            kept += inner
-            dropped += lost
-        else:
-            dropped.append(str(t.get("name") or t.get("type")))
-    return kept, dropped
-
-
 def _log(rec: dict) -> None:
     path = os.environ.get("ROBOUSE_GATEWAY_LOG")
     if path:
@@ -166,7 +150,6 @@ class RobouseGateway(CustomLogger):
         self.spend_cap = float(os.environ.get("ROBOUSE_GATEWAY_SPEND_CAP", "0") or 0)
         self.price = json.loads(os.environ.get("ROBOUSE_GATEWAY_PRICE") or "{}")
         self.stop_file = os.environ.get("ROBOUSE_GATEWAY_STOP_FILE", "")
-        self.move_tool_images = os.environ.get("ROBOUSE_GATEWAY_MOVE_TOOL_IMAGES") == "1"
         self.spent = 0.0
 
     def over_cap(self) -> bool:
@@ -189,7 +172,7 @@ class RobouseGateway(CustomLogger):
             )
         _dump("in", data)
         n, k = apply_cap(data, self.cap)
-        moved = move_tool_images(data) if self.move_tool_images else 0
+        moved = move_tool_images(data)  # Responses bodies only: images out of tool results into the next user message
         bearer = os.environ.get("ROBOUSE_GATEWAY_BEARER_ENV")
         if bearer and os.environ.get(bearer):  # providers whose Anthropic endpoint wants a Bearer token, not x-api-key
             data["extra_headers"] = {
@@ -197,9 +180,6 @@ class RobouseGateway(CustomLogger):
                 "Authorization": f"Bearer {os.environ[bearer]}",
             }
         tools = data.get("tools")
-        dropped = []
-        if isinstance(tools, list) and str(data.get("model", "")).endswith("-responses-bridge"):
-            data["tools"], dropped = _chat_compatible_tools(tools)
         _log(
             {
                 "event": "request",
@@ -210,7 +190,6 @@ class RobouseGateway(CustomLogger):
                 "tool_types": sorted({str(t.get("type")) for t in tools if isinstance(t, dict)})
                 if isinstance(tools, list)
                 else [],
-                "tools_dropped": dropped,
                 # names and keys only (no descriptions or schemas) of tools that are not plain functions
                 "tool_shapes": [
                     {

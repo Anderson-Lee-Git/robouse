@@ -1,13 +1,15 @@
 """The model gateway: one LiteLLM proxy per trial, between the agent and the model provider.
 
 Routing is BenchFlow's: `benchflow.providers.litellm_config.resolve_litellm_route` turns the provider-prefixed model id
-into a LiteLLM route from BenchFlow's provider registry, and `litellm_proxy_config` writes the proxy config, including
-the Responses-to-chat-completions bridge that Codex uses for providers served over chat completions. The gateway
-bridges protocols (Claude Code speaks Anthropic Messages, Codex speaks the Responses API, mini-swe-agent chat
-completions; the provider is reached over chat completions), holds the provider key (the agent gets only a per-trial
-master key), applies the trial's image input to every request, and enforces the trial's spend cap
-(`providers/gateway_hook.py`): once the model's cost reaches the cap, every further request is refused and the gateway
-writes gateway/budget_stop.json, which the runner watches to stop the agent.
+into a LiteLLM route from BenchFlow's provider registry, and `litellm_proxy_config` writes the proxy config. Each
+harness reaches the provider over its own protocol: Claude Code over Anthropic Messages, Codex over the provider's own
+Responses API (the request passes through unchanged, reasoning effort and earlier reasoning included; images in tool
+results move into the next user message, which every Responses provider takes), mini-swe-agent over chat completions.
+The gateway holds the provider key (the agent gets only a per-trial master key), applies the trial's image input to
+every request, and enforces the trial's spend cap (`providers/gateway_hook.py`): once the model's cost reaches the
+cap, every further request is refused and the gateway writes gateway/budget_stop.json, which the runner watches to
+stop the agent. No Responses-to-chat-completions bridge: it dropped Codex's reasoning effort and every earlier
+reasoning item, and Codex on GLM-5.3 reasoned about a quarter as much and solved fewer tasks.
 
 Files, in the trial folder (outside the agent's sandbox): gateway/config.yaml, gateway/requests.jsonl (image counts
 per request, no content), gateway/proxy.log. The provider key is referenced as os.environ/<VAR> in the config and
@@ -39,7 +41,6 @@ class Gateway:
     url: str  # http://127.0.0.1:<port>
     key: str  # per-trial master key: the only credential the agent sees
     model: str  # the model name the agent sends (a proxy alias)
-    responses_model: str  # the name Codex sends (Responses API bridged to chat completions)
     proc: subprocess.Popen
     dir: Path
     stats: dict = field(default_factory=dict)
@@ -108,7 +109,8 @@ def image_cap(ref: models.ModelRef, images: bool) -> int:
 
 
 def _same_protocol_route(route, cfg, protocol: str | None, env: dict):
-    """Reach the provider over the agent's own protocol when the provider serves it.
+    """Reach the provider over the agent's own protocol when the provider serves it (Codex: the Responses endpoint, set
+    as the alias's api_base; Claude Code: Anthropic Messages, below).
 
     BenchFlow's route always uses a provider's chat-completions endpoint when it has one. For Claude Code that loses
     images: LiteLLM turns an image inside an Anthropic tool_result into text on the way to chat completions (spike
@@ -118,6 +120,10 @@ def _same_protocol_route(route, cfg, protocol: str | None, env: dict):
 
     from benchflow.agents.providers import resolve_base_url
 
+    if protocol == "openai-responses":
+        params = dict(route.litellm_params)
+        params["api_base"] = resolve_base_url(cfg, env, protocol=protocol)
+        return dataclasses.replace(route, litellm_params=params)
     if protocol != "anthropic-messages" or protocol not in cfg.all_endpoints:
         return route
     params = dict(route.litellm_params)
@@ -139,7 +145,6 @@ def start(
     images: bool,
     protocol: str | None = None,
     spend_cap_usd: float = 0.0,
-    move_tool_images: bool = False,
     timeout: float = 90,
 ) -> Gateway:
     import yaml
@@ -147,6 +152,8 @@ def start(
 
     cfg = models.provider_registry()[ref.provider]
     env = dict(os.environ)
+    if protocol == "openai-responses" and protocol not in cfg.all_endpoints:
+        raise RuntimeError(f"Codex needs a provider that serves the Responses API; {ref.provider} does not")
     if cfg.auth_env and not env.get(cfg.auth_env):
         raise RuntimeError(f"model {ref.id} needs {cfg.auth_env} in the environment")
     route = _same_protocol_route(resolve_litellm_route(ref.id, env), cfg, protocol, env)
@@ -179,7 +186,6 @@ def start(
         "ROBOUSE_GATEWAY_SPEND_CAP": str(spend_cap_usd),
         "ROBOUSE_GATEWAY_STOP_FILE": str(d / STOP_FILE),
         "ROBOUSE_GATEWAY_PRICE": json.dumps(price or {}),
-        "ROBOUSE_GATEWAY_MOVE_TOOL_IMAGES": "1" if move_tool_images else "0",
         "PYTHONPATH": str(d),
         **({"ROBOUSE_GATEWAY_BEARER_ENV": cfg.auth_env} if route.upstream_model.startswith("anthropic/") else {}),
         "DOCS_URL": "",
@@ -211,13 +217,11 @@ def start(
         url,
         key,
         route.model_alias,
-        f"{route.model_alias}-responses-bridge",
         proc,
         d,
         {
             "image_cap": image_cap(ref, images),
             "route": route.upstream_model,
             "spend_cap_usd": spend_cap_usd or None,
-            "tool_images_moved_to_user_message": move_tool_images,
         },
     )
