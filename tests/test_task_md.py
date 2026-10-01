@@ -81,11 +81,15 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path
     from types import SimpleNamespace
 
     from robouse import harnesses
+    from robouse.harnesses import models
     from robouse.runner.trial import _make_workspace
 
     # a model gateway stand-in: the real one starts a LiteLLM proxy for the trial (harnesses/gateway.py)
     gw = SimpleNamespace(url="http://127.0.0.1:9", key="gw", model="m", stats=None, stop=None, stop_file=None)
     monkeypatch.setattr(harnesses, "_gateway", lambda ref, env, protocol: gw)
+    # and a provider registry stand-in with the Baseten entry, so the test runs without the llm extra (BenchFlow)
+    baseten = SimpleNamespace(**models.PENDING_PROVIDERS["baseten"])
+    monkeypatch.setattr(models, "provider_registry", lambda: {"baseten": baseten})
     monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(tmp_path / "cache"))  # harness homes go to the cache
     stubs = tmp_path / "bin"  # the agent programs only need to exist: nothing is launched
     stubs.mkdir()

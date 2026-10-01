@@ -207,6 +207,18 @@ def _clear_interrupt():
     trial.INTERRUPTED.clear()
 
 
+@pytest.fixture
+def ctrl_c():
+    """A terminal's Ctrl-C for this test: SIGINT raises KeyboardInterrupt in the main thread. Python sets that up at
+    start only when SIGINT is not ignored, and a suite started from a background job or nohup inherits it ignored, so the
+    tests' own SIGINT did nothing there ("DID NOT RAISE KeyboardInterrupt"). Restored afterwards."""
+    old = signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        yield lambda: os.kill(os.getpid(), signal.SIGINT)
+    finally:
+        signal.signal(signal.SIGINT, old)
+
+
 def _scripted(monkeypatch, name: str, script: str) -> None:
     from robouse import harnesses
     from robouse.harnesses import Launch
@@ -255,7 +267,7 @@ def test_a_harness_error_is_an_infrastructure_failure(tmp_path, monkeypatch, cap
     assert r["exception"] and "Invalid API key" in r["exception"]
 
 
-def test_ctrl_c_stops_the_agent_and_records_the_trial(tmp_path, monkeypatch) -> None:  # CB-15, CB-003
+def test_ctrl_c_stops_the_agent_and_records_the_trial(tmp_path, monkeypatch, ctrl_c) -> None:  # CB-15, CB-003
     pytest.importorskip("mujoco")
     from robouse.runner import run_trial
     from robouse.tasks import load_task
@@ -268,7 +280,7 @@ def test_ctrl_c_stops_the_agent_and_records_the_trial(tmp_path, monkeypatch) -> 
             if pidfile.exists():
                 break
             threading.Event().wait(0.1)
-        os.kill(os.getpid(), signal.SIGINT)
+        ctrl_c()
 
     threading.Thread(target=interrupt, daemon=True).start()
     job = tmp_path / "job"
@@ -388,7 +400,7 @@ def test_requests_count_the_agent_until_the_end(tmp_path, monkeypatch, _sim) -> 
     assert not (tdir / "artifacts" / "recording.mp4").exists() and "video_size" not in ep
 
 
-def test_ctrl_c_during_run_many_records_every_running_trial(tmp_path, monkeypatch, _sim) -> None:  # parity A10
+def test_ctrl_c_during_run_many_records_every_running_trial(tmp_path, monkeypatch, _sim, ctrl_c) -> None:  # parity A10
     from robouse.runner import run_many
 
     pids = tmp_path / "pids"
@@ -400,7 +412,7 @@ def test_ctrl_c_during_run_many_records_every_running_trial(tmp_path, monkeypatc
             if len(list(pids.iterdir())) >= 2:
                 break
             threading.Event().wait(0.1)
-        os.kill(os.getpid(), signal.SIGINT)
+        ctrl_c()
 
     threading.Thread(target=interrupt, daemon=True).start()
     job = tmp_path / "job"
