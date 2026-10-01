@@ -118,7 +118,7 @@ PAGES: list[tuple[str, str, str, str, str]] = [
     ("Get started", "docs/index.md", "", "Overview",
      "Robo Use turns robot benchmarks into tasks that an agent harness such as Claude Code solves by driving a simulated robot with robo."),
     ("Get started", "docs/quickstart.md", "quickstart", "Quickstart",
-     "Install robouse and let Claude Code with Kimi K3 solve arc-gravity, a rule-inference task on a table, in 26 robo calls."),
+     "Install robouse and let Claude Code with Kimi K3 solve arc-gravity, a rule-inference task on a table, in 31 robo calls."),
     ("Get started", "docs/supported.md", "supported", "Supported",
      "The models, harnesses, platforms, isolation modes and formats Robo Use 0.3.0 supports, and what each needs."),
     ("Concepts", "docs/concepts.md", "concepts", "Concepts",
