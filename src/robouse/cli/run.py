@@ -147,7 +147,11 @@ def _unknown_harness(name: str) -> int:
     from ..harnesses import HARNESSES
     from ..harnesses.models import LEGACY_HARNESSES
 
-    if name in HARNESSES or name in LEGACY_HARNESSES or any(ep.name == name for ep in entry_points(group="robouse.harnesses")):
+    if (
+        name in HARNESSES
+        or name in LEGACY_HARNESSES
+        or any(ep.name == name for ep in entry_points(group="robouse.harnesses"))
+    ):
         return 0
     print(f"robouse: unknown harness {name!r}; harnesses: {', '.join(HARNESSES)}", file=sys.stderr)
     return 2

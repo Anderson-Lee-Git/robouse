@@ -76,11 +76,10 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path
     its prompt (mini-swe-agent's harness used to write it to .robouse/task.txt as well)."""
     import os
     import shutil
+    from types import SimpleNamespace
 
     from robouse import harnesses
     from robouse.runner.trial import _make_workspace
-
-    from types import SimpleNamespace
 
     # a model gateway stand-in: the real one starts a LiteLLM proxy for the trial (harnesses/gateway.py)
     gw = SimpleNamespace(url="http://127.0.0.1:9", key="gw", model="m", stats=None, stop=None, stop_file=None)
