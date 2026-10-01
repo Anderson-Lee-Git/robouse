@@ -37,7 +37,7 @@ Compare jobs with `robouse report` ([Metrics](metrics.md#reports)).
 
 ## A dataset
 
-A dataset is a named, versioned set of tasks on the [hub](/hub/), for example `farama-foundation/metaworld@0.3`. A registry file pins each version to one commit of the hub repository, [github.com/benchflow-ai/robohub](https://github.com/benchflow-ai/robohub), and a digest of every task. `bench` checks the digests, then runs each task in two Docker containers: the agent with only the `robo` client, and the simulator with no network, which also runs the verifier.
+A dataset is a named, versioned set of tasks on the [hub](/hub/), for example `farama-foundation/metaworld@0.3`. A registry file pins each version to one commit of the hub repository, [github.com/benchflow-ai/robohub](https://github.com/benchflow-ai/robohub), and a digest of every task. `bench` checks the digests, then runs each task in two Docker containers: the agent with only the `robo` client, and the simulator with no network, which also runs the verifier. `bench` is BenchFlow's command; `pip install 'robouse[benchflow]'` installs it (Python 3.12 or newer).
 
 ```console
 $ ROBOUSE_ORACLE_TOKEN=$(openssl rand -hex 16) \
@@ -51,7 +51,7 @@ $ ROBOUSE_ORACLE_TOKEN=$(openssl rand -hex 16) \
 ...
 [PASS] metaworld-reach (reward=1.00, tools=0)
 [PASS] metaworld-drawer-open (reward=1.00, tools=0)
-Job complete: 2/2 (100.0%), mean_reward=1.00, errors=0, idle_timeouts=0, time=0.5min
+Job complete: 2/2 (100.0%), mean_reward=1.00, errors=0, idle_timeouts=0, time=1.8min
 ✓ Score: 2/2 (100.0%), mean reward 1.00, errors=0
 ```
 
