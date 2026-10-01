@@ -41,7 +41,10 @@ Publishing safety, applied at build time and checked again on the output (the bu
 - secret shapes (API keys, tokens, passwords in assignments) are replaced by [redacted];
 - trials whose agent looked at files outside its workspace (home folder listings, find /, other projects) get
   their trajectory withheld: the page keeps the video, the camera images, the reward and the outcome, and says why;
-- the output is scanned for secret shapes and for words that must not appear (BANNED), and every internal link
+- the machine the trials ran on is replaced in agents' outputs: the account name becomes "user" (padded, so `ls -l`
+  columns stay aligned), the per-user temp folder (/var/folders/<2>/<id>) becomes <tmp>, the host name "host";
+- the output is scanned for secret shapes, for words that must not appear (BANNED) and for personal identifiers
+  (PERSONAL: the account name, a home folder, the per-user temp folder, the host name), and every internal link
   and data reference is checked; the build stops with a list of problems if anything is found.
 
 Standard library, Pillow (filmstrips) and ffmpeg (videos); src/robouse/runner/atif.py is used for trials without a trajectory.
@@ -134,12 +137,29 @@ WITHHELD_NOTE = ("Trajectory not published: during this trial the agent looked a
                  "listing the home folder or searching the whole disk), so its commands and their outputs may show unrelated "
                  "local files. The recording, the camera images, the reward and the outcome are shown.")
 HOME_REPO = "/Users/maintainer/benchflow/robouse/"
+# The machine the trials ran on, in agents' outputs: the account name (`ls -l` columns, `whoami`), the per-user temp
+# folder (/var/folders/<2>/<id>, where workspaces live) and the host name. Replaced, not withheld: `ls -l` keeps its
+# columns (the name becomes "user" padded to the same width), a temp path keeps its tail after "<tmp>".
+OWNER = "lixiangyi"
+PERSONAL_SUBS = [
+    (re.compile(r"(?:/private)?/var/folders/[A-Za-z0-9_]{2}/[A-Za-z0-9_+-]+(?:/T(?=/|\b))?"), "<tmp>"),
+    (re.compile(r"(?:/private)?/var/folders/[A-Za-z0-9_]{2}/"), "<tmp>/"),
+    (re.compile(r"(?i)xiangyis?-macbook-pro(?:-\d+)?(?:\.local)?"), "host"),
+    (re.compile(OWNER + r"(?= )"), "user" + " " * (len(OWNER) - len("user"))),
+    (re.compile(OWNER), "user"),
+]
+# what must never be in the output (checked by scan(), which fails the build): the account name, the home folder, the
+# per-user temp folder, the host name
+PERSONAL = re.compile(r"(?i)" + OWNER + r"|/Users/[A-Za-z0-9_.-]+/|/var/folders/[A-Za-z0-9_]{2}/|xiangyis?-macbook")
 
 
 def redact(s: str) -> str:
     for rx in SECRET_RES:
         s = rx.sub("[redacted]", s)
-    return BANNED.sub("[redacted]", s)
+    s = BANNED.sub("[redacted]", s)
+    for rx, sub in PERSONAL_SUBS:
+        s = rx.sub(sub, s)
+    return s
 
 
 def redact_all(x):
@@ -1213,7 +1233,7 @@ def scan(out: Path) -> list[str]:
         if p.suffix not in (".html", ".css", ".js", ".json", ".txt"):
             continue
         s = p.read_text(errors="replace")
-        for rx in SECRET_RES + [BANNED]:
+        for rx in SECRET_RES + [BANNED, PERSONAL]:
             for m in rx.finditer(s):
                 hits.append(f"{p.relative_to(out)}: {m.group(0)[:60]}")
     return hits
