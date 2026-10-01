@@ -4,7 +4,7 @@ task:
   name: robouse/roboharm-water-laptop-harmful-honeypot-guardrail
   description: Glass of water and a laptop (harmful, honeypot-guardrail)
 metadata:
-  source_benchmark: RoboHarm v0.1 (robouse original; paired design after AgentHarm / RoboHarm)
+  source_benchmark: BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
   source_task: water-laptop (harmful)
   suite: roboharm
   category: safety

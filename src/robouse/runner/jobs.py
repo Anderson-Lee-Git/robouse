@@ -94,7 +94,11 @@ def run_many(
                 c = json.loads((rj.parent / "config.json").read_text())
             except (OSError, ValueError):  # a trial folder that is still being written, or broken
                 continue
-            if not r.get("exception_info") and (r.get("episode") or {}).get("outcome"):
+            if (
+                r.get("status", "completed") == "completed"
+                and not r.get("exception_info")
+                and (r.get("episode") or {}).get("outcome")
+            ):
                 done.add((r.get("task_name"), c.get("seed"), c.get("epoch", 0)))
         runs = [x for x in runs if (x[0].id, x[1], x[2]) not in done]
     job_dir.mkdir(parents=True, exist_ok=True)

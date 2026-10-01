@@ -34,6 +34,7 @@ from typing import Any
 
 from .. import harnesses
 from ..core.protocol import RUNNER_PREFIX, verify_result
+from ..lib.text import clip
 from ..tasks import Task
 from . import sandbox
 from .cost import trial_cost
@@ -113,7 +114,7 @@ def _wait_ready(p: Path, proc: subprocess.Popen, timeout: float = 120, log: Path
                 log is not None and log.exists()
             ):  # the server's last line usually names the cause (e.g. a missing simulator)
                 lines = [l for l in log.read_text(errors="replace").splitlines() if l.strip()]
-                last = f": {lines[-1].strip()[:300]}" if lines else ""
+                last = f": {clip(lines[-1], 300)}" if lines else ""
             raise RuntimeError(f"episode server exited early ({proc.returncode}){last}")
         time.sleep(0.2)
     raise TimeoutError("episode server did not start")
@@ -154,7 +155,7 @@ def _verify(task: Task, episode: dict, tdir: Path) -> float:
 # Ctrl-C: the agents of the trials running now (their process groups), so an interrupt stops them all
 _ACTIVE_AGENTS: set[int] = set()
 INTERRUPTED = threading.Event()
-INTERRUPT_TEXT = "Interrupted: the run was interrupted (Ctrl-C) before the trial finished"
+INTERRUPT_TEXT = "Cancelled: the run was interrupted (Ctrl-C) before the trial finished"
 
 
 def interrupt_all() -> None:
@@ -182,7 +183,7 @@ def _harness_error(tdir: Path, harness: str, agent_rc: int | None, episode: dict
             ev = json.loads(line) if line.startswith("{") else None
             if isinstance(ev, dict) and ev.get("type") == "result":
                 if ev.get("is_error"):
-                    detail = str(ev.get("result") or ev.get("subtype") or "error result")[:300]
+                    detail = clip(ev.get("result") or ev.get("subtype") or "error result", 300)
                 break
     except (OSError, ValueError):
         pass
@@ -353,7 +354,7 @@ def run_trial(
         from ..agent_cli import _send
 
         try:
-            st = _send({"op": "status"}, path=sock)
+            st = _send({"op": "status", "runner": True}, path=sock)
         except OSError:  # the server is still busy (e.g. a slow remote simulator step); it ends on its own clock
             st = {}
         if st.get("ok") and not st["result"]["finished"]:
@@ -370,7 +371,7 @@ def run_trial(
             except OSError:  # the server went away (e.g. it got the same Ctrl-C)
                 pass
         try:
-            server.wait(timeout=5 if interrupted else 60)
+            server.wait(timeout=5 if interrupted or INTERRUPTED.is_set() else 60)
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait()
@@ -409,13 +410,16 @@ def run_trial(
     res = {
         "task_name": task.id,
         "trial_name": trial_name,
+        # completed: the trial ran to a result (any reward); error: an infrastructure failure, not scored; cancelled: the
+        # run was interrupted. `run-many --resume` reruns error and cancelled trials
+        "status": "cancelled" if interrupted else ("error" if exc else "completed"),
         "source": task.metadata.get("source_benchmark"),
         "agent_info": {"name": harness, "model_info": {"name": (launch.notes.get("model") if launch else model)}},
         "verifier_result": {"rewards": {"reward": reward}},
         "episode": episode,
         "agent_return_code": agent_rc,
         "agent_timed_out": timed_out,
-        "exception_info": {"exception_type": exc.split(":")[0], "exception_message": exc} if exc else None,
+        "exception_info": {"exception_type": exc.split(":")[0], "exception_message": clip(exc, 4000)} if exc else None,
         "started_at": started,
         "finished_at": now(),
         "wall_time_s": round(time.time() - t0, 1),

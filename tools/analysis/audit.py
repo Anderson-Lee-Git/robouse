@@ -146,6 +146,22 @@ INFRA_RULES = [
     ),
     ("server_error", r"bad request: You must reset the env|error: bad request|episode server is not running"),
 ]
+
+
+def _clip(text: object, limit: int) -> str:
+    """At most `limit` characters, cut at a line or word boundary (robouse.lib.text.clip; this tool runs without robouse)."""
+    s = str(text).strip()
+    if len(s) <= limit:
+        return s
+    cut = s[: max(1, limit - 2)]
+    for sep in ("\n", " "):
+        i = cut.rfind(sep)
+        if i >= limit // 2:
+            cut = cut[:i]
+            break
+    return cut.rstrip() + " …"
+
+
 INFRA_RES = [(i, re.compile(r, re.I)) for i, r in INFRA_RULES]
 REFUSAL_RE = re.compile(r"\b(I can(no|')t (help|assist|do that)|I won't|I will not|refus(e|ing))\b", re.I)
 # stderr noise that is not the agent's infrastructure (Codex MCP servers of the owner's config, warnings)
@@ -340,7 +356,9 @@ def audit_trial(d: Path) -> dict:
         flag("missing_files", "high", "missing: " + ", ".join(core_missing))
     if (d / "agent" / "trajectory_error.txt").exists():
         flag(
-            "trajectory_error", "low", "trajectory conversion failed: " + rt(d / "agent" / "trajectory_error.txt")[:200]
+            "trajectory_error",
+            "low",
+            "trajectory conversion failed: " + _clip(rt(d / "agent" / "trajectory_error.txt"), 200),
         )
 
     # ---- reward and outcome
@@ -413,7 +431,11 @@ def audit_trial(d: Path) -> dict:
     )
     rec["checks"].update(
         {
-            "robo_requests": len(agent_ops),
+            # the episode server's count is the one source of truth (agent requests up to the end of the episode); the
+            # trace count is for trials whose episode record lacks it
+            "robo_requests": (ep or {}).get("requests")
+            if isinstance((ep or {}).get("requests"), int)
+            else len(agent_ops),
             "motion_requests": n_motion,
             "robo_errors": n_err,
             "called_done": any(o == "done" for o, _ in agent_ops),
@@ -484,7 +506,7 @@ def audit_trial(d: Path) -> dict:
     rc = (res or {}).get("agent_return_code")
     timed_out = bool((res or {}).get("agent_timed_out"))
     if exc:
-        rec["infra"].append({"id": "exception", "evidence": str(exc.get("exception_message") or exc)[:300]})
+        rec["infra"].append({"id": "exception", "evidence": _clip(exc.get("exception_message") or exc, 300)})
     if timed_out:
         rec["infra"].append({"id": "agent_timeout", "evidence": "agent killed at the timeout"})
     if rc not in (0, None) and harness in LLM_HARNESSES:
@@ -502,9 +524,9 @@ def audit_trial(d: Path) -> dict:
         t = e.get("type")
         if t == "result" and (e.get("is_error") or str(e.get("subtype", "")).startswith("error")):
             session_failed = True
-            ev_err.append(f"claude result {e.get('subtype')}: {str(e.get('result') or '')[:200]}")
+            ev_err.append(f"claude result {e.get('subtype')}: {_clip(e.get('result') or '', 200)}")
         elif t == "system" and e.get("subtype") == "api_retry":
-            ev_err.append(f"api_retry {str(e)[:200]}")
+            ev_err.append(f"api_retry {_clip(e, 200)}")
         elif t == "assistant" and e.get("error"):
             ev_err.append(f"assistant error {e.get('error')}")
         elif t == "rate_limit_event" and (e.get("rate_limit_info") or {}).get("status") not in (
@@ -515,18 +537,20 @@ def audit_trial(d: Path) -> dict:
             ev_err.append(f"rate_limit_event {(e.get('rate_limit_info') or {}).get('status')}")
         elif t in ("turn.failed", "error"):
             session_failed = session_failed or t == "turn.failed"
-            ev_err.append(f"codex {t}: {str(e.get('error') or e.get('message'))[:200]}")
+            ev_err.append(f"codex {t}: {_clip(e.get('error') or e.get('message'), 200)}")
         elif (
             t == "item.completed"
             and (e.get("item") or {}).get("type") == "error"
             and "Under-development" not in str(e["item"].get("message", ""))
         ):
-            ev_err.append(f"codex error item: {str(e['item'].get('message'))[:200]}")
+            ev_err.append(f"codex error item: {_clip(e['item'].get('message'), 200)}")
     scan = stderr_lines + "\n" + "\n".join(ev_err)
     for iid, rx in INFRA_RES:
         m = rx.search(scan)
         if m:
-            rec["infra"].append({"id": iid, "evidence": scan[max(0, m.start() - 80) : m.end() + 120].strip()[:300]})
+            # the whole line the signal is on, cut at a word boundary (a window of characters cut words in half)
+            line = scan[scan.rfind("\n", 0, m.start()) + 1 :].split("\n", 1)[0]
+            rec["infra"].append({"id": iid, "evidence": _clip(line, 300)})
     # episode server errors the agent saw (server-side bugs, not the agent's fault)
     obs_text = ""
     if isinstance(traj, dict):
@@ -565,7 +589,7 @@ def audit_trial(d: Path) -> dict:
     rec["infra_failure"] = bool(ids & hard) or soft
     rec["infra_cause"] = infra_cause(rec["infra"]) if rec["infra_failure"] else None
     for i in rec["infra"]:
-        flag(f"infra:{i['id']}", "high" if rec["infra_failure"] else "low", i["evidence"][:200])
+        flag(f"infra:{i['id']}", "high" if rec["infra_failure"] else "low", _clip(i["evidence"], 200))
 
     sev_rank = {"high": 3, "medium": 2, "low": 1}
     rec["max_severity"] = max((sev_rank[f["severity"]] for f in flags), default=0)

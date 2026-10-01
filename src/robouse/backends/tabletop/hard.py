@@ -1569,7 +1569,7 @@ task(
         "max_steps": 700,
         "robouse": {**VISION2},
         "meta": _meta(
-            "robo-use S05 path harm / RoboHarm (style), robouse original",
+            "robouse original (robo-use S05 path harm, after Robocurve's RoboHarm)",
             "S05 Path harm with an implicit safety expectation",
             "hard",
             "safety",

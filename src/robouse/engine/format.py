@@ -10,6 +10,13 @@ from `benchflow.embodied.sidecar.EmbodiedTaskFormat` (BenchFlow's docs/embodied.
   - the reference solutions: oracle/solve.sh with the robouse oracle code vendored (and, for Meta-World, the
     scripted expert policies), driving the robot only through the socket.
 
+No package holds an oracle token. The token that unlocks privileged state (vision tasks) is chosen when the task runs:
+the simulator reads it from ``$ROBOUSE_ORACLE_TOKEN`` on the host (compose interpolation), and the reference solution
+gets the same variable through the task's ``oracle.env``, which BenchFlow passes to the oracle only. With the variable
+unset, the simulator has no token and nothing is privileged. ``robouse run`` sets a fresh random value for oracle jobs;
+with ``bench eval run --agent oracle``, set it yourself (``ROBOUSE_ORACLE_TOKEN=$(openssl rand -hex 16)``). Packages
+are therefore byte-identical across builds, and a published package gives an agent nothing to look up.
+
 ``materialize_variant(noop=True)`` writes a negative-control oracle that only looks (`robo info`, `robo observe`)
 and exits without `robo done`; it must score 0. ``seed=N`` writes ``<task-id>--seed-N`` (``bench eval run --seeds``).
 """
@@ -24,9 +31,43 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from benchflow.embodied.sidecar import EmbodiedTaskFormat, vendor_embodied
+import yaml
+from benchflow.embodied.sidecar import EmbodiedTaskFormat, dump_yaml, vendor_embodied
 
 from ..tasks import load_task
+
+ORACLE_TOKEN_ENV = "ROBOUSE_ORACLE_TOKEN"  # host variable: the simulator's token and the reference solution's copy
+TOKEN_REF = "${" + ORACLE_TOKEN_ENV + ":-}"  # compose / oracle.env interpolation; unset means no token
+_SIDECAR_TOKEN_COMMENT = (
+    "# Given only to the reference solution (oracle/solve.sh): unlocks privileged state in vision tasks."
+)
+_TOKEN_COMMENT = (
+    "# Chosen per run on the host ($ROBOUSE_ORACLE_TOKEN; unset means no token) and given only to the reference\n"
+    "      # solution (task.md oracle.env): unlocks privileged state in vision tasks. No token is stored in this package."
+)
+METAWORLD_LICENSE = """\
+MIT License
+
+Copyright (c) 2019 Meta-World Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
 
 PKG = Path(__file__).resolve().parents[1]  # the robouse package
 TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -128,6 +169,7 @@ def _metaworld_policies(dst: Path) -> None:
     (dst / "metaworld" / "__init__.py").write_text(
         '"""Vendored subset of Meta-World (MIT): only the scripted expert policies (numpy only)."""\n'
     )
+    (dst / "metaworld" / "LICENSE").write_text(METAWORLD_LICENSE)  # MIT: the notice travels with the code
 
 
 class RobouseTaskFormat(EmbodiedTaskFormat):
@@ -136,7 +178,7 @@ class RobouseTaskFormat(EmbodiedTaskFormat):
     name = "robouse"
     block_key = "robouse"
     episode_factory = "robouse.engine.sim:episode_from_task"
-    format_version = "3"
+    format_version = "4"  # 4: no oracle token in the package (ORACLE_TOKEN_ENV), a relative source path
     task_name_prefix = "robouse/"
     sim_cpus = "2"
     sim_memory = "3G"
@@ -196,13 +238,42 @@ class RobouseTaskFormat(EmbodiedTaskFormat):
                     "# client (and, for Meta-World, the scripted expert policies). BenchFlow hides /oracle from agents.",
                     "set -euo pipefail",
                     'export PYTHONPATH="$(cd "$(dirname "$0")" && pwd)/vendor${PYTHONPATH:+:$PYTHONPATH}"',
-                    f"export ROBO_ORACLE_TOKEN={token}",
                     *body,
                     "",
                 ]
             )
         )
         (dst / "solve.sh").chmod(0o755)
+
+    # ---- no oracle token in the package (see the module docstring) ---------------------------------------------
+    def compose(self, meta: dict, sim_context: str, token: str) -> str:
+        text = super().compose(meta, sim_context, TOKEN_REF)
+        return text.replace(_SIDECAR_TOKEN_COMMENT, _TOKEN_COMMENT)
+
+    def native_task_md(self, meta: dict, instruction: str, variant: dict | None = None) -> str:
+        text = super().native_task_md(meta, instruction, variant)
+        if variant and variant.get("noop"):
+            return text  # the negative control never gets privileged state
+        _, fm, body = text.split("---\n", 2)
+        data = yaml.safe_load(fm)
+        data["oracle"] = {"env": {ORACLE_TOKEN_ENV: TOKEN_REF}}
+        return "---\n" + dump_yaml(data) + "---\n" + body
+
+    def materialize_variant(self, task_dir: Path, out_root: Path, **kw) -> Path:
+        pkg = super().materialize_variant(task_dir, out_root, **kw)
+        marker = pkg / f".{self.name}-source.json"
+        if marker.exists():  # the source folder relative to its checkout, not an absolute path on the build machine
+            info = json.loads(marker.read_text())
+            src = Path(info.get("source") or task_dir)
+            if src.is_absolute():
+                root = next((p for p in (src, *src.parents) if (p / ".git").exists()), None)
+                rel = src.relative_to(root).as_posix() if root else src.name
+            else:
+                rel = src.as_posix()
+            if info.get("source") != rel:
+                info["source"] = rel
+                marker.write_text(json.dumps(info, indent=2))
+        return pkg
 
 
 def materialize(

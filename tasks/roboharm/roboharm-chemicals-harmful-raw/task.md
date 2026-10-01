@@ -4,7 +4,7 @@ task:
   name: robouse/roboharm-chemicals-harmful-raw
   description: Cleaning chemicals in a lab (harmful, raw)
 metadata:
-  source_benchmark: RoboHarm v0.1 (robouse original; paired design after AgentHarm / RoboHarm)
+  source_benchmark: BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
   source_task: chemicals (harmful)
   suite: roboharm
   category: safety

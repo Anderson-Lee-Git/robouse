@@ -275,9 +275,156 @@ def test_ctrl_c_stops_the_agent_and_records_the_trial(tmp_path, monkeypatch) -> 
     with pytest.raises(KeyboardInterrupt):
         run_trial(load_task(ARC), "sleeper", "", job)
     (res,) = [json.loads(p.read_text()) for p in job.glob("*/result.json")]
-    assert res["exception_info"]["exception_type"] == "Interrupted"
+    assert res["exception_info"]["exception_type"] == "Cancelled" and res["status"] == "cancelled"
     pid = int(pidfile.read_text())
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)  # the agent was stopped, not left running
     ws = Path(json.loads(next(job.glob("*/config.json")).read_text())["workspace"])
     assert not ws.exists()
+
+
+# ---- coordinator items (site-fix triage and parity check) --------------------------------------------------------------
+
+
+def _vla_main(monkeypatch, cfg: dict, info: dict, state: dict) -> tuple[int, list[dict], list[str]]:
+    from robouse.harnesses.vla import client as C
+
+    sent: list[dict] = []
+    out: list[str] = []
+
+    def robo(req: dict) -> dict:
+        sent.append(req)
+        if req["op"] == "info":
+            return {"ok": True, "result": info}
+        if req["op"] == "observe":
+            return {"ok": True, "result": {"state": state, "steps_used": 0}}
+        return {"ok": True, "result": {}}
+
+    class NoWire:
+        def __init__(self, *a):
+            self.metadata = {}
+
+        def reset(self, *a):
+            pass
+
+        def infer(self, obs):
+            raise AssertionError("the policy must not be queried for an incompatible task")
+
+    monkeypatch.setattr(C, "robo", robo)
+    monkeypatch.setattr(C, "emit", lambda **kw: out.append(json.dumps(kw)))
+    monkeypatch.setitem(C.WIRES, "openpi", NoWire)
+    monkeypatch.setenv("ROBOUSE_VLA_CONFIG", json.dumps(cfg))
+    monkeypatch.setenv("ROBOUSE_VLA_URL", "http://127.0.0.1:1")
+    return C.main(), sent, out
+
+
+INFO = {
+    "task": "real-x",
+    "backend": "real",
+    "max_steps": 10,
+    "action": {"names": ["a", "b"], "low": [-1.0, -1.0], "high": [1.0, 1.0]},
+}
+
+
+def test_vla_preset_for_another_simulator_is_refused_before_observing(monkeypatch) -> None:  # parity A2
+    cfg = {"wire": "openpi", "backends": ["libero"], "obs": {"state": {"state": ["hand_pos"], "encoding": "list"}}}
+    rc, sent, out = _vla_main(monkeypatch, cfg, INFO, {"robot": "so101"})
+    assert rc == 2 and not any(r["op"] == "observe" for r in sent)
+    assert any("incompatible" in o and "policy preset is for backends" in o for o in out)
+    assert sent[-1]["op"] == "give_up"
+
+
+def test_vla_preset_reading_a_missing_field_is_refused(monkeypatch) -> None:  # parity A2 (no backends in the preset)
+    cfg = {"wire": "openpi", "obs": {"state": {"state": ["hand_pos"], "encoding": "list"}}}
+    rc, sent, out = _vla_main(monkeypatch, cfg, INFO, {"robot": "so101"})
+    assert rc == 2 and any("incompatible" in o and "hand_pos" in o for o in out), out
+
+
+def test_clip_keeps_whole_words() -> None:  # site-fix CF-08
+    from robouse.lib.text import clip
+
+    msg = "codex error: You've hit your usage limit. Try again at Oct 3rd, 2026 2:26 PM.\ncodex turn.failed: usage"
+    out = clip(msg, 90)
+    assert len(out) <= 90 and out.endswith(" …") and "codex t" not in out
+    assert clip("short", 90) == "short"
+
+
+def test_two_arm_results_are_counted_once() -> None:  # site-fix CF-29: the step list stopped hundreds of steps early
+    from robouse.runner.atif import _align
+
+    def out(i: int) -> str:
+        return f"executed_steps: 1\nstate:\n  left_hand_pos: [0.1, 0.2, {i}]\n  right_hand_pos: [0.3, 0.4, {i}]\nsteps_used: {i}\n"
+
+    calls = [{"command": f"robo act 0 0 0 0 0 0 0 {i}", "output": out(i)} for i in range(1, 7)]
+    trace = [
+        {"steps": i, "req": {"op": "act"}, "resp": {"ok": True, "result": {"state": {}, "steps_used": i}}}
+        for i in range(1, 7)
+    ]
+    rest = _align([{"calls": [c]} for c in calls], list(range(6)), trace)
+    assert rest == [] and [c["trace"] for c in calls] == [[i] for i in range(6)]
+
+
+@pytest.fixture
+def _sim():
+    pytest.importorskip("mujoco")
+
+
+def test_requests_count_the_agent_until_the_end(tmp_path, monkeypatch, _sim) -> None:  # site-fix CF-07
+    from robouse.runner import run_trial
+    from robouse.tasks import load_task
+
+    # three agent requests (info, observe, done), then one after the end; the runner's status check is not counted
+    _scripted(
+        monkeypatch, "counter", "robo info >/dev/null; robo observe >/dev/null; robo done x; robo observe || true\n"
+    )
+    res = run_trial(load_task(ARC), "counter", "", tmp_path / "job")
+    tdir = tmp_path / "job" / res["trial"]
+    ep = json.loads((tdir / "episode" / "result.json").read_text())
+    assert ep["requests"] == 3
+    traj = json.loads((tdir / "agent" / "trajectory.json").read_text())
+    assert traj["extra"]["robouse"]["robo_requests"] == 3
+    # no simulator step ran: no zero-length recording (site-fix: 0-second videos)
+    assert ep["steps_used"] == 0 and not (tdir / "episode" / "recording.mp4").exists()
+    assert not (tdir / "artifacts" / "recording.mp4").exists() and "video_size" not in ep
+
+
+def test_ctrl_c_during_run_many_records_every_running_trial(tmp_path, monkeypatch, _sim) -> None:  # parity A10
+    from robouse.runner import run_many
+
+    pids = tmp_path / "pids"
+    pids.mkdir()
+    _scripted(monkeypatch, "sleeper2", f"echo $$ > {pids}/$$\nsleep 120\nrobo done\n")
+
+    def interrupt() -> None:
+        for _ in range(900):
+            if len(list(pids.iterdir())) >= 2:
+                break
+            threading.Event().wait(0.1)
+        os.kill(os.getpid(), signal.SIGINT)
+
+    threading.Thread(target=interrupt, daemon=True).start()
+    job = tmp_path / "job"
+    with pytest.raises(KeyboardInterrupt):
+        run_many(ARC.parent, "sleeper2", "", job, include=["arc-gravity", "arc-mirror", "arc-swap"], concurrency=2)
+    results = [json.loads(p.read_text()) for p in job.glob("*/result.json")]
+    assert len(results) == 2 and len(list(job.glob("*__sleeper2__*"))) == 2  # the third never started
+    assert all(r["status"] == "cancelled" and r["exception_info"]["exception_type"] == "Cancelled" for r in results)
+    for p in pids.iterdir():
+        with pytest.raises(ProcessLookupError):
+            os.kill(int(p.name), 0)
+
+
+def test_robo_waits_for_long_stepping_requests(tmp_path, monkeypatch) -> None:  # humanoidbench-maze: walk_to > 120 s
+    import socket as so
+
+    from robouse import agent_cli
+
+    path = str(tmp_path / "s.sock")
+    srv = so.socket(so.AF_UNIX, so.SOCK_STREAM)
+    srv.bind(path)
+    srv.listen(4)
+    monkeypatch.setattr(agent_cli, "STEPPING_TIMEOUT_S", 0.5)
+    # a server that never answers: a stepping request waits STEPPING_TIMEOUT_S and then reports it, without a traceback
+    r = agent_cli._send({"op": "skill", "name": "walk_to", "args": []}, path=path)
+    assert r == {"ok": False, "error": "no answer from the episode server within 0 s"} or "no answer" in r["error"]
+    srv.close()
