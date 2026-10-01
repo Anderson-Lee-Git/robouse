@@ -15,7 +15,7 @@
 | `done` | `message` | `robo done [message]` |
 | `give_up` | `message` | `robo give-up [message]` |
 
-A result's text is exactly what the `robo` command prints. When the reply names camera images (`image_path`), the PNGs are attached as MCP image content as well, so an image reaches the agent through MCP exactly when the CLI would have printed a path. In a trial without image input (see [Harnesses](harnesses.md#image-input)), the model gateway replaces those image parts as it replaces any other. Arguments that do not match a tool's schema are rejected before anything is sent. The raw reply is in the result's `_meta["robouse/reply"]`. The runner's own operations (`status`, `shutdown`) have no tool.
+A result's text is exactly what the `robo` command prints. When the reply names camera images (`image_path`), the PNGs are attached as MCP image content as well, so an image reaches the agent through MCP exactly when the CLI would have printed a path. In a trial without image input (see [Harnesses](concepts.md#harnesses)), the model gateway replaces those image parts as it replaces any other. Arguments that do not match a tool's schema are rejected before anything is sent. The raw reply is in the result's `_meta["robouse/reply"]`. The runner's own operations (`status`, `shutdown`) have no tool.
 
 ## Transports
 
