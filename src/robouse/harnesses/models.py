@@ -14,6 +14,7 @@ Capabilities come from the registry's model metadata (`models[].input`, BenchFlo
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 # Legacy harness names: hidden aliases for (harness, provider). Old trial folders and URLs keep these names.
@@ -70,13 +71,22 @@ PENDING_PROVIDERS: dict[str, dict] = {
 }
 
 
+def _python() -> tuple[int, int]:
+    return sys.version_info[0], sys.version_info[1]
+
+
 def provider_registry() -> dict:
     """BenchFlow's provider registry plus the entries pending upstream. Needs the `benchflow` extra."""
     try:
         from benchflow.agents.providers import PROVIDERS, ProviderConfig
-    except ImportError as e:  # pragma: no cover - depends on the install
+    except ImportError as e:
+        if _python() < (3, 12):  # the llm extra installs nothing there: its packages need 3.12
+            raise RuntimeError(
+                "provider-prefixed models need Python 3.12 or newer: the llm extra (BenchFlow's provider registry and "
+                f"LiteLLM) does not install on Python {_python()[0]}.{_python()[1]}"
+            ) from e
         raise RuntimeError(
-            "provider-routed models need BenchFlow's provider registry: pip install 'robouse[llm]'"
+            "provider-prefixed models need BenchFlow's provider registry: pip install 'robouse[llm]'"
         ) from e
     for name, fields in PENDING_PROVIDERS.items():
         PROVIDERS.setdefault(name, ProviderConfig(**fields))

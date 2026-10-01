@@ -50,3 +50,14 @@ def test_doctor_checks_the_key_where_the_gateway_reads_it(monkeypatch, capsys) -
     monkeypatch.setenv(var, "not-a-real-key")
     out = _doctor(monkeypatch, capsys)
     assert f"ok {var} in the environment (what the model gateway reads" in out
+
+
+@pytest.mark.parametrize("version,needs", [((3, 11), "Python 3.12 or newer"), ((3, 12), "pip install 'robouse[llm]'")])
+def test_without_benchflow_the_message_says_what_helps(version, needs, monkeypatch) -> None:
+    import sys
+
+    monkeypatch.setitem(sys.modules, "benchflow.agents.providers", None)  # importing it raises ImportError
+    monkeypatch.setattr(models, "_python", lambda: version)
+    with pytest.raises(RuntimeError) as e:
+        models.provider_registry()
+    assert needs in str(e.value)
