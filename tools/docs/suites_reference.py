@@ -4,9 +4,11 @@ no-op columns from the job folders of a sweep.
 
     /path/to/venv/bin/python tools/docs/suites_reference.py --oracle runs/sweep-oracle --noop runs/sweep-noop
 
-The table is the text between the `<!-- suites-table -->` and `<!-- /suites-table -->` lines; the rest of the page is
-hand-written. Counts come from the package (`robouse tasks --path`), so they cannot drift from the release. A suite
-without trials in a job folder shows "-". Run it against the release users install, not a checkout.
+The bundled table is the text between the `<!-- suites-table -->` and `<!-- /suites-table -->` lines, the hub-only
+suites (tools/docs/counts.py HUB_ONLY, counted from this checkout's task folders) are between `<!-- hub-only-table -->`
+lines, and README.md gets the same "N tasks in M suites"; the rest of the page is hand-written. Bundled counts come from
+the package (`robouse tasks --path`), so they cannot drift from the release; tests/test_counts.py checks all of it. A
+suite without trials in a job folder shows "-". Run it against the release users install, from its checkout.
 """
 from __future__ import annotations
 
@@ -21,6 +23,16 @@ from pathlib import Path
 
 DOC = Path(__file__).resolve().parents[2] / "docs" / "suites.md"
 BEGIN, END = "<!-- suites-table -->", "<!-- /suites-table -->"
+HUB_BEGIN, HUB_END = "<!-- hub-only-table -->", "<!-- /hub-only-table -->"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import counts  # noqa: E402  (tools/docs/counts.py: the counts README.md and docs say)
+
+# The hub-only suites (not in the wheel), in a few words.
+HUB_FROM = {
+    "rle-bench": "RLE-Bench family 03, tabletop reasoning: tower, cantilever, balance, hidden centre of mass",
+    "capx": "CaP-X's robosuite tasks, code as policy with CaP-X's privileged API (simulator object poses, no perception)",
+    "capx-libero": "CaP-X on LIBERO-PRO's object-swap tasks, code as policy with CaP-X's privileged LIBERO API",
+}
 
 # What each suite is, in a few words (the task metadata's source strings are too long for a table).
 FROM = {
@@ -109,13 +121,25 @@ def main() -> None:
              "`pip install 'robouse[sim]'`. The last two columns count the tasks that scored 1 with the reference "
              "solution and with the no-op control.", "",
              "| Suite | What | Tasks | Needs | Reference solution | No-op control |", "|---|---|---|---|---|---|", *rows]
+    hub_rows = []
+    for suite in counts.HUB_ONLY:  # not in the wheel: their task folders in this checkout
+        tasks = [frontmatter(t) for t in sorted((counts.REPO / "tasks" / suite).rglob("task.md"))]
+        ids = [t["robouse"]["id"] for t in tasks]
+        hub_rows.append(
+            f"| `{suite}` | {HUB_FROM.get(suite, '')} | {len(ids)} | {cell(ids, oracle, 1.0)} | {cell(ids, noop, 0.0)} |"
+        )
+    hub = ["| Suite | What | Tasks | Reference solution | No-op control |", "|---|---|---|---|---|", *hub_rows]
     text = DOC.read_text(encoding="utf-8")
-    if BEGIN not in text or END not in text:
-        sys.exit(f"{DOC} has no {BEGIN} ... {END} block")
-    head, rest = text.split(BEGIN, 1)
-    _, tail = rest.split(END, 1)
-    DOC.write_text(head + BEGIN + "\n" + "\n".join(table) + "\n" + END + tail, encoding="utf-8")
-    print(f"wrote the suites table in {DOC}: {len(rows)} suites, {total} tasks, from {version}")
+    for begin, end, lines in ((BEGIN, END, table), (HUB_BEGIN, HUB_END, hub)):
+        if begin not in text or end not in text:
+            sys.exit(f"{DOC} has no {begin} ... {end} block")
+        head, rest = text.split(begin, 1)
+        _, tail = rest.split(end, 1)
+        text = head + begin + "\n" + "\n".join(lines) + "\n" + end + tail
+    DOC.write_text(text, encoding="utf-8")
+    changed = counts.rewrite()  # README.md says the same numbers
+    print(f"wrote the suites tables in {DOC}: {len(rows)} suites, {total} tasks, from {version}; "
+          f"{len(hub_rows)} hub-only suites; rewrote {', '.join(changed) or 'no other file'}")
 
 
 if __name__ == "__main__":
