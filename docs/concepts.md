@@ -90,19 +90,25 @@ A harness is the agent program that acts as the robot's policy; the model is wha
 |---|---|---|---|
 | `oracle` | the task's reference solution | none | nothing |
 | `noop` | `robo done` at once | none | nothing |
-| `claude-code` | Claude Code, `claude -p` | `claude-sonnet-5` | `claude` on `PATH`; `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` |
-| `codex` | Codex, `codex exec --json` | `gpt-6-astra` | `codex` on `PATH`; `OPENAI_API_KEY` or a `codex login` |
-| `claude-code-glm` | Claude Code through a local proxy to Baseten | `zai-org/GLM-5.3` | `claude` on `PATH`, `BASETEN_API_KEY` |
-| `codex-glm` | Codex with Baseten as the provider | `zai-org/GLM-5.3` | `codex` on `PATH`, `BASETEN_API_KEY` |
-| `mini-swe-agent-glm` | mini-swe-agent, `mini` | `zai-org/GLM-5.3` | `mini` on `PATH`, `BASETEN_API_KEY` |
+| `claude-code` | Claude Code, `claude -p` | `claude-sonnet-5` | `claude` on `PATH`; `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, or for a provider-prefixed model the provider's key |
+| `codex` | Codex, `codex exec --json` | `gpt-6-astra` | `codex` on `PATH`; `OPENAI_API_KEY` or a `codex login`, or for a provider-prefixed model the provider's key |
+| `mini-swe-agent` | mini-swe-agent, `mini` | `baseten/zai-org/GLM-5.3` | `mini` on `PATH`, the provider's key |
+| `dimcode` | Dimensional's dimcode, `dimcode run` | `baseten/zai-org/GLM-5.3` | `dimcode` on `PATH` (or `ROBOUSE_DIMCODE`), Node 24 or 26, the provider's key |
 | `vla` | a VLA client, see [Run agents and VLAs](run-agents.md#vlas) | none: `--model` names a preset | `ROBOUSE_VLA_URL` |
 | `molmoact2` | the MolmoAct2 client | `allenai/MolmoAct2-LIBERO-LeRobot` | `ROBOUSE_MOLMOACT2_URL` |
 
-The three Baseten harnesses take any Baseten model through `--model`, such as `moonshotai/Kimi-K3`.
+A model is a provider-prefixed id, as in BenchFlow, such as `baseten/zai-org/GLM-5.3` or `baseten/moonshotai/Kimi-K3` (Baseten is the provider tested with Robo Use; its key is `BASETEN_API_KEY`). A bare id is the harness's own vendor's: `claude-sonnet-5` for Claude Code is Anthropic's, `gpt-6-astra` for Codex OpenAI's. The earlier names `claude-code-glm`, `codex-glm` and `mini-swe-agent-glm` still work: they mean the harness without `-glm` with a `baseten/` model.
 
-Each harness gets its prompt (one paragraph on how to use `robo`, then the task's instruction) and a wall-clock limit: the task's `agent.timeout_sec` (900 s if unset), or `--timeout`. On timeout the process group is killed. Claude Code runs with its own configuration folder, `~/.cache/robouse/claude-home`, so your settings, `CLAUDE.md`, MCP servers and plugins are not loaded; it runs at most 400 turns, with `WebFetch`, `WebSearch` and `Task` disabled. Codex runs with its own `CODEX_HOME` under `~/.cache/robouse/`, at medium reasoning effort.
+A harness with a provider-prefixed model reaches it through the trial's model gateway, a LiteLLM proxy on `127.0.0.1` that starts and stops with the trial. It needs Python 3.12 or newer and `pip install 'robouse[llm]'`. The harness gets a per-trial key for the gateway; the provider key stays in the gateway's process. Claude Code and dimcode reach the provider over Anthropic Messages, Codex over the provider's Responses API, mini-swe-agent over chat completions. The gateway also:
 
-A missing credential stops the trial before it starts, with an exception in `result.json`. An API error during the trial is not an exception: the harness exits and the episode scores 0.
+- stops the trial at its spend cap: once the model's cost reaches `ROBOUSE_SPEND_CAP_USD` (US dollars, default 5; 0 turns it off), it refuses further requests and the runner stops the agent. The trial ends as a budget stop (`budget_stop` in `result.json`): it scores 0 and is not an infrastructure failure.
+- applies the trial's image input, recorded as `image_input` in `config.json` and `result.json`: no images when the harness never passes them to its model (mini-swe-agent), when the provider's registry lists the model as text-only or does not list its inputs, or when `ROBOUSE_AGENT_IMAGES=0`. The gateway then replaces every image part with a short text note. The task does not change: camera images are still files in the workspace.
+
+A harness on its own vendor (`claude-code` with an Anthropic model, `codex` with an OpenAI model) talks to it directly, with no gateway and no spend cap.
+
+Each harness gets its prompt (one paragraph on how to use `robo`, then the task's instruction, the `task.md` body), a temporary workspace with `observations/` as its working directory, and a wall-clock limit: the task's `agent.timeout_sec` (900 s if unset), or `--timeout`. On timeout the process group is killed. With `--interface mcp` or `both`, the harness gets the `robo` MCP tools instead of, or as well as, the `robo` command ([MCP](mcp.md)). Claude Code runs with its own configuration folder, `~/.cache/robouse/claude-home`, so your settings, `CLAUDE.md`, MCP servers and plugins are not loaded; it runs at most 400 turns, with `WebFetch`, `WebSearch` and `Task` disabled. Codex runs with its own `CODEX_HOME` under `~/.cache/robouse/`, at medium reasoning effort. dimcode keeps everything it writes in a per-trial folder inside the workspace.
+
+A missing credential stops the trial before it starts, with an exception in `result.json`. A harness that stops on an API error before ending the episode is an infrastructure failure, not a result: it is not scored, and `--retries` and `--resume` rerun it.
 
 ## Components
 
