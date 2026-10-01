@@ -211,7 +211,7 @@ table.mdt td,table.mdt th{white-space:normal}
 .head.trial{margin-bottom:0}
 .who{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-8) var(--sp-10);margin:var(--sp-8) 0 0;font-size:var(--fs-small);color:var(--ink2)}
 .who .tag{margin-left:0;vertical-align:0}
-.who .rtag{margin:0}  /* "no image input" on trial pages and in Compare: the line's gap spaces it */
+.who .noimg{margin:0}  /* "no image input" on trial pages and in Compare: the line's gap spaces it */
 .who .cmp{margin-left:auto}
 .who a.wl{border-radius:var(--r-xs);transition:color var(--t-fast)}
 .who a.wl:hover{color:var(--accent)}
@@ -495,6 +495,13 @@ table.matrix thead th a:hover .pm{color:var(--accent)}
 table.list.runs th[scope="row"],table.list.runs td.sus{white-space:normal}
 table.list.runs td.sus{min-width:0;max-width:none;overflow-wrap:anywhere}
 .rtag{display:inline-block;margin-left:var(--sp-6);padding:0 var(--sp-6);border:1px solid var(--line);border-radius:var(--r-xs);font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted);white-space:nowrap}
+/* "no image input": quiet text, no box, so a column of them reads cleanly (build_runs_site.noimg_tag) */
+.noimg{margin-left:var(--sp-6);font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted);white-space:nowrap}
+.sl-s{display:none}
+/* a run's title with its marks: the marks a little smaller than the serif heading's text */
+.rh1 .model-mark{width:.78em;height:.78em;vertical-align:-.04em}
+/* who made the model and whose weights ran (tools/models.json `provenance`), under a run's title */
+.head .prov{margin:var(--sp-6) 0 0;max-width:720px;font:400 var(--fs-small)/1.5 var(--sans);color:var(--muted)}
 table.list th:last-child .sb{margin-right:0}  /* the sort button's bleed must not widen the table past its box */
 @media (max-width:560px){table.list.runs th:nth-child(3),table.list.runs td:nth-child(3),table.list.runs th:nth-child(4),table.list.runs td:nth-child(4){display:none}}
 
@@ -525,7 +532,7 @@ table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-
   table.list.runs td.sus .dss{display:none}
   table.list.runs td.sus{max-width:26vw}
   table.list.runs td.sus .dso{order:1;font-size:var(--fs-caption);line-height:1.4;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  table.list.runs thead th .sl{white-space:normal}  /* "Solve rate" may take two lines rather than push its column off-screen */
+  table.list.runs .sl-l{display:none}table.list.runs .sl-s{display:inline}  /* phones: "Solved", one line like the other headings */
 }
 /* run page on phones: Task (with the outcome under its title), Result and Time; Outcome and Steps columns drop, no sideways scroll */
 .oc2{display:none}
@@ -538,3 +545,16 @@ table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-
   table.list.rt th,table.list.rt td{padding-right:var(--sp-8)}
 }
 @media (max-width:640px){table.list.runs .hh{display:none}}  /* phones: the column says "Model"; each row still names the harness */
+/* the narrowest phones (320 px): the runs list still fits without sideways scroll; names stay whole (they never break at
+   a hyphen), so the cells give up a little padding, the dataset a little width, the names a pixel of size, and an
+   unsorted numeric heading its arrow slot */
+@media (max-width:360px){
+  table.list.runs th,table.list.runs td{padding-right:var(--sp-6)}
+  table.list.runs td.sus{max-width:22vw}
+  table.list.runs tbody th{font-size:var(--fs-small)}
+  table.list.runs thead th.n[aria-sort="none"] .si{display:none}
+}
+/* marks and whole hyphenated names inside breadcrumbs: not the "/" separator's margin and colour (prose.css .crumbs span) */
+.crumbs .model-mark{margin:0 .4em 0 0;color:inherit}
+.crumbs .model-mark.hm{margin-right:.3em}
+.crumbs .nw{margin:0;color:inherit}
