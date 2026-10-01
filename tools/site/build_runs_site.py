@@ -567,7 +567,9 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
         return out
     t_first = next((secs(s.get("timestamp")) for s in steps if secs(s.get("timestamp")) is not None), None)
     agent_ids = [s.get("step_id") for s in steps if s.get("source") == "agent"]
-    hide = set(agent_ids[40:-20]) if len(agent_ids) > 150 else set()  # MolmoAct2: hundreds of one-action steps
+    # a VLA policy's hundreds of one-action steps are trimmed in the middle; a model harness's steps are all listed
+    policy = HM[t["hm"]].get("harness") in ("vla", "molmoact2")
+    hide = set(agent_ids[40:-20]) if policy and len(agent_ids) > 150 else set()
     if hide:
         out["hidden"] = len(hide)
     for st in steps[1:]:
