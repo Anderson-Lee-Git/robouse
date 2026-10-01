@@ -33,8 +33,8 @@ from pathlib import Path
 from typing import Any
 
 from .. import harnesses
-from ..harnesses import interface as iface
 from ..core.protocol import RUNNER_PREFIX, verify_result
+from ..harnesses import interface as iface
 from ..lib.text import clip
 from ..tasks import Task
 from . import sandbox

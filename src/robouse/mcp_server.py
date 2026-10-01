@@ -122,14 +122,24 @@ TOOLS: list[dict] = [
         "description": "End the episode and ask for scoring. Call once, when the task is complete. The server judges "
         "success from the simulator state. Same as `robo done [message]`.",
         "inputSchema": _schema({"message": {"type": "string", "default": ""}}),
-        "annotations": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": False,
+            "openWorldHint": False,
+        },
     },
     {
         "name": "give_up",
         "title": "Finish: give up",
         "description": "End the episode without claiming success. Same as `robo give-up [message]`.",
         "inputSchema": _schema({"message": {"type": "string", "default": ""}}),
-        "annotations": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": False,
+            "openWorldHint": False,
+        },
     },
 ]
 _BY_NAME = {t["name"]: t for t in TOOLS}
@@ -377,7 +387,7 @@ def http_server(host: str, port: int, path: str = "/mcp"):
                 return False
             return True
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             if not self._allowed():
                 return
             n = int(self.headers.get("Content-Length") or 0)
@@ -390,11 +400,11 @@ def http_server(host: str, port: int, path: str = "/mcp"):
             else:
                 self._reply(200, reply)
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             if self._allowed():
                 self._reply(405, allow="POST")
 
-        def do_DELETE(self) -> None:  # noqa: N802
+        def do_DELETE(self) -> None:
             if self._allowed():
                 self._reply(405, allow="POST")
 
@@ -445,7 +455,11 @@ class StdioClient:
         self._lock = threading.Lock()
         init = self.request(
             "initialize",
-            {"protocolVersion": PROTOCOL_VERSIONS[0], "capabilities": {}, "clientInfo": {"name": "robouse", "version": "1"}},
+            {
+                "protocolVersion": PROTOCOL_VERSIONS[0],
+                "capabilities": {},
+                "clientInfo": {"name": "robouse", "version": "1"},
+            },
         )
         if "result" not in init:
             raise RuntimeError(f"MCP initialize failed: {init}")

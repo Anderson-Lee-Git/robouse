@@ -935,7 +935,11 @@ def _prompt(trial: Path, cfg: dict, harness: str) -> str:
         return instr or f"task {cfg.get('task')}"
     from ..harnesses.interface import prompt_prefix
 
-    return prompt_prefix(cfg.get("interface") or "cli") + instr if instr else f"(prompt not recorded) task {cfg.get('task')}"
+    return (
+        prompt_prefix(cfg.get("interface") or "cli") + instr
+        if instr
+        else f"(prompt not recorded) task {cfg.get('task')}"
+    )
 
 
 def _to_atif_step(sid: int, st: dict, default_model: str | None) -> dict:

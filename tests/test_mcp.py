@@ -4,10 +4,10 @@ into trials and harnesses."""
 from __future__ import annotations
 
 import base64
-import re
 import http.client
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -87,8 +87,9 @@ def test_lifecycle_and_tool_listing() -> None:
     assert r["protocolVersion"] == "2025-06-18" and r["capabilities"] == {"tools": {"listChanged": False}}
     assert r["serverInfo"]["name"] == "robo" and "done" in r["instructions"]
     # an unknown version gets the newest one the server speaks
-    assert mcp_server.handle(rpc("initialize", {"protocolVersion": "1999-01-01"}))["result"]["protocolVersion"] == (
-        mcp_server.PROTOCOL_VERSIONS[0]
+    assert (
+        mcp_server.handle(rpc("initialize", {"protocolVersion": "1999-01-01"}))["result"]["protocolVersion"]
+        == (mcp_server.PROTOCOL_VERSIONS[0])
     )
     assert mcp_server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
     assert mcp_server.handle(rpc("ping"))["result"] == {}
@@ -107,7 +108,9 @@ def test_json_rpc_errors() -> None:
     assert mcp_server.handle(rpc("resources/list"))["error"]["code"] == -32601
     assert mcp_server.handle(rpc("tools/call", {"name": "shutdown", "arguments": {}}))["error"]["code"] == -32602
     assert mcp_server.handle(rpc("tools/call", {"name": "status"}))["error"]["code"] == -32602
-    batch = mcp_server.handle_payload(json.dumps([rpc("ping", id_=1), {"jsonrpc": "2.0", "method": "x"}, rpc("ping", id_=2)]))
+    batch = mcp_server.handle_payload(
+        json.dumps([rpc("ping", id_=1), {"jsonrpc": "2.0", "method": "x"}, rpc("ping", id_=2)])
+    )
     assert [m["id"] for m in batch] == [1, 2]
     assert mcp_server.handle({"jsonrpc": "2.0", "id": 5, "result": {}}) is None  # a response: nothing to answer
 
@@ -139,7 +142,9 @@ def test_stdio_transport(tmp_path) -> None:
         input="\n".join(
             json.dumps(m)
             for m in [
-                rpc("initialize", {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t"}}, 1),
+                rpc(
+                    "initialize", {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t"}}, 1
+                ),
                 {"jsonrpc": "2.0", "method": "notifications/initialized"},
                 rpc("tools/list", id_=2),
                 rpc("tools/call", {"name": "act", "arguments": {"action": [1, 0, 0, -1], "repeat": 5}}, 3),
@@ -289,7 +294,9 @@ def test_a_run_without_image_input_strips_mcp_images_in_the_gateway(tmp_path, mo
     import copy
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("gateway_hook", SRC / "robouse" / "harnesses" / "providers" / "gateway_hook.py")
+    spec = importlib.util.spec_from_file_location(
+        "gateway_hook", SRC / "robouse" / "harnesses" / "providers" / "gateway_hook.py"
+    )
     hook = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(hook)
     srv = Server(tmp_path, "v", obs_mode="vision", visible_fields=["hand_pos"])
@@ -309,7 +316,10 @@ def test_a_run_without_image_input_strips_mcp_images_in_the_gateway(tmp_path, mo
                         "tool_use_id": "t1",
                         "content": [
                             {"type": "text", "text": text},
-                            {"type": "image", "source": {"type": "base64", "media_type": img["mimeType"], "data": img["data"]}},
+                            {
+                                "type": "image",
+                                "source": {"type": "base64", "media_type": img["mimeType"], "data": img["data"]},
+                            },
                         ],
                     }
                 ],
@@ -458,8 +468,9 @@ def test_dimcode_launch_is_isolated_and_holds_no_key(tmp_path, monkeypatch) -> N
     from robouse.harnesses import build
     from robouse.tasks import Task
 
-    gw = SimpleNamespace(url="http://127.0.0.1:4242", key="sk-robouse-gwkey", model="gw-alias", stats={}, stop=None,
-                         stop_file=None)
+    gw = SimpleNamespace(
+        url="http://127.0.0.1:4242", key="sk-robouse-gwkey", model="gw-alias", stats={}, stop=None, stop_file=None
+    )
     seen: dict = {}
 
     def fake_gateway(ref, env, protocol):
@@ -474,15 +485,23 @@ def test_dimcode_launch_is_isolated_and_holds_no_key(tmp_path, monkeypatch) -> N
     ws = tmp_path / "ws"
     (ws / ".robouse" / "bin").mkdir(parents=True)
     task = Task(tmp_path, {"robouse": {"id": "t"}}, "do it")
-    env = {"PATH": "/usr/bin", "ROBOUSE_INTERFACE": "mcp", "HOME": "/home/u", "_ROBOUSE_IMAGE_INPUT": "0",
-           "_ROBOUSE_TRIAL_DIR": str(tmp_path), "_ROBOUSE_SPEND_CAP_USD": "5"}
+    env = {
+        "PATH": "/usr/bin",
+        "ROBOUSE_INTERFACE": "mcp",
+        "HOME": "/home/u",
+        "_ROBOUSE_IMAGE_INPUT": "0",
+        "_ROBOUSE_TRIAL_DIR": str(tmp_path),
+        "_ROBOUSE_SPEND_CAP_USD": "5",
+    }
     launch = build("dimcode", "baseten/moonshotai/Kimi-K3", "do it", ws, task, env)
     assert seen["ref"].id == "baseten/moonshotai/Kimi-K3" and seen["protocol"] == "anthropic-messages"
     root = ws / ".robouse" / "dimcode"
     cfg = json.loads((root / "config.json").read_text())
     assert cfg["mcp"][0]["name"] == "robo" and cfg["mcp"][0]["url"].startswith("http://127.0.0.1:")
     prov = json.loads((root / "models.json").read_text())["providers"]["robouse"]
-    assert prov["baseUrl"] == gw.url and prov["api"] == "anthropic-messages" and prov["apiKey"] == "$ROBOUSE_GATEWAY_KEY"
+    assert (
+        prov["baseUrl"] == gw.url and prov["api"] == "anthropic-messages" and prov["apiKey"] == "$ROBOUSE_GATEWAY_KEY"
+    )
     assert prov["models"][0]["id"] == "gw-alias" and prov["models"][0]["input"] == ["text"]  # no image input here
     assert json.loads((root / "settings.json").read_text())["defaultModel"] == "gw-alias"
     assert launch.env["DIMCODE_HOME"] == str(root) and launch.env["DIMCODE_INSTALL_DIMOS"] == "0"
@@ -520,11 +539,17 @@ def test_atif_aligns_mcp_tool_calls_like_robo_commands(tmp_path) -> None:
         events.append(
             {
                 "type": "assistant",
-                "message": {"id": f"m{i}", "content": [{"type": "tool_use", "id": f"c{i}", "name": f"mcp__robo__{tool}", "input": args}]},
+                "message": {
+                    "id": f"m{i}",
+                    "content": [{"type": "tool_use", "id": f"c{i}", "name": f"mcp__robo__{tool}", "input": args}],
+                },
             }
         )
         events.append(
-            {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": f"c{i}", "content": r["content"]}]}}
+            {
+                "type": "user",
+                "message": {"content": [{"type": "tool_result", "tool_use_id": f"c{i}", "content": r["content"]}]},
+            }
         )
     srv.finish()
     (trial / "agent" / "stdout.jsonl").write_text("\n".join(json.dumps(e) for e in events))
@@ -539,7 +564,11 @@ def test_atif_aligns_mcp_tool_calls_like_robo_commands(tmp_path) -> None:
     assert [s["observation"]["results"][0]["extra"]["robo_requests"] for s in tool_steps] == [1, 1, 1]
     assert "could not be matched" not in traj["notes"]
     assert traj["steps"][0]["message"].startswith(iface_prompt("mcp"))
-    assert [r["action"] for r in index["steps"][1:4]] == ["robo info", "robo act 1.0 0.0 0.0 -1.0 --repeat 3", "robo done ok"]
+    assert [r["action"] for r in index["steps"][1:4]] == [
+        "robo info",
+        "robo act 1.0 0.0 0.0 -1.0 --repeat 3",
+        "robo done ok",
+    ]
 
 
 def test_atif_reads_a_pi_session(tmp_path) -> None:
@@ -567,9 +596,35 @@ def test_atif_reads_a_pi_session(tmp_path) -> None:
                 "timestamp": 2000,
             },
         },
-        {"type": "message", "message": {"role": "toolResult", "toolCallId": "a", "toolName": "bash", "content": [{"type": "text", "text": "task: t"}], "isError": False}},
-        {"type": "message", "message": {"role": "toolResult", "toolCallId": "b", "toolName": tool, "content": [{"type": "text", "text": "state:"}], "isError": False}},
-        {"type": "message", "message": {"role": "assistant", "content": [{"type": "text", "text": "done"}], "usage": usage, "timestamp": 3000}},
+        {
+            "type": "message",
+            "message": {
+                "role": "toolResult",
+                "toolCallId": "a",
+                "toolName": "bash",
+                "content": [{"type": "text", "text": "task: t"}],
+                "isError": False,
+            },
+        },
+        {
+            "type": "message",
+            "message": {
+                "role": "toolResult",
+                "toolCallId": "b",
+                "toolName": tool,
+                "content": [{"type": "text", "text": "state:"}],
+                "isError": False,
+            },
+        },
+        {
+            "type": "message",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "done"}],
+                "usage": usage,
+                "timestamp": 3000,
+            },
+        },
     ]
     steps, meta = atif._parse_pi(lines, trial)
     atif._mcp_commands(steps)
@@ -619,7 +674,9 @@ def test_reference_solution_through_mcp_is_the_same_episode(tmp_path, monkeypatc
     (cfg_c, res_c, tr_c), (cfg_m, res_m, tr_m) = runs["cli"], runs["mcp"]
     assert cfg_c["interface"] == "cli" and cfg_m["interface"] == "mcp"
     assert res_m["agent_info"]["interface"] == "mcp"
-    mine = [e for e in tr_m if e["req"].get("op") != "status" and not str(e["req"].get("text", "")).startswith("[runner]")]
+    mine = [
+        e for e in tr_m if e["req"].get("op") != "status" and not str(e["req"].get("text", "")).startswith("[runner]")
+    ]
     assert mine and all(e["req"].get("via") == "mcp" for e in mine)
     assert not any(e["req"].get("via") for e in tr_c)
     assert _agent_entries(tr_c) == _agent_entries(tr_m)
