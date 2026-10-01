@@ -13,7 +13,7 @@ assert _spec and _spec.loader
 counts = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(counts)
 
-ROW = re.compile(r"^\| `([\w-]+)` \| [^|]* \| (\d+) \|", re.M)
+ROW = re.compile(r"^\| `([\w-]+)`(?:<br>[^|]*)? \| (\d+) \|", re.M)  # suite (and its description), then the task count
 
 
 def _table(begin: str, end: str) -> dict[str, int]:

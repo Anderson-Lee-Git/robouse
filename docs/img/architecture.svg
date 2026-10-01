@@ -27,7 +27,7 @@
   <text x="461" y="230" class="k end">records the episode</text>
   <rect x="1" y="251" width="578" height="76" rx="8" class="box"/>
   <text x="16" y="276" class="t">Trial folder</text>
-  <text x="122" y="276" class="m o">&lt;out&gt;/&lt;task&gt;__&lt;harness&gt;__&lt;id&gt;/</text>
+  <text x="122" y="276" class="m o">OUT/&lt;task&gt;__&lt;harness&gt;__&lt;id&gt;/</text>
   <text x="16" y="300" class="m">agent/trajectory.json</text>
   <text x="200" y="300" class="m">episode/result.json</text>
   <text x="384" y="300" class="m">artifacts/recording.mp4</text>

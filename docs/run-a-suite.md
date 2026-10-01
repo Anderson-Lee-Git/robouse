@@ -22,9 +22,16 @@ A trial that ended in an infrastructure failure (the simulator or the harness fa
 ## Pick tasks and repeats
 
 ```sh
-robouse run-many --harness oracle --out runs/x \
-  --include 'libero-*' --exclude '*-drawer*' --sample 20 --sample-seed 1 \
-  --seeds 0-4 --split interpolation --dry-run
+robouse run-many \
+  --harness oracle \
+  --out runs/x \
+  --include 'libero-*' \
+  --exclude '*-drawer*' \
+  --sample 20 \
+  --sample-seed 1 \
+  --seeds 0-4 \
+  --split interpolation \
+  --dry-run
 ```
 
 - `--include`, `--exclude`: globs on task ids (repeatable). `--task-list FILE`: one task id per line. `--tasks DIR`: any folder of task folders.
@@ -33,7 +40,7 @@ robouse run-many --harness oracle --out runs/x \
 - `--split nominal|interpolation|extrapolation`: seeded object placements for the tabletop pick-and-place tasks ([Metrics](metrics.md#splits)).
 - `--dry-run`: print the trial plan and exit.
 
-Compare jobs with `robouse report` ([Metrics](metrics.md#reports)).
+Compare runs with `robouse report` ([Metrics](metrics.md#reports)).
 
 ## A dataset
 

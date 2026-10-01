@@ -31,17 +31,17 @@ Each trial's `result.json` also has `cost`: prompt, completion and cached tokens
 
 ## Reports
 
-`robouse report` aggregates job folders:
+`robouse report` aggregates run folders:
 
 ```console
-$ robouse report runs/mw-oracle runs/mine
-| harness | model | n | success | progress | execution_quality | execution_time_s | ... | cost_usd |
-|---|---|---|---|---|---|---|---|---|
-| noop | none | 1 | 0.0 [0.0, 79.3] | 0.0 [0.0, 0.0] | - | - | ... | 0 [0, 0] |
-| oracle | scripted | 6 | 83.3 [43.6, 97.0] | 83.3 [50.0, 100.0] | 100.0 [56.5, 100.0] | 1.84 [1.18, 2.93] | ... | 0 [0, 0] |
-
-Proportions and progress in %; brackets are 95% intervals (Wilson for proportions, bootstrap for means).
+$ robouse report runs/mw-oracle runs/mine --metrics success,progress
+| harness | model | n | success | progress |
+|---|---|---|---|---|
+| noop | none | 1 | 0.0 [0.0, 79.3] | 0.0 [0.0, 0.0] |
+| oracle | scripted | 6 | 83.3 [43.6, 97.0] | 83.3 [50.0, 100.0] |
 ```
+
+Proportions and progress are in percent; brackets are 95% intervals (Wilson for proportions, bootstrap for means). Without `--metrics`, the table has the nine robot metrics and cost.
 
 - `--by harness,model` (default) groups trials; other keys: `suite`, `category`, `difficulty`, `task`, `split`, `seed`, `mode` (sim, real or hil-mock), `job`, `regime`, `released`.
 - When a task has several trials, pass@k is averaged over tasks.

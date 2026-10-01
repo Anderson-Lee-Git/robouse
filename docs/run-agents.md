@@ -23,7 +23,7 @@ Options:
 
 ## Isolation
 
-Model harnesses run in a sandbox, so the agent cannot read the reference solution, the job folder or other trials. The reference solution and the no-op control run without it.
+Model harnesses run in a sandbox, so the agent cannot read the reference solution, the run folder or other trials. The reference solution and the no-op control run without it.
 
 - **macOS**: the system's Seatbelt sandbox (`sandbox-exec`); nothing to install.
 - **Linux**: bubblewrap. Install it first, for example `sudo apt-get install bubblewrap`. Ubuntu 24.04 blocks the user namespaces bubblewrap needs unless an AppArmor profile allows them; if `robouse run` stops with "no sandbox for the agent on this machine", add the profile and load it:

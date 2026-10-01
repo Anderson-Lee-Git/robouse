@@ -62,8 +62,10 @@ The agent observed the scene, moved the blocks with `robo move-to` and called `r
 
 ## Look at the result
 
+The trial's folder is `runs/quickstart/` plus the `trial` name the run printed:
+
 ```console
-$ cd runs/quickstart/arc-gravity__claude-code__2363e1
+$ cd runs/quickstart/arc-gravity__claude-code__*/
 $ cat verifier/reward.txt
 1
 $ cat episode/result.json
@@ -77,7 +79,7 @@ $ cat episode/result.json
   "steps_used": 810,
   "max_steps": 1400,
   "requests": 35,
-  "agent_text": "Applied gravity rule: blocks fall toward the front row and stack at the bottom preserving column order \u2014 blue [2,0], red [1,2] above green [2,2], yellow [2,3]",
+  "agent_text": "Applied gravity rule: blocks fall toward the front row ...",
   ...
 }
 ```
