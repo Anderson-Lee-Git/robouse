@@ -71,7 +71,7 @@ robouse 0.2.0 bundles 692 tasks in 31 suites. "Needs" is what a suite needs beyo
 | `vision` | camera images, no coordinates | 55 | `[metaworld]` | 55/55 | 0/55 |
 <!-- /suites-table -->
 
-`robouse fetch-assets` downloads the MuJoCo Menagerie robot models for `menagerie`, `roboharm` and `drone`; `robouse fetch-assets --all` adds every robot the other suites and composed tasks use (about 380 MB). Each file is checked by SHA-256. Results of models on these suites: [Runs](/runs/).
+`robouse fetch-assets` downloads the MuJoCo Menagerie robot models for `menagerie`, `roboharm` and `drone`; `robouse fetch-assets --all` adds every robot the other suites and composed tasks use (about 390 MB). Each file is checked by SHA-256. Results of models on these suites: [Runs](/runs/).
 
 ## LIBERO
 
