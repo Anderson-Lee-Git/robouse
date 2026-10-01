@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import importlib.util
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 
 from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_task_path
@@ -169,6 +171,9 @@ def _prepare_local(a: argparse.Namespace) -> int:
     if missing:
         print(SIM_HINT.format(err="missing: " + ", ".join(missing)), file=sys.stderr)
         return 1
+    from ..core import gl
+
+    gl.auto_select()  # MUJOCO_GL unset on Linux without a display: OSMesa or EGL, whichever renders; inherited by trials
     return 0
 
 
@@ -183,15 +188,29 @@ def serve(a: argparse.Namespace) -> int:
     if a.split:
         spec["placement"] = {**(spec.get("placement") or {}), "split": a.split}
     secrets = json.loads(sys.stdin.readline() or "{}") if a.secrets_stdin else None
-    res = serve_episode(
-        spec,
-        Path(a.run_dir),
-        a.socket,
-        Path(a.workspace) if a.workspace else None,
-        max_wall_s=a.max_wall_s,
-        ready_file=Path(a.ready_file) if a.ready_file else None,
-        secrets=secrets,
-    )
+    from ..core import gl
+
+    why = None
+    try:
+        res = serve_episode(
+            spec,
+            Path(a.run_dir),
+            a.socket,
+            Path(a.workspace) if a.workspace else None,
+            max_wall_s=a.max_wall_s,
+            ready_file=Path(a.ready_file) if a.ready_file else None,
+            secrets=secrets,
+        )
+    except Exception as e:
+        if (why := gl.explain(e)) is None:
+            raise
+        traceback.print_exc()  # the details stay in the log
+    if why:
+        # outside the handler, so MuJoCo's half-built Renderer is collected (and prints its own follow-on error) first:
+        # the plain message is the last line, the one the runner reports
+        gc.collect()
+        print(f"robouse: {why}", file=sys.stderr, flush=True)
+        return 1
     print(json.dumps({k: v for k, v in res.items() if k != "signature"}))
     return 0
 

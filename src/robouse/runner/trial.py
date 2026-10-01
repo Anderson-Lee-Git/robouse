@@ -114,7 +114,7 @@ def _wait_ready(p: Path, proc: subprocess.Popen, timeout: float = 120, log: Path
                 log is not None and log.exists()
             ):  # the server's last line usually names the cause (e.g. a missing simulator)
                 lines = [l for l in log.read_text(errors="replace").splitlines() if l.strip()]
-                last = f": {clip(lines[-1], 300)}" if lines else ""
+                last = f": {clip(lines[-1], 1000)}" if lines else ""
             raise RuntimeError(f"episode server exited early ({proc.returncode}){last}")
         time.sleep(0.2)
     raise TimeoutError("episode server did not start")
