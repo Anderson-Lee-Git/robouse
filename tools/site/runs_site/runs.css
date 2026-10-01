@@ -454,8 +454,7 @@ td.rs [data-res]{flex-direction:column;align-items:flex-start;gap:var(--sp-4)}
 
 /* pairs: model first, harness second (the hub's order) */
 .ph{color:var(--muted);font-weight:400}
-/* "· VLA" stays with the name: the dot never ends a line */
-.ph{white-space:nowrap}
+/* "· VLA" is bound to the model name and the harness with no-break spaces (build_runs_site.phtml): the dot never starts or ends a line */
 thead th .pm,thead th .ph{display:block}
 thead th .ph{font-size:var(--fs-micro)}
 table.matrix thead th a:hover .pm{color:var(--accent)}
@@ -496,7 +495,7 @@ table.list.runs td.sus{min-width:0;max-width:none;overflow-wrap:anywhere}
 .rtag{display:inline-block;margin-left:var(--sp-6);padding:0 var(--sp-6);border:1px solid var(--line);border-radius:var(--r-xs);font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted);white-space:nowrap}
 table.list th:last-child .sb{margin-right:0}  /* the sort button's bleed must not widen the table past its box */
 @media (max-width:560px){table.list.runs th:nth-child(3),table.list.runs td:nth-child(3),table.list.runs th:nth-child(4),table.list.runs td:nth-child(4){display:none}}
-@media (max-width:560px){table.list.rt th:nth-child(3),table.list.rt td:nth-child(3),table.list.rt th:nth-child(5),table.list.rt td:nth-child(5){display:none}}
+
 @media (max-width:560px){.rtag{display:table;margin:var(--sp-2) 0 0}table.list.runs th,table.list.runs td{padding-right:var(--sp-10)}}
 /* a run's trials: task titles in the text face with room to breathe; the outcome column is narrow (exceptions only) */
 table.list.rt th[scope="row"]{white-space:normal;width:55%;min-width:220px}
@@ -526,3 +525,14 @@ table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-
   table.list.runs td.sus .dso{order:1;font-size:var(--fs-caption);line-height:1.4;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   table.list.runs thead th .sl{white-space:normal}  /* "Solve rate" may take two lines rather than push its column off-screen */
 }
+/* run page on phones: Task (with the outcome under its title), Result and Time; Outcome and Steps columns drop, no sideways scroll */
+.oc2{display:none}
+@media (max-width:640px){
+  table.list.rt th.oc,table.list.rt td.oc,table.list.rt .stc,table.list.rt .rnc{display:none}
+  table.list.rt th[scope="row"]{width:auto;min-width:0}
+  table.list.rt .oc2,table.list.rt .tmeta{display:block;margin-top:var(--sp-2);font-size:var(--fs-caption);line-height:1.4;color:var(--muted)}
+  table.list.rt .tvar{display:block}  /* the variant ("vision") under the title */
+  table.list.rt .tsep{display:none}  /* on its own line a note or variant needs no separator */
+  table.list.rt th,table.list.rt td{padding-right:var(--sp-8)}
+}
+@media (max-width:640px){table.list.runs .hh{display:none}}  /* phones: the column says "Model"; each row still names the harness */

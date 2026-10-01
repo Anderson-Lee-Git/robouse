@@ -747,7 +747,18 @@ def load_chrome(site: Path) -> None:
     CHROME["header"], CHROME["footer"], CHROME["bridge"], CHROME["link"] = mod.header("/runs/"), mod.FOOTER, mod.BRIDGE, mod.LINK
 
 
+# " · " between items: a no-break space binds the dot to the item before it ("A&nbsp;· B"), so a line never starts
+# with the dot (also across tags: " <span>· "); a model and its harness are bound on both sides where they are written.
+# A legend's "·" key (class "cell") is not a separator.
+_GLUE_BEFORE = re.compile(r'(?<=\S) (?=(?:<(?!span class="cell)[^>]+>)*·)')
+
+
+def glue(html_text: str) -> str:
+    return _GLUE_BEFORE.sub("\u00a0", html_text)
+
+
 def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str = "", data: str = "") -> str:
+    body = glue(body)
     synth = ('<div class="synth" role="note"><b>SYNTHETIC TEST DATA</b><span>Fabricated results that test how the viewer holds at scale '
              f'({len(HM)} harness + model pairs, several seeds per task). These are not real runs.</span></div>') if SYNTH else ""
     return f"""<!doctype html>
@@ -1121,7 +1132,7 @@ def build_runs(runs: dict) -> str:
 {ctrl}
 <div class="scroll tbl"><table class="list runs">
   <caption class="vh">Main runs first, newest first; zero-shot probes after them. Sort by any column.</caption>
-  <thead><tr>{th_sort("Model · harness", "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort("Trials", "num", "n")}{th_sort("Solve rate", "num", "n")}</tr></thead>
+  <thead><tr>{th_sort('Model<span class="hh"> · harness</span>', "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort("Trials", "num", "n")}{th_sort("Solve rate", "num", "n")}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("runs", "Clear the search or the filters.")}
@@ -1129,6 +1140,14 @@ def build_runs(runs: dict) -> str:
 """
     return page("Runs · Robo Use", body, desc=f"{len(runs)} runs of {len(idxs)} models, each with its trials, recordings and verdicts.",
                 cls="jobs", canonical="https://robouse.ai/runs/")
+
+
+def title_html(title: str) -> str:
+    """A task title; its variant ("… · vision") in its own span, which takes its own line on phones (runs.css)."""
+    base, sep, var = title.rpartition(" · ")
+    if not sep:
+        return esc(title)
+    return f'{esc(base)}<span class="tvar"><span class="tsep"> · </span>{esc(var)}</span>'
 
 
 def build_run(r: dict) -> str:
@@ -1139,16 +1158,16 @@ def build_run(r: dict) -> str:
     # the counted trial of each task first; an earlier trial of the same task says so, with its start time
     for t in sorted(r["trials"], key=lambda t: (t["title"], t["task"], not t["counted"], str(t.get("seed")), t["started"] or "")):
         st = status(t)
-        seed = f'<span class="muted"> · seed {esc(t["seed"])}</span>' if t.get("seed") is not None else ""
+        seed = f'<span class="muted tmeta"><span class="tsep"> · </span>seed {esc(t["seed"])}</span>' if t.get("seed") is not None else ""
         if not t["counted"]:
-            seed += f'<span class="muted"> · earlier trial, {esc(fmt_day(t["started"]))}</span>'
+            seed += f'<span class="muted tmeta"><span class="tsep"> · </span>earlier trial, {esc(fmt_day(t["started"]))}</span>'
         elif HUB and t["task"] not in HUB:
-            seed += '<span class="muted"> · pilot task, not in the dataset or its score</span>'
+            seed += '<span class="muted tmeta"><span class="tsep"> · </span>pilot task, not in the dataset or its score</span>'
         rows.append(f'<tr class="{"" if t["counted"] else "dim"}" data-outcome="{st}" data-counted="{int(t["counted"])}" data-q="{esc((t["task"] + " " + t["title"]).lower())}">'
-                    f'<th scope="row" data-v="{esc(t["title"])}"><a class="rtk" href="/runs/t/{esc(t["trial"])}/">{esc(t["title"])}</a>{seed}</th>'
-                    f'<td data-v="{ST_RANK[st]}"><span class="badge {st}">{STATUS_TEXT[st]}</span>{"" if t["counted"] else " <span class=muted>not counted</span>"}</td>'
+                    f'<th scope="row" data-v="{esc(t["title"])}"><a class="rtk" href="/runs/t/{esc(t["trial"])}/">{title_html(t["title"])}</a>{seed}{f'<span class="oc2">{esc(result_note(t))}</span>' if result_note(t) else ""}</th>'
+                    f'<td data-v="{ST_RANK[st]}"><span class="badge {st}">{STATUS_TEXT[st]}</span>{"" if t["counted"] else ' <span class="muted rnc">not counted</span>'}</td>'
                     f'<td class="oc">{esc(result_note(t))}</td>'
-                    + (f'<td class="n num" data-v="{num_attr(t["steps_used"])}">{steps_html(t)}</td>' if show_steps else "")
+                    + (f'<td class="n num stc" data-v="{num_attr(t["steps_used"])}">{steps_html(t)}</td>' if show_steps else "")
                     + (f'<td class="n num" data-v="{num_attr(t["wall"])}">{esc(fmt_s(t["wall"])) if t["wall"] is not None else NOT_RECORDED}</td>' if show_time else "") + "</tr>")
     states = {status(t) for t in r["trials"]}
     opts = "".join(f'<option value="{k}">{v}</option>' for k, v in (("ok", "Solved"), ("no", "Not solved"), ("infra", "Infrastructure failure"), ("partial", "Partial")) if k in states)
@@ -1165,7 +1184,7 @@ def build_run(r: dict) -> str:
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
 {ctrl}
 <div class="scroll tbl"><table class="list rt">
-  <thead><tr>{th_sort("Task", "text", "tcol")}{th_sort("Result", "num")}{th_sort("Outcome")}{th_sort("Steps", "num", "n") if show_steps else ""}{th_sort("Time", "num", "n") if show_time else ""}</tr></thead>
+  <thead><tr>{th_sort("Task", "text", "tcol")}{th_sort("Result", "num")}{th_sort("Outcome", "text", "oc")}{th_sort("Steps", "num", "n stc") if show_steps else ""}{th_sort("Time", "num", "n") if show_time else ""}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("trials", "Clear the search or the filter.")}

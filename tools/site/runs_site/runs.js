@@ -11,7 +11,7 @@
   function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }  // a pause right after play rejects; that is not an error
   function dur(x) { if (x == null) return ""; x = +x; return x < 120 ? x.toFixed(x < 10 ? 1 : 0) + " s" : (x / 60).toFixed(1) + " min"; }
   function rew(x) { return x == null || isNaN(+x) ? "" : (+x).toFixed(1); }
-  function mfirst(l) { var i = String(l).indexOf(" + "); return i < 0 ? l : l.slice(i + 3) + " · " + l.slice(0, i); }  // "Claude Code + Opus 5.5" -> "Opus 5.5 · Claude Code"
+  function mfirst(l) { var i = String(l).indexOf(" + "); return i < 0 ? l : l.slice(i + 3) + " · " + l.slice(0, i); }  // "Claude Code + Opus 5.5" -> "Opus 5.5 · Claude Code"
   function num(x) { return x == null ? "" : Number(x).toLocaleString("en-US"); }
   function kfmt(x) { x = +x || 0; return x >= 1e6 ? (x / 1e6).toFixed(2) + "M" : x >= 1e4 ? Math.round(x / 1e3) + "k" : x >= 1e3 ? (x / 1e3).toFixed(1) + "k" : String(x); }
   function getJSON(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status + " " + u); return r.json(); }); }
@@ -366,7 +366,7 @@
           if (i == null) { now.textContent = ""; return; }
           $$('[data-i="' + i + '"]').forEach(function (el) { el.classList.add("cur"); });
           var s = d.steps.find(function (x) { return x.i === i; });
-          now.textContent = "Step " + sn(d, i) + (s ? " · " + actionOf(s).text.slice(0, 80) : "");
+          now.textContent = "Step " + sn(d, i) + (s ? " · " + actionOf(s).text.slice(0, 80) : "");
           scrollInto($('.slist li[data-i="' + i + '"]'));
           markTiles(i);
         });
@@ -465,7 +465,7 @@
           (sp.total > sp.n ? sp.n + " of " + sp.total + " shown" : sp.total) + '</span></div><div class="tiles" data-fade>' +
           d.obs.map(function (o) {
             var cam = o[0].replace(/\.png$/, "").replace(/^obs_\d+_?/, "").replace(/^robot\d_/, "").replace(/_/g, " ");  // the camera, from the file name
-            var lab = o[1] != null ? "step " + sn(d, o[1]) + (cam && !/^\d+$/.test(cam) ? " · " + cam : "") : o[0].replace(/\.png$/, "");
+            var lab = o[1] != null ? "step " + sn(d, o[1]) + (cam && !/^\d+$/.test(cam) ? " · " + cam : "") : o[0].replace(/\.png$/, "");
             return '<button type="button" class="tile"' + (o[1] != null ? ' data-s="' + o[1] + '"' : "") + (o[3] != null ? ' data-seek="' + o[3] + '"' : "") + ' title="' + h(o[0]) + '" aria-label="Camera image ' + h(lab) + (o[3] != null ? ", seek the recording here" : "") + '"><i style="' + sprStyle(sp, o[2]) + '"></i><span>' + h(lab) + "</span></button>";
           }).join("") + "</div></section>";
       }
@@ -489,7 +489,7 @@
             body += '<pre class="cmd"><code>' + h(c.a) + "</code></pre>";
             if (c.b) body += '<pre class="out"><code>' + h(c.b) + "</code></pre>";
             if (c.img && d.sprite) body += '<div class="imgs">' + c.img.map(function (k) { return '<i style="' + sprStyle(d.sprite, k) + '"></i>'; }).join("") + "</div>";
-            if (c.o != null) body += '<details class="disc res"' + (c.n <= 8 ? " open" : "") + "><summary>Output · " + c.n + " line" + (c.n === 1 ? "" : "s") + (c.x != null ? ' · <span class="x-err">exit ' + h(c.x) + "</span>" : "") + '</summary><pre class="out"><code>' + h(c.o) + "</code></pre></details>";
+            if (c.o != null) body += '<details class="disc res"' + (c.n <= 8 ? " open" : "") + "><summary>Output · " + c.n + " line" + (c.n === 1 ? "" : "s") + (c.x != null ? ' · <span class="x-err">exit ' + h(c.x) + "</span>" : "") + '</summary><pre class="out"><code>' + h(c.o) + "</code></pre></details>";
           });
           out.push('<li class="st ' + h(s.src) + '" data-i="' + s.i + '" id="s' + s.i + '">' + head + body + "</li>");
         });
@@ -523,7 +523,7 @@
       function runExtras() {
         var out = "";
         if (X.cost) { var c = X.cost; out += grp("Cost", [["Prompt tokens", c.prompt != null ? num(c.prompt) : null], ["Cached", c.cached ? num(c.cached) : null], ["Completion tokens", c.completion != null ? num(c.completion) : null], ["Cost", c.usd != null ? "$" + (+c.usd).toFixed(c.usd < 1 ? 4 : 2) : null, "USD"], ["Source", c.source || null]]); }
-        if (X.vla) { var v = X.vla; out += grp("Policy inference", [["Inferences", num(v.inferences)], ["Chunk size", v.chunk != null ? String(v.chunk) : null, "actions"], ["Round trip", v.roundtrip ? v.roundtrip[0].toFixed(2) + " · " + v.roundtrip[1].toFixed(2) : null, "s median · p90"], ["Server", v.server ? v.server[0].toFixed(2) + " · " + v.server[1].toFixed(2) : null, "s median · p90"]]); }
+        if (X.vla) { var v = X.vla; out += grp("Policy inference", [["Inferences", num(v.inferences)], ["Chunk size", v.chunk != null ? String(v.chunk) : null, "actions"], ["Round trip", v.roundtrip ? v.roundtrip[0].toFixed(2) + " · " + v.roundtrip[1].toFixed(2) : null, "s median · p90"], ["Server", v.server ? v.server[0].toFixed(2) + " · " + v.server[1].toFixed(2) : null, "s median · p90"]]); }
         return out ? '<div class="xgs">' + out + "</div>" : "";
       }
       /* the runner's own note ("[runner] agent exited without robo done") as a sentence, without the log tag */
@@ -587,9 +587,9 @@
         if (tks.length > 1) {
           var maxIn = Math.max.apply(null, tks.map(function (s) { return s.tk[0]; })) || 1, maxOut = Math.max.apply(null, tks.map(function (s) { return s.tk[1]; })) || 1;
           html += '<section class="chart"><h2>Input tokens per step<span>the context the model read, up to ' + kfmt(maxIn) + '</span></h2><div class="bars">' +
-            tks.map(function (s) { return '<i style="height:' + (100 * s.tk[0] / maxIn).toFixed(1) + '%" data-go="' + s.i + '" data-tip="step ' + sn(d, s.i) + " · " + num(s.tk[0]) + " input (" + num(s.tk[2]) + ' cached)"></i>'; }).join("") + "</div></section>" +
+            tks.map(function (s) { return '<i style="height:' + (100 * s.tk[0] / maxIn).toFixed(1) + '%" data-go="' + s.i + '" data-tip="step ' + sn(d, s.i) + " · " + num(s.tk[0]) + " input (" + num(s.tk[2]) + ' cached)"></i>'; }).join("") + "</div></section>" +
             (outOk ? '<section class="chart"><h2>Output tokens per step<span>up to ' + kfmt(maxOut) + '</span></h2><div class="bars out">' +
-            tks.map(function (s) { return '<i style="height:' + (100 * s.tk[1] / maxOut).toFixed(1) + '%" data-go="' + s.i + '" data-tip="step ' + sn(d, s.i) + " · " + num(s.tk[1]) + ' output"></i>'; }).join("") + "</div></section>"
+            tks.map(function (s) { return '<i style="height:' + (100 * s.tk[1] / maxOut).toFixed(1) + '%" data-go="' + s.i + '" data-tip="step ' + sn(d, s.i) + " · " + num(s.tk[1]) + ' output"></i>'; }).join("") + "</div></section>"
             : '<p class="muted small">Output tokens per step are not shown: this harness’s per-message counts do not add up to its run total.</p>');
         } else if (tk) {
           html += '<p class="muted small">This harness reports tokens for the whole run only, not per step.</p>';
@@ -700,7 +700,7 @@
       root.setAttribute("aria-busy", "false");
       var T = idx.trials, byTask = {};
       Object.keys(T).forEach(function (id) { (byTask[T[id][0]] = byTask[T[id][0]] || []).push(id); });
-      function label(id) { var t = T[id]; return mfirst(idx.hm[t[1]][0]) + " · " + (STATUS[t[2]] || t[2]) + (t[3] ? "" : " (not counted)"); }
+      function label(id) { var t = T[id]; return mfirst(idx.hm[t[1]][0]) + " · " + (STATUS[t[2]] || t[2]) + (t[3] ? "" : " (not counted)"); }
       function sorted(ids) { return ids.slice().sort(function (x, y) { return (T[y][3] - T[x][3]) || (T[x][1] - T[y][1]) || (x < y ? -1 : 1); }); }
       var notes = [], a0 = a, b0 = b;
       if (a && !T[a]) { notes.push("No trial " + a + "."); a = null; }
@@ -711,7 +711,7 @@
       var note = notes.length ? '<p class="cnote" role="status">' + h(notes.join(" ")) + "</p>" : "";
       var tasks = Object.keys(byTask).sort();
       var picker = '<div class="cpick"><select data-task aria-label="Task"><option value="">Choose one of ' + Object.keys(byTask).length.toLocaleString("en-US") + " tasks…</option>" +
-        tasks.map(function (k) { return '<option value="' + h(k) + '"' + (k === task ? " selected" : "") + ">" + h(k) + " · " + h(idx.titles[k] || "") + "</option>"; }).join("") + "</select>" +
+        tasks.map(function (k) { return '<option value="' + h(k) + '"' + (k === task ? " selected" : "") + ">" + h(k) + " · " + h(idx.titles[k] || "") + "</option>"; }).join("") + "</select>" +
         (task && idx.urls && idx.urls[task] ? '<a class="ln" href="' + h(idx.urls[task]) + '">Open task page</a>' : "") + "</div>";
       if (!task) { if (a0 || b0) history.replaceState(null, "", location.pathname + location.hash); root.innerHTML = picker + note + quiet("Pick a task to compare two of its trials, or press Compare on a trial page."); bindPick(); return; }
       var ids = sorted(byTask[task]);
