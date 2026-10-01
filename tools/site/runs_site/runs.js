@@ -317,6 +317,8 @@
     agent_timeout: "Agent timed out", wall_time_exhausted: "Time limit reached", agent_exited: "Agent exited", "no result": "No result"};
   function oc(x) { return x ? (OUTCOMES[x] || String(x).replace(/_/g, " ").replace(/^./, function (c) { return c.toUpperCase(); })) : ""; }
   var WITHHELD = "Trajectory not published: during this trial the agent looked at files outside its workspace (for example listing the home folder or searching the whole disk), so its commands and their outputs may show unrelated local files. The recording, the camera images, the reward and the outcome are shown.";
+  // a pair whose model received no camera images (tools/models.json `images: false`; build_runs_site.noimg_tag on the server-built pages)
+  var NOIMG = '<span class="rtag" title="The model received no camera images in these runs; vision tasks were attempted from text observations only.">no image input</span>';
 
   /* ---------------------------------------------------------------- trial page */
   function initTrial(id) {
@@ -461,7 +463,7 @@
       }
       function strip() {
         var sp = d.sprite;
-        return '<section class="strip" id="filmstrip" aria-label="Camera images"><div class="rechead"><span>Camera images the agent looked at</span><span class="num">' +
+        return '<section class="strip" id="filmstrip" aria-label="Camera images"><div class="rechead"><span>' + (d.images === false ? "Camera images saved during the episode; the model received no images" : "Camera images the agent looked at") + '</span><span class="num">' +
           (sp.total > sp.n ? sp.n + " of " + sp.total + " shown" : sp.total) + '</span></div><div class="tiles" data-fade>' +
           d.obs.map(function (o) {
             var cam = o[0].replace(/\.png$/, "").replace(/^obs_\d+_?/, "").replace(/^robot\d_/, "").replace(/_/g, " ");  // the camera, from the file name
@@ -668,7 +670,7 @@
               var u = sp.disp || sp.tile;  /* in display units: the file viewer draws the tile at twice this, the sprite's own size */
               e.sprite = {src: sp.src, x: (i % sp.cols) * u, y: Math.floor(i / sp.cols) * u, w: u, h: u,
                 bw: Math.min(sp.n, sp.cols) * u, bh: Math.ceil(sp.n / sp.cols) * u,
-                caption: (o[1] != null ? "Looked at in step " + sn(d, o[1]) + ". " : "") + "A " + sp.tile + " px thumbnail from the filmstrip; the full-size image is not published."};
+                caption: (o[1] != null ? (d.images === false ? "Named in step " : "Looked at in step ") + sn(d, o[1]) + ". " : "") + "A " + sp.tile + " px thumbnail from the filmstrip; the full-size image is not published."};
             } else e.w = "Not published. Only a sample of " + (sp ? sp.n : 0) + " camera images is published, as the filmstrip on the Recording tab.";
           } else e.w = why(p);
           return e;
@@ -745,7 +747,7 @@
             ["Time", dur(d.wall)], ["Reward", d.reward != null && +d.reward !== 0 && +d.reward !== 1 ? rew(d.reward) : ""]].filter(function (f) { return f[1]; });
           var said = d.withheld || st === "infra" ? "" : String(vd.claim_text || "").replace(/^\[runner\]\s*/, "");
           body.innerHTML = (d.video ? '<div class="vbox"><video src="' + h(d.video) + '" poster="' + h(d.video.replace("/runs/v/", "/runs/p/").replace(/\.mp4$/, ".jpg")) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="metadata"></video></div>' : "") +
-            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0])) + "</a></p>" +
+            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0])) + "</a>" + (d.images === false ? NOIMG : "") + "</p>" +
             (facts.length ? '<dl class="facts">' + facts.map(function (f) { return "<div><dt>" + f[0] + "</dt><dd>" + h(f[1]) + "</dd></div>"; }).join("") + "</dl>" : "") +
             (d.withheld ? '<div class="withheld" role="note"><b>Trajectory withheld</b><p>The agent looked at files outside its workspace.</p></div>' : (said ? '<p class="said"><span class="muted">' + (vd.claim === "done" || vd.claim === "give_up" ? "The agent: " : "Its last message: ") + "</span>" + h(said.slice(0, 400)) + "</p>" : "") +
               (d.steps.length ? '<ol class="slist">' + stepListHTML(d) + "</ol>" : quiet(d.video ? "No trajectory was recorded." : "No recording or trajectory: the trial ended before the agent acted.")));

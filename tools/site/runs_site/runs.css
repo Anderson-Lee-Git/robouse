@@ -210,6 +210,7 @@ table.mdt td,table.mdt th{white-space:normal}
 .head.trial{margin-bottom:0}
 .who{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-8) var(--sp-10);margin:var(--sp-8) 0 0;font-size:var(--fs-small);color:var(--ink2)}
 .who .tag{margin-left:0;vertical-align:0}
+.who .rtag{margin:0}  /* "no image input" on trial pages and in Compare: the line's gap spaces it */
 .who .cmp{margin-left:auto}
 .who a.wl{border-radius:var(--r-xs);transition:color var(--t-fast)}
 .who a.wl:hover{color:var(--accent)}
@@ -496,7 +497,7 @@ table.list.runs td.sus{min-width:0;max-width:none;overflow-wrap:anywhere}
 table.list th:last-child .sb{margin-right:0}  /* the sort button's bleed must not widen the table past its box */
 @media (max-width:560px){table.list.runs th:nth-child(3),table.list.runs td:nth-child(3),table.list.runs th:nth-child(4),table.list.runs td:nth-child(4){display:none}}
 
-@media (max-width:560px){.rtag{display:table;margin:var(--sp-2) 0 0}table.list.runs th,table.list.runs td{padding-right:var(--sp-10)}}
+@media (max-width:560px){.rtag{display:table;border-collapse:separate;margin:var(--sp-2) 0 0}table.list.runs th,table.list.runs td{padding-right:var(--sp-10)}}
 /* a run's trials: task titles in the text face with room to breathe; the outcome column is narrow (exceptions only) */
 table.list.rt th[scope="row"]{white-space:normal;width:55%;min-width:220px}
 a.rtk{font:500 var(--fs-small)/1.4 var(--sans);color:var(--ink)}

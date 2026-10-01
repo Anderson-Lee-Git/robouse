@@ -563,6 +563,8 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
         "steps": [], "prompt": "",
     }
     out["extra"] = t.get("fake_extra") or trial_extras(t, ep, res, clean)
+    if no_images(t["hm"]):  # runs.js: the "no image input" tag in Compare; the filmstrip says the model received no images
+        out["images"] = False
     # the camera images the agent looked at, each with the first step that mentions it
     step_of: dict[str, int] = {}
     if traj:
@@ -897,6 +899,20 @@ def phtml(i: int) -> str:
     return f'<span class="pm">{model_mark(p)}{esc(p.get("model_label") or p["label"])}</span> <span class="ph">·&nbsp;{esc(p.get("harness_label") or p["harness"])}</span>'
 
 
+# a pair whose model received no camera images in its published runs (tools/models.json `images: false`, checked from
+# the trials) is tagged on every page that shows it; the hub leaderboard's footnote explains the tag
+NOIMG_WHY = "The model received no camera images in these runs; vision tasks were attempted from text observations only."
+
+
+def no_images(i: int) -> bool:
+    return HM[i].get("images") is False
+
+
+def noimg_tag(i: int) -> str:
+    """The quiet "no image input" tag, styled as the zero-shot probe tag (.rtag)."""
+    return f'<span class="rtag" title="{esc(NOIMG_WHY)}">no image input</span>' if no_images(i) else ""
+
+
 def fnum(x) -> str:
     try:
         return f"{int(x):,}" if float(x) == int(float(x)) else f"{float(x):,}"
@@ -972,10 +988,10 @@ ICON = {
 }
 
 
-def player_controls() -> str:
+def player_controls(noimg: bool = False) -> str:
     speeds = "".join(f'<button type="button" data-speed="{s}" aria-pressed="false">{s}×</button>' for s in ("0.25", "0.5", "1"))
     return (f'<div class="pctl"><div class="lane" role="slider" tabindex="0" aria-label="Recording position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" '
-            f'title="Steps with robot motion; blue: steps that looked at a camera image"><span class="lane-tr"></span><span class="lane-mk"></span><b></b></div>'
+            f'title="Steps with robot motion; blue: steps that {"named a camera image file (the model received no images)" if noimg else "looked at a camera image"}"><span class="lane-tr"></span><span class="lane-mk"></span><b></b></div>'
             f'<div class="ctl"><button type="button" class="pb" data-k="prev" aria-label="Previous step" title="Previous step (←)" disabled>{ICON["prev"]}</button>'
             f'<button type="button" class="pb pp" data-k="play" aria-label="Play" title="Play or pause (space)" disabled>{ICON["play"]}{ICON["pause"]}</button>'
             f'<button type="button" class="pb" data-k="next" aria-label="Next step" title="Next step (→)" disabled>{ICON["next"]}</button>'
@@ -1082,7 +1098,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
         facts.append(("Seed", esc(t["seed"])))
     # the infrastructure badge already says "not scored"; only a superseded trial needs the tag
     counted = "" if t["counted"] or st == "infra" else '<span class="tag">not counted: a later trial counts</span>'
-    vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} controls muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls()}' if video
+    vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} controls muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls(no_images(t["hm"]))}' if video
            else "")  # no recording: no player box at all (the stage gives the tabs the full width)
     tabs = [("recording", "Recording", ""), ("trajectory", "Trajectory", f" <span class=\"num\">{n_steps}</span>" if n_steps else ""), ("verdict", "Verdict", ""),
             ("run", "Timing &amp; tokens", ""), ("files", "Files", "")]
@@ -1093,7 +1109,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 {trial_crumbs(t)}
 <section class="page-head head trial">
   <h1>{esc(t['title'])}</h1>
-  <p class="who"><span class="badge {st}">{STATUS_LONG[st]}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl">{model_mark(HM[t["hm"]])}{esc(label)}</span>{counted}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
+  <p class="who"><span class="badge {st}">{STATUS_LONG[st]}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl">{model_mark(HM[t["hm"]])}{esc(label)}</span>{noimg_tag(t["hm"])}{counted}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
   {f'<p class="why">{esc(why or "The harness or the model API ended the trial before the agent acted.")}</p>' if never_ran else f'<dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>'}
 </section>
 """
@@ -1144,7 +1160,7 @@ def build_runs(runs: dict) -> str:
         tag = ' <span class="rtag">zero-shot probe</span>' if r["probe"] else ""
         state = ' <span class="state running">running</span>' if r["state"] == "running" else ""
         rows.append(f'<tr {pair_attrs(i)} data-dataset="{esc(r["ds"])}" data-q="{esc((plab(i) + " " + r["ds"] + (" zero-shot probe" if r["probe"] else "")).lower())}">'
-                    f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i)}</a></th>'
+                    f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i)}</a>{" " + noimg_tag(i) if no_images(i) else ""}</th>'
                     f'<td class="sus" data-v="{esc(r["ds"])}">{ds_cell(r["ds"])}{tag}</td>'
                     f'<td class="muted num" data-v="{esc(r["start"])}">{esc(fmt_date(r["start"]))}{state}</td>'
                     f'<td class="n num" data-v="{len(r["trials"])}">{len(r["trials"])}</td>'
@@ -1210,7 +1226,7 @@ def build_run(r: dict) -> str:
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{esc(r["title"])}</nav>
 <section class="page-head head">
   <h1>{esc(r["title"])}</h1>
-  <p class="meta">{esc(r["ds"])} · {esc(fmt_date(r["start"]))} · {f'{r["solved"]} of {r["scored"]} solved' if r["scored"] else "no scored trial"}{' · <span class="state running">running</span>' if r["state"] == "running" else ""}</p>
+  <p class="meta">{esc(r["ds"])} · {esc(fmt_date(r["start"]))} · {f'{r["solved"]} of {r["scored"]} solved' if r["scored"] else "no scored trial"}{' · <span class="state running">running</span>' if r["state"] == "running" else ""}{" " + noimg_tag(r["hm"]) if no_images(r["hm"]) else ""}</p>
 </section>
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
 {ctrl}
