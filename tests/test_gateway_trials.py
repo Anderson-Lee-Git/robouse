@@ -296,3 +296,14 @@ def test_codex_requests_reach_the_provider_with_their_reasoning(stub_provider, t
     assert "input_image" not in json.dumps(out["output"])  # Baseten rejects an image in a tool result ...
     user = sent["input"][sent["input"].index(out) + 1]
     assert user["role"] == "user" and user["content"][-1]["image_url"] == png  # ... and takes it in a user message
+
+
+def test_a_relative_job_folder(stub_provider, tmp_path, monkeypatch) -> None:
+    """`--out runs/x` (a relative job folder): the gateway runs in its own folder, so it must get absolute paths (it
+    could not find its config.yaml and the trial failed before the agent started)."""
+    monkeypatch.setenv("N_REQUESTS", "1")
+    monkeypatch.chdir(tmp_path)
+    res = run_trial(load_task(VISION_TASK), "stubagent", MODEL, Path("runs") / "rel", timeout=120)
+    assert res["exception"] is None, res
+    _, result = _trial(tmp_path / "runs" / "rel", res)
+    assert result["proxy_stats"]["upstream_calls"] == 1
