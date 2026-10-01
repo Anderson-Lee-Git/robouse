@@ -1,7 +1,7 @@
 """Run trials: task x harness x model -> a BenchFlow trial directory (what the BenchFlow viewer reads).
 
 <job>/<task>__<harness>__<id>/     (<id>: 6 random hex characters)
-  config.json                 task, harness, model, seed, timeouts
+  config.json                 task, harness, model, seed, timeouts, and the files the agent's workspace held at start
   result.json                 result (reward, timing, agent info, exception)
   agent/stdout.jsonl          raw harness output (stream-json / codex --json / text)
   agent/stderr.txt
@@ -92,13 +92,19 @@ def now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _workspace_files(ws: Path, limit: int = 500) -> list[str]:
+    """What a workspace holds, relative to it, folders with a trailing slash (the `robo` client in .robouse/bin, the
+    socket path, harness files, observations/ and the images a task starts with), at most `limit` entries."""
+    files = sorted(str(p.relative_to(ws)) + ("/" if p.is_dir() else "") for p in ws.rglob("*"))
+    return files[:limit] + ([f"... {len(files) - limit} more"] if len(files) > limit else [])
+
+
 def _make_workspace(task: Task) -> Path:
     ws = Path(tempfile.mkdtemp(prefix=f"robouse-ws-{task.id[:24]}-"))
     (ws / ".robouse" / "bin").mkdir(parents=True)
     shim = ws / ".robouse" / "bin" / "robo"
     shim.write_text("#!/usr/bin/env python3\n" + AGENT_CLI.read_text())
     shim.chmod(0o755)
-    (ws / "instruction.md").write_text(task.instruction)
     (ws / "observations").mkdir()
     return ws
 
@@ -223,7 +229,7 @@ def run_trial(
     ready = ws / ".robouse" / "ready"
     started = now()
     t0 = time.time()
-    cfg = {
+    cfg: dict[str, Any] = {
         "task": task.id,
         "task_path": str(task.path),
         "harness": harness,
@@ -311,6 +317,8 @@ def run_trial(
                 int(m) for v in launch.env.values() for m in re.findall(r"//(?:127\.0\.0\.1|localhost):(\d+)", str(v))
             )
             launch.cmd, cfg["sandbox"] = sandbox.wrap(launch.cmd, ws, sock, [job_dir, task.path], ports)
+        # what the agent was given besides its prompt (the task.md body): the files in its workspace
+        cfg["workspace_files"] = _workspace_files(ws)
         (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
         with open(tdir / "agent" / "stdout.jsonl", "w") as out, open(tdir / "agent" / "stderr.txt", "w") as err:
             agent = subprocess.Popen(

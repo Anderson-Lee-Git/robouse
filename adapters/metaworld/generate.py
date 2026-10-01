@@ -11,10 +11,11 @@ from __future__ import annotations
 import argparse
 import shutil
 import textwrap
+import tomllib
 from pathlib import Path
 
 from robouse.core.prompts import ROBO_USAGE
-from robouse.tasks import to_native
+from robouse.tasks import write_task
 
 # What each environment asks for, and what obj1/goal mean in its observation.
 GOALS: dict[str, tuple[str, str]] = {
@@ -224,22 +225,16 @@ def main() -> None:
         shutil.rmtree(out)
     for env, (goal, _) in GOALS.items():
         slug = env.removesuffix("-v3")
-        d = out / f"metaworld-{slug}"
-        (d / "solution").mkdir(parents=True)
-        (d / "tests").mkdir()
         diff = "hard" if env in HARD else "easy" if env in EASY else "medium"
-        (d / "task.toml").write_text(
+        t = tomllib.loads(
             TASK_TOML.format(slug=slug, env=env, goal=goal.replace('"', "'"), seed=a.seed, difficulty=diff)
         )
-        (d / "instruction.md").write_text(instruction(env))
-        (d / "solution" / "solve.sh").write_text(
+        meta = {k: t.get(k, {}) for k in ("task", "metadata", "agent", "verifier", "robouse")}
+        oracle = (
             f"#!/bin/bash\n# Reference solution: Meta-World's scripted expert, through the robo socket.\n"
             f"set -euo pipefail\npython -m robouse.oracle --backend metaworld --env {env} --steps 450\n"
         )
-        (d / "tests" / "test.sh").write_text(VERIFY)
-        for f in (d / "solution" / "solve.sh", d / "tests" / "test.sh"):
-            f.chmod(0o755)
-        to_native(d)
+        write_task(out / f"metaworld-{slug}", meta, instruction(env), oracle, VERIFY)
     print(f"wrote {len(GOALS)} tasks to {out}")
 
 
