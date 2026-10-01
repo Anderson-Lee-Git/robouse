@@ -48,9 +48,11 @@ gymrobotics = ["robouse[sim]", "gymnasium-robotics>=1.4"]
 # (docs/suites/libero.md) because it needs --no-deps.
 robosuite = ["robouse[sim]", "robosuite>=1.5.2,<1.6"]
 dexjoco = ["robouse[sim]", "scipy>=1.10"]
-# BenchFlow runs trials in Docker and loads robouse task folders as a native task format. Needs Python 3.12 and, until
-# BenchFlow releases the task-format hook, BenchFlow from its `robouse` branch (see [tool.uv.sources]).
-benchflow = ["benchflow>=0.7.9.dev0; python_version >= '3.12'"]
+# BenchFlow, pinned to the same build as `llm` so a later pre-release cannot change what installs. From PyPI it adds
+# BenchFlow's `bench` CLI (`bench tasks migrate` converts older task folders). Running trials in Docker through
+# BenchFlow, and BenchFlow loading robouse task folders as a native task format, need BenchFlow's task-format hook:
+# until a release has it, BenchFlow from its `robouse` branch (see [tool.uv.sources]).
+benchflow = ["benchflow==0.7.9.dev2354; python_version >= '3.12'"]
 # Provider-prefixed models (baseten/...): BenchFlow's provider registry and LiteLLM routing, and the LiteLLM proxy each
 # trial's model gateway runs. Both pinned to the builds this release was tested with (BenchFlow's Baseten registry
 # entry is not released yet; robouse supplies it), so a later pre-release cannot change what installs.
