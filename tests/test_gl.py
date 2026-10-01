@@ -1,10 +1,13 @@
 """Offscreen rendering (robouse.core.gl): a machine without an OpenGL platform for MuJoCo gets a one-line message that
 names the fix instead of MuJoCo's follow-on AttributeError; with MUJOCO_GL unset on Linux without a display, robouse
-picks OSMesa or EGL when one renders; `robouse doctor` checks it."""
+picks OSMesa or EGL when one renders; `robouse doctor` checks it; the test suite picks it the same way
+(tests/conftest.py)."""
 
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,7 +16,9 @@ import pytest
 from robouse.cli import main
 from robouse.core import gl
 
-ARC = Path(__file__).resolve().parents[1] / "tasks" / "arc-style" / "arc-gravity"
+REPO = Path(__file__).resolve().parents[1]
+ARC = REPO / "tasks" / "arc-style" / "arc-gravity"
+RENDER_SMOKE = "tests/test_backends_smoke.py::test_start_step_observe_render[tabletop]"
 FATAL = (
     "mujoco.FatalError: an OpenGL platform library has not been loaded into this process, this most likely means that "
     "a valid OpenGL context has not been created before mjr_makeContext was called"
@@ -50,15 +55,11 @@ def test_auto_select_picks_a_platform_that_renders(headless) -> None:
     tried = []
     headless.setattr(gl, "probe", lambda p=None, python=None: tried.append(p) or (None if p == "egl" else "no OSMesa"))
     assert gl.auto_select() == "egl" and tried == ["osmesa", "egl"]
-    import os
-
     assert os.environ["MUJOCO_GL"] == "egl"
     assert gl.auto_select() is None  # already set: left alone
 
 
 def test_auto_select_leaves_the_setting_alone(headless) -> None:
-    import os
-
     headless.setattr(gl, "probe", lambda p=None, python=None: None)
     headless.setenv("DISPLAY", ":0")  # a display: GLFW works, nothing to choose
     assert gl.auto_select() is None and "MUJOCO_GL" not in os.environ
@@ -108,6 +109,32 @@ def test_unset_mujoco_gl_is_chosen_on_headless_linux(tmp_path, monkeypatch, caps
         pytest.skip("neither OSMesa nor EGL is installed here")
     rc = main(["run", "--task", str(ARC), "--harness", "noop", "--out", str(tmp_path / "job")])
     res = json.loads(capsys.readouterr().out)
-    import os
-
     assert rc == 0 and res["exception"] is None and os.environ["MUJOCO_GL"] in gl.CANDIDATES
+
+
+@linux_sim
+@pytest.mark.parametrize("setting", [None, "glfw"], ids=["unset", "glfw-without-a-display"])
+def test_the_render_smoke_test_on_a_machine_without_a_display(setting) -> None:
+    # MuJoCo fixes its OpenGL platform when it is first imported, while the tests are collected: tests/conftest.py
+    # chooses it as `robouse run` does, and the render smoke test skips with the reason when MuJoCo cannot render
+    # offscreen, instead of aborting the whole run (GLFW without a display)
+    gone = ("MUJOCO_GL", "PYOPENGL_PLATFORM", "DISPLAY", "WAYLAND_DISPLAY")
+    env = {k: v for k, v in os.environ.items() if k not in gone} | {"COLUMNS": "200"}
+    if setting:
+        env["MUJOCO_GL"] = setting
+    p = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-rs", RENDER_SMOKE],
+        cwd=REPO,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    out = p.stdout + p.stderr
+    assert p.returncode == 0 and "Fatal Python error" not in out, out[-3000:]
+    skipped = "1 skipped" in out and "MuJoCo cannot render offscreen here" in out
+    if setting == "glfw":  # GLFW needs a display: nothing renders, and the skip says why
+        assert skipped, out[-3000:]
+    else:  # chosen as `robouse run` chooses: it renders, or skips with the reason where neither OSMesa nor EGL does
+        assert "1 passed" in out or skipped, out[-3000:]

@@ -1,9 +1,11 @@
 """Every backend whose simulator this environment has: start one bundled task, take one step, observe, render and close.
-Backends whose simulator (package, virtualenv, robot models or remote worker) is missing are skipped, not failed; the
-release gate (tools/gate.py) runs the reference solutions in each simulator's own image."""
+Backends whose simulator (package, virtualenv, robot models or remote worker) is missing are skipped, not failed, and
+all are skipped, with the reason, where MuJoCo cannot render offscreen; the release gate (tools/gate.py) runs the
+reference solutions in each simulator's own image."""
 
 from __future__ import annotations
 
+import functools
 import json
 from pathlib import Path
 
@@ -12,11 +14,19 @@ import pytest
 
 from robouse.backends import BACKENDS, make_backend
 from robouse.backends.base import embodiment_of
+from robouse.core import gl
 from robouse.tasks import find_tasks
 from robouse.workers.client import WorkerError
 
 ROOT = Path(__file__).resolve().parents[1] / "tasks"
 REMOTE = {"behavior", "gpu", "robodojo"}  # remote GPU workers
+
+
+@functools.cache
+def _offscreen() -> str | None:
+    """Why MuJoCo cannot render offscreen here, with MUJOCO_GL as tests/conftest.py chose it; None when it can. Checked
+    in a fresh interpreter: rendering without an OpenGL platform can abort this one."""
+    return gl.probe()
 
 
 def _first_task(kind: str):
@@ -32,6 +42,8 @@ def test_start_step_observe_render(kind: str) -> None:
     task = _first_task(kind)
     if task is None:
         pytest.skip(f"no bundled {kind} task")
+    if why := _offscreen():
+        pytest.skip(f"MuJoCo cannot render offscreen here ({why}). {gl.HINT}")
     try:
         b = make_backend(task.spec)
         b.reset(int(task.spec.get("seed", 0)))
