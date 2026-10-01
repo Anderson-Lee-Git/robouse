@@ -28,7 +28,7 @@ Every task has a reference solution (`oracle/solve.sh`, run with `--harness orac
 
 ## Episodes and robo
 
-The harness gets a temporary workspace with `instruction.md` and an `observations/` folder, `robo` first on its `PATH`, and `ROBOUSE_SOCKET` pointing at the episode. There is no reset, teleport or state-setting request: the only way to change the scene is to move the robot.
+The harness gets the task.md body as its prompt, a temporary workspace with an `observations/` folder as its working directory, `robo` first on its `PATH`, and `ROBOUSE_SOCKET` pointing at the episode. There is no reset, teleport or state-setting request: the only way to change the scene is to move the robot.
 
 ![An episode. `robo info` and `robo observe` cost nothing; every simulated step of `act`, `move-to` and `grip` counts against the task's `max_steps`. The ending, recorded as `outcome` in `episode/result.json`, decides the reward.](img/episode.svg)
 

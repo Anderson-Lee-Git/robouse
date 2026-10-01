@@ -1,6 +1,6 @@
 # task.md
 
-A task folder holds `task.md`, `oracle/solve.sh` and `verifier/test.sh`. `task.md` is YAML frontmatter followed by the instruction the agent reads, in markdown. This is `metaworld-push`, trimmed:
+A task folder holds `task.md`, `oracle/solve.sh` and `verifier/test.sh`. `task.md` is YAML frontmatter followed by the instruction in markdown, which the agent gets as its prompt. This is `metaworld-push`, trimmed:
 
 ```markdown
 ---
