@@ -17,7 +17,7 @@ import yaml
 
 pytest.importorskip("benchflow.embodied.sidecar")
 
-from robouse.engine.format import TOKEN_REF, materialize  # noqa: E402
+from robouse.engine.format import TOKEN_REF, materialize
 
 ROOT = Path(__file__).resolve().parents[1]
 HEX32 = re.compile(r"\b[0-9a-f]{32}\b")
