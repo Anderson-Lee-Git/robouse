@@ -93,9 +93,9 @@ def now() -> str:
 
 
 def _workspace_files(ws: Path, limit: int = 500) -> list[str]:
-    """The files in a workspace, relative to it (the `robo` client in .robouse/bin, the socket path, harness homes,
-    observations/ the task starts with), at most `limit` of them."""
-    files = sorted(str(p.relative_to(ws)) for p in ws.rglob("*") if p.is_file())
+    """What a workspace holds, relative to it, folders with a trailing slash (the `robo` client in .robouse/bin, the
+    socket path, harness files, observations/ and the images a task starts with), at most `limit` entries."""
+    files = sorted(str(p.relative_to(ws)) + ("/" if p.is_dir() else "") for p in ws.rglob("*"))
     return files[:limit] + ([f"... {len(files) - limit} more"] if len(files) > limit else [])
 
 

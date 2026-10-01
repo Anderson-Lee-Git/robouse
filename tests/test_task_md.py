@@ -66,4 +66,5 @@ def test_the_prompt_is_the_task_md_body_and_the_workspace_has_no_copy(tmp_path, 
     files = listing.read_text().split()
     assert "./.robouse/bin/robo" in files and not any(f.endswith("instruction.md") for f in files)
     cfg = json.loads((tmp_path / "job" / res["trial"] / "config.json").read_text())
-    assert ".robouse/bin/robo" in cfg["workspace_files"] and not any("instruction" in f for f in cfg["workspace_files"])
+    assert {".robouse/bin/robo", "observations/"} <= set(cfg["workspace_files"])
+    assert not any("instruction" in f for f in cfg["workspace_files"])
