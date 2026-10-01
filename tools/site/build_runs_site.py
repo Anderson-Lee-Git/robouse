@@ -101,6 +101,12 @@ def load_models(path: Path) -> None:
     HM[:] = [dict(p) for p in json.loads(path.read_text())["pairs"]]
     HM_KEY.clear()
     HM_KEY.update({canon(p["harness"], p["model"]): i for i, p in enumerate(HM)})
+    icons = path.parent.parent / "site" / "icons"
+    for p in HM:  # GPT-6 Astra · Codex: the harness's mark is the model's own file (OpenAI's Blossom), so it shows once
+        hi, mi = p.get("harness_icon"), p.get("icon")
+        a, b = icons / "harnesses" / f"{hi}.svg", icons / "models" / f"{mi}.svg"
+        if hi and mi and a.is_file() and b.is_file() and a.read_bytes() == b.read_bytes():
+            p.pop("harness_icon")
 
 
 def pair_of(harness: str, model: str) -> int:
@@ -449,12 +455,13 @@ STATUS_TEXT = {"partial": "Stopped", "infra": "Infra failure", "ok": "Solved", "
 STATUS_LONG = {"partial": "Stopped before it finished, not scored", "infra": "Infrastructure failure, not scored",
                "ok": "Solved", "no": "Not solved", "budget": "Stopped at the model budget, counted as not solved"}
 # a column, run or trial whose model received no camera images (each trial's recorded image_input) carries this quiet
-# tag, styled as the zero-shot probe tag (.rtag); its tooltip is the hub leaderboard footnote's sentence
+# label in quiet text (.noimg in runs.css: no box, so a column of them reads cleanly); its tooltip is the hub leaderboard
+# footnote's sentence
 NOIMG_WHY = "The model received no camera images in these runs; vision tasks were attempted from text observations only."
 
 
 def noimg_tag(title: str = NOIMG_WHY) -> str:
-    return f'<span class="rtag" title="{esc(title)}">no image input</span>'
+    return f'<span class="noimg" title="{esc(title)}">no image input</span>'
 
 
 def spend(x) -> str:
@@ -954,9 +961,35 @@ def plab(i: int) -> str:
 
 def model_mark(p: dict) -> str:
     """The model's mark (.model-mark in the site's /ui.css, the same as UI.modelMark in /ui.js and build_hub.model_mark):
-    its provider's icon from tools/models.json `icon`, or an empty slot; decorative, the name beside it is the text."""
+    its maker's icon from tools/models.json `icon`, or an empty slot; decorative, the name beside it is the text."""
     return (f'<span class="model-mark" style="--mm:url(/icons/models/{esc(p["icon"])}.svg)" aria-hidden="true"></span>' if p.get("icon")
             else '<span class="model-mark none" aria-hidden="true"></span>')
+
+
+def harness_mark(p: dict) -> str:
+    """The harness's mark beside the harness name (tools/models.json `harness_icon`, /icons/harnesses/), smaller and in the
+    harness name's quieter colour (.model-mark.hm in /ui.css, UI.harnessMark in /ui.js); nothing for a harness without one."""
+    return (f'<span class="model-mark hm" style="--mm:url(/icons/harnesses/{esc(p["harness_icon"])}.svg)" aria-hidden="true"></span>'
+            if p.get("harness_icon") else "")
+
+
+def nb(s: str) -> str:
+    """Escaped text whose hyphenated words never break at their hyphens ("GR00T N1.7-LIBERO", "mini-swe-agent"): each
+    such word is one .nw span (/ui.css), so a long name wraps only at its spaces."""
+    return " ".join(f'<span class="nw">{esc(w)}</span>' if "-" in w else esc(w) for w in str(s).split(" "))
+
+
+def pair_html(i: int) -> str:
+    """mark Model · mark Harness, for titles, breadcrumbs and who lines (phtml is the list cell); a model without a mark
+    gets no empty slot here, since nothing lines up with a title."""
+    p = HM[i]
+    return (f'{model_mark(p) if p.get("icon") else ""}{nb(p.get("model_label") or p["label"])} · '
+            f'{harness_mark(p)}{nb(p.get("harness_label") or p["harness"])}')
+
+
+def run_title_html(r: dict) -> str:
+    """A run's title with the model's and the harness's marks: "mark GLM-5.3 · mark Codex · robouse-menagerie"."""
+    return pair_html(r["hm"]) + f' · {esc(r["ds"].split("/")[-1])}' + (" · zero-shot probe" if r["probe"] else "")
 
 
 def phtml(i: int, noimg: bool | None = None) -> str:
@@ -964,7 +997,7 @@ def phtml(i: int, noimg: bool | None = None) -> str:
     `_noimg`, unless the caller says otherwise for its own set of trials, e.g. a run)."""
     p = HM[i]
     tag = noimg_tag() if (p.get("_noimg") if noimg is None else noimg) else ""
-    return (f'<span class="pm">{model_mark(p)}{esc(p.get("model_label") or p["label"])}</span> <span class="ph">·&nbsp;{esc(p.get("harness_label") or p["harness"])}</span>'
+    return (f'<span class="pm">{model_mark(p)}{nb(p.get("model_label") or p["label"])}</span> <span class="ph">· {harness_mark(p)}{nb(p.get("harness_label") or p["harness"])}</span>'
             + (" " + tag if tag else ""))
 
 
@@ -1102,9 +1135,8 @@ def group_runs(trials: list[dict], jobs: dict) -> dict[str, dict]:
 def trial_crumbs(t: dict) -> str:
     """Runs / the run; the task title is the h1 right below."""
     r = RUN_OF.get(t.get("run", ""), {})
-    trail = [("Runs", "/runs/"), (r.get("title", t["job"]), f'/runs/r/{r["slug"]}/' if r else "")]
-    bits = [f'<a href="{h}">{esc(x)}</a>' if h else esc(x) for x, h in trail]
-    return '<nav class="crumbs" aria-label="Breadcrumb">' + "<span>/</span>".join(bits) + "</nav>"
+    run = f'<a href="/runs/r/{r["slug"]}/">{run_title_html(r)}</a>' if r else esc(t["job"])  # the run, with its marks
+    return f'<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{run}</nav>'
 
 
 def jpeg_size(p: Path) -> tuple[int, int] | None:
@@ -1172,7 +1204,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 {trial_crumbs(t)}
 <section class="page-head head trial">
   <h1>{esc(t['title'])}</h1>
-  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl">{model_mark(HM[t["hm"]])}{esc(label)}</span>{noimg_tag() if noimg else ""}{counted}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
+  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag() if noimg else ""}{counted}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
   {f'<p class="why">{esc(why or "The harness or the model API ended the trial before the agent acted.")}</p>' if never_ran else f'<dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>'}
 </section>
 """
@@ -1242,7 +1274,7 @@ def build_runs(runs: dict) -> str:
 {ctrl}
 <div class="scroll tbl"><table class="list runs">
   <caption class="vh">Main runs first, newest first; zero-shot probes after them. Sort by any column.</caption>
-  <thead><tr>{th_sort('Model<span class="hh"> · harness</span>', "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort("Trials", "num", "n")}{th_sort("Solve rate", "num", "n")}</tr></thead>
+  <thead><tr>{th_sort('Model<span class="hh"> · harness</span>', "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort("Trials", "num", "n")}{th_sort('<span class="sl-l">Solve rate</span><span class="sl-s">Solved</span>', "num", "n")}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("runs", "Clear the search or the filters.")}
@@ -1286,10 +1318,11 @@ def build_run(r: dict) -> str:
             + (f'<select data-lf="outcome" aria-label="Result"><option value="">Any result</option>{opts}</select>' if len(states) > 1 else "")
             + '<span class="count push" data-lcount aria-live="polite"></span></div></div>')
     body = f"""
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{esc(r["title"])}</nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{run_title_html(r)}</nav>
 <section class="page-head head">
-  <h1>{esc(r["title"])}</h1>
+  <h1 class="rh1">{run_title_html(r)}</h1>
   <p class="meta">{esc(r["ds"])} · {esc(fmt_date(r["start"]))} · {f'{r["solved"]} of {r["scored"]} solved' if r["scored"] else "no scored trial"}{' · <span class="state running">running</span>' if r["state"] == "running" else ""}{" " + noimg_tag() if r["noimg"] else ""}</p>
+  {f'<p class="prov">{esc(HM[r["hm"]]["provenance"])}</p>' if HM[r["hm"]].get("provenance") else ""}
 </section>
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
 {ctrl}
@@ -1572,7 +1605,8 @@ def main(argv: list[str] | None = None) -> int:
                 obs_map = {p.name: i for i, p in enumerate(shown)}
         data = trial_data(t, traj, spec, video, sprite, obs_map)
         data["files"] = files_of(d) if d.name != "empty-trial" else []
-        data["mark"] = model_mark(HM[t["hm"]])  # the model's mark beside its name in Compare
+        data["mark"] = model_mark(HM[t["hm"]]) if HM[t["hm"]].get("icon") else ""  # the marks beside the names in Compare
+        data["hmark"] = harness_mark(HM[t["hm"]])
         ws = str(t["cfg"].get("workspace") or "")
         data["result_json"] = sanitized_json(t["res"], ws) if t["res"] else ""
         data["config_json"] = sanitized_json({k: v for k, v in t["cfg"].items() if k not in ("workspace", "sandbox")}, ws)  # the sandbox rule names the operator's folders
