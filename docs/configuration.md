@@ -20,6 +20,9 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 | `ROBOUSE_METADRIVE_PYTHON` | Python of the MetaDrive virtualenv (default <cache>/metadrive-venv/bin/python) |
 | `ROBOUSE_MYOSUITE_PYTHON` | Python of the MyoSuite virtualenv (default <cache>/myosuite-venv/bin/python) |
 | `ROBOUSE_ROBOCASA_PYTHON` | Python of the RoboCasa virtualenv (default <cache>/robocasa-venv/bin/python) |
+| `ROBOUSE_RLEBENCH_PYTHON` | Python of the RLE-Bench virtualenv (default <cache>/rlebench-venv/bin/python) |
+| `ROBOUSE_CAPX_PYTHON` | Python of the CaP-X virtualenv (default <cache>/capx-venv/bin/python) |
+| `ROBOUSE_CAPX_LIBERO_PYTHON` | Python of the CaP-X LIBERO virtualenv (default <cache>/capx-libero-venv/bin/python) |
 | `ROBOUSE_VLA_URL` | policy server for the `vla` harness |
 | `ROBOUSE_VLA_TOKEN` | bearer token for the policy server |
 | `ROBOUSE_VLA_POLICY_CONFIG` | JSON file with overrides for the `vla` preset |
