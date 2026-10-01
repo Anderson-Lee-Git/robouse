@@ -714,7 +714,8 @@ def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: P
     toc = ""
     if len(p.toc) >= 2:
         items = "".join(f'<li><a href="#{e(hid)}">{e(text)}</a></li>' for hid, text in p.toc)
-        toc = f'<aside class="toc"><nav aria-label="On this page"><p class="grp">On this page</p><ul>{items}</ul></nav></aside>'
+        # plain containers: the navs inside are the landmarks (two unnamed asides were two identical complementary ones)
+        toc = f'<div class="toc"><nav aria-label="On this page"><p class="grp">On this page</p><ul>{items}</ul></nav></div>'
     pager = []
     if prev_p:
         pager.append(f'<a class="prev" href="{page_url(base, prev_p.slug)}"><span>Previous</span>{e(prev_p.label)}</a>')
@@ -747,9 +748,9 @@ def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: P
 {chrome.header("/docs/")}
 <div class="shell{'' if toc else ' no-toc'}">
 <button type="button" class="navbtn" aria-expanded="false" aria-controls="docs-nav">Menu<span class="cur">{e(p.label)}</span></button>
-<aside class="side" id="docs-nav"><nav aria-label="Docs">
+<div class="side" id="docs-nav"><nav aria-label="Docs">
 {chr(10).join(nav)}
-</nav></aside>
+</nav></div>
 <main class="doc">
 <article class="prose">
 {title_block(p.body)}
@@ -848,7 +849,9 @@ article img { display: block; max-width: 100%; height: auto; margin: var(--sp-8)
 .prose :not(pre) > code.brk { white-space: normal; overflow-wrap: anywhere; }
 .prose code .w { white-space: nowrap; }
 
-/* a code block or table that scrolls sideways takes keyboard focus (docs.js); its ring keeps the block's corners */
+/* a code block or table that scrolls sideways takes keyboard focus (docs.js); its ring keeps the block's corners. Code
+   blocks scroll only sideways: their height is their content's, so a rounding pixel never makes them scroll down */
+.code > pre { overflow-y: hidden; }
 .code > pre:focus-visible { border-radius: var(--r-md); }
 .table:focus-visible { border-radius: var(--r-sm); }
 
@@ -1035,18 +1038,25 @@ document.querySelectorAll(".code").forEach(function (box) {
     }
     return el.parentElement && !el.parentElement.classList.contains("prose") ? section(el.parentElement) : "";
   }
-  function name(el) {
+  var names = {};  // a block's name is its first command (with its continuation lines) or its section; repeats get a number
+  els.forEach(function (el, i) {
+    var n;
     if (el.tagName === "PRE") {
-      var first = el.textContent.split("\n")[0].replace(/^\$ /, "").trim();
-      return "Code: " + (first.length > 60 ? first.slice(0, 59) + "…" : first);
+      var lines = el.textContent.split("\n"), cmd = [];
+      for (var k = 0; k < lines.length; k++) { cmd.push(lines[k].replace(/^\$ /, "").replace(/\\$/, "").trim()); if (!/\\$/.test(lines[k])) break; }
+      var first = cmd.join(" ");
+      n = "Code: " + (first.length > 72 ? first.slice(0, 71) + "…" : first);
+    } else {
+      var h = section(el);
+      n = "Table" + (h ? ": " + h : "");
     }
-    var h = section(el);
-    return "Table" + (h ? ": " + h : "");
-  }
+    names[n] = (names[n] || 0) + 1;
+    el._name = names[n] > 1 ? n + " (" + names[n] + ")" : n;
+  });
   function sync() {
     els.forEach(function (el) {
-      var over = el.scrollWidth > el.clientWidth + 1;
-      if (over && !el.hasAttribute("tabindex")) { el.tabIndex = 0; el.setAttribute("role", "region"); el.setAttribute("aria-label", name(el)); }
+      var over = el.scrollWidth > el.clientWidth;  // any overflow, as assistive tools count it
+      if (over && !el.hasAttribute("tabindex")) { el.tabIndex = 0; el.setAttribute("role", "region"); el.setAttribute("aria-label", el._name); }
       else if (!over && el.hasAttribute("tabindex")) { el.removeAttribute("tabindex"); el.removeAttribute("role"); el.removeAttribute("aria-label"); }
     });
   }
