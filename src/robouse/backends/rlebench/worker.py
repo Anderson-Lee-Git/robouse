@@ -154,9 +154,7 @@ class Worker:
     # ---- observation ---------------------------------------------------------------------------------------------
     def observe(self) -> dict:
         """The public fields of RLE-Bench's observation (TabletopClient / HiddenCOMClient), under their client names."""
-        shown = {
-            k: v for k, v in self.raw.items() if (m := re.fullmatch(r"robot\d+_(.*)", k)) and m[1] in ROBOT_FIELDS
-        }
+        shown = {k: v for k, v in self.raw.items() if (m := re.fullmatch(r"robot\d+_(.*)", k)) and m[1] in ROBOT_FIELDS}
         if self.mode == "hidden_com":
             from scipy.spatial.transform import Rotation
 
@@ -186,7 +184,9 @@ class Worker:
         m, d = self.env.sim.model._model, self.env.sim.data._data
         out = {}
         for name, bid in self.env.obj_body_id.items():
-            gids = [g for g in range(m.ngeom) if m.geom_bodyid[g] == bid and (m.geom_contype[g] or m.geom_conaffinity[g])]
+            gids = [
+                g for g in range(m.ngeom) if m.geom_bodyid[g] == bid and (m.geom_contype[g] or m.geom_conaffinity[g])
+            ]
             lo, hi = np.full(3, np.inf), np.full(3, -np.inf)
             for g in gids:
                 R = d.geom_xmat[g].reshape(3, 3)
@@ -194,7 +194,12 @@ class Worker:
                 e = np.abs(R) @ m.geom_aabb[g][3:]
                 lo, hi = np.minimum(lo, c - e), np.maximum(hi, c + e)
             q = d.xquat[bid]
-            out[name] = {"pos": _l(d.xpos[bid]), "quat": _l([q[1], q[2], q[3], q[0]]), "box_min": _l(lo), "box_max": _l(hi)}
+            out[name] = {
+                "pos": _l(d.xpos[bid]),
+                "quat": _l([q[1], q[2], q[3], q[0]]),
+                "box_min": _l(lo),
+                "box_max": _l(hi),
+            }
         return {"objects": out}
 
     # ---- scoring (called once, when the episode ends) ---------------------------------------------------------------
@@ -236,5 +241,5 @@ class Worker:
         if self.env is not None:
             try:
                 self.env.close()
-            except Exception:  # noqa: BLE001 - best-effort teardown
+            except Exception:
                 pass

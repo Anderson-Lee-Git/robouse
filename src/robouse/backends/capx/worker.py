@@ -123,9 +123,32 @@ class Worker:
                 s.rng = rng
         self.env.reset(seed=seed)  # LIBERO: seed n is LIBERO's initial state n - 1, as in CaP-X's trials
         self.api = api_cls(self.env)
+        self._warm_ik()
         self._wrap_step()
-        return {"functions": self.functions(), "max_steps": int(getattr(self.env, "max_steps", 0)),
-                "language": getattr(getattr(self.env, "handle", None), "task_language", None)}
+        return {
+            "functions": self.functions(),
+            "max_steps": int(getattr(self.env, "max_steps", 0)),
+            "language": getattr(getattr(self.env, "handle", None), "task_language", None),
+        }
+
+    @staticmethod
+    def _warm_ik() -> None:
+        """Compile PyRoKi's two IK solves once before the episode starts (JAX compiles on first use, which can take a
+        minute on a busy CPU and would otherwise land inside the agent's first goto_pose)."""
+        try:
+            import capx.integrations.motion.pyroki_snippets as pks
+            from capx.integrations.motion.pyroki import _robot
+            from capx.integrations.motion.pyroki_context import get_pyroki_context
+
+            p, q = np.array([0.5, 0.0, 0.3]), np.array([0.0, 0.0, 1.0, 0.0])
+            # the server-style robot (joint-limit margin) and the in-process context robot the two-arm and LIBERO APIs use
+            for r in (_robot(), get_pyroki_context("panda_description", target_link_name="panda_hand").robot):
+                cfg = pks.solve_ik(robot=r, target_link_name="panda_hand", target_position=p, target_wxyz=q)
+                pks.solve_ik_vel_cost(
+                    robot=r, target_link_name="panda_hand", target_position=p, target_wxyz=q, prev_cfg=cfg
+                )
+        except Exception as e:
+            print(f"IK warm-up skipped: {type(e).__name__}: {e}", file=sys.stderr)
 
     def functions(self) -> list:
         return sorted(n for n in self.api.functions() if n not in NOT_EXPOSED)
@@ -180,7 +203,7 @@ class Worker:
                 return ("done", {"return": jsonable(ret)})
             except _Abort:
                 return ("done", {"stopped": True})
-            except BaseException as e:  # noqa: BLE001 - the API's own error goes back to the caller, as CaP-X's stderr
+            except BaseException as e:
                 tb = traceback.format_exception(type(e), e, e.__traceback__)
                 return ("done", {"error": f"{type(e).__name__}: {e}", "traceback": "".join(tb[-3:])[-1500:]})
 
@@ -223,7 +246,9 @@ class Worker:
     # ---- state ---------------------------------------------------------------------------------------------------
     def observe(self) -> dict:
         """The robot's own state: joint positions and each gripper's opening, from robosuite's observation."""
-        o = self._rs()._get_observations()
+        rs = self._rs()
+        # LIBERO: the observation of the last step, as CaP-X keeps it (computing a new one would render its cameras)
+        o = rs._get_observations() if hasattr(rs, "_get_observations") else (self.env._current_obs or {})
         out = {}
         for k in sorted(o):
             if k.startswith("robot") and k.endswith(("_joint_pos", "_gripper_qpos")):
@@ -248,11 +273,11 @@ class Worker:
         if self._api is not None:
             try:
                 self.api_abort()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         try:
             self._rs().close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
 

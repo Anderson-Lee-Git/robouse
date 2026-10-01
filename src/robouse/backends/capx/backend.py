@@ -45,6 +45,8 @@ TASKS: dict[str, dict] = {
     "two_arm_handover": dict(max_steps=5000, camera="agentview", robots=2),
 }
 API_STEP = "__capx_api_step__"  # what an API skill yields for each control step it takes
+CHUNK = 40  # control steps per `robo skill` request; a longer API call returns running and goes on with capx_continue
+CONTINUE = "capx_continue"
 
 
 def parse_arg(s: str):
@@ -84,6 +86,7 @@ class CapxBackend(Backend):
             timeout=900,
         )
         self.functions: list[str] = []
+        self._running = False  # an API call is part-way through (it took CHUNK steps and waits for capx_continue)
         self._state: dict | None = None
         self._success = False
 
@@ -107,6 +110,9 @@ class CapxBackend(Backend):
             r = self.worker.call("api_advance")
             self._pending = r
         else:
+            if self._running:  # holding still ends an API call that is part-way through
+                self.worker.call("api_abort")
+                self._running = False
             self.worker.call("hold")
         self._state = None
         return StepInfo(success=False)
@@ -116,16 +122,55 @@ class CapxBackend(Backend):
 
     # ---- skills (the API) ----------------------------------------------------------------------------------------
     def skills(self) -> list[str]:
-        return list(self.functions)
+        return [*self.functions, CONTINUE]
 
     def skill_specs(self) -> list[Skill]:
         return [
-            Skill(n, [SkillArg("args", "str", optional=True, doc="one JSON value per argument, or key=VALUE")],
-                  doc=f"CaP-X API function {n}")
-            for n in self.functions
+            *(
+                Skill(
+                    n,
+                    [SkillArg("args", "str", optional=True, doc="one JSON value per argument, or key=VALUE")],
+                    doc=f"CaP-X API function {n}",
+                )
+                for n in self.functions
+            ),
+            Skill(
+                CONTINUE, doc=f"go on with an API call that returned running (each request runs at most {CHUNK} steps)"
+            ),
         ]
 
+    def _steps(self, r: dict):
+        """Run the pending API call for at most CHUNK control steps; returns its result, or running."""
+        n = 0
+        try:
+            while r.get("state") == "step":
+                if n >= CHUNK:
+                    self._running = True
+                    return {"running": True, "note": f"the call goes on: run `robo skill {CONTINUE}` until it returns"}
+                self._pending = None
+                yield API_STEP
+                n += 1
+                r = self._pending or {"state": "done", "error": "the API call stopped"}
+        except GeneratorExit:  # budget used up or episode finished mid-call: stop the API call
+            self.worker.call("api_abort")
+            self._running = False
+            raise
+        self._running = False
+        self._state = None
+        return {k: v for k, v in r.items() if k != "state"}
+
     def start_skill(self, name: str, raw_args: list[str]):
+        if name == CONTINUE:
+            if not self._running:
+                raise ValueError("no API call is running")
+            self._running = False
+
+            def cont():
+                return (yield from self._steps({"state": "step"}))
+
+            return cont()
+        if self._running:
+            raise ValueError(f"an API call is still running: run `robo skill {CONTINUE}` until it returns")
         if name not in self.functions:
             raise ValueError(f"unknown API function {name!r}; functions: {', '.join(self.functions)}")
         args, kwargs = [], {}
@@ -138,16 +183,7 @@ class CapxBackend(Backend):
 
         def gen():
             r = self.worker.call("api_start", name=name, args=args, kwargs=kwargs)
-            try:
-                while r.get("state") == "step":
-                    self._pending = None
-                    yield API_STEP
-                    r = self._pending or {"state": "done", "error": "the API call stopped"}
-            except GeneratorExit:  # budget used up or episode finished mid-call: stop the API call
-                self.worker.call("api_abort")
-                raise
-            self._state = None
-            return {k: v for k, v in r.items() if k != "state"}
+            return (yield from self._steps(r))
 
         return gen()
 
@@ -161,6 +197,9 @@ class CapxBackend(Backend):
         return bool(self.worker.call("success")["success"])
 
     def judge(self, outcome: str, text: str = "") -> bool:
+        if self._running:
+            self.worker.call("api_abort")
+            self._running = False
         r = self.worker.call("success")
         self.last_judge = {**r, "rule": "CaP-X task_completed() (robosuite _check_success in CaP-X's fork)"}
         return outcome == "done" and bool(r["success"])

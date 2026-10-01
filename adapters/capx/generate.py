@@ -85,12 +85,18 @@ DROP = (
     "functions (APIs) above are already imported",
 )
 
+# Layouts per task where it is not seeds 1-5: CaP-X's reference code does not lift the pot in the two-arm-lift layouts
+# of seeds 2, 4 and 6 (the arms reach the handles but the lift fails), so that task uses seeds 1, 3, 5, 7 and 8.
+SEEDS = {"two_arm_lift": [1, 3, 5, 7, 8]}
+
 # Changes to CaP-X's reference code where it does not solve the task as written (each is stated in the task's oracle).
 ORACLE_FIXES = {
     # CaP-X's code wipes at z = 0 (its prompt says the table is at z = 0 in the base frame), but with the wiping
     # gripper's shorter reach that keeps the sponge about 8 cm above the table in CaP-X's own environment, so nothing is
     # wiped; the sponge reaches the table at z = -0.10.
-    "spill_wipe": (("z_wipe = 0.0", "z_wipe = -0.10  # Robo Use: the sponge reaches the table at z = -0.10 (CaP-X's code: 0.0)"),),
+    "spill_wipe": (
+        ("z_wipe = 0.0", "z_wipe = -0.10  # Robo Use: the sponge reaches the table at z = -0.10 (CaP-X's code: 0.0)"),
+    ),
 }
 
 VERIFY = """\
@@ -157,7 +163,7 @@ This is a code-as-policy task from CaP-X: you control the robot by writing Pytho
 
 ## How you run code here
 
-Each API function is a skill of the robot: `robo skill NAME ARG ...` runs it, with one JSON value per argument (a number, a list for an array, `true`/`false`, a string) or `name=VALUE` for a keyword argument, for example `robo skill goto_pose "[0.5, 0.0, 0.2]" "[0, 0, 1, 0]" z_approach=0.1`. It prints what the function returns and anything it printed. To write ordinary Python instead, save this module as `capx_api.py` in your working folder and `from capx_api import *`: it defines every API function of the task under CaP-X's name and signature, returns numpy arrays (a tuple when a function returns several values), and raises `RuntimeError` when a call fails.
+Each API function is a skill of the robot: `robo skill NAME ARG ...` runs it, with one JSON value per argument (a number, a list for an array, `true`/`false`, a string) or `name=VALUE` for a keyword argument, for example `robo skill goto_pose "[0.5, 0.0, 0.2]" "[0, 0, 1, 0]" z_approach=0.1`. It prints what the function returns and anything it printed. A call that takes more than 40 control steps returns `running: True` after 40 of them; `robo skill capx_continue` goes on with it, 40 steps at a time, until it returns. To write ordinary Python instead, save this module as `capx_api.py` in your working folder and `from capx_api import *`: it defines every API function of the task under CaP-X's name and signature, returns numpy arrays (a tuple when a function returns several values), and goes on with long calls by itself, and raises `RuntimeError` when a call fails.
 
 ```python
 {shim.strip()}
@@ -185,13 +191,16 @@ def main() -> None:
     out = Path(a.out)
     if out.exists():
         shutil.rmtree(out)
-    for task, (module, title, desc, tags) in META.items():
+    for task, (module, _title, desc, tags) in META.items():
         up = upstream_strings(Path(a.capx) / "capx/envs/tasks/franka" / module)
         t = TASKS[task]
-        for seed in seeds:
+        for seed in SEEDS.get(task, seeds) if a.seeds == "1-5" else seeds:
             tid = f"capx-{task.replace('_', '-')}-s{seed}"
             meta = {
-                "task": {"name": f"robouse/{tid}", "description": f"{desc} Code as policy with CaP-X's privileged API."},
+                "task": {
+                    "name": f"robouse/{tid}",
+                    "description": f"{desc} Code as policy with CaP-X's privileged API.",
+                },
                 "metadata": {
                     "source_benchmark": SOURCE,
                     "source_task": f"{task} (capx/envs/tasks/franka/{module})",
@@ -217,7 +226,7 @@ def main() -> None:
                     "cameras": [t["camera"]],
                     "skills": True,
                     "success_mode": "final",
-                    "frame_every": 4,
+                    "frame_every": 8,
                 },
             }
             body = instruction(task, prompt_text(up["PROMPT"]), docs[task]["combined_doc"], t["max_steps"], seed)

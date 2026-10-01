@@ -40,7 +40,7 @@ robouse:
   - robot0_robotview
   skills: true
   success_mode: final
-  frame_every: 4
+  frame_every: 8
 ---
 
 # Stack the cubes (CaP-X, privileged API)
@@ -120,7 +120,7 @@ close_gripper() -> None
 
 ## How you run code here
 
-Each API function is a skill of the robot: `robo skill NAME ARG ...` runs it, with one JSON value per argument (a number, a list for an array, `true`/`false`, a string) or `name=VALUE` for a keyword argument, for example `robo skill goto_pose "[0.5, 0.0, 0.2]" "[0, 0, 1, 0]" z_approach=0.1`. It prints what the function returns and anything it printed. To write ordinary Python instead, save this module as `capx_api.py` in your working folder and `from capx_api import *`: it defines every API function of the task under CaP-X's name and signature, returns numpy arrays (a tuple when a function returns several values), and raises `RuntimeError` when a call fails.
+Each API function is a skill of the robot: `robo skill NAME ARG ...` runs it, with one JSON value per argument (a number, a list for an array, `true`/`false`, a string) or `name=VALUE` for a keyword argument, for example `robo skill goto_pose "[0.5, 0.0, 0.2]" "[0, 0, 1, 0]" z_approach=0.1`. It prints what the function returns and anything it printed. A call that takes more than 40 control steps returns `running: True` after 40 of them; `robo skill capx_continue` goes on with it, 40 steps at a time, until it returns. To write ordinary Python instead, save this module as `capx_api.py` in your working folder and `from capx_api import *`: it defines every API function of the task under CaP-X's name and signature, returns numpy arrays (a tuple when a function returns several values), and goes on with long calls by itself, and raises `RuntimeError` when a call fails.
 
 ```python
 """CaP-X's API as Python functions, over the robo CLI (standard library and numpy only).
@@ -147,6 +147,8 @@ def _enc(v):
 
 
 def _dec(v):
+    if isinstance(v, dict):
+        return {k: _dec(x) for k, x in v.items()}
     if isinstance(v, list):
         if all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v) and v:
             return np.asarray(v, dtype=np.float64)
@@ -154,13 +156,19 @@ def _dec(v):
     return v
 
 
-def call(name, *args, **kwargs):
-    argv = [_enc(a) for a in args] + [f"{k}={_enc(v)}" for k, v in kwargs.items()]
+def _skill(name, argv):
     out = subprocess.run(["robo", "skill", name, *argv, "--json"], capture_output=True, text=True)
     r = json.loads(out.stdout or '{"ok": false, "error": "no reply from robo"}')
     if not r.get("ok"):
         raise RuntimeError(f"{name}: {r.get('error')}")
-    res = r["result"]
+    return r["result"]
+
+
+def call(name, *args, **kwargs):
+    argv = [_enc(a) for a in args] + [f"{k}={_enc(v)}" for k, v in kwargs.items()]
+    res = _skill(name, argv)
+    while res.get("running"):  # a long call runs in parts of a few dozen control steps
+        res = _skill("capx_continue", [])
     if res.get("stdout"):
         print(res["stdout"], end="")
     if "error" in res:
@@ -172,7 +180,7 @@ def call(name, *args, **kwargs):
 
 def _functions():
     out = subprocess.run(["robo", "info", "--json"], capture_output=True, text=True)
-    return json.loads(out.stdout)["result"]["skills"]
+    return [n for n in json.loads(out.stdout)["result"]["skills"] if n != "capx_continue"]
 
 
 __all__ = []

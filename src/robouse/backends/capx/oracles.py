@@ -15,7 +15,7 @@ def run(env: str) -> None:
     code = Path(env).read_text()
     g = {"__name__": "__main__", **{n: getattr(capx_api, n) for n in capx_api.__all__}}
     try:
-        exec(compile(code, env, "exec"), g, g)  # noqa: S102 - the task's reference code
+        exec(compile(code, env, "exec"), g, g)
     except RuntimeError as e:
         print(f"reference code stopped: {e}")
     _send({"op": "done", "text": "CaP-X reference code ran"})

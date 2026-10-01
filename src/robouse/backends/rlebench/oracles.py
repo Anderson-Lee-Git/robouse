@@ -163,7 +163,9 @@ class Arm:
             self.grip = grip
         st = None
         for _ in range(tries):
-            st = _call({"op": "skill", "name": "move", "args": [*map(float, p), *map(float, q), self.grip, steps]})["state"]
+            st = _call({"op": "skill", "name": "move", "args": [*map(float, p), *map(float, q), self.grip, steps]})[
+                "state"
+            ]
             if np.linalg.norm(np.asarray(st["eef_pos"]) - np.asarray(p)) < tol:
                 break
         return st
@@ -189,7 +191,9 @@ class Arm:
             v = np.clip(np.array([fwd, lat]) * 25.0, -1, 1)
             a = [0, 0, 0, 0, 0, 0, self.grip, float(v[0]), float(v[1]), 0.0, 0.0, 1.0]
             st = _call({"op": "act", "action": a, "repeat": 2})["state"]
-        _call({"op": "act", "action": [0, 0, 0, 0, 0, 0, self.grip, 0, 0, 0, 0, -1.0], "repeat": 10})  # settle, arm mode
+        _call(
+            {"op": "act", "action": [0, 0, 0, 0, 0, 0, self.grip, 0, 0, 0, 0, -1.0], "repeat": 10}
+        )  # settle, arm mode
 
     def pick(self, obj: dict, yaw: float = 0.0, grasp_dz: float = 0.0) -> None:
         c = (np.asarray(obj["box_min"]) + np.asarray(obj["box_max"])) / 2
@@ -293,17 +297,27 @@ def _transfer(arm: Arm, coin: str, xy, surface_z: float, pan: str | None = None,
     arm.place(xy, surface_z, 2 * half, grasp_off=half, lift=0.12)
 
 
+def _on_pan(coin: str, side: str) -> bool:
+    c, p = np.asarray(_coins()[coin]), np.asarray(_pans()[side])
+    return bool(np.linalg.norm(c[:2] - p[:2]) < 0.10 and 0.0 < c[2] - p[2] < 0.08)
+
+
 def _weigh(arm: Arm, left: list[str], right: list[str]) -> str:
     """Load the pans (left first, so the counts are equal only when both are full), read the tilt, unload (left
     first again). Returns 'left' or 'right' for the heavier side, or 'equal'."""
     home = {c: _coins()[c][:2] for c in left + right}
     for side, coins in (("left", left), ("right", right)):
-        for coin, spot in zip(coins, PAN_SPOTS):
-            _transfer(arm, coin, None, 0.0, pan=side, spot=spot)
+        for coin, spot in zip(coins, PAN_SPOTS, strict=False):
+            for _attempt in range(3):  # place it again if it did not end up resting on the pan
+                _transfer(arm, coin, None, 0.0, pan=side, spot=spot)
+                if _on_pan(coin, side):
+                    break
+                _debug("retry", coin, "not on the", side, "pan")
     st = arm.state()
     arm.move([st["eef_pos"][0] - 0.25, st["eef_pos"][1], 1.3], down(), steps=60)
-    for _ in range(4):
+    for _ in range(5):
         _call({"op": "act", "action": [0, 0, 0, 0, 0, 0, arm.grip, 0, 0, 0, 0, -1.0], "repeat": 20})
+    _debug("on pans", {s: [c for c in left + right if _on_pan(c, s)] for s in ("left", "right")})
     p = _pans()
     dz = float(p["left"][2]) - float(p["right"][2])
     _debug("weighing", left, right, "left-right z", round(dz, 4))

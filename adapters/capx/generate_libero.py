@@ -1,8 +1,8 @@
 """CaP-X's LIBERO-PRO tasks -> robouse tasks (suite "capx-libero"), code as policy with CaP-X's privileged LIBERO API.
 
-The two LIBERO-PRO suites whose task files ship in CaP-X's pinned LIBERO-PRO (uynitsuj/LIBERO-PRO 5368540):
-libero_object_swap and libero_spatial_swap, 10 tasks each, from CaP-X's batch runs (capx/envs/scripts/run_libero_batch.py),
-each with LIBERO's first initial state (CaP-X's trial 1). The task text is CaP-X's LIBERO prompt
+LIBERO-PRO tasks whose task files ship in CaP-X's pinned LIBERO-PRO (uynitsuj/LIBERO-PRO 5368540) and that CaP-X's batch
+runs use (capx/envs/scripts/run_libero_batch.py): the libero_object_swap tasks that CaP-X's privileged reference code solves
+(INCLUDE below), each with LIBERO's first initial state (CaP-X's trial 1). The task text is CaP-X's LIBERO prompt
 (env_configs/libero/franka_libero_spatial_0_privileged.yaml) with the task's BDDL language as the goal. The reference
 solution is CaP-X's privileged reference code for LIBERO (env_configs/human_oracle_code/libero/
 franka_libero_object_swap_7_privileged_oracle.yaml), with the task's object and target in place of the milk and the basket.
@@ -25,6 +25,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SUITES = ("libero_object_swap", "libero_spatial_swap")
+# Generated: the tasks CaP-X's privileged LIBERO reference code solves. Its code (written for object_swap task 7, the milk)
+# solves 8 of the 10 object_swap tasks with the object's name swapped in; it does not get the ketchup (task 4) or the
+# chocolate pudding (task 8) into the basket, and it grasps the spatial_swap bowls at their centre, which fails. CaP-X
+# has no reference code for those, so they are left out.
+INCLUDE = [f"libero_object_swap:{i}" for i in range(10) if i not in (4, 8)]
 
 PROMPT = """You are controlling a Franka Emika robot with API described below.
 Goal: {goal}
@@ -76,13 +81,15 @@ def write_docs(out: Path) -> None:
     w.make("libero:libero_object_swap:0", 1)
     d = w.docs()
     w.close()
-    out.write_text(json.dumps({"combined_doc": d["combined_doc"], "functions": d["functions"], "tasks": tasks}, indent=1) + "\n")
+    out.write_text(
+        json.dumps({"combined_doc": d["combined_doc"], "functions": d["functions"], "tasks": tasks}, indent=1) + "\n"
+    )
 
 
 def generate(docs: dict, out: Path) -> None:
     sys.path.insert(0, str(ROOT / "src"))
     sys.path.insert(0, str(ROOT / "adapters" / "capx"))
-    from generate import VERIFY, prompt_text  # noqa: E402  (the RoboSuite generator's shared pieces)
+    from generate import VERIFY, prompt_text
 
     from robouse.tasks import write_task
 
@@ -90,6 +97,8 @@ def generate(docs: dict, out: Path) -> None:
     if out.exists():
         shutil.rmtree(out)
     for key, t in docs["tasks"].items():
+        if key not in INCLUDE:
+            continue
         rel, obj, target = t["goal"]
         obj, target = re.sub(r"_\d+(_.*)?$", "", obj), re.sub(r"_\d+(_.*)?$", "", target)
         short = t["suite"].replace("libero_", "").replace("_", "-")
@@ -117,7 +126,7 @@ CaP-X's LIBERO API also has `goto_pose_interactive_cartesian`, which takes a Pyt
 
 ## How you run code here
 
-Each API function is a skill of the robot: `robo skill NAME ARG ...` runs it, with one JSON value per argument (a number, a list for an array, `true`/`false`, a string) or `name=VALUE` for a keyword argument, for example `robo skill goto_pose "[0.5, 0.0, 0.2]" "[0, 1, 0, 0]" z_approach=0.1`. It prints what the function returns and anything it printed. To write ordinary Python instead, save this module as `capx_api.py` in your working folder and `from capx_api import *`: it defines every API function of the task under CaP-X's name and signature, returns numpy arrays (a tuple when a function returns several values; dictionaries stay dictionaries), and raises `RuntimeError` when a call fails.
+Each API function is a skill of the robot: `robo skill NAME ARG ...` runs it, with one JSON value per argument (a number, a list for an array, `true`/`false`, a string) or `name=VALUE` for a keyword argument, for example `robo skill goto_pose "[0.5, 0.0, 0.2]" "[0, 1, 0, 0]" z_approach=0.1`. It prints what the function returns and anything it printed. A call that takes more than 40 control steps returns `running: True` after 40 of them; `robo skill capx_continue` goes on with it, 40 steps at a time, until it returns. To write ordinary Python instead, save this module as `capx_api.py` in your working folder and `from capx_api import *`: it defines every API function of the task under CaP-X's name and signature, returns numpy arrays (a tuple when a function returns several values; dictionaries stay dictionaries), and goes on with long calls by itself, and raises `RuntimeError` when a call fails.
 
 ```python
 {shim.strip()}
@@ -132,7 +141,10 @@ Each API function is a skill of the robot: `robo skill NAME ARG ...` runs it, wi
 The scene is LIBERO's first initial state for this task (CaP-X's trial 1).
 """
         meta = {
-            "task": {"name": f"robouse/{tid}", "description": f"{goal[0].upper() + goal[1:]}. LIBERO-PRO, code as policy with CaP-X's privileged API."},
+            "task": {
+                "name": f"robouse/{tid}",
+                "description": f"{goal[0].upper() + goal[1:]}. LIBERO-PRO, code as policy with CaP-X's privileged API.",
+            },
             "metadata": {
                 "source_benchmark": "CaP-X (capgym/cap-x, commit 53e9966) on LIBERO-PRO (uynitsuj/LIBERO-PRO, commit 5368540)",
                 "source_task": f"{t['suite']} task {t['index']} ({t['name']})",
@@ -158,7 +170,7 @@ The scene is LIBERO's first initial state for this task (CaP-X's trial 1).
                 "cameras": ["agentview"],
                 "skills": True,
                 "success_mode": "final",
-                "frame_every": 4,
+                "frame_every": 8,
             },
         }
         oracle = f"""#!/bin/bash
@@ -170,7 +182,9 @@ python -m robouse.oracle --backend capx_libero --env "$(dirname "$0")/oracle_cod
 """
         write_task(out / tid, meta, body, oracle, VERIFY)
         approach = 0.3 if target == "basket" else 0.1
-        (out / tid / "oracle" / "oracle_code.py").write_text(REFERENCE.format(obj=obj, target=target, approach=approach))
+        (out / tid / "oracle" / "oracle_code.py").write_text(
+            REFERENCE.format(obj=obj, target=target, approach=approach)
+        )
         print(tid)
 
 

@@ -31,13 +31,19 @@ def _dec(v):
     return v
 
 
-def call(name, *args, **kwargs):
-    argv = [_enc(a) for a in args] + [f"{k}={_enc(v)}" for k, v in kwargs.items()]
+def _skill(name, argv):
     out = subprocess.run(["robo", "skill", name, *argv, "--json"], capture_output=True, text=True)
     r = json.loads(out.stdout or '{"ok": false, "error": "no reply from robo"}')
     if not r.get("ok"):
         raise RuntimeError(f"{name}: {r.get('error')}")
-    res = r["result"]
+    return r["result"]
+
+
+def call(name, *args, **kwargs):
+    argv = [_enc(a) for a in args] + [f"{k}={_enc(v)}" for k, v in kwargs.items()]
+    res = _skill(name, argv)
+    while res.get("running"):  # a long call runs in parts of a few dozen control steps
+        res = _skill("capx_continue", [])
     if res.get("stdout"):
         print(res["stdout"], end="")
     if "error" in res:
@@ -49,7 +55,7 @@ def call(name, *args, **kwargs):
 
 def _functions():
     out = subprocess.run(["robo", "info", "--json"], capture_output=True, text=True)
-    return json.loads(out.stdout)["result"]["skills"]
+    return [n for n in json.loads(out.stdout)["result"]["skills"] if n != "capx_continue"]
 
 
 __all__ = []

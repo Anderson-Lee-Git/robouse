@@ -150,7 +150,7 @@ class RLEBenchBackend(Backend):
             lay += [
                 G("base", 3, "other", doc="forward, lateral and yaw velocity"),
                 G("torso", 1, "other", doc="torso lift velocity"),
-                G("mode", 1, "other", hold="value", initial=-1.0, doc="-1 arm, +1 base"),
+                G("mode", 1, "other", hold="last", initial=-1.0, doc="-1 arm, +1 base"),
             ]
         return lay
 

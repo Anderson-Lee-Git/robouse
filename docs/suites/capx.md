@@ -1,10 +1,13 @@
 # CaP-X suite (code as policy)
 
-35 tasks from [CaP-X](https://github.com/capgym/cap-x) (NVIDIA, UC Berkeley, Stanford and CMU; MIT; arXiv 2603.22435) at commit `53e9966`: CaP-Bench's seven RoboSuite tasks (lift a cube, stack two cubes, restack them, wipe a spill, put a nut on a peg, lift a pot with two arms, hand a hammer from one arm to the other), each in five fixed layouts. The agent controls the robot by writing Python code that calls CaP-X's API for the task.
+Tasks from [CaP-X](https://github.com/capgym/cap-x) (NVIDIA, UC Berkeley, Stanford and CMU; MIT; arXiv 2603.22435) at commit `53e9966`, in two suites. The agent controls the robot by writing Python code that calls CaP-X's API for the task.
+
+- `capx` (35 tasks): CaP-Bench's seven RoboSuite tasks (lift a cube, stack two cubes, restack them, wipe a spill, put a nut on a peg, lift a pot with two arms, hand a hammer from one arm to the other), each in five fixed layouts (seeds 1-5; the two-arm lift uses seeds 1, 3, 5, 7 and 8, because CaP-X's reference code does not lift the pot in the layouts of seeds 2, 4 and 6).
+- `capx-libero` (8 tasks): LIBERO-PRO's `libero_object_swap` tasks (pick an item and put it in the basket, with the items' positions swapped), with LIBERO's first initial state (CaP-X's trial 1) and CaP-X's privileged LIBERO API. CaP-X's LIBERO reference code (written for the milk, task 7) solves 8 of the 10 with the item's name swapped in; the ketchup (task 4) and the chocolate pudding (task 8) are left out, as is `libero_spatial_swap` (the code grasps the bowls at their centre, which fails, and CaP-X has no reference code for it).
 
 - Backend: `src/robouse/backends/capx/` (`backend.py` bridge, `worker.py` simulation, `capx_api.py` the Python module agents use, `oracles.py` reference solutions, `capx_upstream/` the vendored CaP-X code).
 - Generator: `python adapters/capx/generate.py --capx PATH/TO/cap-x --out tasks/capx` (API documentation from `adapters/capx/api_docs.py`).
-- Hub: dataset `capgym/cap-x`, simulator runtime `capx`.
+- Hub: dataset `capgym/cap-x`, simulator runtimes `capx` (RoboSuite) and `capx-libero` (LIBERO-PRO on CaP-X's robosuite 1.4 fork).
 
 ## What is the same as CaP-X
 
@@ -25,7 +28,8 @@
 ## Not included
 
 - The perception tiers (S2-S4 and M1-M4): they need SAM3, Molmo 2, OWL-ViT, SAM2 and Contact-GraspNet model servers on a GPU, and SAM3's weights are gated. No perception is replaced with simulator state.
-- LIBERO-PRO and BEHAVIOR tasks.
+- BEHAVIOR tasks (Isaac Sim on a GPU), the LIBERO-PRO tasks named above, and LIBERO-PRO suites whose task files are not in CaP-X's pinned LIBERO-PRO.
+- CaP-X's LIBERO API function `goto_pose_interactive_cartesian`, which takes a Python function as its target and so cannot pass through `robo`.
 
 ## Licence
 

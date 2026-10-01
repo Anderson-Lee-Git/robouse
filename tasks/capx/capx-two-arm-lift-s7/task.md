@@ -1,7 +1,7 @@
 ---
 schema_version: '1.3'
 task:
-  name: robouse/capx-two-arm-lift-s2
+  name: robouse/capx-two-arm-lift-s7
   description: Two Franka arms on opposite sides of the table grasp a pot's two handles and lift it together. Code as policy with CaP-X's privileged API.
 metadata:
   source_benchmark: CaP-X (capgym/cap-x, commit 53e9966)
@@ -30,23 +30,23 @@ metadata:
     - goto_pose_both
     - open_gripper_arm0
     - open_gripper_arm1
-    layout_seed: 2
+    layout_seed: 7
 agent:
   timeout_sec: 1800
 verifier:
   timeout_sec: 300
 robouse:
-  id: capx-two-arm-lift-s2
+  id: capx-two-arm-lift-s7
   backend: capx
   env: two_arm_lift
-  seed: 2
+  seed: 7
   max_steps: 5000
   camera: agentview
   cameras:
   - agentview
   skills: true
   success_mode: final
-  frame_every: 4
+  frame_every: 8
 ---
 
 # Lift the pot with two arms (CaP-X, privileged API)
@@ -179,7 +179,7 @@ goto_pose_both(position0: numpy.ndarray, quaternion_wxyz0: numpy.ndarray, positi
 
 ## How you run code here
 
-Each API function is a skill of the robot: `robo skill NAME ARG ...` runs it, with one JSON value per argument (a number, a list for an array, `true`/`false`, a string) or `name=VALUE` for a keyword argument, for example `robo skill goto_pose "[0.5, 0.0, 0.2]" "[0, 0, 1, 0]" z_approach=0.1`. It prints what the function returns and anything it printed. To write ordinary Python instead, save this module as `capx_api.py` in your working folder and `from capx_api import *`: it defines every API function of the task under CaP-X's name and signature, returns numpy arrays (a tuple when a function returns several values), and raises `RuntimeError` when a call fails.
+Each API function is a skill of the robot: `robo skill NAME ARG ...` runs it, with one JSON value per argument (a number, a list for an array, `true`/`false`, a string) or `name=VALUE` for a keyword argument, for example `robo skill goto_pose "[0.5, 0.0, 0.2]" "[0, 0, 1, 0]" z_approach=0.1`. It prints what the function returns and anything it printed. A call that takes more than 40 control steps returns `running: True` after 40 of them; `robo skill capx_continue` goes on with it, 40 steps at a time, until it returns. To write ordinary Python instead, save this module as `capx_api.py` in your working folder and `from capx_api import *`: it defines every API function of the task under CaP-X's name and signature, returns numpy arrays (a tuple when a function returns several values), and goes on with long calls by itself, and raises `RuntimeError` when a call fails.
 
 ```python
 """CaP-X's API as Python functions, over the robo CLI (standard library and numpy only).
@@ -206,6 +206,8 @@ def _enc(v):
 
 
 def _dec(v):
+    if isinstance(v, dict):
+        return {k: _dec(x) for k, x in v.items()}
     if isinstance(v, list):
         if all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v) and v:
             return np.asarray(v, dtype=np.float64)
@@ -213,13 +215,19 @@ def _dec(v):
     return v
 
 
-def call(name, *args, **kwargs):
-    argv = [_enc(a) for a in args] + [f"{k}={_enc(v)}" for k, v in kwargs.items()]
+def _skill(name, argv):
     out = subprocess.run(["robo", "skill", name, *argv, "--json"], capture_output=True, text=True)
     r = json.loads(out.stdout or '{"ok": false, "error": "no reply from robo"}')
     if not r.get("ok"):
         raise RuntimeError(f"{name}: {r.get('error')}")
-    res = r["result"]
+    return r["result"]
+
+
+def call(name, *args, **kwargs):
+    argv = [_enc(a) for a in args] + [f"{k}={_enc(v)}" for k, v in kwargs.items()]
+    res = _skill(name, argv)
+    while res.get("running"):  # a long call runs in parts of a few dozen control steps
+        res = _skill("capx_continue", [])
     if res.get("stdout"):
         print(res["stdout"], end="")
     if "error" in res:
@@ -231,7 +239,7 @@ def call(name, *args, **kwargs):
 
 def _functions():
     out = subprocess.run(["robo", "info", "--json"], capture_output=True, text=True)
-    return json.loads(out.stdout)["result"]["skills"]
+    return [n for n in json.loads(out.stdout)["result"]["skills"] if n != "capx_continue"]
 
 
 __all__ = []
@@ -246,4 +254,4 @@ for _name in _functions():
 - The episode has a budget of **5,000 control steps** (CaP-X's horizon for this task); every step an API call takes counts. When it is used up the episode ends.
 - Call `robo done` exactly once when finished; `robo give-up "reason"` ends without claiming success.
 
-This task is one fixed scene layout (seed 2); CaP-X samples a new layout for every trial.
+This task is one fixed scene layout (seed 7); CaP-X samples a new layout for every trial.
