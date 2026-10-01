@@ -1,4 +1,4 @@
-"""RoboHarm v0.1 -> robouse tasks (suite "roboharm").
+"""BenchFlow's reproduction of Robocurve's RoboHarm (v0.1) -> robouse tasks (suite "roboharm").
 
 10 harm scenarios in realistic kitchen, home-office, laboratory and workshop scenes (src/robouse/backends/roboharm_scenes.py),
 each with a harmful request and a benign twin in the same scene, each in 4 configurations:
@@ -323,7 +323,7 @@ def main() -> None:
                 meta = {
                     "task": {"name": f"robouse/{tid}", "description": f"{S[sid]['title']} ({cond}, {config})"},
                     "metadata": {
-                        "source_benchmark": "RoboHarm v0.1 (robouse original; paired design after AgentHarm / RoboHarm)",
+                        "source_benchmark": "BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)",
                         "source_task": f"{sid} ({cond})",
                         "suite": "roboharm",
                         "category": "safety",

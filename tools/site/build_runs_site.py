@@ -52,15 +52,13 @@ import argparse
 import html
 import importlib.util
 import json
-import os
 import re
 import shutil
 import subprocess
 import sys
-import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -1300,7 +1298,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
     rich = [k for k in tasks if any((t["dir"] / "artifacts" / "recording.mp4").is_file() and (t["dir"] / "agent" / "trajectory.json").is_file() for t in by_task[k])]
     borrow = set(rich[:2])
     trials, jobs = [], {}
-    t0 = datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp()
+    t0 = datetime(2026, 9, 1, tzinfo=UTC).timestamp()
     for ti, task in enumerate(tasks):
         srcs = sorted(by_task[task], key=lambda t: (not t.get("counted"), t["infra"], t["trial"]))
         src = next((t for t in srcs if (t["dir"] / "artifacts" / "recording.mp4").is_file()), srcs[0])
@@ -1322,7 +1320,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
                      "partial": False, "outcome": "infra_error" if infra else ("success_reached" if solved else "max_steps_reached"),
                      "steps_used": None if infra else rng.randint(8, mx), "max_steps": mx, "wall": round(wall, 1), "checks": {"robo_requests": rng.randint(5, 120)},
                      "infra_items": [{"id": "synthetic", "evidence": "fabricated infrastructure failure"}] if infra else [], "agent_text": "", "final_message": "",
-                     "started": datetime.fromtimestamp(start, timezone.utc).isoformat(), "finished": datetime.fromtimestamp(start + wall, timezone.utc).isoformat(),
+                     "started": datetime.fromtimestamp(start, UTC).isoformat(), "finished": datetime.fromtimestamp(start + wall, UTC).isoformat(),
                      "src_trial": src["trial"] if real_dir else None}
                 if ti == 0 and i == 0 and seed == 1:  # one fabricated trial carries every optional block (leaderboard spec section 5)
                     t["fake_extra"] = {
@@ -1380,7 +1378,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     out = a.out.expanduser().resolve()
     site = out.parent
-    VER = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+    VER = datetime.now(UTC).strftime("%Y%m%d%H%M")
     SYNTH = a.synthetic > 0
     if SYNTH:
         if out.is_relative_to(REAL_SITE.resolve()) or out.is_relative_to(REAL_SITE.parent.resolve()):

@@ -55,7 +55,7 @@ DexJoCo's replay is not bit-for-bit reproducible across machines. On this Mac 34
 | dexjoco-microwave-cook | bimanual_microwave_cook | 2026-02-09_17-09-31 | 693 | 3000 |
 | dexjoco-photograph | bimanual_photograph | 2026-03-16_14-31-13 | 260 | 3000 |
 | dexjoco-unlock-ipad | bimanual_unlock_ipad | 2026-03-22_14-10-52 | 336 | 3000 |
-| dexjoco-assembly | bimanual_assembly | 2026-03-19_17-36-54 | 587 | 3000 |
+| dexjoco-assembly | bimanual_assembly | 2026-03-19_19-30-52 | 483 | 3000 |
 
 ## Validation
 
@@ -63,6 +63,7 @@ Through the real runner (`robouse run-many`, macOS, M2 Max):
 
 - Reference solutions: **14/14** (`runs/dexjoco-oracle`), 202 to 693 steps, 13 to 57 s of wall time per episode.
 - No-op control: **0/14** (`runs/dexjoco-noop`).
+- On Linux (the hub's dexjoco runtime image), the first assembly demonstration (2026-03-19_17-36-54) replays without reaching the success check (reward 0 after 707 steps); the task now uses 2026-03-19_19-30-52, which reaches it at step 483.
 
 Model probe, Codex + GPT-6 Astra on 5 tasks (`runs/dexjoco-probe-astra`, list `task-lists/dexjoco-probe-5.txt`): **2/5**.
 

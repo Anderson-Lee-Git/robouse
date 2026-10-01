@@ -7,7 +7,7 @@ name = "robouse"
 dynamic = ["version"]
 description = "Agent as a policy for embodied agents"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Xiangyi Li", email = "xiangyi@benchflow.ai" }]
@@ -50,9 +50,7 @@ all = ["robouse[sim,metaworld,gymrobotics,robosuite,dexjoco]"]
 
 [project.urls]
 Homepage = "https://robouse.ai"
-Documentation = "https://robouse.ai/docs"
-Repository = "https://github.com/benchflow-ai/robouse"
-Issues = "https://github.com/benchflow-ai/robouse/issues"
+Documentation = "https://robouse.ai/docs/"
 
 [project.scripts]
 robouse = "robouse.cli:main"

@@ -157,10 +157,13 @@ def ik_pick(o, arm, name: str, face_deg: float, surface_h: float, lift: float = 
     return res
 
 
-def ik_place(o, arm, name: str, p, face_deg: float, surface_h: float, release_gap: float = 0.005) -> None:
+def ik_place(
+    o, arm, name: str, p, face_deg: float, surface_h: float, release_gap: float = 0.005, lift: float = 0.0
+) -> None:
     """Put the held object down with its centre at p (x, y) resting on a surface of height surface_h
     (release_gap > 0.02 drops it from that height, e.g. into a bin or a drawer). The gripper height is set from the
-    observed offset between the gripper and the object's centre, since an object can slip a little in the grasp."""
+    observed offset between the gripper and the object's centre, since an object can slip a little in the grasp.
+    `lift` raises the open gripper that far before it backs away, so the fingers do not drag a light object."""
     a = _unit(face_deg)
     half_h = _half_h(o, name)
 
@@ -178,6 +181,9 @@ def ik_place(o, arm, name: str, p, face_deg: float, surface_h: float, release_ga
     arm.reach(down)
     o.skill("open_gripper")
     hold(o, 6, arm.dim)
+    if lift:
+        down = down + np.array([0.0, 0.0, lift])
+        arm.reach(down)
     arm.reach(down - 0.14 * a)
     arm.back(0.3)
 
@@ -249,7 +255,8 @@ def tiago_study_to_kitchen(o) -> None:
     drive(o, (-1.0, -1.4), STUDY_DOOR["west"], STUDY_DOOR["east"], KITCHEN_DOOR["east"], KITCHEN_DOOR["west"])
     cx, cy, h, sx, sy = _table(o, "kitchen_table")
     # the kitchen table is against the west wall: approach its east edge facing west
-    ik_place(o, arm, "mug", (cx + sx / 2 - 0.15, cy), 180, h)
+    # lift before backing away: on Linux the open fingers otherwise drag the 0.25 kg mug off the table
+    ik_place(o, arm, "mug", (cx + sx / 2 - 0.15, cy), 180, h, lift=0.03)
 
 
 def _bin(o):
