@@ -44,19 +44,19 @@ robouse 0.2.0 bundles 692 tasks in 31 suites. "Needs" is what a suite needs beyo
 | `crazyflie` | Crazyflie 2, one or three | 7 | `robouse fetch-assets --all` | 7/7 | 0/7 |
 | `cubepick` | cube pick-and-reach | 5 | - | 5/5 | 0/5 |
 | `dexhand` | Shadow Hand, LEAP Hand | 7 | `robouse fetch-assets --all` | 7/7 | 0/7 |
-| `dexjoco` | DexJoCo: Allegro hand tool use | 14 | own virtualenv (below) | 13/14 | 0/14 |
+| `dexjoco` | DexJoCo: Allegro hand tool use | 14 | own virtualenv (below) | 14/14 | 0/14 |
 | `dmcontrol` | dm_control: Control Suite, Jaco arm | 17 | own virtualenv (below) | 17/17 | 0/17 |
 | `driving` | MetaDrive car in traffic | 7 | own virtualenv (below) | 7/7 | 0/7 |
 | `drone` | Skydio X2 over a town | 10 | `robouse fetch-assets` | 10/10 | 0/10 |
 | `gymrobotics` | Gymnasium-Robotics: Fetch, PointMaze | 12 | `[gymrobotics]` | 12/12 | 0/12 |
 | `hard` | low-level control, uncalibrated cameras | 25 | - | 25/25 | 0/25 |
 | `humanoid` | Unitree G1 and H1, Apollo, Booster T1 | 9 | `robouse fetch-assets --all` | 9/9 | 0/9 |
-| `humanoidbench` | HumanoidBench: H1 with two hands | 7 | [the hub](run-a-suite.md#a-dataset) only | - | - |
+| `humanoidbench` | HumanoidBench: H1 with two hands | 7 | [the hub](run-a-suite.md#a-dataset) only | 7/7 | 0/7 |
 | `kitchen` | Franka Kitchen | 10 | `[gymrobotics]` | 10/10 | 0/10 |
 | `libero` | LIBERO: Spatial, Object, Goal, Long | 40 | [LIBERO setup](#libero) | 40/40 | 0/40 |
-| `libero-90` | LIBERO-90 | 90 | [LIBERO setup](#libero) | 89/90 | 0/90 |
+| `libero-90` | LIBERO-90 | 90 | [LIBERO setup](#libero) | 90/90 | 0/90 |
 | `libero-style` | LIBERO-like tabletop scenes | 12 | - | 12/12 | 0/12 |
-| `maniskill` | ManiSkill3 on the CPU | 12 | [the hub](run-a-suite.md#a-dataset) only | - | - |
+| `maniskill` | ManiSkill3 on the CPU | 12 | [the hub](run-a-suite.md#a-dataset) only | 12/12 | 0/12 |
 | `menagerie` | dual Franka Panda, ALOHA 2 | 15 | `robouse fetch-assets` | 15/15 | 0/15 |
 | `metaworld` | Meta-World MT50 | 50 | `[metaworld]` | 50/50 | 0/50 |
 | `mobile-manip` | Stretch 3, TIAGo, Google Robot | 10 | `robouse fetch-assets --all` | 10/10 | 0/10 |
@@ -64,7 +64,7 @@ robouse 0.2.0 bundles 692 tasks in 31 suites. "Needs" is what a suite needs beyo
 | `nav` | object-goal navigation in homes | 40 | - | 40/40 | 0/40 |
 | `quadruped` | Unitree Go2 and Go1, Spot, ANYmal C | 11 | `robouse fetch-assets --all` | 11/11 | 0/11 |
 | `robo-use-families` | Robo Use task families | 8 | - | 8/8 | 0/8 |
-| `robocasa` | RoboCasa kitchens | 24 | [the hub](run-a-suite.md#a-dataset) only | - | - |
+| `robocasa` | RoboCasa kitchens | 24 | [the hub](run-a-suite.md#a-dataset) only | 24/24 | 0/24 |
 | `roboharm` | 10 harm scenarios, 4 configurations | 80 | `robouse fetch-assets` | 80/80 | 0/80 |
 | `robosuite` | robosuite 1.5, five arms | 21 | `[robosuite]` | 21/21 | 0/21 |
 | `safety` | harmful requests and benign twins | 8 | - | 8/8 | 0/8 |
