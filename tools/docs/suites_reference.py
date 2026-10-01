@@ -8,7 +8,9 @@ The bundled table is the text between the `<!-- suites-table -->` and `<!-- /sui
 suites (tools/docs/counts.py HUB_ONLY, counted from this checkout's task folders) are between `<!-- hub-only-table -->`
 lines, and README.md gets the same "N tasks in M suites"; the rest of the page is hand-written. Bundled counts come from
 the package (`robouse tasks --path`), so they cannot drift from the release; tests/test_counts.py checks all of it. A
-suite without trials in a job folder shows "-". Run it against the release users install, from its checkout.
+suite's description is the second line of its first cell, so the table fits the docs column; a suite that needs nothing
+beyond robouse[sim] has an empty Needs cell, and one without trials in a job folder shows "not run". Run it against the
+release users install, from its checkout.
 """
 
 from __future__ import annotations
@@ -46,10 +48,10 @@ FROM = {
     "libero-style": "LIBERO-like tabletop scenes",
     "arc-style": "ARC-style rules on a table",
     "robo-use-families": "Robo Use task families",
-    "safety": "harmful requests and benign twins",
-    "vision": "camera images, no coordinates",
-    "hard": "low-level control, uncalibrated cameras",
-    "menagerie": "dual Franka Panda, ALOHA 2",
+    "safety": "Harmful requests and benign twins",
+    "vision": "Camera images, no coordinates",
+    "hard": "Low-level control, uncalibrated cameras",
+    "menagerie": "Dual Franka Panda, ALOHA 2",
     "roboharm": "10 harm scenarios, 4 configurations",
     "drone": "Skydio X2 over a town",
     "quadruped": "Unitree Go2 and Go1, Spot, ANYmal C",
@@ -57,7 +59,7 @@ FROM = {
     "mobile-manip": "Stretch 3, TIAGo, Google Robot",
     "dexhand": "Shadow Hand, LEAP Hand",
     "crazyflie": "Crazyflie 2, one or three",
-    "composed": "composed from components",
+    "composed": "Composed from components",
     "dexjoco": "DexJoCo: Allegro hand tool use",
     "driving": "MetaDrive car in traffic",
     "dmcontrol": "dm_control: Control Suite, Jaco arm",
@@ -65,9 +67,9 @@ FROM = {
     "humanoidbench": "HumanoidBench: H1 with two hands",
     "maniskill": "ManiSkill3 on the CPU",
     "robocasa": "RoboCasa kitchens",
-    "nav": "object-goal navigation in homes",
-    "cubepick": "cube pick-and-reach",
-    "real": "real arms, on the mock by default",
+    "nav": "Object-goal navigation in homes",
+    "cubepick": "Cube pick-and-reach",
+    "real": "Real arms, on the mock by default",
 }
 # What a suite needs beyond `pip install 'robouse[sim]'`, by backend.
 ASSETS = "`robouse fetch-assets`"
@@ -128,7 +130,7 @@ def results(job: Path | None) -> dict[str, list[float]]:
 def cell(ids: list[str], res: dict[str, list[float]], want: float) -> str:
     ran = [t for t in ids if res.get(t)]
     if not ran:
-        return "-"
+        return "not run"
     return f"{sum(1 for t in ran if any(x == 1.0 for x in res[t]))}/{len(ran)}"
 
 
@@ -160,17 +162,17 @@ def main() -> None:
         backends = Counter(t["robouse"]["backend"] for t in tasks)
         needs = sorted({NEEDS.get(b, "?") for b in backends} - {""})
         rows.append(
-            f"| `{d.name}` | {FROM.get(d.name, '')} | {len(ids)} | {', '.join(needs) or '-'} | "
+            f"| `{d.name}`<br>{FROM.get(d.name, '')} | {len(ids)} | {', '.join(needs)} | "
             f"{cell(ids, oracle, 1.0)} | {cell(ids, noop, 0.0)} |"
         )
         total += len(ids)
     table = [
         f"{version} bundles {total} tasks in {len(rows)} suites. \"Needs\" is what a suite needs beyond "
-        "`pip install 'robouse[sim]'`. The last two columns count the tasks that scored 1 with the reference "
-        "solution and with the no-op control.",
+        "`pip install 'robouse[sim]'`, if anything. The last two columns count the tasks that scored 1 with the "
+        "reference solution and with the no-op control.",
         "",
-        "| Suite | What | Tasks | Needs | Reference solution | No-op control |",
-        "|---|---|---|---|---|---|",
+        "| Suite | Tasks | Needs | Reference solution | No-op control |",
+        "|---|---|---|---|---|",
         *rows,
     ]
     hub_rows = []
@@ -178,9 +180,9 @@ def main() -> None:
         tasks = [frontmatter(t) for t in sorted((counts.REPO / "tasks" / suite).rglob("task.md"))]
         ids = [t["robouse"]["id"] for t in tasks]
         hub_rows.append(
-            f"| `{suite}` | {HUB_FROM.get(suite, '')} | {len(ids)} | {cell(ids, oracle, 1.0)} | {cell(ids, noop, 0.0)} |"
+            f"| `{suite}`<br>{HUB_FROM.get(suite, '')} | {len(ids)} | {cell(ids, oracle, 1.0)} | {cell(ids, noop, 0.0)} |"
         )
-    hub = ["| Suite | What | Tasks | Reference solution | No-op control |", "|---|---|---|---|---|", *hub_rows]
+    hub = ["| Suite | Tasks | Reference solution | No-op control |", "|---|---|---|---|", *hub_rows]
     text = DOC.read_text(encoding="utf-8")
     for begin, end, lines in ((BEGIN, END, table), (HUB_BEGIN, HUB_END, hub)):
         if begin not in text or end not in text:

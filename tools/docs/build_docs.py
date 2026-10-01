@@ -42,8 +42,68 @@ GITHUB_DOC_RE = re.compile(re.escape(GITHUB) + r"/(?:blob|tree)/main/((?:docs/|R
 MARKER = ".build_docs"  # written into --out so a rebuild only ever clears a directory this script owns
 
 
-WRAP_AT = 56  # the docs code column fits about 64 monospace characters at desktop width
-WRAP_CMD = re.compile(r"^(\$ )?(robouse (run|run-many|tasks init)|bench eval run)\s")
+WRAP_AT = 56  # long robouse and bench commands go one flag per line beyond this many characters
+WRAP_CMD = re.compile(r"^(\$ )?(robouse (run|run-many|tasks init|report)|bench eval run)\s")
+LONG_WORD = 28  # inline code this short never breaks; longer code breaks between words, and a long word after a slash
+
+
+def code_html(text: str) -> str:
+    """Inline code that never splits a flag or an id ("--" / "grip", "gpt-6-" / "astra").
+
+    Code up to LONG_WORD characters is plain <code>, which docs.css keeps on one line. Longer code is .brk: it wraps
+    between its words, each word a .w span that stays whole, and a word longer than LONG_WORD may also break after each
+    slash; a long word without a slash may break anywhere rather than run past a phone's column.
+    """
+    esc = lambda s: html.escape(s, quote=False)  # noqa: E731
+    if len(text) <= LONG_WORD:
+        return f"<code>{esc(text)}</code>"
+    words: list[str] = []  # an optional part in brackets ("[--camera C]") stays one word
+    for w in text.split(" "):
+        if words and words[-1].count("[") > words[-1].count("]"):
+            words[-1] += " " + w
+        else:
+            words.append(w)
+
+    def word(w: str) -> str:
+        if not w:
+            return ""
+        if len(w) <= LONG_WORD:
+            return f'<span class="w">{esc(w)}</span>'
+        if "/" in w:
+            return "<wbr>".join(f'<span class="w">{esc(p)}</span>' for p in re.split(r"(?<=/)", w) if p)
+        return esc(w)
+
+    return '<code class="brk">' + " ".join(word(w) for w in words) + "</code>"
+
+
+def image_size(data: bytes) -> tuple[int, int] | None:
+    """(width, height) of a PNG, JPEG or WebP file, from its header; None if it is none of those."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR":
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        kind = data[12:16]
+        if kind == b"VP8X":
+            return 1 + int.from_bytes(data[24:27], "little"), 1 + int.from_bytes(data[27:30], "little")
+        if kind == b"VP8 ":
+            return int.from_bytes(data[26:28], "little") & 0x3FFF, int.from_bytes(data[28:30], "little") & 0x3FFF
+        if kind == b"VP8L":
+            b = int.from_bytes(data[21:25], "little")
+            return 1 + (b & 0x3FFF), 1 + ((b >> 14) & 0x3FFF)
+        return None
+    if data[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(data):
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            marker = data[i + 1]
+            if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                return int.from_bytes(data[i + 7:i + 9], "big"), int.from_bytes(data[i + 5:i + 7], "big")
+            if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+                i += 2
+                continue
+            i += 2 + int.from_bytes(data[i + 2:i + 4], "big")
+    return None
 
 
 def wrap_command(line: str) -> list[str]:
@@ -118,16 +178,16 @@ PAGES: list[tuple[str, str, str, str, str]] = [
     ("Get started", "docs/index.md", "", "Overview",
      "Robo Use turns robot benchmarks into tasks that an agent harness such as Claude Code solves by driving a simulated robot with robo."),
     ("Get started", "docs/quickstart.md", "quickstart", "Quickstart",
-     "Install robouse and let Claude Code with Kimi K3 solve arc-gravity, a rule-inference task on a table, in 31 robo calls."),
+     "Install robouse and let Claude Code with Kimi K3 solve arc-gravity, a rule-inference task on a table, in 35 robo calls."),
     ("Get started", "docs/supported.md", "supported", "Supported",
      "The models, harnesses, platforms, isolation modes and formats Robo Use 0.3.0 supports, and what each needs."),
-    ("Concepts", "docs/concepts.md", "concepts", "Concepts",
+    ("Get started", "docs/concepts.md", "concepts", "Concepts",
      "Tasks, scoring, episodes, the robo command, harnesses and the trial folder: how one Robo Use trial works."),
     ("Guides", "docs/run-agents.md", "run-agents", "Run agents and VLAs",
      "Run Claude Code, Codex, mini-swe-agent, dimcode or a VLA policy server as the robot's policy on one task."),
     ("Guides", "docs/mcp.md", "mcp", "MCP",
      "Drive the robot through the robo MCP tools instead of the robo command: the tools, robo mcp and --interface."),
-    ("Guides", "docs/write-a-task.md", "write-a-task", "Write a task",
+    ("Guides", "docs/write-a-task.md", "write-a-task", "Write or compose a task",
      "Copy a tabletop task, change its goal, and check that its reference solution scores 1 and the no-op control 0."),
     ("Guides", "docs/run-a-suite.md", "run-a-suite", "Run a suite or dataset",
      "Run many tasks with robouse run-many, or a published dataset in Docker with bench eval run -d."),
@@ -142,8 +202,6 @@ PAGES: list[tuple[str, str, str, str, str]] = [
     ("Reference", "docs/metrics.md", "metrics", "Metrics",
      "Episode metrics from the physical trace, placement splits, and robouse report with 95% intervals."),
 ]
-# Extra sidebar links to other parts of the site: (group, label, url).
-SIDEBAR_LINKS = [("Results", "Runs", "/runs/")]
 # Docs kept in the repository but not published: internal notes, run logs and machine-specific setup.
 EXCLUDED = {
     "docs/review-log.md": "internal log of documentation review passes",
@@ -197,9 +255,10 @@ def plain(md: str) -> str:
 class Converter:
     """Converts one markdown document. `link` maps (href) -> (url or None); None means 'not published'."""
 
-    def __init__(self, link, labels=None, svg=None):
+    def __init__(self, link, labels=None, svg=None, size=None):
         self.link = link
         self.svg = svg  # href -> inline SVG markup (or None), for figures that follow the page's theme
+        self.size = size  # href -> (width, height) of an image file (or None), so <img> carries its size
         self.labels = labels or {}  # page url -> nav label, for links whose text is just the file path
         self.seen: dict[str, int] = {}
         self.headings: list[tuple[int, str, str]] = []
@@ -214,7 +273,7 @@ class Converter:
             return f"\x00{len(slots) - 1}\x00"
 
         # code spans (any run of backticks), then <autolinks>
-        text = re.sub(r"(`+)(.+?)\1", lambda m: keep(f"<code>{html.escape(m.group(2).strip() if m.group(1) != '`' else m.group(2), quote=False)}</code>"), text)
+        text = re.sub(r"(`+)(.+?)\1", lambda m: keep(code_html(m.group(2).strip() if m.group(1) != '`' else m.group(2))), text)
         text = re.sub(r"<(https?://[^>\s]+)>", lambda m: keep(self._a(m.group(1), html.escape(m.group(1)))), text)
         text = html.escape(text, quote=False)
         text = re.sub(r"!\[([^\]]*)\]\(([^)\s]+)\)", lambda m: keep(self._img(m.group(2), m.group(1))), text)
@@ -251,16 +310,18 @@ class Converter:
             return self._a(url, inner)
         # not published: keep the words; a bare path becomes inline code
         text = re.sub(r"<[^>]+>", "", inner)
-        if "\x00" in inner or "<code>" in inner or not re.fullmatch(r"[\w./#\-]+", html.unescape(text)):
+        if "\x00" in inner or "<code" in inner or not re.fullmatch(r"[\w./#\-]+", html.unescape(text)):
             return inner
-        return f"<code>{inner}</code>"
+        return code_html(html.unescape(text))
 
     def _img(self, src: str, alt: str) -> str:
         src = html.unescape(src)
         url = src if re.match(r"^https?:", src) else self.link(src)
         if not url:
             return alt
-        return f'<img src="{html.escape(url)}" alt="{alt}" loading="lazy">'
+        size = self.size(src) if self.size and not re.match(r"^https?:", src) else None
+        dims = f' width="{size[0]}" height="{size[1]}"' if size else ""  # the page keeps its layout while images load
+        return f'<img src="{html.escape(url)}" alt="{alt}"{dims} loading="lazy">'
 
     # ---- blocks
 
@@ -312,8 +373,9 @@ class Converter:
                 inner = self.inline(text)
                 if level == 1:
                     out.append(f"<h1 id=\"{hid}\">{inner}</h1>")
-                else:
-                    out.append(f'<h{level} id="{hid}">{inner}<a class="hash" href="#{hid}" aria-label="Link to this section">#</a></h{level}>')
+                else:  # the section link sits beside the heading, not in it, so the heading's name is just its text
+                    out.append(f'<div class="hd hd{level}"><h{level} id="{hid}">{inner}</h{level}>'
+                               f'<a class="hash" href="#{hid}" aria-label="Link to {html.escape(plain(text))}"></a></div>')
                 i += 1
                 continue
             if re.match(r"^\s*(-{3,}|\*{3,}|_{3,})\s*$", line):
@@ -441,16 +503,34 @@ class Converter:
         aligns = []
         for s in cells(sep):
             aligns.append("center" if s.startswith(":") and s.endswith(":") else "right" if s.endswith(":") else "left" if s.startswith(":") else "")
+        heads = cells(head)
+        ncol = len(heads)
+        labels = [plain(h) for h in heads]
+
+        def cell(c: str) -> str:
+            # "first<br>second": the second line is a quieter note under the first (a suite's description under its id)
+            first, *rest = c.split("<br>")
+            return self.inline(first) + "".join(f'<span class="sub">{self.inline(x)}</span>' for x in rest)
+
         def row_html(r: list[str], tag: str) -> str:
             tds = []
             for k, c in enumerate(r):
                 a = aligns[k] if k < len(aligns) and aligns[k] else ""
                 style = f' style="text-align:{a}"' if a else ""
-                tds.append(f"<{tag}{style}>{self.inline(c)}</{tag}>")
-            return "<tr>" + "".join(tds) + "</tr>"
+                inner = cell(c)
+                if tag == "th":
+                    tds.append(f'<th role="columnheader"{style}>{inner}</th>')
+                    continue
+                # on a narrow column docs.css lists each row as a block: the cell's column name comes from data-label
+                label = f' data-label="{html.escape(labels[k])}"' if k < ncol else ""
+                if ncol > 2 and k > 0 and inner:
+                    inner = f'<span class="v">{inner}</span>'
+                tds.append(f'<td role="cell"{label}{style}>{inner}</td>')
+            return '<tr role="row">' + "".join(tds) + "</tr>"
         body = "\n".join(row_html(cells(r), "td") for r in rows)
-        return (f'<div class="table"><table>\n<thead>{row_html(cells(head), "th")}</thead>\n'
-                f"<tbody>\n{body}\n</tbody>\n</table></div>")
+        return (f'<div class="table" data-cols="{ncol}"><table role="table">\n'
+                f'<thead role="rowgroup">{row_html(heads, "th")}</thead>\n'
+                f'<tbody role="rowgroup">\n{body}\n</tbody>\n</table></div>')
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -549,7 +629,11 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
                         + one(narrow).replace('class="fig"', 'class="fig fig-narrow"', 1))
             return one(target)
 
-        conv = Converter(link, {page_url(base, q.slug): q.label for q in pages}, svg)
+        def size(href: str, src_dir=src_dir) -> tuple[int, int] | None:
+            target = posixpath.normpath(posixpath.join(src_dir, href))
+            return image_size(source.read_bytes(target)) if source.exists(target) else None
+
+        conv = Converter(link, {page_url(base, q.slug): q.label for q in pages}, svg, size)
         p.body = conv.blocks(md.splitlines())
         p.toc = [(hid, plain(text)) for lvl, hid, text in conv.headings if lvl == 2]
         p.ids = {hid for _, hid, _ in conv.headings}
@@ -619,10 +703,12 @@ def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: P
             group = q.group
             nav.append(f'<p class="grp">{e(group)}</p><ul>')
         cur = ' aria-current="page"' if q is p else ""
-        nav.append(f'<li><a href="{page_url(base, q.slug)}"{cur}>{e(q.label)}</a></li>')
+        # the current page's sections, under it: shown where there is no room for the on-this-page column (docs.css)
+        secs = ""
+        if q is p and len(p.toc) >= 2:
+            secs = '<ul class="secs">' + "".join(f'<li><a href="#{e(hid)}">{e(text)}</a></li>' for hid, text in p.toc) + "</ul>"
+        nav.append(f'<li><a href="{page_url(base, q.slug)}"{cur}>{e(q.label)}</a>{secs}</li>')
     nav.append("</ul>")
-    for grp, label, url in SIDEBAR_LINKS:
-        nav.append(f'<p class="grp">{e(grp)}</p><ul><li><a href="{e(url)}">{e(label)}</a></li></ul>')
     toc = ""
     if len(p.toc) >= 2:
         items = "".join(f'<li><a href="#{e(hid)}">{e(text)}</a></li>' for hid, text in p.toc)
@@ -653,12 +739,12 @@ def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: P
 <link rel="stylesheet" href="{base}docs.css">
 {getattr(chrome, "BRIDGE", '<link rel="stylesheet" href="/surface.css">')}
 <script src="{base}docs.js" defer></script>
+<noscript><style>@media (max-width: 760px) {{ .side {{ display: block; }} .navbtn {{ display: none !important; }} }}</style></noscript>
 </head>
 <body>
 {chrome.header("/docs/")}
 <div class="shell{'' if toc else ' no-toc'}">
-<input type="checkbox" id="navtoggle" class="navtoggle" aria-controls="docs-nav">
-<label for="navtoggle" class="navbtn">Menu<span class="cur">{e(p.label)}</span></label>
+<button type="button" class="navbtn" aria-expanded="false" aria-controls="docs-nav">Menu<span class="cur">{e(p.label)}</span></button>
 <aside class="side" id="docs-nav"><nav aria-label="Docs">
 {chr(10).join(nav)}
 </nav></aside>
@@ -703,13 +789,15 @@ def check_output(out: Path) -> list[str]:
 CSS = r"""/* Robo Use docs. Generated by robouse/tools/docs/build_docs.py; edit the script, not this file.
    Tokens: /tokens.css. Headings, body text, links, code blocks and the copy button, tables, lists, quotes, captions and the
    title block: /prose.css. Focus ring and controls: /ui.css. Header and footer: /chrome.css. Page surface: /surface.css.
-   This file is the docs layout only: sidebar, page, on-this-page, pager, figures. */
+   This file is the docs layout: sidebar, page, on-this-page, pager, figures, the phone menu, and how tables, inline code
+   and section links behave in the docs' columns. */
 html { scroll-padding-top: var(--sp-20); }
 
-/* layout: sidebar, page, on-this-page, on the site's 1120px grid */
-.shell { display: grid; grid-template-columns: 210px minmax(0, 1fr) 190px; gap: 0 var(--sp-48); max-width: var(--wide); margin: 0 auto;
+/* layout: sidebar, page, on-this-page, on the site's 1120px grid. At full width the page column is 672 px, so an
+   80-column terminal line (the CLIs' help, command output) fits in a code block without scrolling sideways. */
+.shell { display: grid; grid-template-columns: 176px minmax(0, 1fr) 160px; gap: 0 var(--sp-32); max-width: var(--wide); margin: 0 auto;
   padding: var(--sp-72) max(var(--gutter), env(safe-area-inset-right)) 0 max(var(--gutter), env(safe-area-inset-left)); }
-.shell.no-toc { grid-template-columns: 210px minmax(0, 1fr); }
+.shell.no-toc { grid-template-columns: 176px minmax(0, 1fr); }
 /* the side columns stick; a small inset keeps the focus ring inside their scroll box */
 .side, .toc { position: sticky; top: var(--sp-24); align-self: start; max-height: calc(100vh - var(--sp-48)); overflow-y: auto; overscroll-behavior: contain;
   margin: 0 calc(-1 * var(--sp-8)); padding: var(--sp-2) var(--sp-8); font: 400 var(--fs-small)/1.45 var(--sans); }
@@ -717,27 +805,75 @@ html { scroll-padding-top: var(--sp-20); }
 .side .grp:first-child, .toc .grp { margin-top: var(--sp-4); }
 .side ul, .toc ul { list-style: none; margin: 0; padding: 0; }
 .side li, .toc li { margin: 0; }
-.side a, .toc a, .pager a, .hash { text-decoration: none; }
+.side a, .toc a, .pager a { text-decoration: none; }
 .side li a { display: block; margin: 0 calc(-1 * var(--sp-8)); padding: var(--sp-4) var(--sp-8); color: var(--muted); border-radius: var(--r-sm); transition: color var(--t-fast), background var(--t-fast); }
-.side li a:hover { background: var(--hover); }
+.side li a:hover { background: var(--hover); color: var(--ink); }
+.side li a:active { background: var(--press); color: var(--ink2); }
 .side li a:focus-visible { outline-offset: -2px; }
-.side li a:hover { color: var(--ink); }
-.side li a:active { color: var(--ink2); }
-.side li a[aria-current="page"] { color: var(--ink); font-weight: 500; }
+/* the current page: ink on a filled row, so it never reads as one more group label */
+.side li a[aria-current="page"] { color: var(--ink); font-weight: 500; background: var(--press); }
+/* the current page's sections under it, only where the on-this-page column is gone (below 1080 px, the phone menu) */
+.side .secs { display: none; margin: var(--sp-2) 0 var(--sp-6); }
+.side .secs a { padding-left: var(--sp-20); font-size: var(--fs-meta); }
+.side .secs a.on { color: var(--ink); }
 .toc li a { display: block; padding: var(--sp-4) 0 var(--sp-4) var(--sp-12); border-left: var(--hairline); color: var(--muted); line-height: 1.4;
   border-radius: 0; transition: color var(--t-fast), border-color var(--t-fast); }
 .toc li a:hover { color: var(--ink); border-left-color: var(--line-strong); }
 .toc li a.on { color: var(--ink); border-left-color: var(--ink); }
 .toc li a:focus-visible { outline-offset: -2px; }
-input.navtoggle, .navbtn { display: none; }
+.navbtn { display: none; }
 .doc { min-width: 0; max-width: var(--measure); padding-bottom: var(--sp-24); }
 
-/* headings get a hover anchor */
-.hash { margin-left: var(--sp-8); padding: 0 var(--sp-4); color: var(--faint); opacity: 0; font: 400 var(--fs-body)/1 var(--sans); vertical-align: .1em;
+/* section links: a # beside each h2 and h3 (beside, not inside, so the heading's name is only its text); following one
+   also copies the section's address (docs.js). On touch screens, where nothing hovers, it stays faintly visible. */
+.prose .hd { display: flex; align-items: baseline; gap: var(--sp-4); }
+.prose .hd2 { margin: var(--sp-48) 0 var(--sp-12); }
+.prose .hd3 { margin: var(--sp-32) 0 var(--sp-8); }
+.prose .hd > :is(h2, h3, h4) { margin: 0; min-width: 0; }
+.prose > .hd:first-child { margin-top: 0; }
+.prose a.hash { flex: none; padding: 0 var(--sp-4); color: var(--faint); text-decoration: none; opacity: 0; font: 400 var(--fs-body)/1 var(--sans);
   border-radius: var(--r-xs); transition: opacity var(--t-fast), color var(--t-fast); }
-h2:hover .hash, h3:hover .hash, .hash:focus-visible { opacity: 1; }
-.hash:hover { color: var(--accent); }
+.prose a.hash::before { content: "#"; }
+.prose .hd:hover a.hash, .prose a.hash:focus-visible, .prose a.hash.done { opacity: 1; }
+.prose a.hash:hover { color: var(--accent); }
+.prose a.hash.done::after { content: "Copied"; margin-left: var(--sp-6); font: 400 var(--fs-caption)/1 var(--sans); color: var(--ok); }
+@media (hover: none) { .prose a.hash { opacity: 1; } }
 article img { display: block; max-width: 100%; height: auto; margin: var(--sp-8) 0; border-radius: var(--r-sm); border: var(--hairline); }
+
+/* inline code breaks only between words (build_docs.py code_html): a one-word chip stays whole; a .brk chip breaks at its
+   spaces with each word whole, and a long word only after a slash */
+.prose :not(pre) > code { white-space: nowrap; overflow-wrap: normal; }
+.prose :not(pre) > code.brk { white-space: normal; overflow-wrap: anywhere; }
+.prose code .w { white-space: nowrap; }
+
+/* a code block or table that scrolls sideways takes keyboard focus (docs.js); its ring keeps the block's corners */
+.code > pre:focus-visible { border-radius: var(--r-md); }
+.table:focus-visible { border-radius: var(--r-sm); }
+
+/* tables. A cell's second line is a quieter note under its first (a suite's description under its id). When the column
+   is too narrow for a table, each row becomes a block instead of scrolling sideways: its first cell as the title, then
+   the other cells, each after its column name (data-label), side by side while they fit; a value too long to sit beside
+   its name goes under it. Tables of two columns do so only on phones, without the names. */
+.prose td .sub { display: block; margin-top: var(--sp-2); color: var(--muted); font-size: var(--fs-meta); line-height: 1.45; }
+.table { container-type: inline-size; }
+@container (max-width: 599px) {
+  .table:not([data-cols="2"]) :is(table, tbody) { display: block; }
+  .table:not([data-cols="2"]) thead { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .table:not([data-cols="2"]) tr { display: flex; flex-wrap: wrap; gap: var(--sp-4) var(--sp-24); padding: var(--sp-12) 0; border-bottom: var(--hairline); }
+  .table:not([data-cols="2"]) tr > td { min-width: 0; max-width: 100%; padding: 0; border: 0; text-align: left; }
+  .table:not([data-cols="2"]) tr > td:first-child { display: block; flex: 1 0 100%; margin-bottom: var(--sp-2); }
+  .table:not([data-cols="2"]) tr > td + td { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--sp-8); }
+  .table:not([data-cols="2"]) tr > td + td::before { content: attr(data-label); color: var(--muted); font-size: var(--fs-meta); }
+  .table:not([data-cols="2"]) tr > td > .v { min-width: 0; }
+  .table:not([data-cols="2"]) tr > td:empty { display: none; }
+}
+@container (max-width: 439px) {
+  .table[data-cols="2"] :is(table, tbody, tr, td) { display: block; }
+  .table[data-cols="2"] thead { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .table[data-cols="2"] tr { padding: var(--sp-10) 0; border-bottom: var(--hairline); }
+  .table[data-cols="2"] tr > td { padding: 0; border: 0; text-align: left; }
+  .table[data-cols="2"] tr > td + td { margin-top: var(--sp-4); }
+}
 
 /* figures: inline SVG diagrams take the page's colours and type; stills are small webp images */
 .figure { margin: var(--sp-24) 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -787,37 +923,47 @@ article img { display: block; max-width: 100%; height: auto; margin: var(--sp-8)
 .pager a span { font: 400 var(--fs-small)/1 var(--sans); color: var(--muted); }
 .pager .next { margin-left: auto; text-align: right; }
 
-@media (max-width: 1080px) { .shell { grid-template-columns: 200px minmax(0, 1fr); } .toc { display: none; } }
+@media (max-width: 1080px) {
+  .shell, .shell.no-toc { grid-template-columns: 176px minmax(0, 1fr); }
+  .toc { display: none; }
+  .side .secs { display: block; }
+}
 @media (max-width: 760px) {
+  html { scroll-padding-top: calc(var(--touch) + var(--sp-16)); }
   .shell, .shell.no-toc { display: block; padding-top: var(--sp-24); }
-  /* the menu: a visually hidden checkbox (keyboard focusable, no script needed) and its label as the button */
-  input.navtoggle { display: block; position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
-  .navbtn { display: flex; align-items: center; gap: var(--sp-10); min-height: var(--touch); margin-bottom: var(--sp-24); border-bottom: var(--hairline);
-    font: 400 var(--fs-small)/1.2 var(--sans); color: var(--muted); cursor: pointer; user-select: none; -webkit-user-select: none; transition: color var(--t-fast); }
+  /* the menu bar stays at the top of the screen; the menu opens under it as a sheet of its own (docs.js), with the
+     current page's sections, so a long page keeps its contents at hand */
+  .navbtn { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: var(--sp-10); width: 100%; min-height: var(--touch);
+    margin: 0 0 var(--sp-24); padding: 0; border: 0; border-bottom: var(--hairline); border-radius: 0; background: var(--paper);
+    font: 400 var(--fs-small)/1.2 var(--sans); color: var(--muted); text-align: left; cursor: pointer; transition: color var(--t-fast); }
   .navbtn:hover { color: var(--ink); }
+  .navbtn:focus-visible { outline-offset: -2px; border-radius: var(--r-xs); }
   .navbtn .cur { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-weight: 500; }
   .navbtn::after { content: ""; flex: none; width: 7px; height: 7px; margin: -3px var(--sp-2) 0 auto; border: solid var(--muted); border-width: 0 1.4px 1.4px 0;
     transform: rotate(45deg); transition: transform var(--t) var(--ease); }
-  .navtoggle:checked + .navbtn::after { transform: translateY(3px) rotate(-135deg); }
-  .navtoggle:focus-visible + .navbtn { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r-xs); }
-  .side { display: none; position: static; max-height: none; margin: calc(-1 * var(--sp-16)) 0 var(--sp-24); padding: 0 0 var(--sp-12); border-bottom: var(--hairline); overflow: visible; }
+  .navbtn[aria-expanded="true"]::after { transform: translateY(3px) rotate(-135deg); }
+  .side { display: none; }
+  .nav-open .side { display: block; position: fixed; z-index: 19; top: var(--nav-top, 0px); right: 0; bottom: 0; left: 0; align-self: stretch; max-height: none; margin: 0;
+    padding: var(--sp-4) max(var(--gutter), env(safe-area-inset-right)) var(--sp-32) max(var(--gutter), env(safe-area-inset-left));
+    overflow-y: auto; overscroll-behavior: contain; background: var(--paper); }
   .side .grp { margin-top: var(--sp-16); }
   .side li a { display: flex; align-items: center; min-height: var(--touch); padding-top: 0; padding-bottom: 0; }
-  .navtoggle:checked ~ .side { display: block; }
   .pager a { min-height: var(--touch); justify-content: center; }
 }
-/* touch screens: the copy button sits under its code block as a full-size target instead of over the first line */
+/* touch screens: the copy button sits under its code block as a full-size target instead of over the first line, and
+   the right-edge fade of a long block stops at the block's frame instead of hanging behind the button */
 @media (hover: none) {
   .code { display: flex; flex-direction: column; }
   .code > .copy { position: static; align-self: flex-end; opacity: 1; min-height: var(--touch); margin: calc(-1 * var(--sp-8)) calc(-1 * var(--sp-10)) calc(-1 * var(--sp-16)); padding: 0 var(--sp-10);
     border: 0; background: none; font-size: var(--fs-caption); color: var(--muted); }
+  .code.more::after { bottom: calc(var(--touch) - var(--sp-8) - var(--sp-16) + 1px); }
 }
 .copy.done { color: var(--ok); }
 @media print { .side, .toc, .navbtn, .pager, .copy { display: none !important; } .shell { display: block; } }
 """
 
-JS = r"""// Copy buttons for code blocks, prompt styling for console blocks, and the on-this-page highlight.
-// Generated by robouse/tools/docs/build_docs.py.
+JS = r"""// Copy buttons for code blocks, prompt styling for console blocks, the section in view, scrolling blocks a keyboard can
+// reach, section links that copy their address, and the phone menu. Generated by robouse/tools/docs/build_docs.py.
 document.querySelectorAll(".code").forEach(function (box) {
   var code = box.querySelector("code");
   var text = code.textContent;
@@ -838,6 +984,7 @@ document.querySelectorAll(".code").forEach(function (box) {
   var copyText = console ? cmd.join("\n") : text;
   var b = document.createElement("button");
   b.type = "button"; b.className = "copy"; b.textContent = "Copy"; b.setAttribute("aria-live", "polite");
+  b.setAttribute("data-hold", "Copied");  // /ui.js keeps the button as wide as "Copied", so the label flips in place
   b.addEventListener("click", function () {
     (navigator.clipboard ? navigator.clipboard.writeText(copyText) : Promise.reject()).then(function () {
       b.textContent = "Copied"; b.classList.add("done");
@@ -849,33 +996,99 @@ document.querySelectorAll(".code").forEach(function (box) {
   });
   box.appendChild(b);
 });
+// The section in view is marked in the on-this-page column and, where that column is gone, under the page in the sidebar.
 (function () {
-  var links = [].slice.call(document.querySelectorAll(".toc a"));
+  var links = [].slice.call(document.querySelectorAll(".toc a, .side .secs a"));
   if (!links.length) return;
-  var heads = links.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); });
+  var idOf = function (a) { return decodeURIComponent(a.getAttribute("href").slice(1)); };
+  var ids = [];
+  links.forEach(function (a) { if (ids.indexOf(idOf(a)) < 0) ids.push(idOf(a)); });
+  var heads = ids.map(function (id) { return document.getElementById(id); });
   function update() {
     var cur = -1;  // above the first section nothing is current; at the very bottom the last section is
     heads.forEach(function (h, i) { if (h && h.getBoundingClientRect().top < 120) cur = i; });
     if (cur >= 0 && innerHeight + scrollY >= document.documentElement.scrollHeight - 2) cur = heads.length - 1;
     if (picked >= 0) cur = picked;  // the entry the reader clicked stays current until they scroll by themselves
-    links.forEach(function (a, i) { a.classList.toggle("on", i === cur); });
+    links.forEach(function (a) { a.classList.toggle("on", cur >= 0 && idOf(a) === ids[cur]); });
   }
   var picked = -1, release = function () { if (picked >= 0) { picked = -1; update(); } };
-  // any in-page link to a section (a contents entry or a heading's own # permalink) makes that section current
-  var ids = links.map(function (a) { return a.getAttribute("href").slice(1); });
+  // any in-page link to a section (a contents entry or a heading's own # link) makes that section current
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest('a[href^="#"]'); if (!a) return;
-    var i = ids.indexOf(decodeURIComponent(a.getAttribute("href").slice(1))); if (i >= 0) { picked = i; update(); }
+    var i = ids.indexOf(idOf(a)); if (i >= 0) { picked = i; update(); }
   });
   ["wheel", "touchstart", "keydown"].forEach(function (t) { window.addEventListener(t, release, { passive: true }); });
   document.addEventListener("scroll", update, { passive: true });
   update();
 })();
-// phones: Esc closes the open docs menu and returns focus to its toggle
-document.addEventListener("keydown", function (e) {
-  var t = document.getElementById("navtoggle");
-  if (e.key === "Escape" && t && t.checked) { t.checked = false; t.focus(); }
-});
+// A code block or table that scrolls sideways is a named region with a tab stop, so a keyboard can reach it and scroll it
+// with the arrow keys; it loses both when it fits again (a wider window, a table listed as blocks).
+(function () {
+  var els = [].slice.call(document.querySelectorAll(".code > pre, .table"));
+  if (!els.length) return;
+  function section(el) {
+    for (var s = el.previousElementSibling; s; s = s.previousElementSibling) {
+      var h = /^H[1-6]$/.test(s.tagName) ? s : s.matches(".hd, .page-head") ? s.querySelector("h1, h2, h3, h4") : null;
+      if (h) return h.textContent.trim();
+    }
+    return el.parentElement && !el.parentElement.classList.contains("prose") ? section(el.parentElement) : "";
+  }
+  function name(el) {
+    if (el.tagName === "PRE") {
+      var first = el.textContent.split("\n")[0].replace(/^\$ /, "").trim();
+      return "Code: " + (first.length > 60 ? first.slice(0, 59) + "…" : first);
+    }
+    var h = section(el);
+    return "Table" + (h ? ": " + h : "");
+  }
+  function sync() {
+    els.forEach(function (el) {
+      var over = el.scrollWidth > el.clientWidth + 1;
+      if (over && !el.hasAttribute("tabindex")) { el.tabIndex = 0; el.setAttribute("role", "region"); el.setAttribute("aria-label", name(el)); }
+      else if (!over && el.hasAttribute("tabindex")) { el.removeAttribute("tabindex"); el.removeAttribute("role"); el.removeAttribute("aria-label"); }
+    });
+  }
+  sync();
+  if (window.ResizeObserver) { var ro = new ResizeObserver(sync); els.forEach(function (el) { ro.observe(el); }); }
+  else window.addEventListener("resize", sync);
+  window.addEventListener("load", sync);  // web fonts change line widths
+})();
+// A section's # link also copies the section's address.
+(function () {
+  var live = document.createElement("span");
+  live.className = "vh"; live.setAttribute("aria-live", "polite");
+  document.body.appendChild(live);
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a.hash");
+    if (!a || !navigator.clipboard) return;
+    navigator.clipboard.writeText(location.href.split("#")[0] + a.getAttribute("href")).then(function () {
+      a.classList.add("done"); live.textContent = "Link copied";
+      clearTimeout(a._t); a._t = setTimeout(function () { a.classList.remove("done"); live.textContent = ""; }, 1400);
+    }, function () {});
+  });
+})();
+// Phones: Menu opens the docs menu as a sheet under the bar; a link, Escape or Menu again closes it, and a page restored
+// from the back-forward cache never comes back with it open.
+(function () {
+  var btn = document.querySelector(".navbtn"), shell = document.querySelector(".shell"), side = document.getElementById("docs-nav");
+  if (!btn || !shell || !side) return;
+  var isOpen = function () { return shell.classList.contains("nav-open"); };
+  function place() { shell.style.setProperty("--nav-top", Math.max(0, Math.round(btn.getBoundingClientRect().bottom)) + "px"); }
+  function set(open, focus) {
+    shell.classList.toggle("nav-open", open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) place();
+    if (!open && focus) btn.focus();
+  }
+  btn.addEventListener("click", function () { set(!isOpen()); });
+  side.addEventListener("click", function (e) { if (isOpen() && e.target.closest("a")) set(false); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && isOpen()) set(false, true); });
+  window.addEventListener("scroll", function () { if (isOpen()) place(); }, { passive: true });
+  window.addEventListener("resize", function () { if (isOpen()) place(); });
+  window.addEventListener("pageshow", function () { set(false); });
+  var wide = window.matchMedia("(min-width: 761px)"), shut = function (m) { if (m.matches) set(false); };
+  if (wide.addEventListener) wide.addEventListener("change", shut); else wide.addListener(shut);
+})();
 """
 
 

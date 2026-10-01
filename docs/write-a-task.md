@@ -50,7 +50,8 @@ This example turns "put the red block in the bowl" into "put the blue block in t
 
 ```sh
 mkdir -p mytasks
-cp -r "$(robouse tasks --path)/libero-style/libero-red-block-in-bowl" mytasks/blue-block-in-bowl
+cp -r "$(robouse tasks --path)/libero-style/libero-red-block-in-bowl" \
+  mytasks/blue-block-in-bowl
 ```
 
 In `mytasks/blue-block-in-bowl/task.md`, change the ids, the goal and the instruction:
@@ -91,7 +92,7 @@ $ robouse run --task mytasks/blue-block-in-bowl --harness oracle --out runs/mine
 
 ```sh
 #!/bin/bash
-# Reference solution: pick the blue block and drop it in the bowl, using only robo.
+# Reference solution: put the blue block in the bowl, using only robo.
 set -euo pipefail
 robo move-to 0.10 -0.12 0.10 --grip -1   # above the blue block, fingers open
 robo move-to 0.10 -0.12 0.02             # down around it

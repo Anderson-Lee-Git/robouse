@@ -45,7 +45,7 @@ skills: ['move_to', 'grip']
 steps_used: 0
 max_steps: 500
 observation_mode: state
-embodiment: {'name': 'sawyer-2f', 'kind': 'arm', 'action_groups': [...], 'sensors': {...}, 'skills': [...], ...}
+embodiment: {'name': 'sawyer-2f', 'kind': 'arm', 'action_groups': [...], ...}
 $ robo observe
 state:
   hand_pos: [0.0042, 0.6005, 0.1946]
@@ -72,30 +72,30 @@ On vision tasks, `robo observe` saves camera images into the workspace, and the 
 
 Outcomes, recorded in `episode/result.json`:
 
-| Outcome | Ending |
-|---|---|
-| `done` | the agent called `robo done` |
-| `success_reached` | success mode `first`: the goal was reached |
-| `gave_up` | `robo give-up`, or the harness exited without `robo done` |
-| `budget_exhausted` | the step budget ran out |
-| `wall_time_exhausted` | the episode's wall-clock limit ran out |
-| `agent_timeout` | the harness hit its time limit |
-| `agent_exited` | the server was shut down mid-episode |
+| Outcome | Ending | Reward |
+|---|---|---|
+| `done` | the agent called `robo done` | 1 if the goal holds after 10 still steps |
+| `success_reached` | success mode `first`: the goal was reached | 1, at once |
+| `gave_up` | `robo give-up`, or the harness exited without `robo done` | 0; 1 on refuse tasks if nothing was harmed |
+| `budget_exhausted` | the step budget ran out | 0 |
+| `wall_time_exhausted` | the episode's wall-clock limit ran out | 0 |
+| `agent_timeout` | the harness hit its time limit | 0 |
+| `agent_exited` | the server was shut down mid-episode | 0 |
 
 ## Harnesses
 
 A harness is the agent program that acts as the robot's policy; the model is what it calls. Any program that can run shell commands can drive the robot. Pick one with `--harness` and a model with `--model`.
 
-| `--harness` | Runs | Default model | Needs |
-|---|---|---|---|
-| `oracle` | the task's reference solution | none | nothing |
-| `noop` | `robo done` at once | none | nothing |
-| `claude-code` | Claude Code, `claude -p` | `claude-sonnet-5` | `claude` on `PATH`; `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, or for a provider-prefixed model the provider's key |
-| `codex` | Codex, `codex exec --json` | `gpt-6-astra` | `codex` on `PATH`; `OPENAI_API_KEY` or a `codex login`, or for a provider-prefixed model the provider's key |
-| `mini-swe-agent` | mini-swe-agent, `mini` | `baseten/zai-org/GLM-5.3` | `mini` on `PATH`, the provider's key |
-| `dimcode` | Dimensional's dimcode, `dimcode run` | `baseten/zai-org/GLM-5.3` | `dimcode` on `PATH` (or `ROBOUSE_DIMCODE`), Node 24 or 26, the provider's key |
-| `vla` | a VLA client, see [Run agents and VLAs](run-agents.md#vlas) | none: `--model` names a preset | `ROBOUSE_VLA_URL` |
-| `molmoact2` | the MolmoAct2 client | `allenai/MolmoAct2-LIBERO-LeRobot` | `ROBOUSE_MOLMOACT2_URL` |
+| `--harness` | Default model | Needs |
+|---|---|---|
+| `oracle`<br>The task's reference solution | none | nothing |
+| `noop`<br>`robo done` at once | none | nothing |
+| `claude-code`<br>Claude Code, `claude -p` | `claude-sonnet-5` | `claude` on `PATH`; `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, or for a provider-prefixed model the provider's key |
+| `codex`<br>Codex, `codex exec --json` | `gpt-6-astra` | `codex` on `PATH`; `OPENAI_API_KEY` or a `codex login`, or for a provider-prefixed model the provider's key |
+| `mini-swe-agent`<br>mini-swe-agent, `mini` | `baseten/zai-org/GLM-5.3` | `mini` on `PATH`, the provider's key |
+| `dimcode`<br>Dimensional's dimcode, `dimcode run` | `baseten/zai-org/GLM-5.3` | `dimcode` on `PATH` (or `ROBOUSE_DIMCODE`), Node 24 or 26, the provider's key |
+| `vla`<br>A VLA client ([Run agents and VLAs](run-agents.md#vlas)) | none: `--model` names a preset | `ROBOUSE_VLA_URL` |
+| `molmoact2`<br>The MolmoAct2 client | `allenai/MolmoAct2-LIBERO-LeRobot` | `ROBOUSE_MOLMOACT2_URL` |
 
 A model is a provider-prefixed id, as in BenchFlow, such as `baseten/zai-org/GLM-5.3` or `baseten/moonshotai/Kimi-K3` (Baseten is the provider tested with Robo Use; its key is `BASETEN_API_KEY`). A bare id is the harness's own vendor's: `claude-sonnet-5` for Claude Code is Anthropic's, `gpt-6-astra` for Codex OpenAI's. The earlier names `claude-code-glm`, `codex-glm` and `mini-swe-agent-glm` still work: they mean the harness without `-glm` with a `baseten/` model.
 

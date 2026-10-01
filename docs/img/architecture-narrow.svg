@@ -27,7 +27,7 @@
   <text x="250" y="572" class="k end">the runner saves its output</text>
   <rect x="1" y="590" width="242" height="172" rx="8" class="box"/>
   <text x="16" y="615" class="t">Trial folder</text>
-  <text x="16" y="635" class="m o">&lt;out&gt;/&lt;task&gt;__&lt;harness&gt;__&lt;id&gt;/</text>
+  <text x="16" y="635" class="m o">OUT/&lt;task&gt;__&lt;harness&gt;__&lt;id&gt;/</text>
   <text x="16" y="659" class="m">agent/trajectory.json</text>
   <text x="16" y="677" class="m">agent/stdout.jsonl</text>
   <text x="16" y="695" class="m">episode/result.json</text>
