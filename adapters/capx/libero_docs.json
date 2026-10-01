@@ -1,0 +1,234 @@
+{
+ "combined_doc": "get_observation() -> dict[str, typing.Any]\n  Doc:\n    Get the observation of the environment.\n    Returns:\n        observation:\n            A dictionary containing the observation of the environment.\n            The dictionary contains the following keys:\n            - [\"agentview\"][\"images\"][\"rgb\"]: Current color camera image as a numpy array of shape (H, W, 3), dtype uint8.\n            - [\"agentview\"][\"images\"][\"depth\"]: Current depth camera image as a numpy array of shape (H, W), dtype float32.\n            - [\"agentview\"][\"intrinsics\"]: Camera intrinsic matrix as a numpy array of shape (3, 3), dtype float64.\n            - [\"agentview\"][\"pose_mat\"]: Camera extrinsic matrix as a numpy array of shape (4, 4), dtype float64.\n            - [\"robot0_eye_in_hand\"][\"images\"][\"rgb\"]: Current wrist camera image as a numpy array of shape (H, W, 3), dtype uint8.\n            - [\"robot0_eye_in_hand\"][\"images\"][\"depth\"]: Current wrist camera depth image as a numpy array of shape (H, W), dtype float32.\n            - [\"robot0_eye_in_hand\"][\"intrinsics\"]: Wrist camera intrinsic matrix as a numpy array of shape (3, 3), dtype float64.\n            - [\"robot0_eye_in_hand\"][\"pose_mat\"]: Wrist camera extrinsic matrix as a numpy array of shape (4, 4), dtype float64.\n            - [\"robot_cartesian_pos\"]: Current end-effector (panda_hand) pose in the robot/world frame as a numpy array of shape (8,), dtype float64. The first 3 elements are the robot's end-effector XYZ, the next 4 elements are the quaternion wxyz, and the last element is the gripper position normalized, 0 (closed) to 1 (open).\n            - [\"robot_joint_pos\"]: Current joint positions as a numpy array of shape (7,), dtype float64. The last element is the gripper position normalized, 0 (closed) to 1 (open).\n\nget_object_pose(object_name: str) -> tuple[numpy.ndarray, numpy.ndarray]\n  Doc:\n    Get the pose of an object in the environment from a natural language description.\n    The quaternion from get_object_pose may be unreliable, so disregard it and use the grasp pose quaternion OR (0, 0, 1, 0) wxyz as the gripper down orientation if using this for placement position.\n    \n    Args:\n        object_name: The name of the object to get the pose of, in underscore separated lowercase words.\n    \n    Returns:\n        position: (3,) XYZ in meters.\n        quaternion_wxyz: (4,) WXYZ unit quaternion.\n\nget_all_object_poses() -> dict[str, tuple[numpy.ndarray, numpy.ndarray]]\n  Doc:\n    Get the poses of all objects in the scene (both movable and fixed).\n    \n    Returns:\n        Dictionary mapping object name to a tuple of:\n            position: (3,) XYZ in meters.\n            quaternion_wxyz: (4,) WXYZ unit quaternion.\n\nsample_grasp_pose(object_name: str) -> None\n  Doc:\n    Sample a grasp pose for an object in the environment from a natural language description.\n    Do use the grasp sample quaternion from sample_grasp_pose.\n    \n    Args:\n        object_name: The name of the object to sample a grasp pose for, in underscore separated lowercase words.\n    \n    Returns:\n        position: (3,) XYZ in meters.\n        quaternion_wxyz: (4,) WXYZ unit quaternion.\n\ngoto_pose(position: numpy.ndarray, quaternion_wxyz: numpy.ndarray, z_approach: float = 0.0) -> None\n  Doc:\n    Go to pose using Inverse Kinematics.\n    There is no need to call a second goto_pose with the same position and quaternion_wxyz after calling it with z_approach.\n    Args:\n        position: (3,) XYZ in meters.\n        quaternion_wxyz: (4,) WXYZ unit quaternion.\n        z_approach: (float) Z-axis distance offset for goto_pose insertion approach motion. Will first arrive at position + z_approach meters in Z-axis before moving to the requested pose. Useful for more precise grasp approaches. Default is 0.0.\n    Returns:\n        None\n\nopen_gripper() -> None\n  Doc:\n    Open gripper fully.\n    \n    Args:\n        None\n\nclose_gripper() -> None\n  Doc:\n    Close gripper fully.\n    \n    Args:\n        None",
+ "functions": [
+  "close_gripper",
+  "get_all_object_poses",
+  "get_object_pose",
+  "get_observation",
+  "goto_pose",
+  "open_gripper",
+  "sample_grasp_pose"
+ ],
+ "tasks": {
+  "libero_object_swap:0": {
+   "suite": "libero_object_swap",
+   "index": 0,
+   "name": "pick_up_the_alphabet_soup_and_place_it_in_the_basket",
+   "language": "Pick the alphabet soup and place it in the basket",
+   "goal": [
+    "In",
+    "alphabet_soup_1",
+    "basket_1_contain_region"
+   ]
+  },
+  "libero_object_swap:1": {
+   "suite": "libero_object_swap",
+   "index": 1,
+   "name": "pick_up_the_cream_cheese_and_place_it_in_the_basket",
+   "language": "Pick the cream cheese and place it in the basket",
+   "goal": [
+    "In",
+    "cream_cheese_1",
+    "basket_1_contain_region"
+   ]
+  },
+  "libero_object_swap:2": {
+   "suite": "libero_object_swap",
+   "index": 2,
+   "name": "pick_up_the_salad_dressing_and_place_it_in_the_basket",
+   "language": "Pick the salad dressing and place it in the basket",
+   "goal": [
+    "In",
+    "salad_dressing_1",
+    "basket_1_contain_region"
+   ]
+  },
+  "libero_object_swap:3": {
+   "suite": "libero_object_swap",
+   "index": 3,
+   "name": "pick_up_the_bbq_sauce_and_place_it_in_the_basket",
+   "language": "Pick the bbq sauce and place it in the basket",
+   "goal": [
+    "In",
+    "bbq_sauce_1",
+    "basket_1_contain_region"
+   ]
+  },
+  "libero_object_swap:4": {
+   "suite": "libero_object_swap",
+   "index": 4,
+   "name": "pick_up_the_ketchup_and_place_it_in_the_basket",
+   "language": "Pick the ketchup and place it in the basket",
+   "goal": [
+    "In",
+    "ketchup_1",
+    "basket_1_contain_region"
+   ]
+  },
+  "libero_object_swap:5": {
+   "suite": "libero_object_swap",
+   "index": 5,
+   "name": "pick_up_the_tomato_sauce_and_place_it_in_the_basket",
+   "language": "Pick the tomato sauce and place it in the basket",
+   "goal": [
+    "In",
+    "tomato_sauce_1",
+    "basket_1_contain_region"
+   ]
+  },
+  "libero_object_swap:6": {
+   "suite": "libero_object_swap",
+   "index": 6,
+   "name": "pick_up_the_butter_and_place_it_in_the_basket",
+   "language": "Pick the butter and place it in the basket",
+   "goal": [
+    "In",
+    "butter_1",
+    "basket_1_contain_region"
+   ]
+  },
+  "libero_object_swap:7": {
+   "suite": "libero_object_swap",
+   "index": 7,
+   "name": "pick_up_the_milk_and_place_it_in_the_basket",
+   "language": "Pick the milk and place it in the basket",
+   "goal": [
+    "In",
+    "milk_1",
+    "basket_1_contain_region"
+   ]
+  },
+  "libero_object_swap:8": {
+   "suite": "libero_object_swap",
+   "index": 8,
+   "name": "pick_up_the_chocolate_pudding_and_place_it_in_the_basket",
+   "language": "Pick the chocolate pudding and place it in the basket",
+   "goal": [
+    "In",
+    "chocolate_pudding_1",
+    "basket_1_contain_region"
+   ]
+  },
+  "libero_object_swap:9": {
+   "suite": "libero_object_swap",
+   "index": 9,
+   "name": "pick_up_the_orange_juice_and_place_it_in_the_basket",
+   "language": "Pick the orange juice and place it in the basket",
+   "goal": [
+    "In",
+    "orange_juice_1",
+    "basket_1_contain_region"
+   ]
+  },
+  "libero_spatial_swap:0": {
+   "suite": "libero_spatial_swap",
+   "index": 0,
+   "name": "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate",
+   "language": "Pick the akita black bowl between the plate and the ramekin and place it on the plate",
+   "goal": [
+    "On",
+    "akita_black_bowl_1",
+    "plate_1"
+   ]
+  },
+  "libero_spatial_swap:1": {
+   "suite": "libero_spatial_swap",
+   "index": 1,
+   "name": "pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate",
+   "language": "Pick the akita black bowl next to the ramekin and place it on the plate",
+   "goal": [
+    "On",
+    "akita_black_bowl_1",
+    "plate_1"
+   ]
+  },
+  "libero_spatial_swap:2": {
+   "suite": "libero_spatial_swap",
+   "index": 2,
+   "name": "pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate",
+   "language": "Pick the akita black bowl from table center and place it on the plate",
+   "goal": [
+    "On",
+    "akita_black_bowl_1",
+    "plate_1"
+   ]
+  },
+  "libero_spatial_swap:3": {
+   "suite": "libero_spatial_swap",
+   "index": 3,
+   "name": "pick_up_the_black_bowl_on_the_cookie_box_and_place_it_on_the_plate",
+   "language": "Pick the akita black bowl on the cookies box and place it on the plate",
+   "goal": [
+    "On",
+    "akita_black_bowl_1",
+    "plate_1"
+   ]
+  },
+  "libero_spatial_swap:4": {
+   "suite": "libero_spatial_swap",
+   "index": 4,
+   "name": "pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate",
+   "language": "Pick the akita black bowl in the top layer of the wooden cabinet and place it on the plate",
+   "goal": [
+    "On",
+    "akita_black_bowl_1",
+    "plate_1"
+   ]
+  },
+  "libero_spatial_swap:5": {
+   "suite": "libero_spatial_swap",
+   "index": 5,
+   "name": "pick_up_the_black_bowl_on_the_ramekin_and_place_it_on_the_plate",
+   "language": "Pick the akita black bowl on the ramekin and place it on the plate",
+   "goal": [
+    "On",
+    "akita_black_bowl_1",
+    "plate_1"
+   ]
+  },
+  "libero_spatial_swap:6": {
+   "suite": "libero_spatial_swap",
+   "index": 6,
+   "name": "pick_up_the_black_bowl_next_to_the_cookie_box_and_place_it_on_the_plate",
+   "language": "Pick the akita black bowl next to the cookies box and place it on the plate",
+   "goal": [
+    "On",
+    "akita_black_bowl_1",
+    "plate_1"
+   ]
+  },
+  "libero_spatial_swap:7": {
+   "suite": "libero_spatial_swap",
+   "index": 7,
+   "name": "pick_up_the_black_bowl_on_the_stove_and_place_it_on_the_plate",
+   "language": "Pick the akita black bowl on the stove and place it on the plate",
+   "goal": [
+    "On",
+    "akita_black_bowl_1",
+    "plate_1"
+   ]
+  },
+  "libero_spatial_swap:8": {
+   "suite": "libero_spatial_swap",
+   "index": 8,
+   "name": "pick_up_the_black_bowl_next_to_the_plate_and_place_it_on_the_plate",
+   "language": "Pick the akita black bowl next to the plate and place it on the plate",
+   "goal": [
+    "On",
+    "akita_black_bowl_1",
+    "plate_1"
+   ]
+  },
+  "libero_spatial_swap:9": {
+   "suite": "libero_spatial_swap",
+   "index": 9,
+   "name": "pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate",
+   "language": "Pick the akita black bowl on the wooden cabinet and place it on the plate",
+   "goal": [
+    "On",
+    "akita_black_bowl_1",
+    "plate_1"
+   ]
+  }
+ }
+}

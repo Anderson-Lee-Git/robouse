@@ -60,9 +60,12 @@ ENV: dict[str, str] = {
     "ROBOUSE_METADRIVE_PYTHON": "Python of the MetaDrive virtualenv (default <cache>/metadrive-venv/bin/python)",
     "ROBOUSE_MYOSUITE_PYTHON": "Python of the MyoSuite virtualenv (default <cache>/myosuite-venv/bin/python)",
     "ROBOUSE_ROBOCASA_PYTHON": "Python of the RoboCasa virtualenv (default <cache>/robocasa-venv/bin/python)",
+    "ROBOUSE_RLEBENCH_PYTHON": "Python of the RLE-Bench virtualenv (default <cache>/rlebench-venv/bin/python)",
+    "ROBOUSE_CAPX_PYTHON": "Python of the CaP-X virtualenv (default <cache>/capx-venv/bin/python)",
+    "ROBOUSE_CAPX_LIBERO_PYTHON": "Python of the CaP-X LIBERO virtualenv (default <cache>/capx-libero-venv/bin/python)",
     **{
         f"ROBOUSE_{b}_QUIET": f"0 shows the {b.lower()} worker's stderr (default 1)"
-        for b in ("DEXJOCO", "DMCONTROL", "HUMANOIDBENCH", "MANISKILL", "METADRIVE", "MYOSUITE", "ROBOCASA")
+        for b in ("DEXJOCO", "DMCONTROL", "HUMANOIDBENCH", "MANISKILL", "METADRIVE", "MYOSUITE", "ROBOCASA", "RLEBENCH", "CAPX", "CAPX_LIBERO")
     },
     "ROBOUSE_MANISKILL_DEBUG": "1: the ManiSkill worker logs each request",
     "ROBOUSE_HUMANOIDBENCH_POLICY": "HumanoidBench low-level walking policy (default <cache>/humanoidbench/h1_motion.pt)",
@@ -132,6 +135,9 @@ PUBLIC = frozenset(
         "ROBOUSE_METADRIVE_PYTHON",
         "ROBOUSE_MYOSUITE_PYTHON",
         "ROBOUSE_ROBOCASA_PYTHON",
+        "ROBOUSE_RLEBENCH_PYTHON",
+        "ROBOUSE_CAPX_PYTHON",
+        "ROBOUSE_CAPX_LIBERO_PYTHON",
         "ROBOUSE_VLA_URL",
         "ROBOUSE_VLA_TOKEN",
         "ROBOUSE_VLA_POLICY_CONFIG",

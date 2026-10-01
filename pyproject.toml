@@ -126,7 +126,7 @@ exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["tasks", "components", "assets"]
+extend-exclude = ["tasks", "components", "assets", "src/robouse/backends/rlebench/rlebench_upstream", "src/robouse/backends/capx/capx_upstream"]  # vendored upstream code
 per-file-target-version = { "tools/**" = "py312" }  # maintainer tools run on the development environment
 
 [tool.ruff.lint]
