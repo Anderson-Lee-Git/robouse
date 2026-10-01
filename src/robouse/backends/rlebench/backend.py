@@ -270,6 +270,10 @@ class RLEBenchBackend(Backend):
             st["submitted"] = self.answer
         return st
 
+    def privileged_state(self) -> dict:
+        """What only the reference solution sees (oracle token): object poses and extents; never masses."""
+        return self.worker.call("private_state")
+
     def hand_pos(self) -> np.ndarray:
         return np.asarray(self.observe()["eef_pos"], dtype=float)
 

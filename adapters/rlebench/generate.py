@@ -6,10 +6,10 @@ Imports the interactive-control families that fit one agent-as-policy episode:
   The scenes are RLE-Bench's own code (src/robouse/backends/rlebench/rlebench_upstream/), with RLE-Bench's seeds, action
   space, public observations, budgets and scoring; see src/robouse/backends/rlebench/backend.py for the adaptation.
 
-Reference solutions are RLE-Bench's own: replays of its recorded trajectories (copied from the pinned RLE-Bench checkout
-given with --rle into each task's oracle/ folder) and its RGB-based HiddenCOM solver.
+Reference solutions: RLE-Bench's own RGB-based HiddenCOM solver, and closed-loop controllers of ours for the tabletop tasks
+(RLE-Bench's recorded trajectories do not reproduce open-loop on this build; see src/robouse/backends/rlebench/oracles.py).
 
-Usage: python adapters/rlebench/generate.py --rle PATH/TO/RLE-Bench [--out tasks/rle-bench]
+Usage: python adapters/rlebench/generate.py [--out tasks/rle-bench]
 """
 
 from __future__ import annotations
@@ -40,12 +40,13 @@ print("success" if r.get("success") else "fail", r.get("outcome"))
 EOF
 """
 
-ORACLE_REPLAY = """\
+ORACLE_TABLETOP = """\
 #!/bin/bash
-# Reference solution: RLE-Bench's own, a replay of its recorded control trajectory ({npz}, from RLE-Bench's
-# tasks/task03/_template/solution/actions/, MIT) through the robo socket, then `robo done`.
+# Reference solution: a closed-loop controller that reads the objects' poses (given only to the reference solution; never
+# masses or which cube is heavy) and drives the robot with RLE-Bench's move skill and base actions. RLE-Bench's own
+# recorded trajectory for this task does not reproduce when replayed open-loop on this build, so it is not used.
 set -euo pipefail
-python -m robouse.oracle --backend rlebench --env "$(dirname "$0")/actions.npz"
+python -m robouse.oracle --backend rlebench --env {tid}
 """
 
 ORACLE_HIDDEN = """\
@@ -301,11 +302,9 @@ You have **{t['max_steps']:,} control steps**. The episode ends when they are us
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--rle", required=True, help=f"an RLE-Bench checkout at commit {RLE_COMMIT[:7]}")
     ap.add_argument("--out", default=str(ROOT / "tasks" / "rle-bench"))
     a = ap.parse_args()
-    rle, out = Path(a.rle), Path(a.out)
-    actions = rle / "tasks" / "task03" / "_template" / "solution" / "actions"
+    out = Path(a.out)
     if out.exists():
         shutil.rmtree(out)
     for tid, t in TASKS.items():
@@ -314,10 +313,8 @@ def main() -> None:
             oracle = ORACLE_HIDDEN.format(tid=tid)
         else:
             meta, body = tabletop(tid, t)
-            oracle = ORACLE_REPLAY.format(npz=f"{t['task']}.npz")
+            oracle = ORACLE_TABLETOP.format(tid=tid)
         write_task(out / tid, meta, body, oracle, VERIFY)
-        if t["task"] != "HiddenCOM":
-            shutil.copy2(actions / f"{t['task']}.npz", out / tid / "oracle" / "actions.npz")
         print(tid)
 
 

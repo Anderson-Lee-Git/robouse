@@ -178,6 +178,25 @@ class Worker:
             out["pan_positions"] = {k: _l(v) for k, v in pos["pan_positions"].items()}
         return out
 
+    def private_state(self) -> dict:
+        """Object poses and collision extents, for the reference solution only (the episode server gives them only to
+        requests carrying the oracle token). No masses or hidden identities."""
+        if self.mode != "tabletop":
+            return {}
+        m, d = self.env.sim.model._model, self.env.sim.data._data
+        out = {}
+        for name, bid in self.env.obj_body_id.items():
+            gids = [g for g in range(m.ngeom) if m.geom_bodyid[g] == bid and (m.geom_contype[g] or m.geom_conaffinity[g])]
+            lo, hi = np.full(3, np.inf), np.full(3, -np.inf)
+            for g in gids:
+                R = d.geom_xmat[g].reshape(3, 3)
+                c = d.geom_xpos[g] + R @ m.geom_aabb[g][:3]
+                e = np.abs(R) @ m.geom_aabb[g][3:]
+                lo, hi = np.minimum(lo, c - e), np.maximum(hi, c + e)
+            q = d.xquat[bid]
+            out[name] = {"pos": _l(d.xpos[bid]), "quat": _l([q[1], q[2], q[3], q[0]]), "box_min": _l(lo), "box_max": _l(hi)}
+        return {"objects": out}
+
     # ---- scoring (called once, when the episode ends) ---------------------------------------------------------------
     def quality(self) -> dict:
         """Task quality in [0, 1] as RLE-Bench scores it at `finish()`: TowerMaxHeight and CantileverOverhang settle the

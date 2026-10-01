@@ -12,6 +12,8 @@ from .base import Backend
 BACKENDS: dict[str, tuple[str, str]] = {
     "adroit": ("adroit", "AdroitBackend"),  # Gymnasium-Robotics Adroit hand
     "behavior": ("behavior", "BehaviorBackend"),  # BEHAVIOR-1K; remote GPU worker
+    "capx": ("capx", "CapxBackend"),  # CaP-X code-as-policy tasks (privileged API); simulator worker
+    "capx_libero": ("capx", "CapxLiberoBackend"),  # CaP-X's LIBERO-PRO tasks (privileged API); simulator worker
     "components": ("components", "ComposedBackend"),  # tasks composed from components (robouse tasks init)
     "remix": ("components", "ComposedBackend"),  # the name composed tasks had before 0.2
     "crazyflie": ("crazyflie", "CrazyflieBackend"),
