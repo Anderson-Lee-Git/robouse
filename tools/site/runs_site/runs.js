@@ -13,6 +13,8 @@
   function rew(x) { return x == null || isNaN(+x) ? "" : (+x).toFixed(1); }
   function mfirst(l) { var i = String(l).indexOf(" + "); return i < 0 ? l : l.slice(i + 3) + " · " + l.slice(0, i); }  // "Claude Code + Opus 5.5" -> "Opus 5.5 · Claude Code"
   function num(x) { return x == null ? "" : Number(x).toLocaleString("en-US"); }
+  // a name whose hyphenated words never break at their hyphens (build_runs_site.nb; .nw in /ui.css)
+  function nb(s) { return String(s == null ? "" : s).split(" ").map(function (w) { return w.indexOf("-") >= 0 ? '<span class="nw">' + h(w) + "</span>" : h(w); }).join(" "); }
   function kfmt(x) { x = +x || 0; return x >= 1e6 ? (x / 1e6).toFixed(2) + "M" : x >= 1e4 ? Math.round(x / 1e3) + "k" : x >= 1e3 ? (x / 1e3).toFixed(1) + "k" : String(x); }
   function getJSON(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status + " " + u); return r.json(); }); }
   var coll = typeof Intl !== "undefined" ? new Intl.Collator(undefined, {numeric: true, sensitivity: "base"}) : null;
@@ -321,7 +323,7 @@
   function ocOf(d) { return d.outcome === "budget_stop" && d.budget_stop && d.budget_stop.cap_usd != null ? "Stopped at the $" + d.budget_stop.cap_usd + " budget" : oc(d.outcome); }
   var WITHHELD = "Trajectory not published: during this trial the agent looked at files outside its workspace (for example listing the home folder or searching the whole disk), so its commands and their outputs may show unrelated local files. The recording, the camera images, the reward and the outcome are shown.";
   // a trial whose model received no camera images (its recorded image_input; build_runs_site.noimg_tag on the server-built pages)
-  var NOIMG = '<span class="rtag" title="The model received no camera images in these runs; vision tasks were attempted from text observations only.">no image input</span>';
+  var NOIMG = '<span class="noimg" title="The model received no camera images in these runs; vision tasks were attempted from text observations only.">no image input</span>';
 
   /* ---------------------------------------------------------------- trial page */
   function initTrial(id) {
@@ -701,7 +703,18 @@
   /* ---------------------------------------------------------------- compare */
   function initCompare(root) {
     var p = new URLSearchParams(location.search), a = p.get("a"), b = p.get("b");
+    // each pair's mark (/models.json `icon`), for the trial pickers' options (data-mark, drawn by /ui.js)
+    var icons = getJSON("/models.json").then(function (m) { var o = {}; (m.pairs || []).forEach(function (q) { o[q.key] = q.icon || ""; }); return o; }, function () { return {}; });
+    var IDX = null;
+    function markOptions(sel) {
+      icons.then(function (ic) {
+        if (!IDX) return;
+        [].forEach.call(sel.options, function (o) { var t = IDX.trials[o.value]; if (t) o.setAttribute("data-mark", ic[IDX.hm[t[1]][1]] || ""); });
+        if (sel._lb && sel._lb.sync) sel._lb.sync();
+      });
+    }
     getJSON("/runs/d/trials.json").then(function (idx) {
+      IDX = idx;
       root.setAttribute("aria-busy", "false");
       var T = idx.trials, byTask = {};
       Object.keys(T).forEach(function (id) { (byTask[T[id][0]] = byTask[T[id][0]] || []).push(id); });
@@ -742,6 +755,7 @@
         el.innerHTML = '<select aria-label="Trial ' + side.toUpperCase() + '" data-full>' + ids.map(function (x) { return '<option value="' + h(x) + '"' + (x === id ? " selected" : "") + ">" + h(label(x)) + "</option>"; }).join("") +
           '</select><div class="cbody" aria-busy="true"><div class="vbox skel"></div><span class="skel" style="width:60%;height:14px;margin-top:12px"></span></div>';
         $("select", el).addEventListener("change", function (e) { var q = new URLSearchParams(location.search); q.set(side, e.target.value); location.search = "?" + q.toString(); });
+        markOptions($("select", el));
         var body = $(".cbody", el);
         getJSON("/runs/d/" + id + ".json").then(function (d) {
           var st = d.status, vd = d.verdict;
@@ -750,7 +764,7 @@
             ["Time", dur(d.wall)], ["Reward", d.reward != null && +d.reward !== 0 && +d.reward !== 1 ? rew(d.reward) : ""]].filter(function (f) { return f[1]; });
           var said = d.withheld || st === "infra" ? "" : String(vd.claim_text || "").replace(/^\[runner\]\s*/, "");
           body.innerHTML = (d.video ? '<div class="vbox"><video src="' + h(d.video) + '" poster="' + h(d.video.replace("/runs/v/", "/runs/p/").replace(/\.mp4$/, ".jpg")) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="metadata"></video></div>' : "") +
-            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0])) + "</a>" + (d.image_input === false ? NOIMG : "") + "</p>" +
+            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.model_label ? (d.mark || "") + nb(d.model_label) + "\u00a0· " + (d.hmark || "") + nb(d.harness_label) : (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0]))) + "</a>" + (d.image_input === false ? NOIMG : "") + "</p>" +
             (facts.length ? '<dl class="facts">' + facts.map(function (f) { return "<div><dt>" + f[0] + "</dt><dd>" + h(f[1]) + "</dd></div>"; }).join("") + "</dl>" : "") +
             (d.withheld ? '<div class="withheld" role="note"><b>Trajectory withheld</b><p>The agent looked at files outside its workspace.</p></div>' : (said ? '<p class="said"><span class="muted">' + (vd.claim === "done" || vd.claim === "give_up" ? "The agent: " : "Its last message: ") + "</span>" + h(said.slice(0, 400)) + "</p>" : "") +
               (d.steps.length ? '<ol class="slist">' + stepListHTML(d) + "</ol>" : quiet(d.video ? "No trajectory was recorded." : "No recording or trajectory: the trial ended before the agent acted.")));
