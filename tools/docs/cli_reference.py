@@ -79,12 +79,13 @@ def main() -> None:
             continue
         text = helptext(a.robouse, name, "--help")
         out += ["", f"## robouse {name}", "", *block(f"robouse {name} --help", text)]
+        if name in NOTES:  # the note is about the whole command, so it comes before any subcommand's heading
+            out += ["", NOTES[name]]
         subs = subcommands(text)
         for sub, sdesc in subs if any(d for _, d in subs) else []:  # a choice argument, not subcommands, has no help lines
-            if not sdesc.startswith("(maintainers)"):
-                out += ["", *block(f"robouse {name} {sub} --help", helptext(a.robouse, name, sub, "--help"))]
-        if name in NOTES:
-            out += ["", NOTES[name]]
+            if not sdesc.startswith("(maintainers)"):  # each subcommand under its own heading, so it can be linked
+                out += ["", f"### robouse {name} {sub}", "",
+                        *block(f"robouse {name} {sub} --help", helptext(a.robouse, name, sub, "--help"))]
     out += ["", "## robo", "", *block("robo help", helptext(robo, "help")), "", ROBO_NOTE]
     DOC.write_text("\n".join(out) + "\n")
     print(f"wrote {DOC} from {version}")
