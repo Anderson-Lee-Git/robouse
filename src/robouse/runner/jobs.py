@@ -81,6 +81,7 @@ def run_many(
     mode: str | None = None,
     extra_instruction: str = "",
     prior_learnings: str | None = None,
+    interface: str | None = None,
 ) -> list[dict]:
     tasks = select_tasks(root, filt, ids, include, exclude, limit, sample, sample_seed, mode)
     runs = [(t, sd, ep) for t in tasks for sd in parse_seeds(seeds) for ep in range(max(1, epochs))]
@@ -118,6 +119,7 @@ def run_many(
                 "retries": retries,
                 "extra_instruction": extra_instruction,
                 "prior_learnings": prior_learnings,
+                "interface": interface,
                 "started_at": now(),
             },
             indent=2,
@@ -140,6 +142,7 @@ def run_many(
                 extra_instruction=extra_instruction,
                 prior_learnings=prior_learnings,
                 attempt=attempt,
+                interface=interface,
             )
             if not r["exception"]:
                 break

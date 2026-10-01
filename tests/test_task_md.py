@@ -70,7 +70,9 @@ def test_the_prompt_is_the_task_md_body_and_the_workspace_has_no_copy(tmp_path, 
     assert not any("instruction" in f for f in cfg["workspace_files"])
 
 
-@pytest.mark.parametrize("harness", ["mini-swe-agent-glm", "codex-glm", "claude-code-glm", "codex", "claude-code"])
+@pytest.mark.parametrize(
+    "harness", ["mini-swe-agent-glm", "codex-glm", "claude-code-glm", "codex", "claude-code", "dimcode"]
+)
 def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path, monkeypatch) -> None:
     """The workspace holds only robouse's internals (.robouse/) and observations/; the task reaches the agent only as
     its prompt (mini-swe-agent's harness used to write it to .robouse/task.txt as well)."""
@@ -91,9 +93,11 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path
         ("claude", ""),
         ("mini", ""),
         ("codex", '[ "$1" = login ] && echo "{}" > "$CODEX_HOME/auth.json"\n'),  # what `codex login` leaves
+        ("dimcode", ""),
     ):
         (stubs / exe).write_text(f"#!/bin/sh\n{body}exit 0\n")
         (stubs / exe).chmod(0o755)
+    monkeypatch.setenv("ROBOUSE_DIMCODE", str(stubs / "dimcode"))
     monkeypatch.setenv("PATH", f"{stubs}:{os.environ.get('PATH', '')}")
     for var in ("BASETEN_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.setenv(var, "not-a-real-key")

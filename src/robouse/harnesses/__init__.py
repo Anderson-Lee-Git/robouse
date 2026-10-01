@@ -13,6 +13,8 @@ Harnesses
                          id through the gateway
   mini-swe-agent         mini-swe-agent; model: a provider-prefixed id, always through the gateway
   (claude-code-glm, codex-glm and mini-swe-agent-glm: hidden aliases for the three above with a baseten/ model)
+  dimcode                Dimensional's dimcode (built on Pi); model: a provider-prefixed id, always through the
+                         gateway (default baseten/zai-org/GLM-5.3); see dimcode.py
   molmoact2              MolmoAct2 VLA policy: molmoact2/client.py drives `robo` with action chunks from a policy
                          server at $ROBOUSE_MOLMOACT2_URL; model e.g. allenai/MolmoAct2-LIBERO-LeRobot
   vla                    any served VLA (vla/client.py): --model is a preset from vla/presets.json; server at
@@ -258,6 +260,12 @@ def _vla(model, prompt, workspace, task, env) -> Launch:
     )
 
 
+def _dimcode(model, prompt, workspace, task, env) -> Launch:
+    from . import dimcode
+
+    return dimcode.build(model, prompt, workspace, task, env)
+
+
 HARNESSES: dict[str, Builder] = {
     "oracle": _oracle,
     "noop": _noop,
@@ -266,6 +274,7 @@ HARNESSES: dict[str, Builder] = {
     "mini-swe-agent": _mini_swe_agent,
     "molmoact2": _molmoact2,
     "vla": _vla,
+    "dimcode": _dimcode,
 }
 
 
