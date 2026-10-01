@@ -56,6 +56,6 @@ Job complete: 2/2 (100.0%), mean_reward=1.00, errors=0, idle_timeouts=0, time=0.
 ```
 
 - `--agent oracle` runs the reference solutions. `ROBOUSE_ORACLE_TOKEN` is needed only for these runs: a reference solution that reads the true state gets the token, an agent never does.
-- `benchflow/robouse-noop-control@0.2` is the no-op control for `benchflow/robouse-core@0.2`: with `--agent oracle`, every task must score 0.
+- `benchflow/robouse-noop-control` is the no-op control for `benchflow/robouse-core`: the same scenes, each reference solution only looks at the robot and exits, so with `--agent oracle` every task must score 0.
 - This needs Docker with Compose 2.24.4 or newer. On a Mac with Colima, run `bench` from a folder under your home folder: Docker can only mount paths there.
 - The first run of a dataset builds its simulator image, up to about 4 GB for LIBERO. Scenes render on the CPU inside the container, so some tasks are much slower than locally.
