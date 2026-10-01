@@ -129,11 +129,16 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from ..tasks import TaskFormatError
+
     try:
         return _main(argv)
     except KeyboardInterrupt:
         print("\nrobouse: interrupted", file=sys.stderr)
         return 130
+    except TaskFormatError as e:  # e.g. a folder in the older task.toml + instruction.md layout
+        print(f"robouse: {e}", file=sys.stderr)
+        return 2
 
 
 def _main(argv: list[str] | None = None) -> int:

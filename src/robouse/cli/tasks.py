@@ -429,10 +429,12 @@ def _from(a) -> int:
 
 
 def check_task(d: Path, level: str = "structural", run: bool = True, keep_runs: str | None = None) -> int:
-    from ..tasks import SCHEMA_VERSION, load_task
+    from ..tasks import SCHEMA_VERSION, load_task, older_layout, older_layout_message
 
     if not d.is_dir():
         return _err(f"no such task folder: {d}")
+    if older_layout(d):
+        return _err(older_layout_message(d))
     problems = []
     if (d / "task.md").is_file() and not (d / "environment" / "Dockerfile").is_file():
         problems += [f"{rel} is missing" for rel in ("oracle/solve.sh", "verifier/test.sh") if not (d / rel).is_file()]

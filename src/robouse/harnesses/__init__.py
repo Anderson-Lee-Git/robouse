@@ -1,7 +1,8 @@
 """Harness launchers: the command, environment and helper process for one trial's agent.
 
-The agent process gets: cwd = an isolated workspace (instruction.md, observations/), PATH with a standard-library
-`robo` shim first, and ROBOUSE_SOCKET. Credentials come from the environment (`credentials.py`).
+The agent process gets: its prompt (PROMPT_PREFIX + the task.md body), cwd = an isolated workspace (observations/),
+PATH with a standard-library `robo` shim first, and ROBOUSE_SOCKET. Credentials come from the environment
+(`credentials.py`).
 
 Harnesses
   oracle                 the task's reference solution (oracle/solve.sh)
