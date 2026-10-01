@@ -171,7 +171,6 @@ def _mini_swe_agent_glm(model, prompt, workspace, task, env) -> Launch:
         }
     )
     exe = shutil.which("mini") or str(Path.home() / ".local" / "bin" / "mini")
-    (workspace / ".robouse" / "task.txt").write_text(PROMPT_PREFIX + prompt)
     return Launch(
         [
             exe,

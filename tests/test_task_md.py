@@ -68,3 +68,40 @@ def test_the_prompt_is_the_task_md_body_and_the_workspace_has_no_copy(tmp_path, 
     cfg = json.loads((tmp_path / "job" / res["trial"] / "config.json").read_text())
     assert {".robouse/bin/robo", "observations/"} <= set(cfg["workspace_files"])
     assert not any("instruction" in f for f in cfg["workspace_files"])
+
+
+@pytest.mark.parametrize("harness", ["mini-swe-agent-glm", "codex-glm", "codex", "claude-code"])
+def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path, monkeypatch) -> None:
+    """The workspace holds only robouse's internals (.robouse/) and observations/; the task reaches the agent only as
+    its prompt (mini-swe-agent's harness used to write it to .robouse/task.txt as well)."""
+    import os
+    import shutil
+
+    from robouse import harnesses
+    from robouse.runner.trial import _make_workspace
+
+    monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(tmp_path / "cache"))  # harness homes go to the cache
+    stubs = tmp_path / "bin"  # the agent programs only need to exist: nothing is launched
+    stubs.mkdir()
+    for exe, body in (
+        ("claude", ""),
+        ("mini", ""),
+        ("codex", '[ "$1" = login ] && echo "{}" > "$CODEX_HOME/auth.json"\n'),  # what `codex login` leaves
+    ):
+        (stubs / exe).write_text(f"#!/bin/sh\n{body}exit 0\n")
+        (stubs / exe).chmod(0o755)
+    monkeypatch.setenv("PATH", f"{stubs}:{os.environ.get('PATH', '')}")
+    for var in ("BASETEN_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.setenv(var, "not-a-real-key")
+    task = load_task(ARC)
+    ws = _make_workspace(task)
+    try:
+        launch = harnesses.build(harness, "", task.instruction, ws, task, {"PATH": os.environ.get("PATH", "")})
+        assert any(task.instruction.strip() in str(arg) for arg in launch.cmd)  # the prompt
+        entries = sorted(p.relative_to(ws) for p in ws.rglob("*"))
+        assert all(e.parts[0] in (".robouse", "observations") for e in entries), entries
+        marker = task.instruction.strip()[:80]
+        copies = [p for p in ws.rglob("*") if p.is_file() and marker in p.read_text(errors="replace")]
+        assert not copies, copies
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)
