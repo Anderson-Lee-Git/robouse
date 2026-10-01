@@ -34,7 +34,7 @@ img/suites/robocasa.webp | `robocasa`
 ```
 
 <!-- suites-table -->
-robouse 0.2.0 bundles 692 tasks in 31 suites. "Needs" is what a suite needs beyond `pip install 'robouse[sim]'`. The last two columns count the tasks that scored 1 with the reference solution and with the no-op control.
+robouse 0.3.0 bundles 692 tasks in 31 suites. "Needs" is what a suite needs beyond `pip install 'robouse[sim]'`. The last two columns count the tasks that scored 1 with the reference solution and with the no-op control.
 
 | Suite | What | Tasks | Needs | Reference solution | No-op control |
 |---|---|---|---|---|---|
@@ -133,4 +133,9 @@ The driving suite uses MetaDrive 0.4.3 (Apache-2.0).
 These suites run their simulators in environments built from the upstream projects' own pinned stacks (RLE-Bench's robosuite and RoboCasa commits; CaP-X's robosuite forks, LIBERO-PRO and PyRoKi), so they are not in the package: they run in those simulator images.
 
 <!-- hub-only-table -->
+| Suite | What | Tasks | Reference solution | No-op control |
+|---|---|---|---|---|
+| `rle-bench` | RLE-Bench family 03, tabletop reasoning: tower, cantilever, balance, hidden centre of mass | 6 | 6/6 | 0/6 |
+| `capx` | CaP-X's robosuite tasks, code as policy with CaP-X's privileged API (simulator object poses, no perception) | 35 | 35/35 | 0/35 |
+| `capx-libero` | CaP-X on LIBERO-PRO's object-swap tasks, code as policy with CaP-X's privileged LIBERO API | 8 | 8/8 | 0/8 |
 <!-- /hub-only-table -->
