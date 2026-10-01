@@ -14,10 +14,10 @@ import sys
 
 from ..lib.text import clip
 
-HINT = (
-    "On Linux without a display, install OSMesa (`apt install libosmesa6`) and set MUJOCO_GL=osmesa, or EGL "
-    "(`apt install libegl1 libgl1`) and set MUJOCO_GL=egl; on macOS set MUJOCO_GL=cgl"
-)
+# with one installed, robouse chooses it (auto_select); MUJOCO_GL is only an override
+INSTALL = "install OSMesa (`apt install libosmesa6`) or EGL (`apt install libegl1 libgl1`)"
+OVERRIDE = "MUJOCO_GL, if set, overrides that choice (osmesa, egl, or cgl on macOS)"
+HINT = f"On Linux without a display, {INSTALL}: robouse picks whichever renders. {OVERRIDE}"
 # tried in this order when MUJOCO_GL is unset: OSMesa is what the hub's simulator images use; EGL is the GPU path
 CANDIDATES = ("osmesa", "egl")
 _PROBE = "import mujoco; m = mujoco.MjModel.from_xml_string('<mujoco/>'); r = mujoco.Renderer(m, 8, 8); r.render(); r.close()"
@@ -89,7 +89,10 @@ def explain(error: object) -> str | None:
     text = f"{type(error).__name__}: {error}" if isinstance(error, BaseException) else str(error)
     if not any(s in text for s in _SIGNS):
         return None
+    setting = os.environ.get("MUJOCO_GL")
     return (
-        f"offscreen rendering is not available: MuJoCo could not create an OpenGL context. {HINT}. "
-        f"`robouse doctor` checks it. Cause: {reason(text)}"
+        "offscreen rendering is not available: MuJoCo could not create an OpenGL context. On Linux without a display, "
+        f"{INSTALL} and run `robouse doctor`: robouse picks whichever renders. {OVERRIDE}"
+        + (f"; here it is set to {setting}" if setting else "")
+        + f". Cause: {reason(text)}"
     )

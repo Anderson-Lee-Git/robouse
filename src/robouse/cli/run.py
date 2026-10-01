@@ -85,14 +85,14 @@ def register(sub: argparse._SubParsersAction) -> None:
 
     r = sub.add_parser("run", help="run one trial end to end")
     r.add_argument("--task", required=True, help="task folder or bundled task id")
-    r.add_argument("--out", required=True, help="job folder; the trial is written to OUT/<task>__<harness>__<id>/")
+    r.add_argument("--out", required=True, help="run folder; the trial is written to OUT/<task>__<harness>__<id>/")
     r.add_argument("--seeds", help=argparse.SUPPRESS)  # BenchFlow engine only
     _trial_opts(r, many=False)
     r.set_defaults(func=run)
 
     m = sub.add_parser("run-many", help="run a set of trials")
     m.add_argument("--tasks", help="task root (default: the bundled tasks)")
-    m.add_argument("--out", required=True, help="job folder; one trial folder per task")
+    m.add_argument("--out", required=True, help="run folder; one trial folder per task")
     m.add_argument("--filter", default="", help="only task ids containing this substring")
     m.add_argument("--task-list", help="file with one task id per line (a subset of --tasks)")
     m.add_argument(
@@ -332,8 +332,34 @@ def run_many(a: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
-def _benchflow_missing(e: ImportError) -> int:
-    print(f"robouse: this needs BenchFlow ({e}); install robouse[benchflow] (Python 3.12)", file=sys.stderr)
+def _benchflow_missing(e: ImportError, what: str) -> int:
+    """`what` (the BenchFlow engine, export) needs BenchFlow's embodied support, which no PyPI release of BenchFlow has
+    yet: say so, and what this environment has."""
+    import importlib.metadata
+    import importlib.util
+
+    try:
+        installed = importlib.util.find_spec("benchflow") is not None
+        embodied = installed and importlib.util.find_spec("benchflow.embodied") is not None
+    except Exception:  # noqa: BLE001 - a BenchFlow that does not import: its own error says why
+        installed = embodied = True
+    if embodied:  # BenchFlow has it, and something else did not load
+        print(f"robouse: {what} could not load BenchFlow: {type(e).__name__}: {e}", file=sys.stderr)
+        return 1
+    if installed:
+        try:
+            have = f"the installed BenchFlow ({importlib.metadata.version('benchflow')}) does not have it"
+        except importlib.metadata.PackageNotFoundError:
+            have = "the installed BenchFlow does not have it"
+    else:
+        have = "BenchFlow is not installed"
+        if sys.version_info[:2] < (3, 12):
+            have += f", and it needs Python 3.12 or newer (this is {sys.version_info[0]}.{sys.version_info[1]})"
+    print(
+        f"robouse: {what} needs BenchFlow's embodied support (benchflow.embodied), which is not in a PyPI release of "
+        f"BenchFlow yet; {have}",
+        file=sys.stderr,
+    )
     return 1
 
 
@@ -343,7 +369,7 @@ def _run_benchflow(a: argparse.Namespace, tasks: list[Task]) -> int:
 
         from ..engine.run import run_job
     except ImportError as e:
-        return _benchflow_missing(e)
+        return _benchflow_missing(e, "--engine benchflow")
     seeds = parse_seeds(a.seeds) if a.seeds else None
     if seeds and a.seed is not None:
         print("robouse: use --seed or --seeds, not both", file=sys.stderr)
@@ -368,7 +394,7 @@ def export(a: argparse.Namespace) -> int:
     try:
         from ..engine.format import materialize
     except ImportError as e:
-        return _benchflow_missing(e)
+        return _benchflow_missing(e, "export")
     keys = [k for k in a.filter.split(",") if k]
     n = 0
     for root in a.tasks:
