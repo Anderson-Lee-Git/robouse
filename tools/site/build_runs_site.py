@@ -753,8 +753,13 @@ def load_chrome(site: Path) -> None:
 _GLUE_BEFORE = re.compile(r'(?<=\S) (?=(?:<(?!span class="cell)[^>]+>)*·)')
 
 
+_COUNT_OF = re.compile(r"(?<=\d) of (?=\d)")
+_COUNT_NOUN = re.compile(r"(?<=\d) (?=(?:solved|scored|tasks?|trials?|runs?|models?|seeds?|steps?)\b)")
+
+
 def glue(html_text: str) -> str:
-    return _GLUE_BEFORE.sub("\u00a0", html_text)
+    """Dots bound to the item before them; counts like "52 of 119 solved" never broken across lines."""
+    return _COUNT_NOUN.sub("\u00a0", _COUNT_OF.sub("\u00a0of\u00a0", _GLUE_BEFORE.sub("\u00a0", html_text)))
 
 
 def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str = "", data: str = "") -> str:
@@ -805,7 +810,13 @@ def hub_tasks(site: Path) -> dict[str, tuple[str, str]]:
     """Every task's page on the hub (the results, task and suite pages of /runs/ moved there). Run tools/build_hub.py first."""
     j = rj(site / "hub" / "search.json") or {"t": []}
     HUB_TITLE.update({t[0]: t[1] for t in j["t"] if t[1]})
-    return {t[0]: (t[2], t[4]) for t in j["t"]}
+    out = {t[0]: (t[2], t[4]) for t in j["t"]}
+    # a task only earlier dataset versions had (hub/former.json): its trials stay filed under the dataset, linked to its page
+    for tid, v in (rj(site / "hub" / "former.json") or {}).items():
+        out.setdefault(tid, (v[0], v[1]))
+        if len(v) > 2 and v[2]:
+            HUB_TITLE.setdefault(tid, v[2])
+    return out
 
 
 def runs_head(active: str) -> str:
