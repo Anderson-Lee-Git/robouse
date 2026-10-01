@@ -31,9 +31,6 @@ img/suites/myosuite.webp | `myosuite`
 img/suites/humanoidbench.webp | `humanoidbench`
 img/suites/maniskill.webp | `maniskill`
 img/suites/robocasa.webp | `robocasa`
-img/suites/rle-bench.webp | `rle-bench`
-img/suites/capx.webp | `capx`
-img/suites/capx-libero.webp | `capx-libero`
 ```
 
 Stills from the recordings of one reference solution per suite; for `vision`, a camera image the agent receives.
@@ -68,9 +65,6 @@ Stills from the recordings of one reference solution per suite; for `vision`, a 
 | `humanoidbench` | HumanoidBench: Unitree H1 with two Shadow hands | 7 | HumanoidBench virtualenv, `docs/suites/humanoidbench.md` | 7/7 | 0/7 |
 | `maniskill` | ManiSkill3 tabletop, Franka Panda (CPU physics) | 12 | ManiSkill virtualenv, `docs/suites/maniskill.md` | 12/12 | 0/12 |
 | `robocasa` | RoboCasa kitchens, Franka Panda on a parked mobile base | 24 | RoboCasa virtualenv, `docs/suites/robocasa.md` | 24/24 | 0/24 |
-| `rle-bench` | RLE-Bench tabletop reasoning: tower, cantilever, balance, hidden centre of mass ([suite](suites/rle-bench.md)) | 6 | the hub's `rlebench` simulator image | 6/6 | 0/6 |
-| `capx` | CaP-X RoboSuite tasks, code as policy with CaP-X's privileged API ([suite](suites/capx.md)) | 35 | the hub's `capx` simulator image | 35/35 | 0/35 |
-| `capx-libero` | CaP-X on LIBERO-PRO object swap, code as policy ([suite](suites/capx.md)) | 8 | the hub's `capx-libero` simulator image | 8/8 | 0/8 |
 | `nav` | Robo Use: object-goal navigation in 10 generated homes, protocol of Dimensional's Can Jev Nav? ([suite](suites/nav.md)) | 40 | `[sim]` (numpy only) | 40/40 | 0/40 |
 | `cubepick` | inspect-robots `cubepick-reach` ([suite](suites/cubepick.md)) | 5 | `[sim]` (numpy only) | 5/5 | 0/5 |
 | `real` | real arms: Metal, SO-101, Piper; hardware-in-the-loop mock by default ([suite](suites/real.md), [Real robots](real-robots.md)) | 5 | `[sim]`; live: LeRobot / piper_sdk + `--rig` | 5/5 (mock) | 0/5 (mock) |
@@ -153,6 +147,14 @@ Set `ROBOUSE_METADRIVE_PYTHON` to use another interpreter.
 ## Not in the package
 
 BEHAVIOR-1K needs an NVIDIA RTX GPU for its simulator worker, so it runs only from a checkout of the Robo Use repository.
+
+RLE-Bench and CaP-X run their simulators in virtual environments built from the upstream projects' own pinned stacks (RLE-Bench's robosuite and RoboCasa commits; CaP-X's robosuite forks, LIBERO-PRO and PyRoKi), which the [hub](https://robouse.ai/hub/)'s simulator images provide, so they run from a checkout of the Robo Use repository in those images, or as the hub datasets `rle-bench/rle-bench` and `capgym/cap-x`.
+
+| Suite | From | Tasks | Simulator image | Oracle | No-op |
+|---|---|---|---|---|---|
+| `rle-bench` | RLE-Bench family 03, tabletop reasoning: tower, cantilever, balance, hidden centre of mass. Tower, cantilever and balance pass at an RLE-Bench quality of 0.5 or more, a Robo Use threshold; RLE-Bench reports the quality itself as the score | 6 | `rlebench` | 6/6 | 0/6 |
+| `capx` | CaP-X's RoboSuite tasks, code as policy with CaP-X's privileged API (simulator object poses, no perception), several programs per episode | 35 | `capx` | 35/35 | 0/35 |
+| `capx-libero` | CaP-X on LIBERO-PRO's object-swap tasks, code as policy with CaP-X's privileged LIBERO API | 8 | `capx-libero` | 8/8 | 0/8 |
 
 ## GPU track
 
