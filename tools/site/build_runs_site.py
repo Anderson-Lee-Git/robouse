@@ -342,10 +342,13 @@ def pick(trials: list[dict]) -> dict:
         ts.sort(key=lambda t: t["started"])
         by_seed = defaultdict(list)
         for t in ts:
+            t["earlier_condition"] = not counts_under(t)
             by_seed[t.get("seed")].append(t)
         chosen = []
         for seed in sorted(by_seed, key=lambda s: (s is None, str(s))):
-            sts = by_seed[seed]
+            sts = [t for t in by_seed[seed] if not t["earlier_condition"]]
+            if not sts:  # only trials of the pair's earlier condition: shown, none counted
+                continue
             good = [t for t in sts if not t["infra"] and not t["partial"]]
             chosen.append(good[-1] if good else sts[-1])
         for t in ts:
@@ -353,6 +356,36 @@ def pick(trials: list[dict]) -> dict:
             t["others"] = [o["trial"] for o in ts if o is not t]
         out[k] = chosen
     return out
+
+
+def counts_under(t: dict) -> bool:
+    """Whether a trial can count for its pair: tools/models.json `count_only` names the trial fields a counted trial must
+    have, e.g. {"image_input": true} for a pair rerun under a new condition. Its other trials stay published as earlier
+    runs and are never counted, even for a task the new condition did not run."""
+    cond = HM[t["hm"]].get("count_only") or {}
+    return all(t.get(k) == v for k, v in cond.items())
+
+
+EARLIER_CONDITION = {"image_input": {True: "an earlier run without image input"}}
+
+
+def earlier_reason(t: dict) -> str:
+    cond = HM[t["hm"]].get("count_only") or {}
+    for k, v in cond.items():
+        if t.get(k) != v:
+            return EARLIER_CONDITION.get(k, {}).get(v, "an earlier run under other conditions")
+    return "an earlier run under other conditions"
+
+
+def budget_text(t: dict) -> str:
+    """'Stopped at the $5 budget': a trial the model gateway stopped at its spend cap."""
+    cap = (t.get("budget") or {}).get("cap_usd")
+    return f"Stopped at the ${cap:g} budget" if isinstance(cap, (int, float)) else "Stopped at the model budget"
+
+
+def long_status(t: dict, st: str) -> str:
+    """The trial page's result badge; a budget stop names its budget ('Stopped at the $5 budget, counted as not solved')."""
+    return f"{budget_text(t)}, counted as not solved" if st == "budget" else STATUS_LONG[st]
 
 
 def status(t: dict) -> str:
@@ -366,7 +399,7 @@ def status(t: dict) -> str:
 
 OUTCOME_TEXT = {"success_reached": "Goal reached", "done": "Agent said done", "gave_up": "Agent gave up", "budget_exhausted": "Step budget used up",
                 "agent_timeout": "Agent timed out", "wall_time_exhausted": "Time limit reached", "agent_exited": "Agent exited", "no result": "No result",
-                "budget_stop": "Stopped at the spend cap"}
+                "budget_stop": "Stopped at the model budget"}
 
 
 # an infrastructure failure's cause in a narrow cell (scripts/audit.py INFRA_CAUSES has the sentence)
@@ -382,6 +415,8 @@ def result_note(t: dict) -> str:
         return INFRA_SHORT.get((t.get("infra_cause") or {}).get("key", "other"), INFRA_SHORT["other"])
     if st == "partial":
         return "Run stopped"
+    if st == "budget":
+        return budget_text(t)
     return "" if st == "ok" else outcome_text(t["outcome"])
 
 
@@ -390,9 +425,9 @@ def outcome_text(code: str | None) -> str:
     return OUTCOME_TEXT.get(code or "", (code or "–").replace("_", " ").capitalize())
 
 
-STATUS_TEXT = {"partial": "Stopped", "infra": "Infra failure", "ok": "Solved", "no": "Not solved", "budget": "Budget stop"}
+STATUS_TEXT = {"partial": "Stopped", "infra": "Infra failure", "ok": "Solved", "no": "Not solved", "budget": "Stopped at budget"}
 STATUS_LONG = {"partial": "Stopped before it finished, not scored", "infra": "Infrastructure failure, not scored",
-               "ok": "Solved", "no": "Not solved", "budget": "Budget stop: stopped at the model spend cap, scored as not solved"}
+               "ok": "Solved", "no": "Not solved", "budget": "Stopped at the model budget, counted as not solved"}
 NOIMG_TITLE = "The model received no image input in this trial: text only (camera images stayed files the agent could read with code)"
 
 
@@ -553,7 +588,8 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
         "id": t["trial"], "task": t["task"], "title": t["title"], "suite": t["suite"], "hm": t["hm"], "pair": HM[t["hm"]]["key"], "label": plab(t["hm"]), "model_label": HM[t["hm"]].get("model_label") or "",
         "harness_label": HM[t["hm"]].get("harness_label") or "", "job": t["job"], "seed": t.get("seed"),
         "status": status(t), "counted": t["counted"], "others": t["others"], "reward": t["reward"], "outcome": t["outcome"],
-        "image_input": t.get("image_input"),
+        "image_input": t.get("image_input"), "spend_cap_usd": t["cfg"].get("spend_cap_usd"),
+        "budget_stop": t.get("budget"), "earlier_condition": bool(t.get("earlier_condition")),
         "steps_used": t["steps_used"], "max_steps": t["max_steps"], "requests": ep.get("requests") if ep.get("requests") is not None else t["checks"].get("robo_requests"),
         "motion": t["checks"].get("motion_requests"), "robo_errors": t["checks"].get("robo_errors"),
         "wall": t["wall"], "ep_wall": ep.get("wall_time_s"), "started": t["started"], "finished": t["finished"],
@@ -1052,7 +1088,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     st = status(t)
     label = plab(t["hm"])
     # the badge says solved or not; the outcome is shown when it gives the reason, the reward when it is not plainly 0 or 1
-    facts = [("Outcome", esc(outcome_text(t["outcome"])))] if st not in ("ok", "infra") and t["outcome"] else []
+    facts = [("Outcome", esc(budget_text(t) if st == "budget" else outcome_text(t["outcome"])))] if st not in ("ok", "infra") and t["outcome"] else []
     if st == "infra" and t.get("infra_cause"):
         facts = [("Why", esc(t["infra_cause"]["text"].rstrip(".")))]
     try:
@@ -1062,13 +1098,14 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
         pass
     if st == "budget":
         b = t["budget"] or {}
-        facts.append(("Spend cap", f'{esc(spend(b.get("cap_usd")))}; {esc(spend(b.get("spent_usd")))} spent when stopped'))
+        facts.append(("Budget", f'{esc(spend(b.get("cap_usd")))} per trial; {esc(spend(b.get("spent_usd")))} spent when stopped'))
     facts += [("Steps", steps_html(t)), ("Time", esc(fmt_s(t["wall"])))]
     if t.get("image_input") is False:
         facts.append(("Image input", "None: text only"))
     if t.get("seed") is not None:
         facts.append(("Seed", esc(t["seed"])))
-    counted = "" if t["counted"] else f'<span class="tag">not counted: {"infrastructure failure" if t["infra"] else "a later trial counts"}</span>'
+    why = earlier_reason(t) if t.get("earlier_condition") else "infrastructure failure" if t["infra"] else "a later trial counts"
+    counted = "" if t["counted"] else f'<span class="tag">not counted: {why}</span>'
     vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} controls muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls()}' if video
            else '<div class="vbox novideo"><div class="empty-state"><b>No recording for this trial.</b>The episode ended before the simulator wrote a frame.</div></div>')
     tabs = [("recording", "Recording", ""), ("trajectory", "Trajectory", f" <span class=\"num\">{n_steps}</span>" if n_steps else ""), ("verdict", "Verdict", ""),
@@ -1077,7 +1114,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 {trial_crumbs(t)}
 <section class="page-head head trial">
   <h1>{esc(t['title'])}</h1>
-  <p class="who"><span class="badge {st}">{STATUS_LONG[st]}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl">{model_mark(HM[t["hm"]])}{esc(label)}</span>{noimg_tag() if t.get("image_input") is False else ""}{counted}<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t['trial'])}">Compare</a></p>
+  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl">{model_mark(HM[t["hm"]])}{esc(label)}</span>{noimg_tag() if t.get("image_input") is False else ""}{counted}<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t['trial'])}">Compare</a></p>
   <dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>
 </section>
 <nav class="tabs" role="tablist" aria-label="Trial views" data-fade>
@@ -1089,7 +1126,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 </div>
 <noscript><style>.pctl,nav.tabs,#panel{{display:none}}</style><p class="muted">The trajectory, verdict and files need JavaScript; the recording plays above.</p></noscript>
 """
-    return page(f"{t['title']} · {label} · Runs · Robo Use", body, desc=f"{t['title']}: {label}, {STATUS_LONG[st].lower()}.",
+    return page(f"{t['title']} · {label} · Runs · Robo Use", body, desc=f"{t['title']}: {label}, {long_status(t, st).lower()}.",
                 cls="trialpage", data=f' data-trial="{esc(t["trial"])}"', canonical=f"https://robouse.ai/runs/t/{t['trial']}/")
 
 
@@ -1160,7 +1197,7 @@ def build_run(r: dict) -> str:
                     f'<td class="n num" data-v="{num_attr(t["steps_used"])}">{steps_html(t)}</td>'
                     f'<td class="n num" data-v="{num_attr(t["wall"])}">{esc(fmt_s(t["wall"]))}</td></tr>')
     states = {status(t) for t in r["trials"]}
-    opts = "".join(f'<option value="{k}">{v}</option>' for k, v in (("ok", "Solved"), ("no", "Not solved"), ("budget", "Budget stop"), ("infra", "Infrastructure failure"), ("partial", "Partial")) if k in states)
+    opts = "".join(f'<option value="{k}">{v}</option>' for k, v in (("ok", "Solved"), ("no", "Not solved"), ("budget", "Stopped at budget"), ("infra", "Infrastructure failure"), ("partial", "Partial")) if k in states)
     ctrl = ('<div class="fbar"><div class="frow ctl-row">'
             '<label class="search"><span class="vh">Search tasks</span><input type="search" data-lq placeholder="Search tasks" autocomplete="off" spellcheck="false"></label>'
             + (f'<select data-lf="outcome" aria-label="Result"><option value="">Any result</option>{opts}</select>' if len(states) > 1 else "")
