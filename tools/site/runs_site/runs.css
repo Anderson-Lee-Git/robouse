@@ -322,6 +322,16 @@ ol.traj{margin:0;padding:0;list-style:none}
 .sh .seek:hover{border-color:var(--accent);background:var(--accent-soft)}
 .sh .seek:active{background:var(--press)}
 .txt{font-size:var(--fs-meta);line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+/* an agent's message rendered from its Markdown (runs.js mdLite): paragraphs and lists, not pre-wrapped source */
+.txt.md{white-space:normal}
+.txt.md p,.txt.md ul,.txt.md ol{margin:0 0 var(--sp-6)}
+.txt.md > :last-child{margin-bottom:0}
+.txt.md ul,.txt.md ol{padding-left:var(--sp-20)}
+.txt.md code{font-family:var(--mono);font-size:.95em}
+/* the Trajectory's closing line: the Verdict's sentence, a size down */
+.traj .vline{margin:0 0 var(--sp-4);font-size:var(--fs-body)}
+/* /runs/: a run with no scored trial says so in its rate cell */
+.nsc{font-size:var(--fs-caption);color:var(--muted);white-space:nowrap}
 details.rsn{margin:var(--sp-4) 0}
 details.rsn .txt{margin-top:var(--sp-4);font-size:var(--fs-caption);color:var(--ink2)}
 ol.traj pre,.card pre{margin:var(--sp-6) 0;padding:var(--sp-8) var(--sp-12)}

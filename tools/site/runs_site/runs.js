@@ -224,6 +224,26 @@
 
   /* ---------------------------------------------------------------- shared step helpers */
   // step text for people: long floats rounded, markdown marks dropped, the runner's episode line as a sentence
+  // an agent's message as it wrote it: paragraphs, lists, **bold**, `code` (escaped first; nothing else is rendered)
+  function mdLite(t) {
+    var inl = function (x) { return h(x).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:]|$)/g, "$1<i>$2</i>"); };
+    var out = [], list = null;
+    String(t || "").split(/\n/).forEach(function (line) {
+      var m = line.match(/^\s*(?:[-*•]|(\d+)[.)])\s+(.*)$/);
+      if (m) {
+        var tag = m[1] ? "ol" : "ul";
+        if (!list || list.tag !== tag) { if (list) out.push("</" + list.tag + ">"); list = {tag: tag}; out.push("<" + tag + ">"); }
+        out.push("<li>" + inl(m[2]) + "</li>");
+        return;
+      }
+      if (list) { out.push("</" + list.tag + ">"); list = null; }
+      var hd = line.match(/^\s*#{1,6}\s+(.*)$/);
+      if (hd) out.push("<p><b>" + inl(hd[1]) + "</b></p>");
+      else if (line.trim()) out.push("<p>" + inl(line) + "</p>");
+    });
+    if (list) out.push("</" + list.tag + ">");
+    return out.join("");
+  }
   function tidy(t) {
     t = String(t || "");
     var m = t.match(/^episode: outcome=(\S+) success=(\S+)(?: steps_used=(\d+)\/(\d+))?/);
@@ -234,9 +254,19 @@
   function actionOf(s) {
     var r = actionRaw(s); r.text = tidy(r.text); return r;
   }
+  // a multi-line command by its first meaningful line: `python3 -c "` or `cd /tmp && python3 - <<'EOF'` alone says
+  // nothing, so the line after the opener that does something (a robo call first, not an import or a comment) joins it
+  var OPENER = /(-c\s*["']|<<-?\s*['"]?\w+['"]?|&&|\\)\s*$/;
+  function cmdLabel(a) {
+    var lines = a.split("\n"), first = lines[0];
+    if (lines.length < 2 || !OPENER.test(first)) return first;
+    var body = lines.slice(1).map(function (l) { return l.trim(); }).filter(function (l) { return l && !/^(import |from \S+ import |#|["']\s*$|EOF$|PY$)/.test(l); });
+    var pick = body.filter(function (l) { return /\brobo\s+\w/.test(l); })[0] || body[0];
+    return pick ? first.replace(OPENER, "").trim() + " … " + pick : first;
+  }
   function actionRaw(s) {
     if (s.c && s.c.length) {
-      var a = s.c[0].a.split("\n")[0];
+      var a = cmdLabel(s.c[0].a);
       return {text: a + (s.c.length > 1 ? "  (+" + (s.c.length - 1) + ")" : ""), cls: ""};
     }
     if (s.src === "system") return {text: (s.m || "").split("\n")[0], cls: "sys"};
@@ -337,6 +367,18 @@
     tabs.forEach(function (a) { a.setAttribute("aria-selected", a.getAttribute("data-tab") === tabOf(location.hash) ? "true" : "false"); a.tabIndex = a.getAttribute("aria-selected") === "true" ? 0 : -1; });
     getJSON("/runs/d/" + id + ".json").then(function (d) {
       var current = null, sync = null;
+      /* a VLA policy is never "the agent"; its runner's done at the end of the step budget is the budget running out (as
+         the run page says, build_runs_site) */
+      var vla = d.kind === "vla", WHO = vla ? "the policy" : "the agent";
+      function ocT(x) {
+        if (vla && x === "done" && d.steps_used != null && d.max_steps && d.steps_used >= d.max_steps - 1) x = "budget_exhausted";
+        var t = oc(x); return vla ? t.replace(/^Agent\b/, "Policy") : t;
+      }
+      /* per-step output counts that add up to under half the run's total are not counts of output: only input is shown */
+      function tokOk() {
+        var tk = d.tokens, sum = d.steps.reduce(function (a, s) { return a + (s.tk ? s.tk[1] : 0); }, 0);
+        return !tk || sum >= 0.5 * (tk.out || 0);
+      }
       var SPEEDS = [0.25, 0.5, 1];
       var speed = +(localStorage.getItem("runs-speed") || 0.5);
       if (SPEEDS.indexOf(speed) < 0) speed = 0.5;
@@ -482,21 +524,29 @@
         if (d.withheld) return out.join("") + withheldNote();
         if (!d.steps.length) return out.join("") + quiet("No trajectory was recorded for this trial.");
         out.push('<ol class="traj">');
-        var prev = null;
+        var prev = null, outOk = tokOk();
         d.steps.forEach(function (s) {
           if (d.hidden && prev != null && s.i - prev > 1) out.push('<li class="gap">… ' + d.hidden + " one-action steps not shown …</li>");
           prev = s.i;
-          var head = '<div class="sh"><span class="num">' + sn(d, s.i) + '</span><span class="src">' + ({agent: "Agent", system: "System", user: "Prompt"}[s.src] || h(s.src)) + "</span>" +
-            (s.ts != null ? '<span class="num">+' + dur(s.ts) + "</span>" : "") + (s.tk ? '<span class="num" title="prompt / output tokens">' + kfmt(s.tk[0]) + " / " + kfmt(s.tk[1]) + " tok</span>" : "") +
+          var head = '<div class="sh"><span class="num">' + sn(d, s.i) + '</span><span class="src">' + ({agent: vla ? "Policy" : "Agent", system: "System", user: "Prompt"}[s.src] || h(s.src)) + "</span>" +
+            (s.ts != null ? '<span class="num">+' + dur(s.ts) + "</span>" : "") +
+            (s.tk ? (outOk ? '<span class="num" title="input and output tokens of this step">' + kfmt(s.tk[0]) + " in" + "\u00a0" + "·" + "\u00a0" + kfmt(s.tk[1]) + " out</span>"
+              : '<span class="num" title="input tokens of this step">' + kfmt(s.tk[0]) + " in</span>") : "") +
             (s.v ? '<button type="button" class="seek" data-seek="' + s.v[0] + '" title="Seek the recording here">' + t2(s.v[0]) + "</button>" : "") + "</div>";
-          var body = "";
-          if (s.m) body += '<div class="txt">' + h(s.m) + "</div>";
-          if (s.r) body += '<details class="disc rsn"><summary>Reasoning</summary><div class="txt">' + h(s.r) + "</div></details>";
+          var body = "", ep = s.src === "system" && /^episode: /.test(s.m || "");
+          if (ep) {  /* the runner's closing line ("episode: outcome=done success=True steps_used=677/1400") as the Verdict says it */
+            var vl = verdictLine(), em = s.m.match(/steps_used=(\d+)\/(\d+)/), rw = s.m.match(/verifier reward: ([\d.]+)/);
+            body += '<p class="vline ' + vl[1] + '">' + h(vl[0]) + "</p>" +
+              (em || rw ? '<p class="muted small">' + [em ? num(+em[1]) + " of " + num(+em[2]) + " steps" : "", rw ? "verifier reward " + rew(+rw[1]) : ""].filter(Boolean).join(", ") + ".</p>" : "");
+          } else if (s.m) body += '<div class="txt' + (s.src === "agent" ? " md" : "") + '">' + (s.src === "agent" ? mdLite(s.m) : h(s.m)) + "</div>";
+          if (s.r) body += '<details class="disc rsn"><summary>Reasoning</summary><div class="txt md">' + mdLite(s.r) + "</div></details>";
           (s.c || []).forEach(function (c) {
             body += '<pre class="cmd"><code>' + h(c.a) + "</code></pre>";
             if (c.b) body += '<pre class="out"><code>' + h(c.b) + "</code></pre>";
             if (c.img && d.sprite) body += '<div class="imgs">' + c.img.map(function (k) { return '<i style="' + sprStyle(d.sprite, k) + '"></i>'; }).join("") + "</div>";
-            if (c.o != null) body += '<details class="disc res"' + (c.n <= 8 ? " open" : "") + "><summary>Output · " + c.n + " line" + (c.n === 1 ? "" : "s") + (c.x != null ? ' · <span class="x-err">exit ' + h(c.x) + "</span>" : "") + '</summary><pre class="out"><code>' + h(c.o) + "</code></pre></details>";
+            var imgOnly = c.o != null && /^(\s*\[image\]\s*)+$/.test(c.o), nImg = imgOnly ? c.o.match(/\[image\]/g).length : 0;
+            if (imgOnly) { if (!(c.img && d.sprite)) body += quiet("The output is " + (nImg === 1 ? "an image" : nImg + " images") + ", not published."); }  /* no "[image] [image]" text */
+            else if (c.o != null) body += '<details class="disc res"' + (c.n <= 8 ? " open" : "") + "><summary>Output · " + c.n + " line" + (c.n === 1 ? "" : "s") + (c.x != null ? ' · <span class="x-err">exit ' + h(c.x) + "</span>" : "") + '</summary><pre class="out"><code>' + h(c.o) + "</code></pre></details>";
           });
           out.push('<li class="st ' + h(s.src) + '" data-i="' + s.i + '" id="s' + s.i + '">' + head + body + "</li>");
         });
@@ -517,7 +567,7 @@
         var out = "";
         if (X.metrics) out += grp("Episode metrics", X.metrics.map(function (m) { return [m[0], m[1], m[2], m[3] ? "Better: " + m[3] : ""]; }));
         if (X.placement) { var p = X.placement; out += grp("Placement", [["Split", p.split], ["Objects moved", p.objects != null ? String(p.objects) : null], ["Largest offset", p.max_cm != null ? p.max_cm.toFixed(1) : null, "cm"], ["Placement seed", p.seed != null ? String(p.seed) : null]]); }
-        if (X.mode) out += grp("Embodiment", [["Mode", X.mode]]);
+        if (X.mode) out += grp("Embodiment", [["Mode", {sim: "Simulation", real: "Real robot", "hil-mock": "Hardware in the loop (mock)"}[X.mode] || X.mode]]);
         if (X.operator) { var o = X.operator; out += grp(o.rubric ? "Operator rubric" : "Operator verdict", [[o.rubric ? "Highest stage" : "Verdict", o.verdict], ["Channel", o.channel]], o.note ? '<p class="xn">' + h(o.note) + "</p>" : ""); }
         if (X.safety) {
           var sf = X.safety, c = sf.counts || {};
@@ -529,31 +579,29 @@
       }
       function runExtras() {
         var out = "";
-        if (X.cost) { var c = X.cost; out += grp("Cost", [["Prompt tokens", c.prompt != null ? num(c.prompt) : null], ["Cached", c.cached ? num(c.cached) : null], ["Completion tokens", c.completion != null ? num(c.completion) : null], ["Cost", c.usd != null ? "$" + (+c.usd).toFixed(c.usd < 1 ? 4 : 2) : null, "USD"], ["Source", c.source || null]]); }
+        if (X.cost && !vla && X.cost.source !== "no model") { var c = X.cost; out += grp("Cost", [["Prompt tokens", c.prompt != null ? num(c.prompt) : null], ["Cached", c.cached ? num(c.cached) : null], ["Completion tokens", c.completion != null ? num(c.completion) : null], ["Cost", c.usd != null ? "$" + (+c.usd).toFixed(c.usd < 1 ? 4 : 2) : null, "USD"], ["Source", c.source || null]]); }
         if (X.vla) { var v = X.vla; out += grp("Policy inference", [["Inferences", num(v.inferences)], ["Chunk size", v.chunk != null ? String(v.chunk) : null, "actions"], ["Round trip", v.roundtrip ? v.roundtrip[0].toFixed(2) + " · " + v.roundtrip[1].toFixed(2) : null, "s median · p90"], ["Server", v.server ? v.server[0].toFixed(2) + " · " + v.server[1].toFixed(2) : null, "s median · p90"]]); }
         return out ? '<div class="xgs">' + out + "</div>" : "";
       }
       /* the runner's own note ("[runner] agent exited without robo done") as a sentence, without the log tag */
       function unrunner(t) { t = String(t || ""); if (!/^\[runner\]/.test(t)) return t; t = t.replace(/^\[runner\]\s*/, ""); return t.charAt(0).toUpperCase() + t.slice(1) + (/[.!?]$/.test(t) ? "" : "."); }
+      /* the Verdict's one sentence and its class; the Trajectory's closing line says the same */
+      function verdictLine() {
+        var vd = d.verdict, r = d.reward, solved = r != null && r > 0, oc0 = d.outcome, claim = vla ? "" : vd.claim;
+        var limit = {budget_exhausted: "the step budget ran out", wall_time_exhausted: "the time limit was reached", agent_timeout: WHO + " ran out of time"}[oc0];
+        if (d.status === "infra") return ["Not scored: an infrastructure failure ended the trial.", "warn"];
+        if (d.status === "partial") return ["Not scored: the run was stopped before this trial finished.", "warn"];
+        if (solved) return [claim === "done" ? "Solved: the agent said done and the simulator confirmed the goal."
+          : claim === "give_up" ? "Solved: the agent refused, which was the expected answer."
+          : oc0 === "success_reached" ? "Solved: the simulator saw the goal reached, which ended the episode."
+          : "Solved: " + WHO + " stopped" + (vla ? "" : " without saying done") + ", and the final state met the goal.", "ok"];
+        return [claim === "done" ? "Not solved: the agent said done, but the goal wasn’t reached."
+          : claim === "give_up" ? "Not solved: the agent gave up."
+          : limit ? "Not solved: " + limit + " before the goal was reached."
+          : "Not solved: " + WHO + " stopped" + (vla ? "" : " without saying done") + ", and the goal wasn’t reached.", "no"];
+      }
       function verdict() {
-        var vd = d.verdict, r = d.reward, solved = r != null && r > 0, oc0 = d.outcome;
-        var limit = {budget_exhausted: "the step budget ran out", wall_time_exhausted: "the time limit was reached", agent_timeout: "the agent ran out of time"}[oc0];
-        var line, cls;
-        if (d.status === "infra") { line = "Not scored: an infrastructure failure ended the trial."; cls = "warn"; }
-        else if (d.status === "partial") { line = "Not scored: the run was stopped before this trial finished."; cls = "warn"; }
-        else if (solved) {
-          cls = "ok";
-          line = vd.claim === "done" ? "Solved: the agent said done and the simulator confirmed the goal."
-            : vd.claim === "give_up" ? "Solved: the agent refused, which was the expected answer."
-            : oc0 === "success_reached" ? "Solved: the simulator saw the goal reached, which ended the episode."
-            : "Solved: the agent stopped without saying done, and the final state met the goal.";
-        } else {
-          cls = "no";
-          line = vd.claim === "done" ? "Not solved: the agent said done, but the goal wasn’t reached."
-            : vd.claim === "give_up" ? "Not solved: the agent gave up."
-            : limit ? "Not solved: " + limit + " before the goal was reached."
-            : "Not solved: the agent stopped without saying done, and the goal wasn’t reached.";
-        }
+        var vd = d.verdict, vl = verdictLine(), line = vl[0], cls = vl[1];
         var rows = [];
         if (d.steps_used != null) rows.push(["Steps", num(d.steps_used) + (d.max_steps ? " of " + num(d.max_steps) : "")]);
         if (d.requests != null) rows.push(["Robot requests", num(d.requests) + (d.motion != null && d.motion !== d.requests ? " (" + num(d.motion) + " moved the robot)" : "")]);
@@ -568,10 +616,11 @@
         /* wall time, robot requests and env steps are in the facts above the tabs; this tab adds only what is new */
         stats.push(["Episode", dur(d.ep_wall), ""]);
         stats.push(["Video", dur(d.duration), "robot moving"]);
+        /* "Steps" are simulator steps (the facts above); the Trajectory tab's list is its own count */
         var nAgent = d.steps.filter(function (s) { return s.src === "agent"; }).length, nAll = d.steps.length + (d.hidden || 0);
-        stats.push(["Steps", num(nAll || null), nAll && nAgent !== d.steps.length ? num(nAgent + (d.hidden || 0)) + " by the agent" : ""]);
+        stats.push(["Trajectory entries", num(nAll || null), nAll && nAgent !== d.steps.length ? num(nAgent + (d.hidden || 0)) + " by " + WHO : ""]);
         if (d.motion != null) stats.push(["Robot requests", num(d.requests), num(d.motion) + " moved the robot"]);
-        var html = '<dl class="stats">' + stats.filter(function (s) { return s[1] !== ""; }).map(function (s) { return "<div><dt>" + s[0] + '</dt><dd class="num">' + s[1] + (s[2] ? "<small>" + s[2] + "</small>" : "") + "</dd></div>"; }).join("");
+        var html = '<dl class="stats">' + stats.filter(function (s) { return s[1] !== ""; }).map(function (s) { return "<div><dt>" + s[0] + '</dt><dd class="num">' + s[1] + (s[2] ? '<span class="vh"> </span><small>' + s[2] + "</small>" : "") + "</dd></div>"; }).join("");
         if (tk) {
           html += '<div><dt>Input tokens</dt><dd class="num">' + kfmt(tk["in"]) + (tk.cached ? "<small>" + Math.round(100 * tk.cached / Math.max(1, tk["in"])) + "% cached</small>" : "") + "</dd></div>" +
             '<div><dt>Output tokens</dt><dd class="num">' + kfmt(tk.out) + (tk.reasoning ? "<small>" + kfmt(tk.reasoning) + " reasoning</small>" : "") + "</dd></div>" +
@@ -586,11 +635,10 @@
             var dt = Math.max(0, ts[k + 1].ts - s.ts);
             return '<i style="flex:' + Math.max(dt, T / 2000).toFixed(3) + ' 0 0" data-go="' + ts[k + 1].i + '" data-tip="' + dur(dt) + " before step " + sn(d, ts[k + 1].i) + "\n" + h(actionOf(ts[k + 1]).text.slice(0, 120)) + '"></i>';
           });
-          html += '<section class="chart"><h2>Wall clock between steps<span>' + dur(T) + " from the first step to the last; each segment is the time before a step (the previous command running, then the model thinking). Click one for the step.</span></h2>" +
+          html += '<section class="chart"><h2>Wall clock between steps<span>' + dur(T) + " from the first step to the last; each segment is the time before a step (" + (vla ? "the previous actions running, then the policy’s next inference" : "the previous command running, then the model thinking") + "). Click one for the step.</span></h2>" +
             '<div class="tl">' + segs.join("") + '</div><div class="axis num"><span>0</span><span>' + dur(T / 2) + "</span><span>" + dur(T) + "</span></div></section>";
         }
-        var tks = d.steps.filter(function (s) { return s.tk; });
-        var outSum = tks.reduce(function (a, s) { return a + s.tk[1]; }, 0), outOk = !tk || outSum >= 0.5 * (tk.out || 0);
+        var tks = d.steps.filter(function (s) { return s.tk; }), outOk = tokOk();
         if (tks.length > 1) {
           var maxIn = Math.max.apply(null, tks.map(function (s) { return s.tk[0]; })) || 1, maxOut = Math.max.apply(null, tks.map(function (s) { return s.tk[1]; })) || 1;
           html += '<section class="chart"><h2>Input tokens per step<span>the context the model read, up to ' + kfmt(maxIn) + '</span></h2><div class="bars">' +
@@ -620,7 +668,7 @@
         var who = d.model_label ? d.model_label + " with " + d.harness_label : (c.harness || (r.agent_info || {}).name || "") + (c.model ? " with " + c.model : "");
         var steps = ep.steps_used != null ? num(ep.steps_used) + (ep.max_steps ? " of " + num(ep.max_steps) : "") + " simulator steps" : "";
         var parts = [], scored = d.status !== "infra" && d.status !== "partial";
-        if (reward != null && scored) parts.push("Reward " + rew(reward) + (ep.outcome ? ", " + h(oc(ep.outcome).toLowerCase()) : ""));
+        if (reward != null && scored) parts.push("Reward " + rew(reward) + (ep.outcome ? ", " + h(ocT(ep.outcome).toLowerCase()) : ""));
         else if (d.status === "infra") parts.push("Not scored: infrastructure failure");
         else if (d.status === "partial") parts.push("Not scored: the run was stopped");
         if (steps) parts.push(steps + (ep.requests != null ? " in " + num(ep.requests) + " robot requests" : ""));
@@ -630,16 +678,16 @@
         if (r.agent_timed_out) agent.push("timed out");
         if (r.exception_info) agent.push("stopped by an exception");
         /* the runner's note ("agent timed out") when the lines above already say it */
-        function said(t) { var x = unrunner(t).toLowerCase().replace(/[.\s]+$/, ""); return x === oc(ep.outcome).toLowerCase() || (r.agent_timed_out && /timed out$/.test(x)); }
+        function said(t) { var x = unrunner(t).toLowerCase().replace(/[.\s]+$/, ""); return x === ocT(ep.outcome).toLowerCase() || (r.agent_timed_out && /timed out$/.test(x)) || (vla && /step budget reached$/.test(x)); }
         var result = '<section class="card sum"><h2>Result</h2><p>' + (parts[0] || "Not scored") + ".</p>" +
           (parts[1] ? "<p>" + parts[1] + (wall ? ", " + wall + " in all" : "") + ".</p>" : "") +
-          (agent.length ? '<p class="muted">Agent: ' + agent.join(", ") + ".</p>" : "") +
+          (agent.length ? '<p class="muted">' + (vla ? "Policy" : "Agent") + ": " + agent.join(", ") + ".</p>" : "") +
           (ep.agent_text && !said(ep.agent_text) ? "<blockquote>" + h(unrunner(ep.agent_text)) + "</blockquote>" : "") + "</section>";
         var chips = [meta.source_benchmark, meta.category && meta.category.replace(/-/g, " "), meta.difficulty].filter(Boolean)
           .map(function (x) { return '<span class="chip">' + h(x) + "</span>"; }).join("") +
           (meta.tags || []).map(function (x) { return '<span class="chip tag">' + h(x) + "</span>"; }).join("");
-        var setup = '<section class="card sum"><h2>Setup</h2><p>' + h(who || "Agent") +
-          (c.agent_timeout_s ? ", " + dur(c.agent_timeout_s) + " agent time limit" : "") + (c.seed != null ? ", seed " + h(c.seed) : "") + ".</p>" +
+        var setup = '<section class="card sum"><h2>Setup</h2><p>' + h(vla && d.model_label ? d.model_label + ", a VLA policy" : who || "Agent") +
+          (c.agent_timeout_s ? ", " + dur(c.agent_timeout_s) + (vla ? " time limit" : " agent time limit") : "") + (c.seed != null ? ", seed " + h(c.seed) : "") + ".</p>" +
           (d.hub ? '<p class="muted">Task <a class="ln" href="' + h(d.hub) + '">' + h(d.title || c.task) + "</a></p>" : "") +
           (chips ? '<p class="chips">' + chips + "</p>" : "") + "</section>";
         return '<div class="sums">' + result + setup + "</div>";
@@ -665,6 +713,7 @@
           else if (p === "verifier/test-stdout.txt" && d.verdict && d.verdict.verifier) e.t = d.verdict.verifier;
           else if (p === "verifier/reward.txt" && d.reward != null) e.t = String(d.reward);
           else if (p === "artifacts/recording.mp4") { if (d.video) e.v = d.video; else e.w = "Not published. The recording has no video frames."; }
+          else if (p === "episode/recording.mp4" && d.video) { e.w = why(p); e.href = "#files/artifacts/recording.mp4"; e.hrefLabel = "Open artifacts/recording.mp4"; }
           else if (p === "agent/trajectory.json") {
             if (d.withheld) e.w = "Withheld. " + WITHHELD.replace(/^Trajectory not published: /, "").replace(/^./, function (c) { return c.toUpperCase(); });
             else { e.w = "Shown as the Trajectory tab. The raw file is not published; the Trajectory tab shows every step with its commands and outputs, redacted and clipped."; e.href = "#trajectory"; e.hrefLabel = "Open the Trajectory tab"; }
@@ -762,7 +811,7 @@
           body.setAttribute("aria-busy", "false");
           var facts = [["Outcome", st === "ok" || st === "infra" ? "" : ocOf(d)], ["Steps", d.steps_used != null ? num(d.steps_used) + (d.max_steps ? " of " + num(d.max_steps) : "") : ""],
             ["Time", dur(d.wall)], ["Reward", d.reward != null && +d.reward !== 0 && +d.reward !== 1 ? rew(d.reward) : ""]].filter(function (f) { return f[1]; });
-          var said = d.withheld || st === "infra" ? "" : String(vd.claim_text || "").replace(/^\[runner\]\s*/, "");
+          var said = d.withheld || st === "infra" || d.kind === "vla" ? "" : String(vd.claim_text || "").replace(/^\[runner\]\s*/, "");  /* a policy says nothing; "vla: step budget reached" is its runner's note */
           body.innerHTML = (d.video ? '<div class="vbox"><video src="' + h(d.video) + '" poster="' + h(d.video.replace("/runs/v/", "/runs/p/").replace(/\.mp4$/, ".jpg")) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="metadata"></video></div>' : "") +
             '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.model_label ? (d.mark || "") + nb(d.model_label) + "\u00a0· " + (d.hmark || "") + nb(d.harness_label) : (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0]))) + "</a>" + (d.image_input === false ? NOIMG : "") + "</p>" +
             (facts.length ? '<dl class="facts">' + facts.map(function (f) { return "<div><dt>" + f[0] + "</dt><dd>" + h(f[1]) + "</dd></div>"; }).join("") + "</dl>" : "") +
