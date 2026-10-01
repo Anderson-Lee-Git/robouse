@@ -55,6 +55,7 @@ import argparse
 import html
 import importlib.util
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -1008,6 +1009,21 @@ def fnum(x) -> str:
         return ""
 
 
+def pct_key(x: float) -> float:
+    """The whole percent a share (0 to 1) reads as: rounded half up (37 of 40 is 93); a share above 0 that would read 0
+    is 0.5 ("<1%"), one below 1 that would read 100 is 99.5 (">99%"). The one rule on every robouse.ai page: roboharm
+    tools/build_hub.py pct_key and /ui.js UI.pctKey are the same (the share to six decimals, as the hub's JSON has it)."""
+    v = round(x, 6)
+    p = math.floor(v * 100 + 0.5 + 1e-9)  # the epsilon keeps a binary 92.4999… that is 92.5 from rounding down
+    return 0.5 if p == 0 and v > 0 else 99.5 if p == 100 and v < 1 else p
+
+
+def pct(x: float) -> str:
+    """A share as the site shows it: "93%", "<1%", ">99%" (pct_key)."""
+    k = pct_key(x)
+    return "<1%" if k == 0.5 else ">99%" if k == 99.5 else f"{k}%"
+
+
 def freward(r) -> str:
     try:
         return f"{float(r):.1f}"
@@ -1258,8 +1274,8 @@ def build_runs(runs: dict) -> str:
                     f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, False)}</a>{" " + noimg_tag() if r["noimg"] else ""}</th>'
                     f'<td class="sus" data-v="{esc(r["ds"])}">{ds_cell(r["ds"])}{tag}</td>'
                     f'<td class="muted num" data-v="{esc(r["start"])}">{esc(fmt_date(r["start"]))}{state}</td>'
-                    f'<td class="n num" data-v="{len(r["trials"])}">{len(r["trials"])}</td>'
-                    f'<td class="n num" data-v="{rate:.4f}">{f"{rate * 100:.0f}%" if rate >= 0 else "·"}</td></tr>')
+                    f'<td class="n num" data-v="{r["scored"]}">{r["scored"]}</td>'
+                    f'<td class="n num" data-v="{rate:.4f}">{pct(rate) if rate >= 0 else "·"}</td></tr>')
     idxs = sorted({r["hm"] for r in runs.values()})
     harn = sorted({(hslug(i), HM[i].get("harness_label") or HM[i]["harness"]) for i in idxs}, key=lambda x: x[1].lower())
     dss = sorted({r["ds"] for r in runs.values()})
@@ -1274,7 +1290,7 @@ def build_runs(runs: dict) -> str:
 {ctrl}
 <div class="scroll tbl"><table class="list runs">
   <caption class="vh">Main runs first, newest first; zero-shot probes after them. Sort by any column.</caption>
-  <thead><tr>{th_sort('Model<span class="hh"> · harness</span>', "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort("Trials", "num", "n")}{th_sort('<span class="sl-l">Solve rate</span><span class="sl-s">Solved</span>', "num", "n")}</tr></thead>
+  <thead><tr>{th_sort('Model<span class="hh"> · harness</span>', "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort('<span class="sl-l">Scored trials</span><span class="sl-s">Scored</span>', "num", "n", title="Trials that count toward the solve rate; the run page lists every trial")}{th_sort('<span class="sl-l">Solve rate</span><span class="sl-s">Solved</span>', "num", "n")}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("runs", "Clear the search or the filters.")}

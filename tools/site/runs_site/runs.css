@@ -503,9 +503,10 @@ table.list.runs td.sus{min-width:0;max-width:none;overflow-wrap:anywhere}
 /* who made the model and whose weights ran (tools/models.json `provenance`), under a run's title */
 .head .prov{margin:var(--sp-6) 0 0;max-width:720px;font:400 var(--fs-small)/1.5 var(--sans);color:var(--muted)}
 table.list th:last-child .sb{margin-right:0}  /* the sort button's bleed must not widen the table past its box */
-@media (max-width:560px){table.list.runs th:nth-child(3),table.list.runs td:nth-child(3),table.list.runs th:nth-child(4),table.list.runs td:nth-child(4){display:none}}
+/* up to 620 px the date and the scored count drop (below that width all five columns overflow the list's box) */
+@media (max-width:620px){table.list.runs th:nth-child(3),table.list.runs td:nth-child(3),table.list.runs th:nth-child(4),table.list.runs td:nth-child(4){display:none}}
 
-@media (max-width:560px){.rtag{display:table;border-collapse:separate;margin:var(--sp-2) 0 0}table.list.runs th,table.list.runs td{padding-right:var(--sp-10)}}
+@media (max-width:620px){.rtag{display:table;border-collapse:separate;margin:var(--sp-2) 0 0}table.list.runs th,table.list.runs td{padding-right:var(--sp-10)}}
 /* a run's trials: task titles in the text face with room to breathe; the outcome column is narrow (exceptions only) */
 table.list.rt th[scope="row"]{white-space:normal;width:55%;min-width:220px}
 a.rtk{font:500 var(--fs-small)/1.4 var(--sans);color:var(--ink)}
