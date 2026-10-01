@@ -4,20 +4,10 @@
 
 ```sh
 pip install 'robouse[sim]'
-robouse run --task arc-gravity --harness claude-code-glm --model moonshotai/Kimi-K3 --out runs/quickstart
 ```
 
-Python 3.11 to 3.13. Extras add simulators: `metaworld`, `gymrobotics`, `robosuite`, `dexjoco`, `all`.
+The package contains 692 tasks in 31 suites, from rule puzzles on a table to Meta-World, LIBERO, RoboCasa, quadrupeds, humanoids and drones, and harnesses for Claude Code, Codex, mini-swe-agent and served VLA policies. It needs Python 3.11 to 3.13.
 
-Docs: [robouse.ai/docs](https://robouse.ai/docs/). Results: [robouse.ai/runs](https://robouse.ai/runs/).
-
-## Working on Robo Use
-
-An editable install uses the checkout's `tasks/` and `assets/`:
-
-```sh
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -e ".[metaworld,gymrobotics]"
-```
-
-The public docs are built from `docs/` by `tools/docs/build_docs.py`, which publishes the pages in its `PAGES`; the other files in `docs/` are maintainers' notes. `tools/docs/cli_reference.py` and `tools/docs/suites_reference.py` regenerate the CLI page and the suites table from an installed release.
+- First run: [robouse.ai/docs/quickstart](https://robouse.ai/docs/quickstart/)
+- Documentation: [robouse.ai/docs](https://robouse.ai/docs/)
+- Datasets, tasks and results: [robouse.ai/hub](https://robouse.ai/hub/)
