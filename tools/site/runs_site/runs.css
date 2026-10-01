@@ -185,6 +185,7 @@ dl.facts dd{overflow-wrap:break-word}
 .badge.ok{color:var(--ok-ink);background:color-mix(in srgb,var(--ok) 10%,transparent)}
 .badge.no{color:var(--no-ink);background:color-mix(in srgb,var(--no) 9%,transparent)}
 .badge.infra,.badge.partial,.badge.some{color:var(--ink2);background:var(--press)}
+.badge.budget{color:var(--ink2);background:color-mix(in srgb,var(--muted) 12%,transparent)}
 .state{font:500 var(--fs-meta)/1 var(--sans);color:var(--muted)}
 .state.running{color:var(--ink2)}
 .chip{display:inline-flex;align-items:center;height:var(--ctl-xs);padding:0 var(--sp-8);border:var(--hairline);border-radius:var(--r-pill);font:400 var(--fs-caption)/1 var(--sans);color:var(--ink2)}

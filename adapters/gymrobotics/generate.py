@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import tomllib
 from pathlib import Path
 
 from robouse.backends.gymrobotics.backend import TASKS
 from robouse.core.prompts import ROBO_USAGE
-from robouse.tasks import to_native
+from robouse.tasks import write_task
 
 
 def _metaworld_verify() -> str:
@@ -203,20 +204,14 @@ def main() -> None:
         shutil.rmtree(out)
     verify = _metaworld_verify()
     for task_id, (env, seed) in TASKS.items():
-        d = out / task_id
-        (d / "solution").mkdir(parents=True)
-        (d / "tests").mkdir()
         toml, instr = build(task_id, env, seed)
-        (d / "task.toml").write_text(toml)
-        (d / "instruction.md").write_text(instr)
-        (d / "solution" / "solve.sh").write_text(
+        t = tomllib.loads(toml)
+        meta = {k: t.get(k, {}) for k in ("task", "metadata", "agent", "verifier", "robouse")}
+        oracle = (
             "#!/bin/bash\n# Reference solution: scripted controller that uses only the robo socket and public observations.\n"
             f"set -euo pipefail\npython -m robouse.oracle --backend gymrobotics --env {task_id}\n"
         )
-        (d / "tests" / "test.sh").write_text(verify)
-        for f in (d / "solution" / "solve.sh", d / "tests" / "test.sh"):
-            f.chmod(0o755)
-        to_native(d)
+        write_task(out / task_id, meta, instr, oracle, verify)
     print(f"wrote {len(TASKS)} tasks to {out}")
 
 

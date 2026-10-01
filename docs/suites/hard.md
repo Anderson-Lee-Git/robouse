@@ -59,7 +59,7 @@ On the final version (v4):
 
 - Reference solutions: 25/25 (`runs/oracle-hard-v4`).
 - No-op control: 0/25 (`runs/noop-hard-v4`).
-- Each task folder's `robouse.scenario` holds the full scene, including object positions and goals, which the server needs. Agents never see it: they run in a temporary workspace that holds only `instruction.md` (the task body), the `robo` shim and `observations/`. Vision observations are filtered to the listed fields unless the request carries the oracle token. None of the agent transcripts from the four versions mention the task folders, the backend module or the repository.
+- Each task folder's `robouse.scenario` holds the full scene, including object positions and goals, which the server needs. Agents never see it: they get the task body as their prompt and run in a temporary workspace that holds only the `robo` shim and `observations/`. Vision observations are filtered to the listed fields unless the request carries the oracle token. None of the agent transcripts from the four versions mention the task folders, the backend module or the repository.
 
 ## Results and iteration history
 

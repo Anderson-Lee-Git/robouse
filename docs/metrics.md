@@ -1,43 +1,48 @@
-# Metrics, splits, repeats and reports
+# Metrics
+
+The episode server records the physical state at every control step in `episode/physics.jsonl` (end-effector or base position, simulation time, the largest contact force on the robot) and writes `metrics` into `episode/result.json` when the episode ends. Metrics never change the verdict.
 
 ## Episode metrics
 
-The episode server samples the physical state at every control step (`episode/physics.jsonl`: end-effector or base point, simulation time, the largest contact force on the robot's own geoms) and writes `metrics` into `episode/result.json` when the episode ends. They never change the verdict.
-
 | Metric | Definition |
 |---|---|
-| `success` | the trusted verdict |
-| `progress` | fraction of the task's stages reached in order, or the operator's rubric stage over the top stage; otherwise equal to success |
-| `execution_time_s` | control steps used x control period (reported over successful episodes) |
-| `execution_speed` | stages (or 1 task) completed per active minute (successful episodes) |
-| `smoothness_sparc` | spectral arc length of the end-effector (or base) speed, fc = 10 Hz; <= 0, closer to 0 is smoother |
-| `avg_jerk` | mean norm of the end-effector jerk after a 10 Hz low-pass (m/s^3) |
+| `success` | the verdict: 1 or 0 |
+| `progress` | fraction of the task's stages reached in order; equal to `success` for tasks without stages |
+| `execution_time_s` | control steps used × control period (solved episodes) |
+| `execution_speed` | stages (or 1 task) completed per active minute (solved episodes) |
+| `smoothness_sparc` | spectral arc length of the end-effector (or base) speed; at most 0, closer to 0 is smoother |
+| `avg_jerk` | mean norm of the end-effector jerk after a 10 Hz low-pass, m/s³ |
 | `path_length_m` | end-effector (or base) path length |
 | `max_contact_force_n` | largest normal contact force on the robot (MuJoCo backends) |
-| `safety_events`, `safe_failure` | safety events (falls, crashes, harm, e-stops, stops); a failed episode with none is a safe failure |
-| `excellent` | success with no safety event and no vetoed motion (aggregated as execution quality over successes) |
-| navigation | `arrived`, `spl`, `soft_spl`, `collisions`, `time_to_target_s`, `path_ratio`, `excess_turning_rad_per_m` ([suites/nav.md](suites/nav.md)) |
+| `safety_events`, `safe_failure` | falls, crashes, harm and stops; a failed episode with none is a safe failure |
+| `excellent` | solved with no safety event and no vetoed motion |
 
-Each trial's `result.json` also carries `cost`: prompt, completion and cached tokens from the ATIF trajectory, and USD from the harness (Claude Code) or `src/robouse/pricing.json` (Baseten Model API prices read 2026-09-29; override with `ROBOUSE_PRICING`). `config.json` carries provenance (Robo Use version, git commit and dirty flag, Python, simulator package versions).
+Navigation tasks add `arrived`, `spl`, `soft_spl`, `collisions`, `time_to_target_s`, `path_ratio` and `excess_turning_rad_per_m`.
 
-## Repeats, subsets and splits
+Each trial's `result.json` also has `cost`: prompt, completion and cached tokens from the trajectory, and US dollars from the harness (Claude Code) or from Robo Use's price table for Baseten models (override with `ROBOUSE_PRICING`).
 
-```bash
-robouse run-many --harness oracle --out runs/x \
-  --include 'libero-*' --exclude '*-drawer*' --sample 20 --sample-seed 1 \
-  --seeds 0-4 --epochs 1 --retries 2 --split interpolation --dry-run
-```
+## Splits
 
-- `--seeds` (one trial per seed; pass@k in the report), `--epochs` (repeats of the same seed, e.g. real robots), `--retries` (infrastructure failures only, exponential backoff, failed trial kept in `_infra_failed/`).
-- `--include` / `--exclude` (globs on task ids), `--sample N --sample-seed S`, `--limit`, `--mode sim|real`, `--dry-run`.
-- `--extra-instruction TEXT`, `--prior-learnings FILE` (e.g. from `robouse summarize TRIAL`, a deterministic digest of a trial's outcome, errors and last requests).
-- `--split nominal|interpolation|extrapolation`: seeded object placements, identical for every policy given (task, split, seed). Nominal: the task's placement or one of four 2 cm diagonal shifts; interpolation: unseen placements inside that square; extrapolation: 3-6 cm away. Supported by the tabletop pick-and-place scenes (68 tasks without a cell grid). Reference solutions: 8/8 on each split (4 tasks x seeds 0-1).
+`--split` on `robouse run` and `run-many` moves the objects of the tabletop pick-and-place tasks to seeded placements, the same for every policy given the task, split and seed:
+
+- `nominal`: the task's own placement, or one of four 2 cm diagonal shifts.
+- `interpolation`: unseen placements inside that square.
+- `extrapolation`: 3 to 6 cm from the task's own placement.
 
 ## Reports
 
-```bash
-robouse report runs/a runs/b --by harness,model --by suite
-robouse report runs/nav-* --by model --metrics success,spl,soft_spl,collisions,cost_usd --cost-quality cq.json --svg cq.svg
+`robouse report` aggregates job folders:
+
+```console
+$ robouse report runs/mw-oracle runs/mine
+| harness | model | n | success | progress | execution_quality | execution_time_s | ... | cost_usd |
+|---|---|---|---|---|---|---|---|---|
+| noop | none | 1 | 0.0 [0.0, 79.3] | 0.0 [0.0, 0.0] | - | - | ... | 0 [0, 0] |
+| oracle | scripted | 6 | 83.3 [43.6, 97.0] | 83.3 [50.0, 100.0] | 100.0 [56.5, 100.0] | 1.84 [1.18, 2.93] | ... | 0 [0, 0] |
+
+Proportions and progress in %; brackets are 95% intervals (Wilson for proportions, bootstrap for means).
 ```
 
-Groups by any of harness, model, suite, category, difficulty, task, split, seed, mode (sim / real / hil-mock), job, regime (a job's training-data regime, set in its `job.json`) and released (a task's `metadata.released`, public vs held-out). Proportions get 95% Wilson score intervals (defined at 0% and 100%), means get 95% percentile bootstrap intervals (2000 resamples, fixed seed), and pass@k (unbiased) is averaged over tasks when trials repeat. `--json` writes everything; `--cost-quality` and `--svg` write cost-per-run against success for groups with a known cost.
+- `--by harness,model` (default) groups trials; other keys: `suite`, `category`, `difficulty`, `task`, `split`, `seed`, `mode` (sim, real or hil-mock), `job`, `regime`, `released`.
+- When a task has several trials, pass@k is averaged over tasks.
+- `--metrics` picks the columns, `--json FILE` writes everything, and `--cost-quality FILE` and `--svg FILE` write cost against solve rate.

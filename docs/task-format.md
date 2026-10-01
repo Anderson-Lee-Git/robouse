@@ -1,8 +1,6 @@
 # task.md
 
-A task folder holds `task.md`, `oracle/solve.sh` and `verifier/test.sh`. BenchFlow loads the folder as it is: the installed robouse package (`robouse.engine.format`) generates the Docker environment, the verifier and the oracle package for it, so there is no `environment/` folder to write.
-
-`task.md` is YAML frontmatter followed by the instruction the agent reads, in markdown. This is `metaworld-push`, trimmed:
+A task folder holds `task.md`, `oracle/solve.sh` and `verifier/test.sh`. `task.md` is YAML frontmatter followed by the instruction in markdown, which the agent gets as its prompt. This is `metaworld-push`, trimmed:
 
 ```markdown
 ---
@@ -36,37 +34,36 @@ robouse:
 A Sawyer robot arm with a two-finger gripper stands at a table ...
 ```
 
-`schema_version`, `task`, `metadata`, `agent` and `verifier` follow BenchFlow's native task format. Robo Use reads `agent.timeout_sec` (the harness's wall-clock limit, default 900 s) and the `robouse:` block.
+`schema_version`, `task`, `metadata`, `agent` and `verifier` are BenchFlow's task fields. Robo Use reads `agent.timeout_sec` (the harness's wall-clock limit, default 900 s) and the `robouse:` block.
 
 ## The robouse block
 
 | Field | Default | Meaning |
 |---|---|---|
 | `id` | required | task id, as used by `robouse run --task` |
-| `backend` | required | simulator backend, e.g. `tabletop`, `metaworld`, `libero`, `robosuite`, `menagerie`, `roboharm`, `drone`, the embodiment suites' backends, or `components` (a composed task) |
+| `backend` | required | simulator backend, as in the second column of `robouse tasks` |
 | `env` | | the backend's scene or env id, e.g. `push-v3` |
-| `scenario` | | tabletop only: the whole scene (objects, fixtures, goals) |
-| `instance` | | composed tasks only (`backend: components`), written by `robouse tasks init`: `embodiment`, `scene` and `task` as `{id, version}`, `modifiers` (`obs`, `budget`, `perturbation`, `safety`, `roles`), `seed`, and `layout` (the generated objects, fixtures, goal and safety overlay); see [Components](components.md). Tasks written before the rename use `backend: remix` with a `remix:` block, which loads with a deprecation warning until the next release |
-| `seed` | 0 | object and goal layout; `--seed` overrides it, `--seeds 0-4` runs one trial per seed |
+| `scenario` | | tabletop only: the whole scene (objects, fixtures, goals, constraints); see [Write or compose a task](write-a-task.md#write-a-task-by-hand) |
+| `instance` | | composed tasks only (`backend: components`), written by `robouse tasks init`: the embodiment, scene and task template with their versions, the modifiers, the seed and the generated layout |
+| `seed` | 0 | object and goal layout; `--seed` overrides it |
 | `max_steps` | backend's | step budget; every simulated step counts, including skills |
 | `success_mode` | `final` | `final`: goal checked after `robo done` and 10 still steps. `first`: solved the first time the benchmark's success signal fires |
-| `skills` | `true` | allow the robot's skills (`robo skill`, and on arm tasks the shorthands `robo move-to` and `robo grip`) |
+| `skills` | `true` | allow `robo move-to`, `robo grip` and `robo skill` |
 | `max_repeat` | 50 | cap on `robo act --repeat` and `robo grip --steps` |
 | `obs_mode` | `state` | `state`: all state as numbers. `vision`: only `visible_fields`, plus camera images |
 | `visible_fields` | `hand_pos`, `gripper_open` | state fields shown in vision mode |
 | `camera` | backend's | camera used for the video |
 | `cameras` | `[camera]` | cameras whose images vision mode saves |
 | `uncalibrated_cameras` | | cameras `robo info` gives no projection matrix for |
-| `safety` | | `refuse` (tabletop, roboharm, drone, embodiment suites): refusing with `robo give-up`, without harmful contact, is the rewarded behaviour; composed tasks set this through the `safety` modifier |
-| `roles` | | optional, for BenchFlow scenes with several roles on one robot: `{planner: {allow: [info, observe, status]}, operator: {allow: all}}`; a request carries its role from `ROBO_ROLE` |
-| `trace_state` | `true` | record the state after every simulator step in `steps.jsonl` (the training trace) |
+| `safety` | | `refuse`: refusing with `robo give-up`, without harmful contact, is the rewarded behaviour |
+| `interface` | `cli` | what the agent drives the robot with: `cli` (the `robo` command), `mcp` (the `robo` MCP tools) or `both`; `--interface` overrides it ([MCP](mcp.md)) |
 
-Some backends read fields of their own (robosuite: `robots`, `controller`; LIBERO: `suite`, `task_index`, `init_state`, ...); copy them from a bundled task of that backend. Scoring and observation modes are explained in [Tasks and scoring](tasks.md).
+Some backends read fields of their own (robosuite: `robots`, `controller`; LIBERO: `suite`, `task_index`, `init_state`); copy them from a task of that backend.
 
 ## oracle/solve.sh
 
-The reference solution. It runs like an agent, with `robo` on its `PATH` and no access to the simulator, and it must score 1. The bundled tasks call `python -m robouse.oracle`; on vision tasks the runner gives the reference solution, and only it, the full state. Your own can be plain `robo` commands; [Write a task](write-a-task.md) has one that reads positions from `robo observe --json` and uses only skills.
+The reference solution. It runs like an agent, with `robo` on its `PATH` and no access to the simulator, and it must score 1. The tasks in the package call `python -m robouse.oracle`; on vision tasks the runner gives the reference solution, and only it, the full state. Your own can be plain `robo` commands.
 
 ## verifier/test.sh
 
-Copies the episode server's verdict, `$ROBOUSE_EPISODE_DIR/result.json`, into `$ROBOUSE_VERIFIER_DIR/reward.txt` as `1` or `0`. Every bundled task's script does the same; copy one unchanged.
+Copies the episode server's verdict, `$ROBOUSE_EPISODE_DIR/result.json`, into `$ROBOUSE_VERIFIER_DIR/reward.txt` as `1` or `0`. Every task in the package uses the same script; copy one unchanged.

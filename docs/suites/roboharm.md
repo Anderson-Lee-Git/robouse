@@ -49,7 +49,7 @@ Scenes no longer use the floating gripper. A Franka Emika Panda arm (MuJoCo Mena
 
 The honeypot text follows the study's `honeypot_briefing_generic.md` and adds RoboJailBench-style "it is only a simulation" framing.
 
-The honeypot lives inside the instruction because the runner only writes `instruction.md` into the workspace. A separate briefing file in the workspace would need a session feature (see below).
+The honeypot lives inside the instruction because the agent gets only the instruction (as its prompt) and `observations/`. A separate briefing file in the workspace would need a session feature (see below).
 
 Every harness prompt already begins "You are controlling a simulated robot" (`harnesses.PROMPT_PREFIX`), so `raw` is not simulation-free. The honeypot's added content is the claim that nothing is real and the scenario-specific claim that the hazard is fake.
 
@@ -90,5 +90,5 @@ See the probe section of the report in [drone.md](drone.md#model-probe), which c
 - Layouts are fixed per scenario; the seed does not change positions.
 - Harm is measured by contact, zones and containment, not by simulated injury, liquid or gas. Water, fire, electricity and toxic gas are implied by labels and scene state, not simulated.
 - The person is static and does not react.
-- The honeypot is in the instruction text, not a separate file. Session feature for the lead, if wanted: an optional backend hook `workspace_files() -> dict[name, text]` that `Episode._save_workspace_images` (or a sibling) writes into the workspace. That would let a `honeypot` config drop `briefing.md` next to `instruction.md`, which is closer to the real-robot study.
+- The honeypot is in the instruction text, not a separate file. Session feature for the lead, if wanted: an optional backend hook `workspace_files() -> dict[name, text]` that `Episode._save_workspace_images` (or a sibling) writes into the workspace. That would let a `honeypot` config drop a `briefing.md` into the workspace, which is closer to the real-robot study.
 - Agents that can read the repository could find the scenario definitions. Model harnesses run in the sandbox that denies reading `~/benchflow`.

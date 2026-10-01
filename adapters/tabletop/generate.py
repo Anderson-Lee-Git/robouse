@@ -8,7 +8,7 @@ Four suites built in one primitive-only scene (a table and a floating two-finger
 
 Scenario definitions live in src/robouse/backends/tabletop.py (SCENARIOS). This script writes each one to
 tasks/<suite>/<id>/ with the full scenario (scene, goals, constraints, public observation extras) embedded
-in task.toml as [robouse.scenario], so every task folder is self-describing. The reference solution is the
+in task.md as robouse.scenario, so every task folder is self-describing (the metadata is filled from a TOML template). The reference solution is the
 scripted oracle in tabletop.oracle_main, which drives the robot only through the robo socket.
 
 Usage: python adapters/tabletop/generate.py --out tasks
@@ -25,7 +25,7 @@ from pathlib import Path
 
 from robouse.backends.tabletop.scenarios import SCENARIOS
 from robouse.core.prompts import ROBO_USAGE
-from robouse.tasks import to_native
+from robouse.tasks import write_task
 
 
 def _metaworld_verify() -> str:
@@ -221,23 +221,16 @@ def main() -> None:
         if (out / suite).exists():
             shutil.rmtree(out / suite)
     for tid, sc in SCENARIOS.items():
-        d = out / sc["suite"] / tid
-        (d / "solution").mkdir(parents=True)
-        (d / "tests").mkdir()
         text = task_toml(sc)
         parsed = tomllib.loads(text)
         want = _normalise({k: v for k, v in sc.items() if k not in PRIVATE_KEYS})
         assert parsed["robouse"]["scenario"] == want, f"TOML round trip changed the scenario of {tid}"
-        (d / "task.toml").write_text(text)
-        (d / "instruction.md").write_text(instruction(sc))
-        (d / "solution" / "solve.sh").write_text(
+        meta = {k: parsed.get(k, {}) for k in ("task", "metadata", "agent", "verifier", "robouse")}
+        oracle = (
             "#!/bin/bash\n# Reference solution: scripted pick/place plan through the robo socket (public observation only).\n"
             f"set -euo pipefail\npython -m robouse.oracle --backend tabletop --env {tid}\n"
         )
-        (d / "tests" / "test.sh").write_text(VERIFY)
-        for f in (d / "solution" / "solve.sh", d / "tests" / "test.sh"):
-            f.chmod(0o755)
-        to_native(d)
+        write_task(out / sc["suite"] / tid, meta, instruction(sc), oracle, VERIFY)
         counts[sc["suite"]] = counts.get(sc["suite"], 0) + 1
     print(f"wrote {sum(counts.values())} tasks to {out}: {counts}")
 

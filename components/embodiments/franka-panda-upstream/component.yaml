@@ -10,10 +10,13 @@ capabilities:
 - grasp
 composable: false
 suites:
+- capx
+- capx-libero
 - gpu-maniskill
 - kitchen
 - libero
 - libero-90
 - maniskill
+- rle-bench
 - robocasa
 - robosuite

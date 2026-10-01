@@ -7,7 +7,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 export MUJOCO_GL=cgl
-PAIRS=("codex:gpt-6-astra:4:astra" "claude-code-glm::3:cc-glm" "codex-glm::2:codex-glm" "mini-swe-agent-glm::2:mini-glm")
+# harness:model:concurrency:tag. Models other than a harness's own vendor's go through the trial's model gateway, which
+# needs their provider key (e.g. BASETEN_API_KEY) in the environment and stops a trial at ROBOUSE_SPEND_CAP_USD (default 5).
+PAIRS=("codex:gpt-6-astra:4:astra" "claude-code:baseten/zai-org/GLM-5.3:3:cc-glm" "codex:baseten/zai-org/GLM-5.3:2:codex-glm"
+  "mini-swe-agent:baseten/zai-org/GLM-5.3:2:mini-glm")
 if [ -n "${FINAL_PAIRS:-}" ]; then read -r -a PAIRS <<< "$FINAL_PAIRS"; fi
 # Embodiment suites (not arms): quadruped humanoid mobile-manip dexhand crazyflie (robot models: `robouse fetch-assets`);
 # driving needs MetaDrive in its own venv (docs/suites/driving.md).
@@ -18,8 +21,6 @@ for spec in "${PAIRS[@]}"; do
   (
     for suite in "${SUITES[@]}"; do
       [ -d "tasks/$suite" ] || continue
-      # codex-glm cannot send images to the GLM endpoint, so it skips the image-only suites
-      if [ "$tag" = "codex-glm" ] && { [ "$suite" = vision ] || [ "$suite" = hard ]; }; then continue; fi
       job="runs/final-$suite-$tag"; mkdir -p "$job"
       .venv/bin/robouse run-many --tasks "tasks/$suite" --harness "$h" --model "$m" --out "$job" --concurrency "$c" --resume >> "$job/console.log" 2>&1
     done

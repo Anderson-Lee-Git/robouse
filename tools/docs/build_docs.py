@@ -28,6 +28,7 @@ import html
 import importlib.util
 import posixpath
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -39,6 +40,38 @@ GITHUB = "https://github.com/benchflow-ai/robouse"
 # Absolute links to docs in the repository (README uses them so they work on PyPI) map to the generated pages.
 GITHUB_DOC_RE = re.compile(re.escape(GITHUB) + r"/(?:blob|tree)/main/((?:docs/|README\.md).*)$")
 MARKER = ".build_docs"  # written into --out so a rebuild only ever clears a directory this script owns
+
+
+WRAP_AT = 56  # the docs code column fits about 64 monospace characters at desktop width
+WRAP_CMD = re.compile(r"^(\$ )?(robouse (run|run-many|tasks init)|bench eval run)\s")
+
+
+def wrap_command(line: str) -> list[str]:
+    """Put a long robouse/bench command on one flag per line, with backslash continuations.
+
+    Only simple commands are touched: no pipes, chains, comments, redirects or existing continuations.
+    """
+    if len(line) <= WRAP_AT or not WRAP_CMD.match(line) or re.search(r"&&|\|\||[|;<>#]|\\$", line):
+        return [line]
+    prompt = "$ " if line.startswith("$ ") else ""
+    lex = shlex.shlex(line[len(prompt):], posix=False)
+    lex.whitespace_split, lex.commenters = True, ""
+    toks = list(lex)
+    first = next((i for i, t in enumerate(toks) if t.startswith("-")), None)
+    if first is None:
+        return [line]
+    groups, cur = [" ".join(toks[:first])], []
+    for t in toks[first:]:
+        if t.startswith("-") or len(cur) >= 2:  # a flag and at most one value per line
+            if cur:
+                groups.append(" ".join(cur))
+            cur = [t]
+        else:
+            cur.append(t)
+    groups.append(" ".join(cur))
+    ind = " " * (len(prompt) + 2)
+    return [prompt + groups[0] + " \\"] + [ind + g + " \\" for g in groups[1:-1]] + [ind + groups[-1]]
+
 
 class Source:
     """Reads docs from a git revision (default HEAD, so the site matches the repository) or the working tree."""
@@ -68,40 +101,65 @@ class Source:
         return self.read_bytes(path).decode("utf-8")
 
 
-# (group, source path relative to the repo, slug, nav label). Order = sidebar order = prev/next order.
-# old slug -> new slug of pages that moved (a redirect stub is written at the old URL)
-REDIRECTS = {"remix": "components"}
-PAGES: list[tuple[str, str, str, str]] = [
-    ("Get started", "docs/index.md", "", "Overview"),
-    ("Get started", "docs/quickstart.md", "quickstart", "Quickstart"),
-    ("Get started", "docs/supported.md", "supported", "Supported"),
-    ("Concepts", "docs/tasks.md", "tasks", "Tasks and scoring"),
-    ("Concepts", "docs/episodes.md", "episodes", "Episodes and robo"),
-    ("Concepts", "docs/harnesses.md", "harnesses", "Harnesses"),
-    ("Concepts", "docs/components.md", "components", "Components"),
-    ("Guides", "docs/run-an-agent.md", "run-an-agent", "Run an agent"),
-    ("Guides", "docs/write-a-task.md", "write-a-task", "Write a task"),
-    ("Guides", "docs/run-a-suite.md", "run-a-suite", "Run a suite"),
-    ("Guides", "docs/datasets.md", "datasets", "Datasets"),
-    ("Reference", "docs/cli.md", "cli", "robouse CLI"),
-    ("Reference", "docs/robo-cli.md", "robo-cli", "robo CLI"),
-    ("Reference", "docs/task-format.md", "task-format", "task.md"),
-    ("Reference", "docs/suites.md", "suites", "Suites"),
+# (group, source path relative to the repo, slug, nav label, meta description). Order = sidebar order = prev/next
+# order. The description is one sentence under 155 characters with a fact specific to the page.
+# Old slug -> new "slug#anchor" of pages that were merged or renamed; a redirect stub is written at the old URL.
+REDIRECTS = {
+    "tasks": "concepts#tasks-and-scoring",
+    "episodes": "concepts#episodes-and-robo",
+    "harnesses": "concepts#harnesses",
+    "run-an-agent": "run-agents",
+    "datasets": "run-a-suite#a-dataset",
+    "robo-cli": "cli#robo",
+    "remix": "write-a-task#compose-a-task",
+    "components": "concepts#components",
+}
+PAGES: list[tuple[str, str, str, str, str]] = [
+    ("Get started", "docs/index.md", "", "Overview",
+     "Robo Use turns robot benchmarks into tasks that an agent harness such as Claude Code solves by driving a simulated robot with robo."),
+    ("Get started", "docs/quickstart.md", "quickstart", "Quickstart",
+     "Install robouse and let Claude Code with Kimi K3 solve arc-gravity, a rule-inference task on a table, in 31 robo calls."),
+    ("Get started", "docs/supported.md", "supported", "Supported",
+     "The models, harnesses, platforms, isolation modes and formats Robo Use 0.3.0 supports, and what each needs."),
+    ("Concepts", "docs/concepts.md", "concepts", "Concepts",
+     "Tasks, scoring, episodes, the robo command, harnesses and the trial folder: how one Robo Use trial works."),
+    ("Guides", "docs/run-agents.md", "run-agents", "Run agents and VLAs",
+     "Run Claude Code, Codex, mini-swe-agent, dimcode or a VLA policy server as the robot's policy on one task."),
+    ("Guides", "docs/mcp.md", "mcp", "MCP",
+     "Drive the robot through the robo MCP tools instead of the robo command: the tools, robo mcp and --interface."),
+    ("Guides", "docs/write-a-task.md", "write-a-task", "Write a task",
+     "Copy a tabletop task, change its goal, and check that its reference solution scores 1 and the no-op control 0."),
+    ("Guides", "docs/run-a-suite.md", "run-a-suite", "Run a suite or dataset",
+     "Run many tasks with robouse run-many, or a published dataset in Docker with bench eval run -d."),
+    ("Reference", "docs/cli.md", "cli", "CLIs",
+     "The --help output of every robouse command and of robo, the agent's only way to act."),
+    ("Reference", "docs/task-format.md", "task-format", "task.md",
+     "The fields of a Robo Use task.md: BenchFlow's task fields and the robouse block, with defaults."),
+    ("Reference", "docs/suites.md", "suites", "Suites",
+     "Every suite in the robouse package, with its task count, what it needs and its reference-solution and no-op results."),
+    ("Reference", "docs/configuration.md", "configuration", "Configuration",
+     "The ROBOUSE_* environment variables you can set: cache and asset paths, the sandbox, simulator virtualenvs and policy servers."),
+    ("Reference", "docs/metrics.md", "metrics", "Metrics",
+     "Episode metrics from the physical trace, placement splits, and robouse report with 95% intervals."),
 ]
 # Extra sidebar links to other parts of the site: (group, label, url).
-SIDEBAR_LINKS = [("Results", "Runs and videos", "/runs/")]
+SIDEBAR_LINKS = [("Results", "Runs", "/runs/")]
 # Docs kept in the repository but not published: internal notes, run logs and machine-specific setup.
 EXCLUDED = {
     "docs/review-log.md": "internal log of documentation review passes",
-    "docs/components-design.md": "design of components and composed tasks; the public part is components.md",
+    "docs/components.md": "maintainers' notes on components; the public part is in concepts.md and write-a-task.md",
+    "docs/components-design.md": "design of components",
+    "docs/remix.md": "replaced by the compose sections of concepts.md and write-a-task.md",
     "docs/research/": "internal literature and dataset surveys",
     "docs/dogfood.md": "log of the commands run to check the public docs",
     "docs/results.md": "generated table for the repository; the public results are robouse.ai/runs/",
     "docs/audit.md": "the maintainers' audit script over local runs",
     "docs/viewer.md": "the maintainers' viewer setup and viewer formats",
-    "docs/benchflow.md": "validation log of the BenchFlow export; the public part is in run-a-suite.md",
-    "docs/molmoact2.md": "GPU server setup notes; the public part is in harnesses.md",
-    "docs/suites/": "per-suite design notes; the public part is the table in suites.md",
+    "docs/benchflow.md": "maintainers' notes on the BenchFlow engine",
+    "docs/molmoact2.md": "GPU server setup notes",
+    "docs/real-robots.md": "the real suite is not in the package",
+    "docs/vla.md": "maintainers' VLA notes and GPU results; the public part is in run-agents.md",
+    "docs/suites/": "per-suite design notes; the public part is suites.md",
 }
 # Build-time guard: none of these may appear in the output. Stored rot13-encoded so the word itself never
 # appears in the repository either.
@@ -242,6 +300,8 @@ class Converter:
                     out.append('<div class="gallery">' + "".join(items) + "</div>")
                     continue
                 cls = f' class="language-{lang}"' if lang else ""
+                if lang in ("console", "sh", "bash"):
+                    body = [w for row in body for w in wrap_command(row)]
                 out.append(f'<div class="code"><pre><code{cls}>{html.escape(chr(10).join(body), quote=False)}</code></pre></div>')
                 continue
             m = self.HEAD_RE.match(line)
@@ -283,8 +343,9 @@ class Converter:
             if fm and (i + 1 >= n or not lines[i + 1].strip()):  # an image alone in its paragraph: a figure
                 cap, src = fm.group(1), fm.group(2)
                 svg = self.svg(src) if self.svg and src.endswith(".svg") else None
-                body = svg.replace("<svg ", f'<svg role="img" aria-label="{html.escape(plain(cap))}" ', 1) if svg else self._img(src, html.escape(plain(cap)))
-                out.append(f'<figure class="figure">{body}<figcaption>{self.inline(cap)}</figcaption></figure>')
+                body = svg.replace("<svg ", f'<svg role="img" aria-label="{html.escape(plain(cap))}" ') if svg else self._img(src, html.escape(plain(cap)))
+                cls = "figure has-narrow" if svg and "fig-narrow" in svg else "figure"
+                out.append(f'<figure class="{cls}">{body}<figcaption>{self.inline(cap)}</figcaption></figure>')
                 i += 1
                 continue
             para = [line.strip()]
@@ -402,6 +463,7 @@ class Page:
     src: str
     slug: str
     label: str
+    summary: str = ""
     title: str = ""
     body: str = ""
     description: str = ""
@@ -428,6 +490,8 @@ def page_list(source: Source) -> list[Page]:
     for p in PAGES:
         if not source.exists(p[1]):
             sys.exit(f"{p[1]} is listed in PAGES but not in {source.ref or 'the working tree'}")
+        if len(p[4]) > 155:
+            sys.exit(f"{p[1]}: meta description is {len(p[4])} characters; keep it under 155")
         pages.append(Page(*p))
     listed = {p.src for p in pages}
     for src in source.list("docs", ".md"):
@@ -466,15 +530,24 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
 
         md = source.read(p.src)
         md = re.sub(r"/Users/(?!<)[^/\s`]+/", "~/", md)  # tidy absolute home paths
+        md = re.sub(r"^<!--.*?-->[ \t]*\n", "", md, flags=re.M)  # whole-line comments (generator markers) are not published
         def svg(href: str, src_dir=src_dir) -> str | None:
             target = posixpath.normpath(posixpath.join(src_dir, href))
             if not (target.startswith("docs/") and source.exists(target)):
                 broken.append(f"{p.src}: missing figure {href}")
                 return None
-            s = source.read(target)
-            s = re.sub(r"<\?xml[^>]*>\s*|<!--.*?-->", "", s, flags=re.S).strip()
-            uid = posixpath.splitext(posixpath.basename(target))[0]
-            return re.sub(r'id="ah-([\w-]+)"', lambda m: f'id="{uid}-{m.group(1)}"', s).replace("url(#ah-", f"url(#{uid}-")
+
+            def one(t: str) -> str:
+                s = re.sub(r"<\?xml[^>]*>\s*|<!--.*?-->", "", source.read(t), flags=re.S).strip()
+                uid = posixpath.splitext(posixpath.basename(t))[0]
+                return re.sub(r'id="ah-([\w-]+)"', lambda m: f'id="{uid}-{m.group(1)}"', s).replace("url(#ah-", f"url(#{uid}-")
+
+            # X-narrow.svg, when there is one, is the same figure stacked for phones (docs.css shows one of the two)
+            narrow = target[:-len(".svg")] + "-narrow.svg"
+            if source.exists(narrow):
+                return (one(target).replace('class="fig"', 'class="fig fig-wide"', 1)
+                        + one(narrow).replace('class="fig"', 'class="fig fig-narrow"', 1))
+            return one(target)
 
         conv = Converter(link, {page_url(base, q.slug): q.label for q in pages}, svg)
         p.body = conv.blocks(md.splitlines())
@@ -484,7 +557,7 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
         p.title = plain(h1)
         paras = [b for b in re.split(r"\n\s*\n", md) if b.strip() and not b.lstrip().startswith(("#", "`", "|", "-", "!", ">"))]
         desc = re.sub(r"\s+", " ", plain(paras[0])) if paras else p.title
-        p.description = desc if len(desc) <= 180 else desc[:177].rsplit(" ", 1)[0] + "..."
+        p.description = p.summary or (desc if len(desc) <= 180 else desc[:177].rsplit(" ", 1)[0] + "...")
 
     # every in-docs link must hit a page, and every #anchor a heading on it
     by_url = {page_url(base, q.slug): q for q in pages}
@@ -525,8 +598,9 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_text(render(p, pages, base, prev_p, next_p, chrome), encoding="utf-8")
         written.append(dst)
-    for old_slug, new_slug in REDIRECTS.items():  # moved pages: a stub at the old URL that sends readers to the new one
-        url = page_url(base, new_slug)
+    for old_slug, target in REDIRECTS.items():  # moved pages: a stub at the old URL that sends readers to the new one
+        slug, _, anchor = target.partition("#")
+        url = page_url(base, slug) + (f"#{anchor}" if anchor else "")
         dst = out / old_slug / "index.html"
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_text(f'<!doctype html><meta charset="utf-8"><title>Moved</title><link rel="canonical" href="{url}">'
@@ -558,7 +632,7 @@ def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: P
         pager.append(f'<a class="prev" href="{page_url(base, prev_p.slug)}"><span>Previous</span>{e(prev_p.label)}</a>')
     if next_p:
         pager.append(f'<a class="next" href="{page_url(base, next_p.slug)}"><span>Next</span>{e(next_p.label)}</a>')
-    title = "Robo Use docs" if not p.slug else f"{p.title} · Robo Use docs"
+    title = "Docs · Robo Use" if not p.slug else f"{p.title} · Docs · Robo Use"
     canonical = "https://robouse.ai" + page_url(base, p.slug)
     return f"""<!doctype html>
 <html lang="en">
@@ -668,6 +742,19 @@ article img { display: block; max-width: 100%; height: auto; margin: var(--sp-8)
 /* figures: inline SVG diagrams take the page's colours and type; stills are small webp images */
 .figure { margin: var(--sp-24) 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .figure > svg { display: block; width: 100%; min-width: 500px; height: auto; overflow: visible; }  /* small screens scroll rather than shrink the type */
+.figure > svg.fig-narrow { display: none; }
+/* a figure with a stacked variant shows that instead on phones, and wherever its column is narrower than the wide
+   drawing's 500 px (a tablet with the sidebar), at about the desktop's type size, so nothing scrolls sideways */
+.figure.has-narrow { container-type: inline-size; }
+@media (max-width: 640px) {
+  .figure.has-narrow { overflow-x: visible; }
+  .figure.has-narrow > svg.fig-wide { display: none; }
+  .figure.has-narrow > svg.fig-narrow { display: block; width: 100%; min-width: 0; max-width: 316px; }
+}
+@container (max-width: 499px) {
+  .figure.has-narrow > svg.fig-wide { display: none; }
+  .figure.has-narrow > svg.fig-narrow { display: block; width: 100%; min-width: 0; max-width: 316px; }
+}
 .figure img { margin: 0; }
 .fig { color: var(--ink); }
 .fig text { font-family: var(--sans); font-size: var(--fs-meta); fill: var(--ink2); }
@@ -735,13 +822,20 @@ document.querySelectorAll(".code").forEach(function (box) {
   var code = box.querySelector("code");
   var text = code.textContent;
   var console = code.classList.contains("language-console");
-  if (console) {  // "$ cmd" lines are commands, the rest is output; copy only the commands
+  // In console blocks, "$ cmd" lines are commands and the rest is output. A command continues onto
+  // the next line while its line ends in a backslash. Copy only the commands.
+  var cmd = [];
+  if (console) {
+    var cont = false;
     code.innerHTML = text.split("\n").map(function (l) {
       var esc = l.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-      return l.indexOf("$ ") === 0 ? '<span class="p">$ </span>' + esc.slice(2) : '<span class="o">' + esc + "</span>";
+      var isCmd = l.indexOf("$ ") === 0, isCont = !isCmd && cont;
+      if (isCmd) cmd.push(l.slice(2)); else if (isCont) cmd.push(l);
+      cont = (isCmd || isCont) && /\\$/.test(l);
+      return isCmd ? '<span class="p">$ </span>' + esc.slice(2) : isCont ? esc : '<span class="o">' + esc + "</span>";
     }).join("\n");
   }
-  var copyText = console ? text.split("\n").filter(function (l) { return l.indexOf("$ ") === 0; }).map(function (l) { return l.slice(2); }).join("\n") : text;
+  var copyText = console ? cmd.join("\n") : text;
   var b = document.createElement("button");
   b.type = "button"; b.className = "copy"; b.textContent = "Copy"; b.setAttribute("aria-live", "polite");
   b.addEventListener("click", function () {

@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import importlib.util
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 
 from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_task_path
 
 HARNESS_HELP = (
-    "harness: oracle, noop, claude-code, codex, claude-code-glm, codex-glm, mini-swe-agent-glm, molmoact2 or "
-    "vla (https://robouse.ai/docs/harnesses/)"
+    "harness: oracle, noop, claude-code, codex, mini-swe-agent, dimcode, molmoact2 or vla; --model a "
+    "provider-prefixed id such as baseten/zai-org/GLM-5.3 (https://robouse.ai/docs/harnesses/)"
 )
 RECORD_SIZE_HELP = (
     "render the episode video at this size, e.g. 1280x720; agent images are unchanged "
@@ -38,6 +40,12 @@ def _engine_opts(p: argparse.ArgumentParser) -> None:
 def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
     p.add_argument("--harness", "--agent", dest="harness", metavar="HARNESS", required=True, help=HARNESS_HELP)
     p.add_argument("--model", default="", help="model for the harness (default: the harness's)")
+    p.add_argument(
+        "--interface",
+        choices=("cli", "mcp", "both"),
+        help="what the agent drives the robot with: the robo CLI, the robo MCP tools, or both "
+        "(default: " + ("each task's" if many else "the task's") + " robouse.interface, else cli)",
+    )
     p.add_argument(
         "--timeout",
         type=float,
@@ -143,8 +151,13 @@ def _unknown_harness(name: str) -> int:
     from importlib.metadata import entry_points
 
     from ..harnesses import HARNESSES
+    from ..harnesses.models import LEGACY_HARNESSES
 
-    if name in HARNESSES or any(ep.name == name for ep in entry_points(group="robouse.harnesses")):
+    if (
+        name in HARNESSES
+        or name in LEGACY_HARNESSES
+        or any(ep.name == name for ep in entry_points(group="robouse.harnesses"))
+    ):
         return 0
     print(f"robouse: unknown harness {name!r}; harnesses: {', '.join(HARNESSES)}", file=sys.stderr)
     return 2
@@ -169,6 +182,9 @@ def _prepare_local(a: argparse.Namespace) -> int:
     if missing:
         print(SIM_HINT.format(err="missing: " + ", ".join(missing)), file=sys.stderr)
         return 1
+    from ..core import gl
+
+    gl.auto_select()  # MUJOCO_GL unset on Linux without a display: OSMesa or EGL, whichever renders; inherited by trials
     return 0
 
 
@@ -183,15 +199,29 @@ def serve(a: argparse.Namespace) -> int:
     if a.split:
         spec["placement"] = {**(spec.get("placement") or {}), "split": a.split}
     secrets = json.loads(sys.stdin.readline() or "{}") if a.secrets_stdin else None
-    res = serve_episode(
-        spec,
-        Path(a.run_dir),
-        a.socket,
-        Path(a.workspace) if a.workspace else None,
-        max_wall_s=a.max_wall_s,
-        ready_file=Path(a.ready_file) if a.ready_file else None,
-        secrets=secrets,
-    )
+    from ..core import gl
+
+    why = None
+    try:
+        res = serve_episode(
+            spec,
+            Path(a.run_dir),
+            a.socket,
+            Path(a.workspace) if a.workspace else None,
+            max_wall_s=a.max_wall_s,
+            ready_file=Path(a.ready_file) if a.ready_file else None,
+            secrets=secrets,
+        )
+    except Exception as e:
+        if (why := gl.explain(e)) is None:
+            raise
+        traceback.print_exc()  # the details stay in the log
+    if why:
+        # outside the handler, so MuJoCo's half-built Renderer is collected (and prints its own follow-on error) first:
+        # the plain message is the last line, the one the runner reports
+        gc.collect()
+        print(f"robouse: {why}", file=sys.stderr, flush=True)
+        return 1
     print(json.dumps({k: v for k, v in res.items() if k != "signature"}))
     return 0
 
@@ -219,6 +249,7 @@ def run(a: argparse.Namespace) -> int:
         split=a.split,
         extra_instruction=a.extra_instruction,
         prior_learnings=a.prior_learnings,
+        interface=a.interface,
     )
     print(json.dumps(res, indent=2))
     return 1 if res.get("exception") else 0  # the trial could not run to a result (reward 0 is a result)
@@ -290,6 +321,7 @@ def run_many(a: argparse.Namespace) -> int:
         mode=a.mode,
         extra_instruction=a.extra_instruction,
         prior_learnings=a.prior_learnings,
+        interface=a.interface,
     )
     failed = sum(1 for r in results if r.get("exception"))
     if failed:
