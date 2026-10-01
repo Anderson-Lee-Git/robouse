@@ -1,0 +1,15 @@
+Robo Use (the robouse package)
+
+Robo Use is licensed under the Apache License 2.0 (LICENSE). It includes source code from the projects below, each under its own license. Each project's license text is next to its code, and the VENDORED.md beside it lists the files copied and what was changed. Paths are given as in the source distribution; in the wheel they start at robouse/.
+
+CaP-X
+  https://github.com/capgym/cap-x, commit 53e9966d7a8e2fa7494676772bccc35280f5c0ed
+  MIT License, Copyright (c) 2026 Max Fu
+  Code: src/robouse/backends/capx/capx_upstream/
+  License: src/robouse/backends/capx/capx_upstream/LICENSE
+
+RLE-Bench
+  https://github.com/RLE-Bench/RLE-Bench, commit 34a73aa3daebd92a4adc56142b87f2bccda4780d
+  MIT License, Copyright (c) 2026 RLE-Bench contributors
+  Code: src/robouse/backends/rlebench/rlebench_upstream/
+  License: src/robouse/backends/rlebench/rlebench_upstream/LICENSE

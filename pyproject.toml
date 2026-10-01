@@ -8,8 +8,13 @@ dynamic = ["version"]
 description = "Agent as a policy for embodied agents"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
-license = "Apache-2.0"
-license-files = ["LICENSE"]
+license = "Apache-2.0 AND MIT"  # MIT: the vendored CaP-X and RLE-Bench code (NOTICE)
+license-files = [
+    "LICENSE",
+    "NOTICE",
+    "src/robouse/backends/capx/capx_upstream/LICENSE",
+    "src/robouse/backends/rlebench/rlebench_upstream/LICENSE",
+]
 authors = [{ name = "Xiangyi Li", email = "xiangyi@benchflow.ai" }]
 keywords = ["robotics", "embodied-agents", "llm-agents", "benchmark", "mujoco", "benchflow"]
 classifiers = [
@@ -46,9 +51,10 @@ dexjoco = ["robouse[sim]", "scipy>=1.10"]
 # BenchFlow runs trials in Docker and loads robouse task folders as a native task format. Needs Python 3.12 and, until
 # BenchFlow releases the task-format hook, BenchFlow from its `robouse` branch (see [tool.uv.sources]).
 benchflow = ["benchflow>=0.7.9.dev0; python_version >= '3.12'"]
-# Provider-prefixed models (baseten/..., openrouter/..., ...): BenchFlow's provider registry and LiteLLM routing, and
-# the LiteLLM proxy each trial's model gateway runs. LiteLLM pinned to BenchFlow's LITELLM_VERSION_SPEC.
-llm = ["benchflow>=0.7.9.dev0; python_version >= '3.12'", "litellm[proxy]==1.91.0; python_version >= '3.12'"]
+# Provider-prefixed models (baseten/...): BenchFlow's provider registry and LiteLLM routing, and the LiteLLM proxy each
+# trial's model gateway runs. Both pinned to the builds this release was tested with (BenchFlow's Baseten registry
+# entry is not released yet; robouse supplies it), so a later pre-release cannot change what installs.
+llm = ["benchflow==0.7.9.dev2354; python_version >= '3.12'", "litellm[proxy]==1.91.0; python_version >= '3.12'"]
 all = ["robouse[sim,metaworld,gymrobotics,robosuite,dexjoco]"]
 
 [project.urls]
@@ -120,7 +126,7 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "assets/robocasa/provenance.json" = "robouse/assets_provenance/robocasa.json"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/assets/humanoidbench/provenance.json", "/assets/robocasa/provenance.json", "/README.md", "/LICENSE", "/pyproject.toml"]
+include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/assets/humanoidbench/provenance.json", "/assets/robocasa/provenance.json", "/README.md", "/LICENSE", "/NOTICE", "/pyproject.toml"]
 exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]
 
 [tool.ruff]
