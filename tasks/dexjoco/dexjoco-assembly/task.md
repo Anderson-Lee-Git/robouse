@@ -6,7 +6,7 @@ task:
 metadata:
   source_benchmark: DexJoCo (brave-eai/dexjoco, MIT; arXiv 2605.16257)
   source_task: bimanual_assembly
-  source_demo: DexJoCo/DexJoCo-Datasets-Raw/dexjoco_raw_datasets/bimanual_assembly/assembly_demo_10_2026-03-19_17-36-54_867270
+  source_demo: DexJoCo/DexJoCo-Datasets-Raw/dexjoco_raw_datasets/bimanual_assembly/assembly_demo_12_2026-03-19_19-30-52_804150
   suite: dexjoco
   category: manipulation
   difficulty: hard
@@ -83,21 +83,21 @@ robouse:
   - 0.0
   - 0.0
   - 0.0
-  - -0.2668644
-  - 0.1773895
-  - 0.956082
-  - 0.9974515
+  - -0.2655997
+  - 0.1732069
+  - 0.9467634
+  - 0.9983931
   - 0.0
   - 0.0
-  - 0.071348
-  - -0.297098
-  - -0.207627
-  - 0.976082
-  - 0.697859
-  - -0.1139856
-  - 0.697859
-  - 0.1139856
-  - 0.036082
+  - 0.0566674
+  - -0.250095
+  - -0.228174
+  - 0.9667634
+  - 0.7040682
+  - -0.0654825
+  - 0.7040682
+  - 0.0654825
+  - 0.0267634
 ---
 
 # Peg-in-Hole Assembly (DexJoCo)
@@ -114,7 +114,7 @@ Two Franka Emika Panda arms stand side by side at a table (table top about 0.93-
 
 **Observation.** `robo observe` reports for each arm, prefixed `right_` / `left_`: `hand_pos` and `hand_quat_wxyz` (measured flange position and orientation, quaternion w, x, y, z), `hand_target_pos` and `hand_target_quat_wxyz` (the commanded pose), `finger_joints` and `finger_joint_targets` (16 measured and commanded joint angles in radians, in F0..F15 order); for objects, `<name>_pos` (body origin), `<name>_quat_wxyz`, `<name>_tilt_deg` (angle of the body's z axis from vertical) and `<name>_yaw_deg`; plus the task fields listed above. `robo observe --image` saves a picture from the back camera; `--camera` picks another (`back`, `handcam_rgb_right`, `handcam_rgb_left`). The hand's orientation matters: at the start the palm faces down; look at a picture before you reach.
 
-The step budget is 3000 steps (60 s of simulated time). A human teleoperator needed 587 steps for this scene.
+The step budget is 3000 steps (60 s of simulated time). A human teleoperator needed 483 steps for this scene.
 
 ## How to control the robot
 
