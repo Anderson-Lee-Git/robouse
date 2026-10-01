@@ -221,11 +221,10 @@ class Arm:
 
 
 def _debug(*a) -> None:
-    import os
+    """Progress notes on stderr (the reference solution's log)."""
     import sys
 
-    if os.environ.get("ROBOUSE_ORACLE_DEBUG"):
-        print(*a, file=sys.stderr, flush=True)
+    print(*a, file=sys.stderr, flush=True)
 
 
 def _objects() -> dict:
