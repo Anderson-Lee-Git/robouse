@@ -10,6 +10,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# The published documentation. Messages point here, not at files under docs/ in the repository, which are not published.
+DOCS_URL = "https://robouse.ai/docs/"
+SUITES_DOCS = DOCS_URL + "suites/"  # the suites page, with the setup of the simulators that need their own virtualenv
+
 ENV: dict[str, str] = {
     # locations
     "ROBOUSE_CACHE_DIR": "cache for simulator virtualenvs, downloaded assets and harness homes (default ~/.cache/robouse)",
