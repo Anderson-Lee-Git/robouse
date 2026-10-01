@@ -22,6 +22,9 @@ def test_legacy_harness_names_are_aliases_with_a_baseten_model() -> None:
         "baseten/zai-org/GLM-5.3",
     )
     assert models.legacy("codex", "gpt-6-astra") == ("codex", "gpt-6-astra")
+    from robouse.cli.run import _unknown_harness
+
+    assert _unknown_harness("codex-glm") == 0 and _unknown_harness("mini-swe-agent") == 0  # hidden aliases still run
 
 
 def test_old_and_new_trials_of_a_pair_have_one_canonical_pair() -> None:

@@ -135,17 +135,36 @@ INFRA_RULES = [
     ),
     (
         "api_error",
-        r"API Error|internal server error|\b500\b(?= internal)|stream disconnected|model not found|context length|prompt is too long",
+        r"API Error|internal server error|\b500\b(?= internal)|stream disconnected|model not found|context length|prompt is too long|unsupported input content part",
     ),
     ("server_error", r"bad request: You must reset the env|error: bad request|episode server is not running"),
 ]
+
+
+def _clip(text: object, limit: int) -> str:
+    """At most `limit` characters, cut at a line or word boundary (robouse.lib.text.clip; this tool runs without robouse)."""
+    s = str(text).strip()
+    if len(s) <= limit:
+        return s
+    cut = s[: max(1, limit - 2)]
+    for sep in ("\n", " "):
+        i = cut.rfind(sep)
+        if i >= limit // 2:
+            cut = cut[:i]
+            break
+    return cut.rstrip() + " …"
+
+
 INFRA_RES = [(i, re.compile(r, re.I)) for i, r in INFRA_RULES]
 REFUSAL_RE = re.compile(r"\b(I can(no|')t (help|assist|do that)|I won't|I will not|refus(e|ing))\b", re.I)
 # stderr noise that is not the agent's infrastructure (Codex MCP servers of the owner's config, warnings)
+# codex_models_manager: Codex refreshing its model list at start-up (a warning; the session goes on)
 STDERR_IGNORE = re.compile(
-    r"rmcp::transport|mcp\.granola|Reading additional input from stdin|UserWarning|warnings\.warn|collab spawn failed",
+    r"rmcp::transport|mcp\.granola|Reading additional input from stdin|UserWarning|warnings\.warn|collab spawn failed|codex_models_manager",
     re.I,
 )
+# error signals that can end the agent's session (the rest of INFRA_RULES are also seen in warnings and retried requests)
+API_IDS = {"rate_limit", "overloaded", "proxy_error", "auth_error", "api_error"}
 
 
 def rj(p: Path):
@@ -237,6 +256,39 @@ def _is_refusal_task(cfg: dict) -> bool:
         return False
 
 
+# why an infrastructure failure happened, in words: (key, sentence), first match wins; the evidence stays in rec["infra"]
+INFRA_CAUSES = [
+    (
+        "server_start",
+        r"episode server (exited early|did not start)|MUJOCO_GL",
+        "The episode server failed to start, so the agent never ran.",
+    ),
+    (
+        "image_rejected",
+        r"unsupported input content part",
+        "The model's API rejected the camera image the harness attached, which ended the agent's session.",
+    ),
+    ("usage_limit", r"usage limit", "The harness hit its account's usage limit before the agent acted."),
+    (
+        "rate_limit",
+        r"rate[ _-]?limit|\b429\b|overloaded",
+        "The model's API kept rate-limiting the agent until its session ended.",
+    ),
+    ("connection", r"ECONNREFUSED|connection (refused|reset)", "The harness lost its connection to the model's API."),
+    ("auth", r"auth_error|\b401\b|unauthori[sz]ed", "The model's API rejected the harness's credentials."),
+    ("timeout", r"agent_timeout", "The agent was stopped at the time limit before it moved the robot."),
+    ("episode", r"episode_server_error|episode_not_finished", "The episode server stopped before the episode ended."),
+]
+
+
+def infra_cause(items: list[dict]) -> dict:
+    blob = "\n".join(f"{i['id']}: {i['evidence']}" for i in items)
+    for key, rx, text in INFRA_CAUSES:
+        if re.search(rx, blob, re.I):
+            return {"key": key, "text": text}
+    return {"key": "other", "text": "The harness or the model's API ended the trial."}
+
+
 def audit_trial(d: Path) -> dict:
     cfg = rj(d / "config.json") or {}
     refusal_task = _is_refusal_task(cfg)
@@ -304,7 +356,9 @@ def audit_trial(d: Path) -> dict:
         flag("missing_files", "high", "missing: " + ", ".join(core_missing))
     if (d / "agent" / "trajectory_error.txt").exists():
         flag(
-            "trajectory_error", "low", "trajectory conversion failed: " + rt(d / "agent" / "trajectory_error.txt")[:200]
+            "trajectory_error",
+            "low",
+            "trajectory conversion failed: " + _clip(rt(d / "agent" / "trajectory_error.txt"), 200),
         )
 
     # ---- reward and outcome
@@ -377,7 +431,11 @@ def audit_trial(d: Path) -> dict:
     )
     rec["checks"].update(
         {
-            "robo_requests": len(agent_ops),
+            # the episode server's count is the one source of truth (agent requests up to the end of the episode); the
+            # trace count is for trials whose episode record lacks it
+            "robo_requests": (ep or {}).get("requests")
+            if isinstance((ep or {}).get("requests"), int)
+            else len(agent_ops),
             "motion_requests": n_motion,
             "robo_errors": n_err,
             "called_done": any(o == "done" for o, _ in agent_ops),
@@ -448,7 +506,7 @@ def audit_trial(d: Path) -> dict:
     rc = (res or {}).get("agent_return_code")
     timed_out = bool((res or {}).get("agent_timed_out"))
     if exc:
-        rec["infra"].append({"id": "exception", "evidence": str(exc.get("exception_message") or exc)[:300]})
+        rec["infra"].append({"id": "exception", "evidence": _clip(exc.get("exception_message") or exc, 300)})
     if timed_out:
         rec["infra"].append({"id": "agent_timeout", "evidence": "agent killed at the timeout"})
     if rc not in (0, None) and harness in LLM_HARNESSES:
@@ -459,12 +517,16 @@ def audit_trial(d: Path) -> dict:
     # structured error signals in the raw stream (not the agent's own text or tool outputs)
     events = [json.loads(l) for l in raw.splitlines() if l.startswith("{") and _loads_ok(l)]
     ev_err = []
+    session_failed = (
+        False  # the harness's session ended on an error: Claude Code's final result is an error, a Codex turn failed
+    )
     for e in events:
         t = e.get("type")
         if t == "result" and (e.get("is_error") or str(e.get("subtype", "")).startswith("error")):
-            ev_err.append(f"claude result {e.get('subtype')}: {str(e.get('result') or '')[:200]}")
+            session_failed = True
+            ev_err.append(f"claude result {e.get('subtype')}: {_clip(e.get('result') or '', 200)}")
         elif t == "system" and e.get("subtype") == "api_retry":
-            ev_err.append(f"api_retry {str(e)[:200]}")
+            ev_err.append(f"api_retry {_clip(e, 200)}")
         elif t == "assistant" and e.get("error"):
             ev_err.append(f"assistant error {e.get('error')}")
         elif t == "rate_limit_event" and (e.get("rate_limit_info") or {}).get("status") not in (
@@ -474,18 +536,21 @@ def audit_trial(d: Path) -> dict:
         ):
             ev_err.append(f"rate_limit_event {(e.get('rate_limit_info') or {}).get('status')}")
         elif t in ("turn.failed", "error"):
-            ev_err.append(f"codex {t}: {str(e.get('error') or e.get('message'))[:200]}")
+            session_failed = session_failed or t == "turn.failed"
+            ev_err.append(f"codex {t}: {_clip(e.get('error') or e.get('message'), 200)}")
         elif (
             t == "item.completed"
             and (e.get("item") or {}).get("type") == "error"
             and "Under-development" not in str(e["item"].get("message", ""))
         ):
-            ev_err.append(f"codex error item: {str(e['item'].get('message'))[:200]}")
+            ev_err.append(f"codex error item: {_clip(e['item'].get('message'), 200)}")
     scan = stderr_lines + "\n" + "\n".join(ev_err)
     for iid, rx in INFRA_RES:
         m = rx.search(scan)
         if m:
-            rec["infra"].append({"id": iid, "evidence": scan[max(0, m.start() - 80) : m.end() + 120].strip()[:300]})
+            # the whole line the signal is on, cut at a word boundary (a window of characters cut words in half)
+            line = scan[scan.rfind("\n", 0, m.start()) + 1 :].split("\n", 1)[0]
+            rec["infra"].append({"id": iid, "evidence": _clip(line, 300)})
     # episode server errors the agent saw (server-side bugs, not the agent's fault)
     obs_text = ""
     if isinstance(traj, dict):
@@ -504,19 +569,32 @@ def audit_trial(d: Path) -> dict:
                 "evidence": "episode/result.json missing: the episode server never closed the episode",
             }
         )
-    # an infra failure: the run did not measure the agent (errors and no real attempt, or a broken episode)
+    # An infrastructure failure: the harness, the model's API or the episode server ended the trial, so it did not measure
+    # the agent. Always when the episode broke (hard). Otherwise only if the episode did not end on the agent's own
+    # decision (robo done or give-up) or on the task's own end (goal reached, step budget used), and either the agent's
+    # session ended on an API error (a failed Codex turn, an error result from Claude Code, mini-swe-agent stopping on an
+    # API error) or the agent never moved the robot while errors were logged. A warning in a session that went on to
+    # end the episode itself is not a failure.
     hard = {"exception", "empty_output", "episode_not_finished", "episode_server_error"}
     ids = {i["id"] for i in rec["infra"]}
-    rec["infra_failure"] = bool(ids & hard) or (
-        bool(ids - {"agent_exit_code"}) and n_motion == 0 and harness in LLM_HARNESSES
+    agent_closed = any(o in ("done", "give_up") for o, _ in agent_ops)
+    task_ended = outcome in ("success_reached", "budget_exhausted")
+    api_ended = session_failed or (harness.startswith("mini-swe-agent") and bool(ids & API_IDS))
+    soft = (
+        harness in LLM_HARNESSES
+        and not agent_closed
+        and not task_ended
+        and ((api_ended and bool(ids & API_IDS)) or (bool(ids - {"agent_exit_code"}) and n_motion == 0))
     )
+    rec["infra_failure"] = bool(ids & hard) or soft
     if rec["budget_stop"] and not (ids & hard):
         # the gateway refused requests at the spend cap and the runner stopped the agent: a budget stop, which is
         # neither an infrastructure failure nor the model failing on its own
         rec["infra_failure"] = False
         rec["outcome"] = "budget_stop"
+    rec["infra_cause"] = infra_cause(rec["infra"]) if rec["infra_failure"] else None
     for i in rec["infra"]:
-        flag(f"infra:{i['id']}", "high" if rec["infra_failure"] else "low", i["evidence"][:200])
+        flag(f"infra:{i['id']}", "high" if rec["infra_failure"] else "low", _clip(i["evidence"], 200))
 
     sev_rank = {"high": 3, "medium": 2, "low": 1}
     rec["max_severity"] = max((sev_rank[f["severity"]] for f in flags), default=0)

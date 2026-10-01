@@ -52,15 +52,13 @@ import argparse
 import html
 import importlib.util
 import json
-import os
 import re
 import shutil
 import subprocess
 import sys
-import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -131,7 +129,7 @@ SECRET_RES = [
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9_\-\.=]{20,}"),
     re.compile(r"(?i)\b(BF_REVIEW_TOKEN|BASETEN_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY|API_KEY|ACCESS_TOKEN|SECRET|PASSWORD|PASSWD|TOKEN)\s*[=:]\s*['\"]?[A-Za-z0-9_\-\./+]{8,}"),
 ]
-BANNED = re.compile("(?i)" + "har" + "bor")
+BANNED = re.compile("(?i)" + "har" + "bor" + r"|bf-agents|~/benchflow|/Users/maintainer|seatbelt")
 # Agent commands that look outside the workspace, and outputs that show files outside it.
 OUTSIDE_CMD = re.compile(
     r"\bls\s+(?:-\w+\s+)*(?:/|~|\$HOME|/Users[\w/.-]*|/private/tmp/?|/tmp/?|/opt|/usr/local)(?=[\s;&|)\"']|$)"
@@ -189,7 +187,7 @@ def rjl(p: Path) -> list[dict]:
 
 
 def load_audit():
-    spec = importlib.util.spec_from_file_location("robouse_audit", REPO / "scripts" / "audit.py")
+    spec = importlib.util.spec_from_file_location("robouse_audit", REPO / "tools" / "analysis" / "audit.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -315,7 +313,7 @@ def collect(audit_mod, prefixes: tuple[str, ...]) -> tuple[list[dict], dict]:
                 "reward": a.get("reward"), "solved": bool(a.get("solved")), "infra": bool(a.get("infra_failure")),
                 "partial": not res, "outcome": a.get("outcome") or ("no result" if not res else ""),
                 "steps_used": a.get("steps_used"), "max_steps": a.get("max_steps"), "wall": a.get("wall_time_s"),
-                "checks": a.get("checks") or {}, "infra_items": a.get("infra") or [], "agent_text": a.get("agent_text") or "",
+                "checks": a.get("checks") or {}, "infra_items": a.get("infra") or [], "infra_cause": a.get("infra_cause"), "agent_text": a.get("agent_text") or "",
                 "final_message": a.get("final_message") or "",
                 "image_input": a.get("image_input"), "budget": a.get("budget_stop"),
                 "started": res.get("started_at") or cfg.get("started_at") or "", "finished": res.get("finished_at") or "",
@@ -371,13 +369,29 @@ OUTCOME_TEXT = {"success_reached": "Goal reached", "done": "Agent said done", "g
                 "budget_stop": "Stopped at the spend cap"}
 
 
+# an infrastructure failure's cause in a narrow cell (scripts/audit.py INFRA_CAUSES has the sentence)
+INFRA_SHORT = {"server_start": "Server did not start", "image_rejected": "API rejected the image", "usage_limit": "Usage limit reached",
+               "rate_limit": "Rate-limited", "connection": "API connection lost", "auth": "API rejected credentials",
+               "timeout": "Timed out before moving", "episode": "Server stopped early", "other": "Harness or API error"}
+
+
+def result_note(t: dict) -> str:
+    """The Outcome cell: why a trial was not scored, or how an unsolved episode ended; blank when solved."""
+    st = status(t)
+    if st == "infra":
+        return INFRA_SHORT.get((t.get("infra_cause") or {}).get("key", "other"), INFRA_SHORT["other"])
+    if st == "partial":
+        return "Run stopped"
+    return "" if st == "ok" else outcome_text(t["outcome"])
+
+
 def outcome_text(code: str | None) -> str:
     """The runner's outcome code as words ("success_reached" -> "Goal reached"); the code stays in the trial's JSON."""
     return OUTCOME_TEXT.get(code or "", (code or "–").replace("_", " ").capitalize())
 
 
-STATUS_TEXT = {"partial": "Partial", "infra": "Infra failure", "ok": "Solved", "no": "Not solved", "budget": "Budget stop"}
-STATUS_LONG = {"partial": "Partial: the run was stopped before this trial finished", "infra": "Infrastructure failure, not scored",
+STATUS_TEXT = {"partial": "Stopped", "infra": "Infra failure", "ok": "Solved", "no": "Not solved", "budget": "Budget stop"}
+STATUS_LONG = {"partial": "Stopped before it finished, not scored", "infra": "Infrastructure failure, not scored",
                "ok": "Solved", "no": "Not solved", "budget": "Budget stop: stopped at the model spend cap, scored as not solved"}
 NOIMG_TITLE = "The model received no image input in this trial: text only (camera images stayed files the agent could read with code)"
 
@@ -540,7 +554,7 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
         "harness_label": HM[t["hm"]].get("harness_label") or "", "job": t["job"], "seed": t.get("seed"),
         "status": status(t), "counted": t["counted"], "others": t["others"], "reward": t["reward"], "outcome": t["outcome"],
         "image_input": t.get("image_input"),
-        "steps_used": t["steps_used"], "max_steps": t["max_steps"], "requests": t["checks"].get("robo_requests"),
+        "steps_used": t["steps_used"], "max_steps": t["max_steps"], "requests": ep.get("requests") if ep.get("requests") is not None else t["checks"].get("robo_requests"),
         "motion": t["checks"].get("motion_requests"), "robo_errors": t["checks"].get("robo_errors"),
         "wall": t["wall"], "ep_wall": ep.get("wall_time_s"), "started": t["started"], "finished": t["finished"],
         "video": video, "duration": rindex.get("duration_s"), "fps": rindex.get("fps"),
@@ -549,7 +563,9 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
                     "last_message": "" if withheld else clip(t["final_message"], 2000),
                     "success": ep.get("success"), "success_ever": ep.get("success_ever"), "success_mode": ep.get("success_mode") or spec.get("success_mode"),
                     "verifier": clip(vout.read_text(errors="replace"), 3000) if vout.is_file() else "",
-                    "infra": [f"{i.get('id')}: {i.get('evidence')}" for i in t["infra_items"]][:6] if t["infra"] else []},
+                    "infra": [f"{i.get('id')}: {i.get('evidence')}" + ("…" if len(i.get("evidence") or "") >= 300 else "") for i in t["infra_items"]][:6] if t["infra"] else [],
+                    "infra_cause": (t.get("infra_cause") or {}).get("text", "") if t["infra"] else "",
+                    "infra_key": (t.get("infra_cause") or {}).get("key", "") if t["infra"] else ""},
         "spec": {**{k: spec.get(k) for k in ("backend", "env", "camera", "skills", "success_mode", "max_steps", "observation_mode", "seed", "safety") if spec.get(k) is not None},
                  **observed_info(d)},
         "steps": [], "prompt": "",
@@ -771,7 +787,7 @@ def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str
 {f'<link rel="canonical" href="{esc(canonical)}">' if canonical and not SYNTH else ''}
 <meta property="og:site_name" content="Robo Use">
 <meta property="og:title" content="{esc(title)}">
-<meta property="og:image" content="https://robouse.ai/og/landing.png?v=4">
+<meta property="og:image" content="https://robouse.ai/og/landing.png?v=7">
 {FAVICON}
 <script src="/theme.js"></script>
 {CHROME["link"]}
@@ -797,11 +813,13 @@ def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str
 
 HAS_SEEDS = [False]  # set in main
 HUB: dict[str, tuple[str, str]] = {}  # task id -> (its hub task page, its dataset), from <site>/hub/search.json
+HUB_TITLE: dict[str, str] = {}  # task id -> its title on the hub (variants told apart: "... · vision"), the one title every page uses
 
 
 def hub_tasks(site: Path) -> dict[str, tuple[str, str]]:
     """Every task's page on the hub (the results, task and suite pages of /runs/ moved there). Run tools/build_hub.py first."""
     j = rj(site / "hub" / "search.json") or {"t": []}
+    HUB_TITLE.update({t[0]: t[1] for t in j["t"] if t[1]})
     return {t[0]: (t[2], t[4]) for t in j["t"]}
 
 
@@ -980,8 +998,10 @@ def group_runs(trials: list[dict], jobs: dict) -> dict[str, dict]:
         t["run"] = slug
     for r in out.values():
         ts = r["trials"]
-        r["scored"] = sum(1 for t in ts if t["counted"] and not t["infra"] and not t["partial"])
-        r["solved"] = sum(1 for t in ts if t["counted"] and not t["infra"] and not t["partial"] and t["solved"])
+        # the dataset's own tasks only, so a run and its dataset's Results agree; a pilot task the hub does not list is shown, not scored
+        inds = [t for t in ts if t["counted"] and not t["infra"] and not t["partial"] and (not HUB or t["task"] in HUB)]
+        r["scored"] = len(inds)
+        r["solved"] = sum(1 for t in inds if t["solved"])
         r["title"] = f'{plab(r["hm"])} · {r["ds"].split("/")[-1]}' + (" · zero-shot probe" if r["probe"] else "")
         counted = [t for t in ts if t["counted"]]
         r["noimg"] = bool(counted) and all(t.get("image_input") is False for t in counted)
@@ -1032,7 +1052,9 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     st = status(t)
     label = plab(t["hm"])
     # the badge says solved or not; the outcome is shown when it gives the reason, the reward when it is not plainly 0 or 1
-    facts = [("Outcome", esc(outcome_text(t["outcome"])))] if st != "ok" and t["outcome"] else []
+    facts = [("Outcome", esc(outcome_text(t["outcome"])))] if st not in ("ok", "infra") and t["outcome"] else []
+    if st == "infra" and t.get("infra_cause"):
+        facts = [("Why", esc(t["infra_cause"]["text"].rstrip(".")))]
     try:
         if float(t["reward"]) not in (0.0, 1.0):
             facts.append(("Reward", freward(t["reward"])))
@@ -1047,7 +1069,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     if t.get("seed") is not None:
         facts.append(("Seed", esc(t["seed"])))
     counted = "" if t["counted"] else f'<span class="tag">not counted: {"infrastructure failure" if t["infra"] else "a later trial counts"}</span>'
-    vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls()}' if video
+    vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} controls muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls()}' if video
            else '<div class="vbox novideo"><div class="empty-state"><b>No recording for this trial.</b>The episode ended before the simulator wrote a frame.</div></div>')
     tabs = [("recording", "Recording", ""), ("trajectory", "Trajectory", f" <span class=\"num\">{n_steps}</span>" if n_steps else ""), ("verdict", "Verdict", ""),
             ("run", "Timing &amp; tokens", ""), ("files", "Files", "")]
@@ -1065,10 +1087,10 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
   <div class="player" id="player">{vid}</div>
   <div id="panel" class="panel" role="tabpanel" aria-busy="true">{skeleton()}</div>
 </div>
-<noscript><p class="muted">The tabs need JavaScript. The recording plays above.</p></noscript>
+<noscript><style>.pctl,nav.tabs,#panel{{display:none}}</style><p class="muted">The trajectory, verdict and files need JavaScript; the recording plays above.</p></noscript>
 """
-    return page(f"{t['task']} · {label} · Runs · Robo Use", body, desc=f"{t['title']}: {label}, {STATUS_LONG[st].lower()}.",
-                cls="trialpage", data=f' data-trial="{esc(t["trial"])}"')
+    return page(f"{t['title']} · {label} · Runs · Robo Use", body, desc=f"{t['title']}: {label}, {STATUS_LONG[st].lower()}.",
+                cls="trialpage", data=f' data-trial="{esc(t["trial"])}"', canonical=f"https://robouse.ai/runs/t/{t['trial']}/")
 
 
 def build_compare() -> str:
@@ -1076,6 +1098,7 @@ def build_compare() -> str:
 {runs_head("compare")}
 <p class="meta tabnote">Pick two trials of one task.</p>
 <div id="compare" class="compare" aria-busy="true">{skeleton()}</div>
+<noscript><style>#compare{{display:none}}</style><p class="muted">Compare needs JavaScript. Each trial page plays its own recording.</p></noscript>
 """
     return page("Compare · Runs · Robo Use", body, cls="comparepage", canonical="https://robouse.ai/runs/compare/")
 
@@ -1093,7 +1116,7 @@ def build_runs(runs: dict) -> str:
         state = ' <span class="state running">running</span>' if r["state"] == "running" else ""
         rows.append(f'<tr {pair_attrs(i)} data-dataset="{esc(r["ds"])}" data-q="{esc((plab(i) + " " + r["ds"] + (" zero-shot probe" if r["probe"] else "")).lower())}">'
                     f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, r["noimg"])}</a></th>'
-                    f'<td class="sus" data-v="{esc(r["ds"])}">{esc(r["ds"])}{tag}</td>'
+                    f'<td class="sus" data-v="{esc(r["ds"])}">{esc(r["ds"]).replace("/", "/<wbr>")}{tag}</td>'
                     f'<td class="muted num" data-v="{esc(r["start"])}">{esc(fmt_date(r["start"]))}{state}</td>'
                     f'<td class="n num" data-v="{len(r["trials"])}">{len(r["trials"])}</td>'
                     f'<td class="n num" data-v="{rate:.4f}">{f"{rate * 100:.0f}%" if rate >= 0 else "·"}</td></tr>')
@@ -1128,10 +1151,12 @@ def build_run(r: dict) -> str:
         seed = f'<span class="muted"> · seed {esc(t["seed"])}</span>' if t.get("seed") is not None else ""
         if not t["counted"]:
             seed += f'<span class="muted"> · earlier trial, {esc(fmt_day(t["started"]))}</span>'
+        elif HUB and t["task"] not in HUB:
+            seed += '<span class="muted"> · pilot task, not in the dataset or its score</span>'
         rows.append(f'<tr class="{"" if t["counted"] else "dim"}" data-outcome="{st}" data-counted="{int(t["counted"])}" data-q="{esc((t["task"] + " " + t["title"]).lower())}">'
                     f'<th scope="row" data-v="{esc(t["title"])}"><a class="rtk" href="/runs/t/{esc(t["trial"])}/">{esc(t["title"])}</a>{seed}</th>'
                     f'<td data-v="{ST_RANK[st]}"><span class="badge {st}">{STATUS_TEXT[st]}</span>{"" if t["counted"] else " <span class=muted>not counted</span>"}</td>'
-                    f'<td class="oc">{esc(outcome_text(t["outcome"])) if st != "ok" else ""}</td>'
+                    f'<td class="oc">{esc(result_note(t))}</td>'
                     f'<td class="n num" data-v="{num_attr(t["steps_used"])}">{steps_html(t)}</td>'
                     f'<td class="n num" data-v="{num_attr(t["wall"])}">{esc(fmt_s(t["wall"]))}</td></tr>')
     states = {status(t) for t in r["trials"]}
@@ -1144,7 +1169,7 @@ def build_run(r: dict) -> str:
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{esc(r["title"])}</nav>
 <section class="page-head head">
   <h1>{esc(r["title"])}</h1>
-  <p class="meta">{esc(r["ds"])} · {esc(fmt_date(r["start"]))} · {r["solved"]} of {r["scored"]} solved{' · <span class="state running">running</span>' if r["state"] == "running" else ""}{noimg_tag("The model received no image input in this run: text only") if r["noimg"] else ""}</p>
+  <p class="meta">{esc(r["ds"])} · {esc(fmt_date(r["start"]))} · {f'{r["solved"]} of {r["scored"]} solved' if r["scored"] else "no scored trial"}{' · <span class="state running">running</span>' if r["state"] == "running" else ""}{noimg_tag("The model received no image input in this run: text only") if r["noimg"] else ""}</p>
 </section>
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
 {ctrl}
@@ -1155,7 +1180,8 @@ def build_run(r: dict) -> str:
 {list_foot("trials", "Clear the search or the filter.")}
 </div>
 """
-    return page(f"{r['title']} · Runs · Robo Use", body, cls="jobs", desc=f"{r['title']}: {r['solved']} of {r['scored']} solved.")
+    return page(f"{r['title']} · Runs · Robo Use", body, cls="jobs", desc=f"{r['title']}: " + (f"{r['solved']} of {r['scored']} solved." if r["scored"] else "no scored trial."),
+                canonical=f"https://robouse.ai/runs/r/{r['slug']}/")
 
 
 # ---------------------------------------------------------------- checks
@@ -1253,7 +1279,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
     rich = [k for k in tasks if any((t["dir"] / "artifacts" / "recording.mp4").is_file() and (t["dir"] / "agent" / "trajectory.json").is_file() for t in by_task[k])]
     borrow = set(rich[:2])
     trials, jobs = [], {}
-    t0 = datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp()
+    t0 = datetime(2026, 9, 1, tzinfo=UTC).timestamp()
     for ti, task in enumerate(tasks):
         srcs = sorted(by_task[task], key=lambda t: (not t.get("counted"), t["infra"], t["trial"]))
         src = next((t for t in srcs if (t["dir"] / "artifacts" / "recording.mp4").is_file()), srcs[0])
@@ -1275,7 +1301,7 @@ def synthesize(real: list[dict], n_tasks: int, n_seeds: int, scratch: Path) -> t
                      "partial": False, "outcome": "infra_error" if infra else ("success_reached" if solved else "max_steps_reached"),
                      "steps_used": None if infra else rng.randint(8, mx), "max_steps": mx, "wall": round(wall, 1), "checks": {"robo_requests": rng.randint(5, 120)},
                      "infra_items": [{"id": "synthetic", "evidence": "fabricated infrastructure failure"}] if infra else [], "agent_text": "", "final_message": "",
-                     "started": datetime.fromtimestamp(start, timezone.utc).isoformat(), "finished": datetime.fromtimestamp(start + wall, timezone.utc).isoformat(),
+                     "started": datetime.fromtimestamp(start, UTC).isoformat(), "finished": datetime.fromtimestamp(start + wall, UTC).isoformat(),
                      "src_trial": src["trial"] if real_dir else None}
                 if ti == 0 and i == 0 and seed == 1:  # one fabricated trial carries every optional block (leaderboard spec section 5)
                     t["fake_extra"] = {
@@ -1333,7 +1359,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     out = a.out.expanduser().resolve()
     site = out.parent
-    VER = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+    VER = datetime.now(UTC).strftime("%Y%m%d%H%M")
     SYNTH = a.synthetic > 0
     if SYNTH:
         if out.is_relative_to(REAL_SITE.resolve()) or out.is_relative_to(REAL_SITE.parent.resolve()):
@@ -1376,7 +1402,7 @@ def main(argv: list[str] | None = None) -> int:
     for t in trials:
         if t["task"] not in tdocs:
             tdocs[t["task"]] = read_task(t["cfg"].get("task_path"), t["suite"], t["task"])
-        t["title"] = title_of(tdocs[t["task"]]["body"], t["task"])
+        t["title"] = HUB_TITLE.get(t["task"]) or title_of(tdocs[t["task"]]["body"], t["task"])
         tinfo.setdefault(t["task"], {"suite": t["suite"], "title": t["title"], "difficulty": t["difficulty"], "source": t["source"]})
 
     encodes, sprites, keep_v, keep_f = [], [], set(), set()
@@ -1429,9 +1455,10 @@ def main(argv: list[str] | None = None) -> int:
         data["mark"] = model_mark(HM[t["hm"]])  # the model's mark beside its name in Compare
         ws = str(t["cfg"].get("workspace") or "")
         data["result_json"] = sanitized_json(t["res"], ws) if t["res"] else ""
-        data["config_json"] = sanitized_json({k: v for k, v in t["cfg"].items() if k != "workspace"}, ws)
+        data["config_json"] = sanitized_json({k: v for k, v in t["cfg"].items() if k not in ("workspace", "sandbox")}, ws)  # the sandbox rule names the operator's folders
+        data["hub"] = HUB.get(t["task"], ("", ""))[0]
         (out / "d" / f"{t['trial']}.json").write_text(json.dumps(redact_all(data), ensure_ascii=False, separators=(",", ":")))
-        n = len(data["steps"]) if not w else 0
+        n = len(data["steps"]) + data.get("hidden", 0) if not w else 0  # the Trajectory badge: the last step number the lists show
         pdir = out / "t" / t["trial"]
         pdir.mkdir(parents=True, exist_ok=True)
         t["mode"] = (data.get("extra") or {}).get("mode") or "sim"
