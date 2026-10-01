@@ -26,7 +26,15 @@ FATAL = (
 FOLLOW_ON = "AttributeError: 'Renderer' object has no attribute '_mjr_context'"
 
 
-def test_explain_names_the_fix() -> None:
+def _says_install_and_doctor(msg: str) -> None:
+    # install OSMesa or EGL and check with doctor: robouse picks it; MUJOCO_GL is mentioned only as an override
+    assert "install OSMesa (`apt install libosmesa6`) or EGL (`apt install libegl1 libgl1`)" in msg
+    assert "robouse picks whichever renders" in msg and "MUJOCO_GL, if set, overrides that choice" in msg
+    assert "set MUJOCO_GL" not in msg
+
+
+def test_explain_names_the_fix(monkeypatch) -> None:
+    monkeypatch.delenv("MUJOCO_GL", raising=False)  # tests/conftest.py may have chosen it for this session
     for err in (
         FATAL,
         FOLLOW_ON,
@@ -35,7 +43,10 @@ def test_explain_names_the_fix() -> None:
     ):
         msg = gl.explain(err)
         assert msg and msg.startswith("offscreen rendering is not available")
-        assert "MUJOCO_GL=osmesa" in msg and "libosmesa6" in msg and "MUJOCO_GL=egl" in msg and "MUJOCO_GL=cgl" in msg
+        _says_install_and_doctor(msg)
+        assert "and run `robouse doctor`" in msg and "cgl on macOS" in msg and "here it is set to" not in msg
+    monkeypatch.setenv("MUJOCO_GL", "egl")  # an override in effect is named
+    assert "overrides that choice (osmesa, egl, or cgl on macOS); here it is set to egl. Cause:" in gl.explain(FATAL)
     assert "Cause: mujoco.FatalError: an OpenGL platform library" in gl.explain(
         f"{FATAL}\n{FOLLOW_ON}"
     )  # not the follow-on
@@ -73,7 +84,8 @@ def test_doctor_reports_offscreen_rendering(monkeypatch, capsys) -> None:
     monkeypatch.setattr(gl, "probe", lambda p=None, python=None: gl.reason(f"{FATAL}\n{FOLLOW_ON}"))
     main(["doctor"])
     out = capsys.readouterr().out
-    assert "-- MuJoCo cannot render offscreen" in out and "OpenGL platform library" in out and "libosmesa6" in out
+    assert "-- MuJoCo cannot render offscreen" in out and "OpenGL platform library" in out
+    _says_install_and_doctor(out)
     monkeypatch.setattr(gl, "probe", lambda p=None, python=None: None)
     main(["doctor"])
     assert "ok MuJoCo renders offscreen" in capsys.readouterr().out
@@ -96,7 +108,9 @@ def test_a_trial_without_an_opengl_platform_says_what_to_install(tmp_path, monke
     rc = main(["run", "--task", str(ARC), "--harness", "noop", "--out", str(tmp_path / "job")])
     res = json.loads(capsys.readouterr().out)
     assert rc == 1 and "offscreen rendering is not available" in res["exception"], res["exception"]
-    assert "MUJOCO_GL=osmesa" in res["exception"] and "_mjr_context" not in res["exception"]
+    _says_install_and_doctor(res["exception"])
+    assert "run `robouse doctor`" in res["exception"] and "here it is set to glfw" in res["exception"]
+    assert "_mjr_context" not in res["exception"]
 
 
 @linux_sim
