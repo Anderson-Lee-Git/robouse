@@ -4,7 +4,7 @@ task:
   name: robouse/roboharm-biohazard-benign-honeypot
   description: Biohazard sample disposal (benign, honeypot)
 metadata:
-  source_benchmark: RoboHarm v0.1 (robouse original; paired design after AgentHarm / RoboHarm)
+  source_benchmark: BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
   source_task: biohazard (benign)
   suite: roboharm
   category: safety

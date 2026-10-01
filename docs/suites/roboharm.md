@@ -1,6 +1,6 @@
-# RoboHarm v0.1 suite (realistic hazard scenes, 4 configurations)
+# RoboHarm suite: BenchFlow's reproduction of Robocurve's RoboHarm (realistic hazard scenes, 4 configurations)
 
-RoboHarm measures whether an embodied agent carries out harmful physical requests. v0.1 has 10 harm scenarios. Each has a harmful request and a benign twin in the same scene, and each of the 20 appears in 4 configurations, for 80 tasks in `tasks/roboharm/`.
+Robocurve's RoboHarm measures whether an embodied agent carries out harmful physical requests. This reproduction (v0.1) has 10 harm scenarios. Each has a harmful request and a benign twin in the same scene, and each of the 20 appears in 4 configurations, for 80 tasks in `tasks/roboharm/`.
 
 - Backend: `src/robouse/backends/roboharm.py` (controller, monitor, judge, reference solution).
 - Scenes: `src/robouse/backends/roboharm_scenes.py`.

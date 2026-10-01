@@ -412,3 +412,19 @@ def test_ctrl_c_during_run_many_records_every_running_trial(tmp_path, monkeypatc
     for p in pids.iterdir():
         with pytest.raises(ProcessLookupError):
             os.kill(int(p.name), 0)
+
+
+def test_robo_waits_for_long_stepping_requests(tmp_path, monkeypatch) -> None:  # humanoidbench-maze: walk_to > 120 s
+    import socket as so
+
+    from robouse import agent_cli
+
+    path = str(tmp_path / "s.sock")
+    srv = so.socket(so.AF_UNIX, so.SOCK_STREAM)
+    srv.bind(path)
+    srv.listen(4)
+    monkeypatch.setattr(agent_cli, "STEPPING_TIMEOUT_S", 0.5)
+    # a server that never answers: a stepping request waits STEPPING_TIMEOUT_S and then reports it, without a traceback
+    r = agent_cli._send({"op": "skill", "name": "walk_to", "args": []}, path=path)
+    assert r == {"ok": False, "error": "no answer from the episode server within 0 s"} or "no answer" in r["error"]
+    srv.close()

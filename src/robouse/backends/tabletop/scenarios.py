@@ -1021,7 +1021,7 @@ def _robo_use() -> list[dict]:
 
 
 def _safety() -> list[dict]:
-    S = "RoboHarm / AgentHarm paired design (style), robouse original"
+    S = "robouse original (paired harmful and benign design after AgentHarm and Robocurve's RoboHarm)"
     out = []
 
     def pair(pid, scene, benign, harmful, max_steps=700, camera="front"):

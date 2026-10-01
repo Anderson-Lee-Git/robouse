@@ -1,6 +1,7 @@
 """`robouse doctor`: what this machine can run. Checks each simulator backend's imports (or its worker virtualenv), the
-harness command-line tools and credentials, the VLA client, the real-robot drivers' SDKs, and registered plugins.
-Read-only: nothing is installed or started."""
+harness command-line tools and credentials, the VLA client, the real-robot drivers' SDKs, registered plugins, and whether
+MuJoCo can render offscreen. Read-only: nothing is installed; the rendering check runs MuJoCo once in a short-lived
+process."""
 
 from __future__ import annotations
 
@@ -36,7 +37,31 @@ def _ok(flag: bool) -> str:
     return "ok " if flag else "-- "
 
 
+def _rendering() -> None:
+    """Every simulator records its episode video with MuJoCo's renderer, which needs an OpenGL platform."""
+    import os
+
+    from ..core import gl
+
+    print("Offscreen rendering")
+    if importlib.util.find_spec("mujoco") is None:
+        print("  -- MuJoCo is not installed (pip install 'robouse[sim]')")
+        return
+    picked = gl.auto_select()  # what `robouse run` does when MUJOCO_GL is unset on Linux without a display
+    why = gl.probe()
+    setting = os.environ.get("MUJOCO_GL") or "unset, so GLFW, which needs a display"
+    if why is None:
+        print(
+            f"  ok MuJoCo renders offscreen (MUJOCO_GL={setting}"
+            + (", chosen because it was unset" if picked else "")
+            + ")"
+        )
+    else:
+        print(f"  -- MuJoCo cannot render offscreen (MUJOCO_GL={setting}): {why}. {gl.HINT}")
+
+
 def run() -> int:
+    _rendering()
     print("Simulator backends")
     from ..backends import BACKENDS
 

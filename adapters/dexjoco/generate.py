@@ -268,7 +268,7 @@ DEMO_LIST = [
     ("dexjoco-microwave-cook", "bimanual_microwave_cook", "2026-02-09_17-09-31_847162"),
     ("dexjoco-photograph", "bimanual_photograph", "2026-03-16_14-31-13_305518"),
     ("dexjoco-unlock-ipad", "bimanual_unlock_ipad", "2026-03-22_14-10-52_406095"),
-    ("dexjoco-assembly", "bimanual_assembly", "2026-03-19_17-36-54_867270"),
+    ("dexjoco-assembly", "bimanual_assembly", "2026-03-19_19-30-52_804150"),
 ]
 
 
