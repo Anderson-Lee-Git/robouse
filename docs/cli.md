@@ -1,6 +1,6 @@
 # CLIs
 
-`robouse` runs tasks, trials and runs; `robo` is the agent's only way to act. The help below is the output of `robouse 0.3.0`.
+`robouse` runs tasks, trials and runs; `robo` is the agent's only way to act. The help below is the output of `robouse 0.3.1`.
 
 ```console
 $ robouse --help
@@ -10,24 +10,24 @@ Robo Use: run robot tasks with an agent harness as the policy.
 https://robouse.ai
 
 options:
-  -h, --help      show this help message and exit
-  --version       show program's version number and exit
+  -h, --help    show this help message and exit
+  --version     show program's version number and exit
 
 commands:
   COMMAND
-    run           run one trial end to end
-    run-many      run a set of trials
-    tasks         list, create and check tasks
-    components    list, show and check components
-    fetch-assets  download the MuJoCo Menagerie robot models (menagerie,
-                  roboharm, drone; --robot or --all for the embodiment suites
-                  and composed tasks)
-    report        metrics with 95% confidence intervals over job folders,
-                  grouped by trial attributes
-    summarize     distil a trial into learnings (markdown) for --prior-
-                  learnings
-    doctor        what this machine can run: simulators, harnesses,
-                  credentials and the VLA server
+    run         run one trial end to end
+    run-many    run a set of trials
+    tasks       list, create and check tasks
+    components  list, show and check components
+    fetch-assets
+                download the MuJoCo Menagerie robot models (menagerie,
+                roboharm, drone; --robot or --all for the embodiment suites
+                and composed tasks)
+    report      metrics with 95% confidence intervals over run folders,
+                grouped by trial attributes
+    summarize   distil a trial into learnings (markdown) for --prior-learnings
+    doctor      what this machine can run: simulators, harnesses, credentials
+                and the VLA server
 ```
 
 ## robouse run
@@ -43,7 +43,7 @@ usage: robouse run [-h] --task TASK --out OUT --harness HARNESS
 options:
   -h, --help            show this help message and exit
   --task TASK           task folder or bundled task id
-  --out OUT             job folder; the trial is written to
+  --out OUT             run folder; the trial is written to
                         OUT/<task>__<harness>__<id>/
   --harness HARNESS, --agent HARNESS
                         harness: oracle, noop, claude-code, codex, mini-swe-
@@ -93,7 +93,7 @@ usage: robouse run-many [-h] [--tasks TASKS] --out OUT [--filter FILTER]
 options:
   -h, --help            show this help message and exit
   --tasks TASKS         task root (default: the bundled tasks)
-  --out OUT             job folder; one trial folder per task
+  --out OUT             run folder; one trial folder per task
   --filter FILTER       only task ids containing this substring
   --task-list TASK_LIST
                         file with one task id per line (a subset of --tasks)
@@ -339,16 +339,16 @@ options:
 $ robouse report --help
 usage: robouse report [-h] [--by BY] [--metrics METRICS] [--json JSON]
                       [--cost-quality COST_QUALITY] [--svg SVG]
-                      jobs [jobs ...]
+                      runs [runs ...]
 
 positional arguments:
-  jobs                  job folders (run-many --out)
+  runs                  run folders (run-many --out)
 
 options:
   -h, --help            show this help message and exit
   --by BY               group keys, comma-separated (repeatable): harness,
                         model, suite, category, difficulty, task, split, seed,
-                        mode, job, regime, released (default harness,model)
+                        mode, run, regime, released (default harness,model)
   --metrics METRICS     metrics to show, comma-separated (default: the nine
                         robot metrics and cost)
   --json JSON           write the full report as JSON

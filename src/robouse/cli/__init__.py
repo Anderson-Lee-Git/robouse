@@ -31,14 +31,14 @@ DESCRIPTION = "Robo Use: run robot tasks with an agent harness as the policy. ht
 
 def _analysis(sub: argparse._SubParsersAction) -> None:
     rp = sub.add_parser(
-        "report", help="metrics with 95%% confidence intervals over job folders, grouped by trial attributes"
+        "report", help="metrics with 95%% confidence intervals over run folders, grouped by trial attributes"
     )
-    rp.add_argument("jobs", nargs="+", help="job folders (run-many --out)")
+    rp.add_argument("runs", nargs="+", help="run folders (run-many --out)")
     rp.add_argument(
         "--by",
         action="append",
         help="group keys, comma-separated (repeatable): harness, model, suite, "
-        "category, difficulty, task, split, seed, mode, job, regime, released (default harness,model)",
+        "category, difficulty, task, split, seed, mode, run, regime, released (default harness,model)",
     )
     rp.add_argument(
         "--metrics", action="append", help="metrics to show, comma-separated (default: the nine robot metrics and cost)"
@@ -47,11 +47,11 @@ def _analysis(sub: argparse._SubParsersAction) -> None:
     rp.add_argument("--cost-quality", help="write cost-versus-success points (JSON) for groups with a known cost")
     rp.add_argument("--svg", help="write a cost-versus-success scatter (SVG)")
     rp.set_defaults(
-        func=lambda a: _call("..analysis.report", "main", a.jobs, a.by, a.metrics, a.json, a.cost_quality, a.svg)
+        func=lambda a: _call("..analysis.report", "main", a.runs, a.by, a.metrics, a.json, a.cost_quality, a.svg)
     )
 
     gr = sub.add_parser("grade")  # listed once it has run on this release (it needs a vision-language model API)
-    gr.add_argument("trials", nargs="+", help="trial folders or job folders")
+    gr.add_argument("trials", nargs="+", help="trial folders or run folders")
     gr.add_argument(
         "--model",
         default="moonshotai/Kimi-K3",

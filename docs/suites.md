@@ -34,7 +34,7 @@ img/suites/robocasa.webp | `robocasa`
 ```
 
 <!-- suites-table -->
-robouse 0.3.0 bundles 692 tasks in 31 suites. "Needs" is what a suite needs beyond `pip install 'robouse[sim]'`, if anything. The last two columns count the tasks that scored 1 with the reference solution and with the no-op control.
+robouse 0.3.1 bundles 692 tasks in 31 suites. "Needs" is what a suite needs beyond `pip install 'robouse[sim]'`, if anything. The last two columns count the tasks that scored 1 with the reference solution and with the no-op control.
 
 | Suite | Tasks | Needs | Reference solution | No-op control |
 |---|---|---|---|---|

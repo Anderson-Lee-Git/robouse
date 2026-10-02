@@ -71,3 +71,45 @@ def test_record_size_is_validated(capsys) -> None:
 
 def test_parser_builds() -> None:
     assert parser().prog == "robouse"
+
+
+# what each help says about the folder `--out` writes: a run folder, as the site and docs call it (0.3.1; "job" before)
+RUN_FOLDER = {
+    None: "report metrics with 95% confidence intervals over run folders",
+    "run": "--out OUT run folder; the trial is written to OUT/<task>__<harness>__<id>/",
+    "run-many": "--out OUT run folder; one trial folder per task",
+    "report": "runs run folders (run-many --out)",
+    "grade": "trials trial folders or run folders",
+}
+
+
+@pytest.mark.parametrize("cmd", RUN_FOLDER, ids=lambda c: c or "robouse")
+def test_help_says_run_folder(cmd, capsys) -> None:
+    with pytest.raises(SystemExit):
+        main([cmd, "--help"] if cmd else ["--help"])
+    out = " ".join(capsys.readouterr().out.split())
+    assert RUN_FOLDER[cmd] in out and "job" not in out.lower(), out
+    if cmd == "report":
+        assert "runs [runs ...]" in out and "mode, run, regime" in out
+
+
+def _trial(run: Path, name: str, reward: float) -> None:
+    d = run / name
+    d.mkdir(parents=True)
+    (d / "config.json").write_text(json.dumps({"harness": "oracle", "task": name, "metadata": {"suite": "s"}}))
+    (d / "result.json").write_text(json.dumps({"verifier_result": {"rewards": {"reward": reward}}, "episode": {}}))
+
+
+def test_report_groups_by_run_and_still_by_job(tmp_path, capsys) -> None:
+    _trial(tmp_path / "run-a", "t1", 1.0)
+    _trial(tmp_path / "run-b", "t1", 0.0)
+    runs = [str(tmp_path / "run-a"), str(tmp_path / "run-b")]
+    for key in ("run", "job"):  # job: the key's name before 0.3.1, still accepted
+        out = tmp_path / f"{key}.json"
+        assert main(["report", *runs, "--by", key, "--json", str(out)]) == 0
+        groups = json.loads(out.read_text())["groups"]
+        assert [g["group"][key] for g in groups] == ["run-a", "run-b"]
+        assert [g["success"]["value"] for g in groups] == [1.0, 0.0]
+    with pytest.raises(SystemExit) as e:
+        main(["report", *runs, "--by", "nope"])
+    assert "unknown group key" in str(e.value) and "'run'" in str(e.value) and "'job'" not in str(e.value)

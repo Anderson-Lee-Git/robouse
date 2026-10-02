@@ -1,6 +1,6 @@
 # Supported
 
-Robo Use 0.3.0.
+Robo Use 0.3.1.
 
 ## Models and harnesses
 
@@ -18,7 +18,7 @@ Robo Use 0.3.0.
 | Platform | Notes |
 |---|---|
 | macOS on Apple silicon | Python 3.11 to 3.13; provider-prefixed models need 3.12 or newer |
-| Linux arm64 | without a display, OSMesa (`libosmesa6`) or EGL (`libegl1 libgl1`): Robo Use picks the one that renders when `MUJOCO_GL` is unset ([Quickstart](quickstart.md#install)); bubblewrap for model harnesses; the `robosuite` extra needs a C compiler |
+| Linux arm64 | without a display, OSMesa (`libosmesa6`) or EGL (`libegl1 libgl1`): Robo Use picks whichever renders, and `MUJOCO_GL`, if set, overrides the choice ([Quickstart](quickstart.md#install)); bubblewrap for model harnesses; the `robosuite` extra needs a C compiler |
 | Python 3.14 | not supported: MuJoCo 3.3.0 and Meta-World have no build for it |
 
 ## Isolation
