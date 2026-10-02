@@ -216,7 +216,7 @@ table.mdt td,table.mdt th{white-space:normal}
 .who a.wl{border-radius:var(--r-xs);transition:color var(--t-fast)}
 .who a.wl:hover{color:var(--accent)}
 nav.tabs[role=tablist]{margin:var(--sp-24) 0 var(--sp-20)}
-.stage{display:grid;grid-template-columns:minmax(0,500px) minmax(0,1fr);gap:var(--sp-28);align-items:start}
+.stage{display:grid;grid-template-columns:minmax(0,var(--pw,500px)) minmax(0,1fr);gap:var(--sp-28);align-items:start}  /* --pw: near the recording's own width (build_runs_site.player_width) */
 .stage.t-trajectory,.stage.t-verdict{grid-template-columns:340px minmax(0,1fr)}
 .stage.t-run .player,.stage.t-files .player{display:none}
 .stage.t-run,.stage.t-files{display:block}
@@ -410,7 +410,7 @@ details.res{margin:var(--sp-2) 0 var(--sp-6)}
 }
 @media (max-width:960px){
   .stage,.stage.t-trajectory,.stage.t-verdict{grid-template-columns:minmax(0,1fr)}
-  .player{position:static;max-width:440px}
+  .player{position:static;max-width:min(440px,var(--pw,440px))}
   .stage.t-recording .panel{position:static}
   .recbox{position:static}
   .recbox .slist{flex:none;max-height:min(60vh,480px)}
@@ -512,7 +512,7 @@ table.list.runs td.sus{min-width:0;max-width:none;overflow-wrap:anywhere}
 .rh1 .model-mark{width:.78em;height:.78em;vertical-align:-.04em}
 /* who made the model and whose weights ran (tools/models.json `provenance`), under a run's title */
 .head .prov{margin:var(--sp-6) 0 0;max-width:720px;font:400 var(--fs-small)/1.5 var(--sans);color:var(--muted)}
-table.list th:last-child .sb{margin-right:0}  /* the sort button's bleed must not widen the table past its box */
+table.list th:last-child .sb{margin-right:0;padding-right:0}  /* the sort button's bleed must not widen the table past its box, and its label still ends where the values end */
 /* up to 620 px the date and the scored count drop (below that width all five columns overflow the list's box) */
 @media (max-width:620px){table.list.runs th:nth-child(3),table.list.runs td:nth-child(3),table.list.runs th:nth-child(4),table.list.runs td:nth-child(4){display:none}}
 
@@ -537,14 +537,17 @@ table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-
 .stage[data-novid] .player{display:none}
 /* a trial that never ran: one sentence under the header says why */
 .head.trial .why{margin:var(--sp-12) 0 0;max-width:640px;font-size:var(--fs-body);line-height:1.55;color:var(--ink)}
-/* phones: the dataset's own name leads, its org under it in small type (as on the hub cards); desktop reads org/name */
-@media (max-width:640px){
-  table.list.runs td.sus .ds{display:flex;flex-direction:column}
-  table.list.runs td.sus .dss{display:none}
-  table.list.runs td.sus{max-width:26vw}
-  table.list.runs td.sus .dso{order:1;font-size:var(--fs-caption);line-height:1.4;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  table.list.runs .sl-l{display:none}table.list.runs .sl-s{display:inline}  /* phones: "Solved", one line like the other headings */
+/* phones (up to 620 px, where the date and the count drop too): two columns, the run and its solve rate; the dataset
+   moves under the pair in the same cell, its name whole (never broken at a hyphen) and its org after it in small type */
+.rds,.ml-s{display:none}
+@media (max-width:620px){
+  table.list.runs .ml-l{display:none}table.list.runs .ml-s{display:inline}  /* the first column holds the whole run: "Run" */
+  table.list.runs th.dsc,table.list.runs td.sus{display:none}
+  table.list.runs .rds{display:block;margin-top:var(--sp-2);font:400 var(--fs-meta)/1.4 var(--sans);color:var(--ink2)}
+  table.list.runs .rdo{font-size:var(--fs-caption);color:var(--muted)}
+  table.list.runs .rds .rtag{display:inline-block;margin:0 0 0 var(--sp-6)}
 }
+@media (max-width:640px){table.list.runs .sl-l{display:none}table.list.runs .sl-s{display:inline}}  /* phones: "Run" and "Solved", one line like the other headings */
 /* run page on phones: Task (with the outcome under its title), Result and Time; Outcome and Steps columns drop, no sideways scroll */
 .oc2{display:none}
 @media (max-width:640px){
@@ -561,7 +564,6 @@ table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-
    unsorted numeric heading its arrow slot */
 @media (max-width:360px){
   table.list.runs th,table.list.runs td{padding-right:var(--sp-6)}
-  table.list.runs td.sus{max-width:22vw}
   table.list.runs tbody th{font-size:var(--fs-small)}
   table.list.runs thead th.n[aria-sort="none"] .si{display:none}
 }
@@ -569,3 +571,10 @@ table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-
 .crumbs .model-mark{margin:0 .4em 0 0;color:inherit}
 .crumbs .model-mark.hm{margin-right:.3em}
 .crumbs .nw{margin:0;color:inherit}
+
+/* breadcrumbs: a crumb is never broken inside (a run title or a task id moves to its own line whole); only a crumb wider
+   than the whole line wraps, at its spaces */
+.crumbs > a,.crumbs > span[aria-current],.crumbs .cgp > a{display:inline-block;max-width:100%;vertical-align:top}
+.crumbs .cgp{margin:0;color:inherit;white-space:nowrap}  /* a crumb and the "/" after it never part */
+.crumbs .cgp > a{white-space:normal}
+.crumbs > span[aria-current] .model-mark{margin-right:.4em}

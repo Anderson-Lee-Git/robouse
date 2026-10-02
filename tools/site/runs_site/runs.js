@@ -15,6 +15,8 @@
   function num(x) { return x == null ? "" : Number(x).toLocaleString("en-US"); }
   // a name whose hyphenated words never break at their hyphens (build_runs_site.nb; .nw in /ui.css)
   function nb(s) { return String(s == null ? "" : s).split(" ").map(function (w) { return w.indexOf("-") >= 0 ? '<span class="nw">' + h(w) + "</span>" : h(w); }).join(" "); }
+  // a mark glued to its name's first word, never alone on a line (UI.named in /ui.js, build_runs_site.named)
+  function named(mark, name) { var s = String(name == null ? "" : name), i = s.indexOf(" "); return mark ? '<span class="mkw">' + mark + nb(i < 0 ? s : s.slice(0, i)) + "</span>" + (i < 0 ? "" : " " + nb(s.slice(i + 1))) : nb(s); }
   function kfmt(x) { x = +x || 0; return x >= 1e6 ? (x / 1e6).toFixed(2) + "M" : x >= 1e4 ? Math.round(x / 1e3) + "k" : x >= 1e3 ? (x / 1e3).toFixed(1) + "k" : String(x); }
   function getJSON(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status + " " + u); return r.json(); }); }
   var coll = typeof Intl !== "undefined" ? new Intl.Collator(undefined, {numeric: true, sensitivity: "base"}) : null;
@@ -344,6 +346,8 @@
     return !!(t.closest && t.closest(".ft, .lb, .lb-pop, .ms-pop, [role=tab], [role=listbox], [role=dialog]"));
   }
 
+  // a task's difficulty as every page shows it (build_hub.DIFFICULTY has the same map)
+  var DIFFICULTY = {easy: "Easy", medium: "Medium", hard: "Hard"};
   // readable episode outcomes (the runner's codes stay in the raw JSON)
   var OUTCOMES = {success_reached: "Goal reached", done: "Agent said done", gave_up: "Agent gave up", budget_exhausted: "Step budget used up",
     agent_timeout: "Agent timed out", wall_time_exhausted: "Time limit reached", agent_exited: "Agent exited", "no result": "No result",
@@ -419,9 +423,12 @@
           scrollInto($('.slist li[data-i="' + i + '"]'));
           markTiles(i);
         });
+        /* the player's keys work only while the player shows (not on Timing or Files) and, for Space and the arrows, only
+           while focus is in the player: elsewhere they scroll the page as usual */
         document.addEventListener("keydown", function (e) {
-          if (busyTarget(e) || current === "files") return;
-          var tag = (e.target || {}).tagName || "";
+          if (busyTarget(e) || !player || !player.offsetParent || !player.getClientRects().length) return;
+          var tag = (e.target || {}).tagName || "", inside = player.contains(document.activeElement);
+          if ((e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === " ") && !inside) return;
           if (e.key === "ArrowRight") { step(1); e.preventDefault(); }
           else if (e.key === "ArrowLeft") { step(-1); e.preventDefault(); }
           else if (e.key === " " && !/^(BUTTON|A|SUMMARY|VIDEO)$/.test(tag)) { if (v.paused) play(v); else v.pause(); e.preventDefault(); }
@@ -683,7 +690,7 @@
           (parts[1] ? "<p>" + parts[1] + (wall ? ", " + wall + " in all" : "") + ".</p>" : "") +
           (agent.length ? '<p class="muted">' + (vla ? "Policy" : "Agent") + ": " + agent.join(", ") + ".</p>" : "") +
           (ep.agent_text && !said(ep.agent_text) ? "<blockquote>" + h(unrunner(ep.agent_text)) + "</blockquote>" : "") + "</section>";
-        var chips = [meta.source_benchmark, meta.category && meta.category.replace(/-/g, " "), meta.difficulty].filter(Boolean)
+        var chips = [meta.source_benchmark, meta.category && meta.category.replace(/-/g, " "), DIFFICULTY[meta.difficulty] || meta.difficulty].filter(Boolean)
           .map(function (x) { return '<span class="chip">' + h(x) + "</span>"; }).join("") +
           (meta.tags || []).map(function (x) { return '<span class="chip tag">' + h(x) + "</span>"; }).join("");
         var setup = '<section class="card sum"><h2>Setup</h2><p>' + h(vla && d.model_label ? d.model_label + ", a VLA policy" : who || "Agent") +
@@ -812,8 +819,10 @@
           var facts = [["Outcome", st === "ok" || st === "infra" ? "" : ocOf(d)], ["Steps", d.steps_used != null ? num(d.steps_used) + (d.max_steps ? " of " + num(d.max_steps) : "") : ""],
             ["Time", dur(d.wall)], ["Reward", d.reward != null && +d.reward !== 0 && +d.reward !== 1 ? rew(d.reward) : ""]].filter(function (f) { return f[1]; });
           var said = d.withheld || st === "infra" || d.kind === "vla" ? "" : String(vd.claim_text || "").replace(/^\[runner\]\s*/, "");  /* a policy says nothing; "vla: step budget reached" is its runner's note */
-          body.innerHTML = (d.video ? '<div class="vbox"><video src="' + h(d.video) + '" poster="' + h(d.video.replace("/runs/v/", "/runs/p/").replace(/\.mp4$/, ".jpg")) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="metadata"></video></div>' : "") +
-            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.model_label ? (d.mark || "") + nb(d.model_label) + "\u00a0· " + (d.hmark || "") + nb(d.harness_label) : (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0]))) + "</a>" + (d.image_input === false ? NOIMG : "") + "</p>" +
+          /* the recording at near its own size (a quarter larger at most) and in its own shape, as on the trial page */
+          var vs = d.size && d.size[0] ? ' style="--ar:' + d.size[0] + "/" + d.size[1] + ";max-width:" + Math.min(560, Math.round(d.size[0] * 1.25)) + 'px"' : "";
+          body.innerHTML = (d.video ? '<div class="vbox"' + vs + '><video src="' + h(d.video) + '" poster="' + h(d.video.replace("/runs/v/", "/runs/p/").replace(/\.mp4$/, ".jpg")) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="metadata"></video></div>' : "") +
+            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.model_label ? named(d.mark || "", d.model_label) + "\u00a0· " + named(d.hmark || "", d.harness_label) : (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0]))) + "</a>" + (d.image_input === false ? NOIMG : "") + "</p>" +
             (facts.length ? '<dl class="facts">' + facts.map(function (f) { return "<div><dt>" + f[0] + "</dt><dd>" + h(f[1]) + "</dd></div>"; }).join("") + "</dl>" : "") +
             (d.withheld ? '<div class="withheld" role="note"><b>Trajectory withheld</b><p>The agent looked at files outside its workspace.</p></div>' : (said ? '<p class="said"><span class="muted">' + (vd.claim === "done" || vd.claim === "give_up" ? "The agent: " : "Its last message: ") + "</span>" + h(said.slice(0, 400)) + "</p>" : "") +
               (d.steps.length ? '<ol class="slist">' + stepListHTML(d) + "</ol>" : quiet(d.video ? "No trajectory was recorded." : "No recording or trajectory: the trial ended before the agent acted.")));
