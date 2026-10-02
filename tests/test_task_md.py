@@ -71,7 +71,7 @@ def test_the_prompt_is_the_task_md_body_and_the_workspace_has_no_copy(tmp_path, 
 
 
 @pytest.mark.parametrize(
-    "harness", ["mini-swe-agent-glm", "codex-glm", "claude-code-glm", "codex", "claude-code", "dimcode"]
+    "harness", ["mini-swe-agent-glm", "codex-glm", "claude-code-glm", "codex", "claude-code", "dimcode", "show-harness"]
 )
 def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path, monkeypatch) -> None:
     """The workspace holds only robouse's internals (.robouse/) and observations/; the task reaches the agent only as

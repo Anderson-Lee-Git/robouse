@@ -5,6 +5,7 @@ Inputs (all optional; missing or malformed files degrade to fewer steps, never t
   agent/stdout.jsonl       Claude Code stream-json, `codex exec --json` events, or plain text
   agent/mini_traj.json     mini-swe-agent trajectory
   agent/pi_session.jsonl   Pi session file (dimcode)
+  agent/stdout.jsonl       show-harness client events (start, plan, decision, end), each with the robo requests it made
   episode/trace.jsonl      every robo request the episode server handled: {t, steps, req, resp}
   episode/frames.jsonl     one line per video frame: {i, t, step}; the video plays them at FPS
   episode/result.json      outcome, agent_text, wall_time_s
@@ -56,6 +57,7 @@ DEFAULT_MODELS = {
     "mini-swe-agent-glm": "zai-org/GLM-5.3",
     "mini-swe-agent": "baseten/zai-org/GLM-5.3",
     "dimcode": "baseten/zai-org/GLM-5.3",
+    "show-harness": "baseten/zai-org/GLM-5.3",
     "oracle": "scripted",
     "noop": "none",
 }
@@ -602,6 +604,137 @@ def _pi_final(meta: dict) -> dict | None:
 
 
 # ---------------------------------------------------------------------------------------------
+# show-harness client events (agent/stdout.jsonl): start, plan, decision, end, error. Each event lists the robo
+# requests it made in order, so its step owns the next that many agent entries of the trace, one to one.
+
+
+def _sh_usage(calls: list[dict]) -> dict:
+    tot = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0}
+    for c in calls:
+        for k in tot:
+            tot[k] += int((c.get("usage") or {}).get(k) or 0)
+    return tot
+
+
+def _sh_head(ev: dict) -> str:
+    """One line on what a decision did: the unit, where it came from, and what the interpreter measured."""
+    unit, src, res = ev.get("unit"), ev.get("source") or "model", ev.get("result") or {}
+    bits = [str(src)]
+    if res.get("kind") == "move":
+        bits.append(
+            f"{float(res.get('step_m') or 0) * 100:g} cm step, {res.get('control_steps')} control steps, "
+            f"moved {float(res.get('moved_m') or 0) * 100:.1f} cm"
+        )
+    elif res.get("kind") == "gripper" and res.get("width_m") is not None:
+        bits.append(
+            f"width {float(res['width_m']) * 100:.1f} cm" + (", empty: reopened" if res.get("grasp_empty") else "")
+        )
+    elif res.get("interrupted"):
+        bits.append(str(res["interrupted"]))
+    if (ev.get("recovery") or {}).get("event"):
+        bits.append(f"recovery: {ev['recovery']['event']}")
+    return f"-> {unit or ev.get('error') or 'no unit'} ({'; '.join(bits)})"
+
+
+def _parse_show_harness(
+    events: list[dict], agent_entries: list[int], trace: list[dict]
+) -> tuple[list[dict], dict, list[int]]:
+    steps: list[dict] = []
+    meta: dict[str, Any] = {"events": len(events), "model_calls": 0, "usage": {}}
+    pos = 0
+
+    def own(st: dict, ev: dict) -> None:
+        nonlocal pos
+        for _ in ev.get("requests") or []:
+            if pos >= len(agent_entries):
+                break
+            j = agent_entries[pos]
+            pos += 1
+            e = trace[j]
+            req = e.get("req") or {}
+            c = _call(f"sh-{j}", "robo", req, _req_label(req))
+            c["output"] = _resp_text(e.get("resp") or {})
+            c["is_error"] = not (e.get("resp") or {}).get("ok", False)
+            c["trace"] = [j]
+            st["calls"].append(c)
+        imgs = [str(n) for n in ev.get("images") or []]
+        first_obs = next((c for c in st["calls"] if (c["args"] or {}).get("op") == "observe"), None)
+        if imgs and first_obs is not None:  # the pictures the model was shown (the camera contract's views)
+            first_obs["image_paths"] = [f"../artifacts/observations/{n}" for n in dict.fromkeys(imgs)]
+
+    def model_step(ev: dict, message: str) -> dict:
+        calls = [c for c in ev.get("calls") or [] if isinstance(c, dict) and c.get("usage") is not None]
+        st = _step("agent", _clip(message, MSG_LIMIT), epoch=ev.get("t"))
+        thinking = [str(c.get("reasoning") or "").strip() for c in calls]
+        st["reasoning"] = "\n\n".join(t for t in thinking if t) or None
+        st["llm_call_count"] = len(calls)
+        if calls:
+            st["metrics"] = _sh_usage(calls)
+            meta["model_calls"] += len(calls)
+        return st
+
+    for ev in events:
+        typ = ev.get("type")
+        if typ == "start":
+            meta.update({k: ev.get(k) for k in ("mode", "model", "dialect", "profile", "backend", "units", "settings")})
+            if ev.get("task"):
+                steps.append(_step("user", _clip(str(ev["task"]), MSG_LIMIT), epoch=ev.get("t")))
+            st = _step(
+                "agent",
+                f"show-harness, {ev.get('mode')} mode, {ev.get('profile')} conventions; units: "
+                f"{', '.join(ev.get('units') or [])}; AgentView camera {ev.get('agentview')}, wrist camera "
+                f"{ev.get('wrist')}. The model is shown the camera images and the prompt in each step's message, "
+                "not the state that `observe` returns below.",
+                epoch=ev.get("t"),
+            )
+            st["llm_call_count"] = 0
+        elif typ == "plan":
+            sgs = ev.get("subgoals") or []
+            lines = [
+                f"{k}. {sg.get('motion')}: {sg.get('target')} (done when: {sg.get('completion')})"
+                for k, sg in enumerate(sgs, 1)
+                if isinstance(sg, dict)
+            ]
+            st = model_step(ev, f"Subtask plan ({ev.get('route')}):\n" + "\n".join(lines))
+        elif typ == "decision":
+            calls = ev.get("calls") or []
+            reply = str((calls[-1] or {}).get("content") or "").strip() if calls else ""
+            st = model_step(ev, (reply + "\n\n" if reply else "") + _sh_head(ev))
+            st["extra"] = {
+                "show_harness": {
+                    k: ev.get(k)
+                    for k in ("i", "unit", "source", "stage", "stage_motion", "target_in_wrist", "result", "recovery")
+                    if ev.get(k) is not None
+                }
+            }
+        elif typ in ("end", "error"):
+            text = ev.get("reason") if typ == "end" else ev.get("error")
+            st = _step("agent", _clip(f"show-harness {typ}: {text}", MSG_LIMIT), epoch=ev.get("t"))
+            st["llm_call_count"] = 0
+        else:
+            continue
+        own(st, ev)
+        steps.append(st)
+    meta["usage"] = {
+        k: sum(int((s.get("metrics") or {}).get(k) or 0) for s in steps)
+        for k in ("prompt_tokens", "completion_tokens", "cached_tokens")
+    }
+    return steps, meta, agent_entries[pos:]
+
+
+def _show_harness_final(meta: dict) -> dict | None:
+    u = meta.get("usage") or {}
+    if not meta.get("model_calls"):
+        return None
+    return {
+        "total_prompt_tokens": u.get("prompt_tokens", 0),
+        "total_completion_tokens": u.get("completion_tokens", 0),
+        "total_cached_tokens": u.get("cached_tokens", 0),
+        "extra": {"model_calls": meta["model_calls"]},
+    }
+
+
+# ---------------------------------------------------------------------------------------------
 # robo MCP tool calls, as the equivalent `robo` command
 
 MCP_TOOL_RES = (
@@ -931,7 +1064,7 @@ def _prompt(trial: Path, cfg: dict, harness: str) -> str:
             instr = load_task(tp).instruction
         except (OSError, ValueError, KeyError):  # the task folder moved or changed since the trial
             instr = ""
-    if harness in TRACE_HARNESSES:
+    if harness in TRACE_HARNESSES or harness == "show-harness":  # no robo CLI prefix: the client words its own prompt
         return instr or f"task {cfg.get('task')}"
     from ..harnesses.interface import prompt_prefix
 
@@ -1024,6 +1157,14 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
             f"{harness} harness: no LLM; steps are the episode server's trace of robo requests "
             f"(up to {ORACLE_ACTS_PER_STEP} motion requests per step)."
         )
+    elif harness == "show-harness":
+        steps, meta, leftover = _parse_show_harness(_read_jsonl(raw), agent_entries, trace)
+        fm = _show_harness_final(meta)
+        notes.append("show-harness: one step per decision; each owns the robo requests the client made for it.")
+        if not steps:
+            notes.append("agent/stdout.jsonl is empty or missing")
+        if leftover:
+            notes.append(f"{len(leftover)} robo request(s) in the trace were not reported by the client")
     else:
         if harness == "dimcode" and (trial / "agent" / "pi_session.jsonl").is_file():
             steps, meta = _parse_pi(_read_jsonl(trial / "agent" / "pi_session.jsonl"), trial)
@@ -1280,6 +1421,8 @@ def _source_name(trial: Path, harness: str) -> str:
         return "agent/mini_traj.json"
     if harness == "dimcode" and (trial / "agent" / "pi_session.jsonl").is_file():
         return "agent/pi_session.jsonl (Pi session)"
+    if harness == "show-harness":
+        return "agent/stdout.jsonl (show-harness client events)"
     return (
         "agent/stdout.jsonl ("
         + (

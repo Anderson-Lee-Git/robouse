@@ -34,6 +34,7 @@ DEFAULT_MODELS = {
     "codex": "gpt-6-astra",
     "mini-swe-agent": "baseten/zai-org/GLM-5.3",
     "dimcode": "baseten/zai-org/GLM-5.3",
+    "show-harness": "baseten/zai-org/GLM-5.3",
 }
 # harnesses that never pass an image to their model (mini-swe-agent sends text only; its agent can still read image
 # files with code)
@@ -59,6 +60,9 @@ PENDING_PROVIDERS: dict[str, dict] = {
         },
         "models": [
             {"id": "zai-org/GLM-5.3", "name": "GLM-5.3", "reasoning": True, "input": ["text", "image"], "maxImages": 8},
+            # probed 2026-10-01: it named the blocks in a rendered tabletop frame (chat completions), and counted 9
+            # attached images on both chat completions and Anthropic Messages (no 8-image limit seen)
+            {"id": "zai-org/GLM-5.3-Flash", "name": "GLM-5.3 Flash", "reasoning": True, "input": ["text", "image"]},
             {
                 "id": "moonshotai/Kimi-K3",
                 "name": "Kimi K3",

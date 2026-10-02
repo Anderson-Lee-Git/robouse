@@ -164,7 +164,9 @@ def _verify(task: Task, episode: dict, tdir: Path) -> float:
 
 
 # harnesses that drive a language model (the others run scripted code or a VLA policy)
-LLM_HARNESSES = ("claude-code", "codex", "mini-swe-agent", "dimcode")
+LLM_HARNESSES = ("claude-code", "codex", "mini-swe-agent", "dimcode", "show-harness")
+# harnesses that may also drive a self-hosted model named without a provider prefix (no gateway; images always sent)
+SELF_HOSTED_HARNESSES = ("show-harness",)
 
 
 def image_input_plan(harness: str, model: str) -> dict:
@@ -183,6 +185,14 @@ def image_input_plan(harness: str, model: str) -> dict:
     if canon not in LLM_HARNESSES:
         return {"harness": canon, "model": mid, "image_input": None, "image_input_reason": "no language model"}
     mid = mid or models.DEFAULT_MODELS.get(canon, "")
+    if canon in SELF_HOSTED_HARNESSES and models.split(mid)[0] is None:
+        # a model served by the user (e.g. a fine-tuned VLM on vLLM): no gateway, so nothing removes images
+        return {
+            "harness": canon,
+            "model": mid,
+            "image_input": True,
+            "image_input_reason": "a self-hosted model: images are always sent",
+        }
     ref = models.resolve(canon, mid)
     accepts = models.accepts_images(ref)
     plan = {"harness": canon, "model": ref.id if models.split(mid)[0] else mid, "accepts_images": accepts}
