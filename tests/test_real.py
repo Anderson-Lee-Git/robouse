@@ -321,12 +321,15 @@ def _replay(ep, fx, until: float | None = None, wiggle: float = 0.0) -> list[tup
 
 # ---- gap 1: the loop watchdog acts; lost telemetry stops -----------------------------------------------------------------
 
+# these tests set the absolute watchdog limits below a few control periods (the limits then stretch to those periods)
+ABSOLUTE = {"watchdog_periods": 0, "watchdog_hard_periods": 0}
+
 
 def test_watchdog_one_stall_is_logged_and_the_episode_goes_on(tmp_path):
     ep = _episode(
         "real-metal-reach",
         tmp_path,
-        envelope={"watchdog_s": 0.15, "watchdog_hard_s": 2.0, "watchdog_max_stalls": 3},
+        envelope={"watchdog_s": 0.15, "watchdog_hard_s": 2.0, "watchdog_max_stalls": 3, **ABSOLUTE},
         mock_fault={"kind": "slow", "at_step": 3, "steps": 1, "seconds": 0.3},
     )
     q = list(ep.backend.q)
@@ -347,7 +350,7 @@ def test_watchdog_hard_limit_stops_and_secures_the_arm(tmp_path):
     ep = _episode(
         "real-metal-reach",
         tmp_path,
-        envelope={"watchdog_s": 0.1, "watchdog_hard_s": 0.3},
+        envelope={"watchdog_s": 0.1, "watchdog_hard_s": 0.3, **ABSOLUTE},
         mock_fault={"kind": "slow", "at_step": 3, "steps": 1, "seconds": 0.45},
     )
     q = list(ep.backend.q)
@@ -374,7 +377,7 @@ def test_watchdog_stalls_in_a_row_stop(tmp_path):
     ep = _episode(
         "real-metal-reach",
         tmp_path,
-        envelope={"watchdog_s": 0.1, "watchdog_hard_s": 5.0, "watchdog_max_stalls": 3},
+        envelope={"watchdog_s": 0.1, "watchdog_hard_s": 5.0, "watchdog_max_stalls": 3, **ABSOLUTE},
         mock_fault={"kind": "slow", "at_step": 3, "steps": 3, "seconds": 0.2},
     )
     r = ep.handle({"op": "act", "action": list(ep.backend.q), "repeat": 6})
@@ -844,3 +847,32 @@ def test_mock_skips_the_physical_estop_unless_the_task_asks(tmp_path, monkeypatc
     ep.handle({"op": "observe"})
     assert ep.outcome == "safety_stop" and ep.steps == 0
     ep.close()
+
+
+# ---- independent review, 2026-10-02 -------------------------------------------------------------------------------------
+
+
+def test_watchdog_limits_scale_with_the_control_period():
+    """R7: the loop watchdog's limits are 0.5 s and 2 s, or 3 and 10 control periods on a slow rig, whichever is
+    longer: every shipped profile keeps 0.5 s and 2 s, and a 2 Hz rig is not stopped by its own period."""
+    import dataclasses
+
+    from robouse.real.drivers.rosbridge import ros_profile
+    from robouse.real.robots import METAL, PROFILES
+    from robouse.real.safety import Guard, SafetyStop
+
+    for p in [*PROFILES.values(), ros_profile({})]:
+        g = Guard(p)
+        assert (g.stall_s, g.hard_s) == (0.5, 2.0), p.name
+    slow = dataclasses.replace(METAL, control_hz=2.0)
+    g = Guard(slow)
+    assert (g.stall_s, g.hard_s) == (1.5, 5.0)
+    for _ in range(10):
+        g.check_loop(0.55)  # a 2 Hz step with some jitter
+    assert g.stalls == 0
+    g.check_loop(1.6)
+    g.check_loop(1.6)
+    with pytest.raises(SafetyStop, match="3 control steps in a row slower than 1.5 s"):
+        g.check_loop(1.6)
+    with pytest.raises(SafetyStop, match=r"limit 5 s"):
+        Guard(slow).check_loop(5.1)

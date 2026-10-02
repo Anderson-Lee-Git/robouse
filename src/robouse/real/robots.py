@@ -41,8 +41,11 @@ class EnvelopeDefaults:
     windup_gripper: float = 8.0
     temp_warn_c: float = 55.0
     temp_stop_c: float = 65.0
-    watchdog_s: float = 0.5  # a control step slower than this is a loop stall (logged)
-    watchdog_hard_s: float = 2.0  # one control step slower than this stops the episode
+    watchdog_s: float = 0.5  # a control step slower than this is a loop stall (logged) ...
+    watchdog_hard_s: float = 2.0  # one control step slower than this stops the episode ...
+    # ... or, on a slow rig, this many control periods when that is longer (10-20 Hz rigs keep 0.5 s and 2 s)
+    watchdog_periods: float = 3.0
+    watchdog_hard_periods: float = 10.0
     watchdog_max_stalls: int = 3  # this many loop stalls in a row stop the episode
     telemetry_timeout_s: float = 1.0  # no fresh joint reading for this long stops the episode (dead link, stale cache)
 

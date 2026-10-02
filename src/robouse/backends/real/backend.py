@@ -245,8 +245,8 @@ class RealArmBackend(EmbodiedBackend):
             "windup_deg": e.windup_deg,
             "temp_stop_c": e.temp_stop_c,
             "watchdog": {
-                "stall_s": e.watchdog_s,
-                "stop_s": e.watchdog_hard_s,
+                "stall_s": self.guard.stall_s,
+                "stop_s": self.guard.hard_s,
                 "stalls_in_a_row": e.watchdog_max_stalls,
             },
             "telemetry_timeout_s": e.telemetry_timeout_s,

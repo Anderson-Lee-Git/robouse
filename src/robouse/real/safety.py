@@ -15,8 +15,9 @@ inspect-robots-metal adapter, which ran the 2026-09-05 Metal arm sessions withou
 After each step: stale telemetry (a joint reading older than `telemetry_timeout_s`, as a cached bus serves when the link
 is dead, stops the episode), thermal guard (warn, then stop and hold above `temp_stop_c`; also checked at connect) and
 the loop watchdog (a step slower than `watchdog_s` is a stall: one slower than `watchdog_hard_s`, or
-`watchdog_max_stalls` stalls in a row, stop the episode). The contact watch (contact.py) runs in the backend. Every
-veto, clamp, warning and stop is appended to the intervention log (events.jsonl).
+`watchdog_max_stalls` stalls in a row, stop the episode; on a slow rig both stretch to `watchdog_periods` and
+`watchdog_hard_periods` control periods). The contact watch (contact.py) runs in the backend. Every veto, clamp,
+warning and stop is appended to the intervention log (events.jsonl).
 
 `HardwareLock` makes sure only one controller uses a robot at a time (flock on ~/.config/robouse-operator/<robot>.lock).
 """
@@ -186,6 +187,9 @@ class Guard:
             speeds[g] = slow[g] = self.e.gripper_speed / self.hz
             wind[g] = self.e.windup_gripper
         self.max_step, self.max_step_slow, self.windup = speeds, slow, wind
+        # loop watchdog limits: the absolute ones, or a number of control periods on a slow rig (whichever is longer)
+        self.stall_s = max(self.e.watchdog_s, self.e.watchdog_periods / self.hz)
+        self.hard_s = max(self.e.watchdog_hard_s, self.e.watchdog_hard_periods / self.hz)
         self.last_cmd: np.ndarray | None = None
         self.last_pos: np.ndarray | None = None
         self._warned_at = -1e9
@@ -257,19 +261,20 @@ class Guard:
             self.log("warn", kind="temperature", temps=temps)
 
     def check_loop(self, dt: float) -> None:
-        """Loop watchdog: one control step slower than watchdog_hard_s, or watchdog_max_stalls steps in a row slower
-        than watchdog_s, stop the episode (a controller this late is not watching the arm)."""
-        if dt > self.e.watchdog_hard_s:
-            why = f"a control step took {dt:.2f} s (limit {self.e.watchdog_hard_s:g} s)"
-            self.log("stop", kind="watchdog", reason=why, dt=round(dt, 3), limit_s=self.e.watchdog_hard_s)
+        """Loop watchdog: one control step slower than `hard_s`, or watchdog_max_stalls steps in a row slower than
+        `stall_s`, stop the episode (a controller this late is not watching the arm). Both scale with the control
+        period on a slow rig (watchdog_periods, watchdog_hard_periods); at 10-20 Hz they are 0.5 s and 2 s."""
+        if dt > self.hard_s:
+            why = f"a control step took {dt:.2f} s (limit {self.hard_s:g} s)"
+            self.log("stop", kind="watchdog", reason=why, dt=round(dt, 3), limit_s=self.hard_s)
             raise SafetyStop(f"watchdog: {why}", "watchdog")
-        if dt <= self.e.watchdog_s:
+        if dt <= self.stall_s:
             self.stalls = 0
             return
         self.stalls += 1
         self.log("warn", kind="loop_stall", dt=round(dt, 3), in_a_row=self.stalls)
         if self.stalls >= self.e.watchdog_max_stalls:
-            why = f"{self.stalls} control steps in a row slower than {self.e.watchdog_s:g} s (last {dt:.2f} s)"
+            why = f"{self.stalls} control steps in a row slower than {self.stall_s:g} s (last {dt:.2f} s)"
             self.log("stop", kind="watchdog", reason=why, dt=round(dt, 3), in_a_row=self.stalls)
             raise SafetyStop(f"watchdog: {why}", "watchdog")
 
