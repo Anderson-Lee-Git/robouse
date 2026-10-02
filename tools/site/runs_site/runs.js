@@ -9,7 +9,16 @@
   function h(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]; }); }
   function t2(x) { x = Math.round((+x || 0) * 10) / 10; var m = Math.floor(x / 60), s = (x - m * 60).toFixed(1); return m + ":" + (+s < 10 ? "0" : "") + s; }  // round first, then pad: 9.96 -> 0:10.0
   function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }  // a pause right after play rejects; that is not an error
-  function dur(x) { if (x == null) return ""; x = +x; return x < 120 ? x.toFixed(x < 10 ? 1 : 0) + " s" : (x / 60).toFixed(1) + " min"; }
+  // a duration, the one way every robouse.ai page writes it (build_runs_site.fmt_s, build_hub.fmt_dur): "5.9 s", "43 s", "1 min 42 s", "1 h 5 min"
+  function dur(x) {
+    if (x == null) return ""; x = +x;
+    if (x < 9.95) return x.toFixed(1) + " s";
+    if (x < 59.5) return Math.round(x) + " s";
+    var t = Math.round(x);
+    if (t < 3600) return Math.floor(t / 60) + " min" + (t % 60 ? " " + (t % 60) + " s" : "");
+    var m = Math.round(t / 60);
+    return Math.floor(m / 60) + " h" + (m % 60 ? " " + (m % 60) + " min" : "");
+  }
   function rew(x) { return x == null || isNaN(+x) ? "" : (+x).toFixed(1); }
   function mfirst(l) { var i = String(l).indexOf(" + "); return i < 0 ? l : l.slice(i + 3) + " · " + l.slice(0, i); }  // "Claude Code + Opus 5.5" -> "Opus 5.5 · Claude Code"
   function num(x) { return x == null ? "" : Number(x).toLocaleString("en-US"); }
@@ -63,6 +72,7 @@
     var limit0 = +root.getAttribute("data-limit") || Infinity, limit = limit0;
     var noun = root.getAttribute("data-noun") || "rows";
     var P = new URLSearchParams(location.search);
+    if (P.get("all") === "1") limit = Infinity;  /* "Show all" survives a reload or a shared link */
     var fsel = $$("[data-lf]", root), q = $("[data-lq]", root), scope = $("[data-lscope]", root);
     var more = $("[data-lmore]", root), moreBox = more && more.parentNode, empty = $("[data-lempty]", root), count = $("[data-lcount]", root);
     var wrap = table.closest(".scroll") || table;
@@ -99,18 +109,30 @@
       return hook.match ? hook.match(r) : true;
     }
     function fmt(n) { return Number(n).toLocaleString("en-US"); }
+    function filtered() { return fsel.some(function (s) { return s.value; }) || !!(scope && scope.value === "all") || !!only; }
     function apply() {
       var n = 0;
       rows.forEach(function (r) { var ok = match(r); if (ok) n++; r.hidden = !ok || n > limit; });
-      if (count) count.textContent = (n === rows.length ? fmt(rows.length) : fmt(n) + " of " + fmt(rows.length)) + " " + noun;
-      if (moreBox) { moreBox.hidden = n <= limit; more.textContent = "Show all " + fmt(n) + " " + noun; }
-      if (empty) { empty.hidden = n > 0; wrap.hidden = n === 0; }
+      /* the count only while a search or filter narrows the list ("12 of 128 trials"); the page states the total once */
+      if (count) count.textContent = n === rows.length || !n ? "" : fmt(n) + " of " + fmt(rows.length) + " " + noun;
+      if (moreBox) { moreBox.hidden = n <= limit; more.textContent = "Show " + fmt(n - Math.min(n, limit)) + " more"; }
+      if (empty) {
+        empty.hidden = n > 0; wrap.hidden = n === 0;
+        if (!n) {  /* one pattern: what matched nothing, and one button that undoes it */
+          var word = q && q.value.trim(), filt = filtered();
+          $("b", empty).textContent = "No " + noun + " match " + (filt ? "these filters" + (word ? " and “" + word + "”" : "") : "“" + word + "”") + ".";
+          var cb = $("[data-lclear]", empty); if (cb) cb.textContent = filt ? "Clear filters" : "Clear search";
+        }
+      }
       if (!hook.noUrl) {
         var p = new URLSearchParams(location.search);
         fsel.forEach(function (s) { var k = s.getAttribute("data-lf"); if (s.value) p.set(k, s.value); else p.delete(k); });
         if (q) { if (q.value.trim()) p.set("q", q.value.trim()); else p.delete("q"); }
         if (scope) { if (scope.value === "all" && !only) p.set("scope", "all"); else p.delete("scope"); }
         if (hasPairs && !hook.noOnly) { if (only) p.set("m", only); else p.delete("m"); }
+        var sth = ths.filter(function (x) { return x.getAttribute("aria-sort") !== "none" && x.getAttribute("data-key"); })[0];
+        if (sth) { p.set("sort", sth.getAttribute("data-key")); p.set("dir", sth.getAttribute("aria-sort") === "ascending" ? "asc" : "desc"); } else { p.delete("sort"); p.delete("dir"); }
+        if (limit === Infinity && limit0 !== Infinity) p.set("all", "1"); else p.delete("all");
         if (hook.write) hook.write(p);
         var qs = p.toString();
         history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
@@ -143,11 +165,8 @@
       if (isNum) { var x = parseFloat(s); return isNaN(x) || x === -1 ? null : x; }
       return s ? s.toLowerCase() : null;
     }
-    ths.forEach(function (th) {
-      var b = $("button.sb", th); if (!b) return;
-      b.addEventListener("click", function () {
+    function sortBy(th, dir) {
         var idx = [].indexOf.call(th.parentNode.children, th), isNum = th.getAttribute("data-sort") === "num";
-        var cur = th.getAttribute("aria-sort"), dir = cur === "none" ? (th.getAttribute("data-first") || (isNum ? "descending" : "ascending")) : cur === "descending" ? "ascending" : "descending";
         ths.forEach(function (x) { x.setAttribute("aria-sort", "none"); });
         th.setAttribute("aria-sort", dir);
         var sg = dir === "ascending" ? 1 : -1;
@@ -161,9 +180,18 @@
         var frag = document.createDocumentFragment();
         rows.forEach(function (r) { frag.appendChild(r); });
         tb.appendChild(frag);
+    }
+    ths.forEach(function (th) {
+      var b = $("button.sb", th); if (!b) return;
+      b.addEventListener("click", function () {
+        var isNum = th.getAttribute("data-sort") === "num", cur = th.getAttribute("aria-sort");
+        sortBy(th, cur === "none" ? (th.getAttribute("data-first") || (isNum ? "descending" : "ascending")) : cur === "descending" ? "ascending" : "descending");
         apply();
       });
     });
+    /* an order from the URL (?sort=date&dir=asc) before the first draw */
+    var s0 = P.get("sort") && ths.filter(function (x) { return x.getAttribute("data-key") === P.get("sort"); })[0];
+    if (s0) sortBy(s0, P.get("dir") === "asc" ? "ascending" : "descending");
     document.addEventListener("modelset", apply);
     apply();
     return {apply: apply, reset: reset};
@@ -269,7 +297,7 @@
   function actionRaw(s) {
     if (s.c && s.c.length) {
       var a = cmdLabel(s.c[0].a);
-      return {text: a + (s.c.length > 1 ? "  (+" + (s.c.length - 1) + ")" : ""), cls: ""};
+      return {text: a + (s.c.length > 1 ? "  (+" + (s.c.length - 1) + (s.c.length > 2 ? " commands)" : " command)") : ""), cls: ""};
     }
     if (s.src === "system") return {text: (s.m || "").split("\n")[0], cls: "sys"};
     return {text: (s.m || s.r || "").replace(/\s+/g, " "), cls: "msg"};
@@ -288,16 +316,23 @@
   function stepListHTML(d) {
     return d.steps.map(function (s) {
       var a = actionOf(s), v = s.v;
-      var x = s.env && s.env[1] > s.env[0] ? "+" + (s.env[1] - s.env[0]) + " steps" : "";
+      var x = s.env && s.env[1] > s.env[0] ? "+" + (s.env[1] - s.env[0]) + " sim steps" : "";  /* simulator steps this step moved, not commands */
       return '<li data-i="' + s.i + '"' + (v ? ' data-t0="' + v[0] + '" tabindex="0" aria-label="Step ' + sn(d, s.i) + ", " + h(a.text.slice(0, 120)) + ", seek to " + t2(v[0]) + '"' : ' class="nov"') +
         '><span class="i">' + sn(d, s.i) + '</span><span class="t">' + (v && x && v[0] > 0 ? t2(v[0]) : "") +  // the recording time where this step moved the robot; blank for steps that did not move it
 
         '</span><span class="a ' + a.cls + '" title="' + h(a.text.slice(0, 400)) + '">' + h(a.text.slice(0, 220)) + '</span><span class="x' + (exitOf(s) ? " err" : "") + '">' + (exitOf(s) ? "exit≠0" : x) + "</span></li>";
     }).join("");
   }
-  function keyActivate(box) {  // Enter or space on a focusable step row seeks, like a click
+  function keyActivate(box) {  // Enter or space on a focusable step row seeks, like a click; ↑ ↓ Home End move between rows
+    /* each list is one tab stop (the first row that seeks), not one per step */
+    $$(".slist", box).forEach(function (ol) { $$("li[data-t0]", ol).forEach(function (li, k) { li.tabIndex = k ? -1 : 0; }); });
     box.addEventListener("keydown", function (e) {
-      if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches("li[data-t0]")) { e.preventDefault(); e.stopPropagation(); e.target.click(); }
+      var li = e.target.matches && e.target.matches("li[data-t0]") ? e.target : null; if (!li) return;
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); li.click(); return; }
+      var all = $$("li[data-t0]", li.parentNode), k = all.indexOf(li);
+      var j = e.key === "ArrowDown" ? k + 1 : e.key === "ArrowUp" ? k - 1 : e.key === "Home" ? 0 : e.key === "End" ? all.length - 1 : -2;
+      if (j === -2 || !all[j]) return;
+      e.preventDefault(); e.stopPropagation(); li.tabIndex = -1; all[j].tabIndex = 0; all[j].focus();
     });
   }
 
@@ -784,10 +819,10 @@
       if (a && b === a) { notes.push("Trial A and B were the same trial; B is another trial of this task."); b = null; }
       var note = notes.length ? '<p class="cnote" role="status">' + h(notes.join(" ")) + "</p>" : "";
       var tasks = Object.keys(byTask).sort();
-      var picker = '<div class="cpick"><select data-task aria-label="Task"><option value="">Choose one of ' + Object.keys(byTask).length.toLocaleString("en-US") + " tasks…</option>" +
-        tasks.map(function (k) { return '<option value="' + h(k) + '"' + (k === task ? " selected" : "") + ">" + h(k) + " · " + h(idx.titles[k] || "") + "</option>"; }).join("") + "</select>" +
+      var picker = '<div class="cpick"><select data-task aria-label="Task"><option value="" disabled hidden' + (task ? "" : " selected") + ">Choose a task</option>" +
+        tasks.map(function (k) { return '<option value="' + h(k) + '" data-sub="' + h(k) + '"' + (k === task ? " selected" : "") + ">" + h(idx.titles[k] || k) + "</option>"; }).join("") + "</select>" +
         (task && idx.urls && idx.urls[task] ? '<a class="ln" href="' + h(idx.urls[task]) + '">Open task page</a>' : "") + "</div>";
-      if (!task) { if (a0 || b0) history.replaceState(null, "", location.pathname + location.hash); root.innerHTML = picker + note + quiet("Pick a task to compare two of its trials, or press Compare on a trial page."); bindPick(); return; }
+      if (!task) { if (a0 || b0) history.replaceState(null, "", location.pathname + location.hash); root.innerHTML = picker + note + quiet("Pick a task, then two of its trials; Compare on a trial page opens this with that trial."); bindPick(); return; }
       var ids = sorted(byTask[task]);
       if (!a || !T[a]) a = ids.find(function (x) { return x !== b; });
       if (!b) b = ids.find(function (x) { return x !== a && T[x][1] !== T[a][1] && T[x][3]; }) || ids.find(function (x) { return x !== a; });
@@ -795,7 +830,7 @@
         var q = new URLSearchParams(location.search); q.set("a", a); if (b) q.set("b", b); else q.delete("b");
         history.replaceState(null, "", location.pathname + "?" + q.toString() + location.hash);
       }
-      root.innerHTML = picker + note + (b ? '<div class="cbar"><button type="button" class="btn quiet sm" data-both>Play both from the start</button><span class="muted">Each column follows its own video; click a step to seek.</span></div>'
+      root.innerHTML = picker + note + (b ? '<div class="cbar"><button type="button" class="btn quiet sm" data-both>Play both from the start at 0.5×</button><span class="muted">Each column follows its own video; click a step to seek.</span></div>'
         : '<p class="muted">This task has only one trial.</p>') +
         '<div class="cmpgrid"><div class="col" data-side="a"></div><div class="col" data-side="b"></div></div>';
       bindPick();
@@ -822,7 +857,8 @@
           /* the recording at near its own size (a quarter larger at most) and in its own shape, as on the trial page */
           var vs = d.size && d.size[0] ? ' style="--ar:' + d.size[0] + "/" + d.size[1] + ";max-width:" + Math.min(560, Math.round(d.size[0] * 1.25)) + 'px"' : "";
           body.innerHTML = (d.video ? '<div class="vbox"' + vs + '><video src="' + h(d.video) + '" poster="' + h(d.video.replace("/runs/v/", "/runs/p/").replace(/\.mp4$/, ".jpg")) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="metadata"></video></div>' : "") +
-            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="wl" href="/runs/t/' + h(id) + '/">' + (d.model_label ? named(d.mark || "", d.model_label) + "\u00a0· " + named(d.hmark || "", d.harness_label) : (d.mark || "") + h(d.label || mfirst(idx.hm[d.hm][0]))) + "</a>" + (d.image_input === false ? NOIMG : "") + "</p>" +
+            /* the trial picker above names the trial; here its result, and a link to its page */
+            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="ln" href="/runs/t/' + h(id) + '/">Trial page</a>' + (d.image_input === false ? NOIMG : "") + "</p>" +
             (facts.length ? '<dl class="facts">' + facts.map(function (f) { return "<div><dt>" + f[0] + "</dt><dd>" + h(f[1]) + "</dd></div>"; }).join("") + "</dl>" : "") +
             (d.withheld ? '<div class="withheld" role="note"><b>Trajectory withheld</b><p>The agent looked at files outside its workspace.</p></div>' : (said ? '<p class="said"><span class="muted">' + (vd.claim === "done" || vd.claim === "give_up" ? "The agent: " : "Its last message: ") + "</span>" + h(said.slice(0, 400)) + "</p>" : "") +
               (d.steps.length ? '<ol class="slist">' + stepListHTML(d) + "</ol>" : quiet(d.video ? "No trajectory was recorded." : "No recording or trajectory: the trial ended before the agent acted.")));
