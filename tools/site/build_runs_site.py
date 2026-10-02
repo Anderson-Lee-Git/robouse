@@ -756,7 +756,8 @@ def _fmt_metric(v, kind: str) -> str | None:
         if kind == "int":
             return f"{int(float(v)):,}"
         x = float(v)
-        return f"{x:,.3f}" if abs(x) < 10 else f"{x:,.1f}"
+        t = f"{x:,.3f}".rstrip("0").rstrip(".") if abs(x) < 10 else f"{x:,.1f}".rstrip("0").rstrip(".")
+        return t.replace("-", "\u2212") if t not in ("-0", "") else "0"  # 5.9, not 5.900; −3.015 with a true minus
     except (TypeError, ValueError):
         return None
 
@@ -1159,7 +1160,8 @@ def player_controls(noimg: bool = False) -> str:
             f'<div class="ctl"><button type="button" class="pb" data-k="prev" aria-label="Previous step" title="Previous step (←)" disabled>{ICON["prev"]}</button>'
             f'<button type="button" class="pb pp" data-k="play" aria-label="Play" title="Play or pause (space)" disabled>{ICON["play"]}{ICON["pause"]}</button>'
             f'<button type="button" class="pb" data-k="next" aria-label="Next step" title="Next step (→)" disabled>{ICON["next"]}</button>'
-            f'<span class="seg sm" role="group" aria-label="Playback speed">{speeds}</span><span class="now trunc" aria-live="off"></span>'
+            f'<span class="seg sm" role="group" aria-label="Playback speed">{speeds}</span>'
+            f'<button type="button" class="pb spd" data-k="speed" aria-label="Playback speed" disabled>0.5×</button><span class="now trunc" aria-live="off"></span>'
             f'<button type="button" class="pb" data-k="full" aria-label="Full screen" title="Full screen (f)" disabled>{ICON["full"]}</button></div>'
             f'<p class="cap">Plays only while the robot moves.</p></div>')
 
@@ -1170,6 +1172,24 @@ def skeleton() -> str:
 
 
 RUN_OF: dict[str, dict] = {}  # run slug -> {hm, ds, probe, trials, title, ...}, set in main; a trial's run is t["run"]
+BY_TASK: dict[str, list[dict]] = defaultdict(list)  # task id -> its published trials, set in main
+
+
+def task_link(t: dict) -> str:
+    """The trial's task on the hub, as a button beside Compare (the trial page's only other way to it was a grey line in Files)."""
+    url = HUB.get(t["task"], ("", ""))[0]
+    return f'<a class="btn quiet sm cmp" href="{esc(url)}">Task page</a>' if url else ""
+
+
+def other_trials(t: dict, n: int = 8) -> str:
+    """A trial that never ran has nothing to show: the other trials of its task, counted ones first, each with its result."""
+    rest = sorted((o for o in BY_TASK.get(t["task"], []) if o is not t), key=lambda o: (not o["counted"], status(o) != "ok", plab(o["hm"]).lower()))
+    if not rest:
+        return ""
+    items = "".join(f'<li><span class="badge {status(o)}">{STATUS_TEXT[status(o)]}</span><a class="ln" href="/runs/t/{esc(o["trial"])}/">{pair_html(o["hm"])}</a>'
+                    + ("" if o["counted"] else ' <span class="muted">not counted</span>') + "</li>" for o in rest[:n])
+    more = f'<p class="muted small">{len(rest) - n} more on the <a class="ln" href="{esc(HUB.get(t["task"], ("", ""))[0])}#results">task page</a>.</p>' if len(rest) > n and HUB.get(t["task"]) else ""
+    return f'<section class="others" aria-labelledby="others-h"><h2 id="others-h" class="lab">Other trials of this task</h2><ul class="olist">{items}</ul>{more}</section>'
 
 
 def group_runs(trials: list[dict], jobs: dict) -> dict[str, dict]:
@@ -1238,13 +1258,6 @@ def box_style(t: dict) -> str:
     return f' style="--ar:{wh[0]}/{wh[1]}"' if wh and wh[1] else ""
 
 
-def player_width(t: dict) -> int | None:
-    """How wide the player may be: the recordings are small (256 to 480 px), so the player stays near their own size (a
-    quarter larger at most, 500 px at most) instead of blowing a 320 px clip up to 500 (runs.css --pw)."""
-    wh = jpeg_size(POSTERS / f"{t['trial']}.jpg")
-    return min(500, round(wh[0] * 1.25)) if wh and wh[0] else None
-
-
 def poster_attr(t: dict) -> str:
     """The recording's first frame at its own size (runs/p/<trial>.jpg, from the published encode by
     tools/site/make_posters.sh on the build VM), so the player is never a black box and Play starts on the same picture."""
@@ -1252,6 +1265,22 @@ def poster_attr(t: dict) -> str:
 
 
 POSTERS = Path()  # <out>/p, set in main
+
+
+# where the stage starts on the page, measured while the page is parsed (before the player inside it is laid out, so it
+# never jumps): runs.css sizes the player so its controls show in the first screen whatever the header's height
+STAGE_TOP = ('<script>(function (s) { s.style.setProperty("--top", Math.round(s.getBoundingClientRect().top + scrollY) + "px"); })'
+             '(document.currentScript.parentNode);</script>')
+
+
+def stage_style(t: dict) -> str:
+    """The player column's width (--pw) and the recording's shape (--ar). The recordings are small (256 to 480 px), so the
+    player stays near their own size (a quarter larger at most, 500 px at most) instead of blowing a 320 px clip up to
+    500; at desktop widths runs.css also keeps it short enough that its controls show without scrolling."""
+    wh = jpeg_size(POSTERS / f"{t['trial']}.jpg")
+    if not (wh and wh[0] and wh[1]):
+        return ""
+    return f' style="--pw:{min(500, round(wh[0] * 1.25))}px;--ar:{wh[0]}/{wh[1]}"'
 
 
 def build_trial(t: dict, n_steps: int, video: str | None) -> str:
@@ -1287,17 +1316,18 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 {trial_crumbs(t)}
 <section class="page-head head trial">
   <h1>{esc(t['title'])}</h1>
-  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag(spaced=False) if noimg else ""}{counted}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
+  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag(spaced=False) if noimg else ""}{counted}{task_link(t)}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
   {f'<p class="why">{esc(why or "The harness or the model API ended the trial before the agent acted.")}</p>' if never_ran else f'<dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>'}
 </section>
 """
     if never_ran:
+        head += other_trials(t)
         return page(f"{t['title']} · {label} · Runs · Robo Use", head, desc=f"{t['title']}: {label}, {STATUS_LONG[st].lower()}.",
                     cls="trialpage compact", data=f' data-trial="{esc(t["trial"])}"', canonical=f"https://robouse.ai/runs/t/{t['trial']}/")
     body = head + f"""<nav class="tabs" role="tablist" aria-label="Trial views" data-fade>
   {"".join(f'<a href="#{k}" role="tab" data-tab="{k}" aria-selected="false" aria-controls="panel">{x}{extra}</a>' for k, x, extra in tabs)}
 </nav>
-<div id="stage" class="stage t-recording"{"" if video else " data-novid"}{f' style="--pw:{player_width(t)}px"' if video and player_width(t) else ""}>
+<div id="stage" class="stage t-recording"{"" if video else " data-novid"}{stage_style(t) if video else ""}>{STAGE_TOP if video else ""}
   <div class="player" id="player">{vid}</div>
   <div id="panel" class="panel" role="tabpanel" aria-busy="true">{skeleton()}</div>
 </div>
@@ -1630,6 +1660,8 @@ def main(argv: list[str] | None = None) -> int:
         p["_noimg"] = bool(mine) and all(t.get("image_input") is False for t in mine)
     HUB.update(hub_tasks(site))
     RUN_OF.update(group_runs(trials, jobs))
+    for t in trials:
+        BY_TASK[t["task"]].append(t)
     global POSTERS
     POSTERS = out / "p"
     for sub in ("t", "task", "d", "jobs", "r"):

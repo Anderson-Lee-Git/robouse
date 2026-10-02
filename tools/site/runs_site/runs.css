@@ -214,6 +214,7 @@ table.mdt td,table.mdt th{white-space:normal}
 .who .tag{margin-left:0;vertical-align:0}
 .who .noimg{margin:0}  /* "no image input" on trial pages and in Compare: the line's gap spaces it */
 .who .cmp{margin-left:auto}
+.who .cmp + .cmp{margin-left:0}  /* Task page, then Compare, together at the right */
 .who a.wl{border-radius:var(--r-xs);transition:color var(--t-fast)}
 .who a.wl:hover{color:var(--accent)}
 nav.tabs[role=tablist]{margin:var(--sp-24) 0 var(--sp-20)}
@@ -234,14 +235,14 @@ nav.tabs[role=tablist]{margin:var(--sp-24) 0 var(--sp-20)}
 
 /* the custom player: a step lane (scrubber) and one row of controls, all --ctl-sm tall */
 .pctl{margin-top:var(--sp-10)}
-.lane{position:relative;height:var(--sp-20);cursor:pointer;border-radius:var(--r-xs);touch-action:none}
+.lane{position:relative;height:var(--sp-24);cursor:pointer;border-radius:var(--r-xs);touch-action:pan-y}
 .lane-tr{position:absolute;left:0;right:0;top:calc(50% - .5px);height:1px;background:var(--line-strong);transition:background var(--t-fast)}
 .lane:hover .lane-tr{background:var(--faint)}
 .lane-mk i{position:absolute;top:calc(50% - 4px);width:1px;height:9px;background:var(--muted)}
 .lane-mk i.im{top:calc(50% - 6px);height:12px;background:var(--accent)}
 .lane b{position:absolute;top:calc(50% - 7px);width:2px;height:14px;margin-left:-1px;border-radius:var(--r-2xs);background:var(--ink)}
 .lane:focus-visible{outline-offset:2px}
-.ctl{display:flex;align-items:center;gap:var(--sp-6);margin-top:var(--sp-8);min-width:0}
+.ctl{position:relative;display:flex;align-items:center;gap:var(--sp-6);margin-top:var(--sp-8);min-width:0}  /* above the lane's touch area where the two meet */
 .pb{display:inline-grid;place-items:center;flex:none;width:var(--ctl-sm);height:var(--ctl-sm);padding:0;border:var(--border);border-radius:var(--r-sm);background:var(--panel);
   color:var(--ink2);cursor:pointer;transition:color var(--t-fast),border-color var(--t-fast),background var(--t-fast)}
 .pb svg{width:12px;height:12px}
@@ -297,6 +298,9 @@ p.meta.tabnote{margin:0 0 var(--sp-20)}
 .tile{flex:0 0 auto;display:flex;flex-direction:column;gap:var(--sp-4);width:112px;padding:0;border:0;border-radius:var(--r-sm);background:none;text-align:left;
   font:400 var(--fs-micro)/1.4 var(--mono);color:var(--muted);cursor:pointer;transition:color var(--t-fast)}
 .tile i{display:block;width:112px;height:112px;border-radius:var(--r-sm);background-color:var(--media-bg);background-repeat:no-repeat;box-shadow:inset 0 0 0 1px var(--line);transition:box-shadow var(--t-fast),opacity var(--t-fast)}
+.tile span{display:flex;flex-direction:column}
+.tile span b{font-weight:500;color:var(--ink2)}
+.tile span small{font:400 var(--fs-micro)/1.4 var(--sans);color:var(--muted)}
 .tile:hover{color:var(--ink)}
 .tile:hover i{box-shadow:inset 0 0 0 1px var(--faint)}
 .tile:active i{opacity:.85}
@@ -318,7 +322,8 @@ ol.traj{margin:0;padding:0;list-style:none}
 .st.cur{border-left-color:var(--accent)}
 .st.cur::before{background:var(--accent)}
 .st.flash{background:var(--accent-soft)}
-.sh{display:flex;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-6);font:400 var(--fs-micro)/1.4 var(--mono);color:var(--muted)}
+.sh{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-10);margin-bottom:var(--sp-6);font:400 var(--fs-micro)/1.4 var(--mono);color:var(--muted)}
+.sh .num{white-space:nowrap}
 .sh .src{font:500 var(--fs-caption)/1.4 var(--sans);color:var(--ink2)}
 .st.system .sh .src{color:var(--ink2)}
 .sh .seek{margin-left:auto;height:var(--ctl-xs);padding:0 var(--sp-8);border:var(--hairline);border-radius:var(--r-xs);background:none;font:inherit;color:var(--accent);cursor:pointer;
@@ -340,8 +345,12 @@ details.rsn{margin:var(--sp-4) 0}
 details.rsn .txt{margin-top:var(--sp-4);font-size:var(--fs-caption);color:var(--ink2)}
 ol.traj pre,.card pre{margin:var(--sp-6) 0;padding:var(--sp-8) var(--sp-12)}
 pre.cmd,pre.cmd code{width:auto;white-space:pre-wrap;overflow-wrap:anywhere}
-pre.cmd code::before{content:"$ ";color:var(--faint)}
+pre.cmd .c0::before{content:"$ ";color:var(--faint)}
+pre.cmd .cl{display:block;padding-left:4ch;text-indent:-4ch}  /* runs.js cmdHtml: one command per line; a wrapped line hangs under its command */
+pre.cmd .cl.ch{padding-left:6ch}  /* a chained command (after "&&") starts 2 characters in */
 pre.out{max-height:380px;overflow:auto;background:transparent;color:var(--ink2)}
+pre.out,pre.out code{width:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+pre.cmd .nw{white-space:nowrap}  /* a flag or a signed number stays whole ("--grip", "-0.12"); runs.js cmdHtml puts each chained command on its own line */
 details.res{margin:var(--sp-2) 0 var(--sp-6)}
 .x-err{color:var(--no)}
 .imgs{display:flex;flex-wrap:wrap;gap:var(--sp-6);margin:var(--sp-6) 0}
@@ -377,14 +386,17 @@ details.res{margin:var(--sp-2) 0 var(--sp-6)}
 .chart{margin:0 0 var(--sp-32)}
 .chart h2{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-4) var(--sp-16);margin:0 0 var(--sp-10);font:500 var(--fs-meta)/1.4 var(--sans);color:var(--ink2)}
 .chart h2 span{font-weight:400;color:var(--muted)}
-.tl{display:flex;gap:1px;height:var(--sp-24);border-radius:var(--r-xs);overflow:hidden}
-.tl i{display:block;height:100%;min-width:1px;background:color-mix(in srgb,var(--accent) 55%,transparent);cursor:pointer;transition:opacity var(--t-fast)}
-.tl i:hover{opacity:.6}
+.tl{display:flex;gap:1px;height:var(--sp-24)}
+.tl i{display:block;height:100%;min-width:1px;background:var(--ink2);cursor:pointer;transition:background var(--t-fast)}  /* ink, as the leaderboard's bars; 1 px gaps of paper between */
+.tl i:first-child{border-radius:var(--r-xs) 0 0 var(--r-xs)}.tl i:last-child{border-radius:0 var(--r-xs) var(--r-xs) 0}
+.tl i:hover,.tl i:focus-visible,.bars i:hover,.bars i:focus-visible{background:var(--ink)}
+.tl i.cur{background:var(--accent)}  /* the selected step (the player's) is the only accent */
+.tl i.cur:hover,.tl i.cur:focus-visible{background:color-mix(in srgb,var(--accent) 75%,var(--ink))}
+.tl i:focus-visible,.bars i:focus-visible{outline:2px solid var(--focus);outline-offset:1px;border-radius:var(--r-2xs)}
 .axis{display:flex;justify-content:space-between;margin-top:var(--sp-6);font:400 var(--fs-caption)/1 var(--sans);font-variant-numeric:tabular-nums;color:var(--muted)}
 .bars{display:flex;align-items:flex-end;gap:1px;height:var(--sp-88);border-bottom:var(--border)}
-.bars i{flex:1 1 0;min-width:1px;border-radius:var(--r-2xs) var(--r-2xs) 0 0;background:color-mix(in srgb,var(--ink) 30%,transparent);cursor:pointer;transition:opacity var(--t-fast)}
+.bars i{flex:1 1 0;min-width:1px;border-radius:var(--r-2xs) var(--r-2xs) 0 0;background:color-mix(in srgb,var(--ink) 55%,var(--paper));cursor:pointer;transition:background var(--t-fast)}
 .bars.out i{background:var(--accent)}
-.bars i:hover{opacity:.6}
 .tip{position:fixed;z-index:60;max-width:360px;padding:var(--sp-6) var(--sp-8);border-radius:var(--r-sm);background:var(--ink);color:var(--paper);box-shadow:var(--shadow-2);
   font:400 var(--fs-caption)/1.4 var(--mono);white-space:pre-wrap;pointer-events:none}
 
@@ -442,7 +454,6 @@ details.res{margin:var(--sp-2) 0 var(--sp-6)}
   .slist li{grid-template-columns:28px 46px minmax(0,1fr)}
   .slist .x{display:none}
   .who .cmp{margin-left:0}
-  .ctl .now{display:none}
   .ctl .seg{margin-left:auto}
   dl.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-12) var(--sp-16)}
   dl.facts dd,dl.facts dd .mono{overflow-wrap:break-word;white-space:normal;min-width:0}
@@ -577,7 +588,7 @@ table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-
 /* marks and whole hyphenated names inside breadcrumbs: not the "/" separator's margin and colour (prose.css .crumbs span) */
 .crumbs .model-mark{margin:0 .4em 0 0;color:inherit}
 .crumbs .model-mark.hm{margin-right:.3em}
-.crumbs .nw{margin:0;color:inherit}
+.crumbs .nw,.crumbs .mkw{margin:0;color:inherit}  /* a mark glued to its name's first word (UI.named) is not a separator */
 
 /* breadcrumbs: a crumb is never broken inside (a run title or a task id moves to its own line whole); only a crumb wider
    than the whole line wraps, at its spaces */
@@ -610,3 +621,44 @@ table.list.rt td.oc{white-space:nowrap}  /* an outcome never orphans its last wo
 /* a run page's title and its facts break only between their parts ("pi0-FAST-LIBERO (LeRobot) · VLA · libero"): each
    part moves to the next line whole, and wraps at its own spaces only when it is wider than the line */
 .rh1 .tpart,.page-head .meta .tpart{display:inline-block;max-width:100%;overflow-wrap:normal}
+
+/* the player's controls stay one row: where the player is narrow (the Trajectory and Verdict tabs, phones) or the
+   screen is touch, one button cycles the speed (0.25×, 0.5×, 1×) in place of the three; the step number never truncates,
+   the action after it does, and in the narrowest player it goes */
+.pctl{container:pctl/inline-size}
+.pb.spd{display:none;width:auto;min-width:var(--ctl-sm);padding:0 var(--sp-8);font:400 var(--fs-meta)/1 var(--sans);font-variant-numeric:tabular-nums;color:var(--ink)}
+@container pctl (max-width:399px){.ctl .seg{display:none}.ctl .pb.spd{display:inline-grid}.ctl .now .na{display:none}}
+@container pctl (max-width:299px){.ctl .now{visibility:hidden}}
+@media (pointer:coarse){
+  .ctl .seg{display:none}
+  .ctl .pb.spd{display:inline-grid;min-width:var(--touch)}
+  .lane{position:relative}
+  .lane::before{content:"";position:absolute;left:0;right:0;top:50%;height:var(--touch);transform:translateY(-50%)}
+}
+@media (max-width:640px){.ctl .pb.spd{margin-left:auto}}
+.ctl .now{display:flex;justify-content:flex-end}
+.ctl .now .ns{flex:none}
+.ctl .now .na{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* at desktop widths the player is never taller than the window leaves room for below the stage's top (--top, measured
+   as the page loads): the lane and the controls (72 px) show in the first screen, with 16 px to spare */
+@media (min-width:961px){
+  .stage{grid-template-columns:minmax(0,min(var(--pw,500px),max(300px,calc((100vh - var(--top,446px) - 88px) * var(--ar,1))))) minmax(0,1fr)}
+}
+/* a trial that never ran: the other trials of its task */
+.others{margin:var(--sp-40) 0 0;max-width:720px}
+.others h2.lab{margin:0 0 var(--sp-12)}
+.olist{margin:0;padding:0;list-style:none;border-top:var(--hairline)}
+.olist li{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-4) var(--sp-10);padding:var(--sp-10) 0;border-bottom:var(--hairline);font-size:var(--fs-small)}
+.olist .badge{flex:none}
+.olist .muted{font-size:var(--fs-caption)}
+.olist li{position:relative}
+.olist a.ln{color:var(--ink);text-decoration:none}
+.olist a.ln::after{content:"";position:absolute;inset:0}  /* the whole row opens the trial */
+.olist li:hover a.ln{color:var(--accent)}
+.olist li:has(a.ln:focus-visible){outline:2px solid var(--focus);outline-offset:-2px;border-radius:var(--r-xs)}
+.olist a.ln:focus-visible{outline:0}
+.others > p{margin:var(--sp-10) 0 0}
+/* the Files tab's Setup card: the task is a link that looks like one */
+.card.sum a.ln{color:var(--ink);text-decoration:underline;text-decoration-color:var(--link-line);text-underline-offset:2px}
+.card.sum a.ln:hover{color:var(--accent);text-decoration-color:currentColor}
+.sums > .card:only-child{grid-column:1/-1}  /* Setup alone (no Result to add) takes the row */
