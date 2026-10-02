@@ -47,7 +47,12 @@ def make_driver(prof: Profile, cfg: dict) -> ArmDriver:
             prof,
             {**cfg, "cameras": {c: "mock" for c in cams}},
             robot_factory=lambda c, p: ReplayRobot(
-                fx, p, cameras=cams, noise_deg=float(cfg.get("mock_noise_deg", 0.0))
+                fx,
+                p,
+                cameras=cams,
+                noise_deg=float(cfg.get("mock_noise_deg", 0.0)),
+                playback=bool(cfg.get("mock_playback", False)),  # the recorded joints and torques, step by step
+                fault=cfg.get("mock_fault"),  # injected link failure (tests of the watchdog and stale telemetry)
             ),
             mock=True,
         )

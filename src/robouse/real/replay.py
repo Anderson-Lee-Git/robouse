@@ -8,10 +8,21 @@ recorded on the bench by ~/benchflow/robot/recorder.py) holds:
   - keyframes: measured poses with the camera frames recorded at that moment.
 
 `ReplayRobot` has LeRobot's `Robot` shape (connect / get_observation / send_action / disconnect, plus the Damiao bus
-cache the Metal driver reads), so the real driver code (drivers/lerobot_arm.py), the safety guard and the episode server
-run unchanged against it. Camera frames are the recorded frames whose pose is closest to the mock's current pose;
-telemetry replays the recorded sequence. Nothing in the mock models contact with objects: manipulation outcomes on the
-mock are decided by the (scripted) operator, never inferred.
+cache the Metal driver reads, which serves positions and telemetry from its last replies), so the real driver code
+(drivers/lerobot_arm.py), the safety guard and the episode server run unchanged against it. Camera frames are the
+recorded frames whose pose is closest to the mock's current pose. Two modes (`mock_playback` in the task's `real:` block):
+
+  tracking  (default) the joints follow commands through the fitted tracking model; temperatures replay the recorded
+            sequence. No joint torque is reported: the recorded torques belong to the recorded motion, not to the
+            mock's, and nothing in the mock models contact with objects. Manipulation outcomes on the mock are decided by
+            the (scripted) operator, never inferred.
+  playback  each control step returns the next recorded step as measured on the bench (joints, torques, temperatures),
+            whatever is commanded: the recorded session replayed through the safety layer, e.g. its contacts.
+
+`mock_fault` injects a link failure from a control step on (tests of the watchdog and the stale-telemetry stop):
+{"at_step": K, "kind": "stale"} (the bus stops getting replies and keeps serving its cache, as the Damiao bus does when
+the CAN link dies), "dead" (reads and writes raise, as when the USB adapter is unplugged) or "slow" (each read takes
+"seconds" longer, for "steps" steps).
 
 `conformance()` is the strict replay check behind `robouse hil-check`: it feeds the recorded command sequence through the
 Robo Use safety guard, with the measured joints taken from the recording, and reports vetoes, clamps and how well the
@@ -21,6 +32,7 @@ fitted tracking model reproduces the recorded motion.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -77,16 +89,30 @@ class Fixture:
             self._img_cache[f] = np.asarray(Image.open(self.dir / "keyframes" / f).convert("RGB"))
         return self._img_cache[f]
 
-    def telemetry(self, k: int) -> dict:
+    def telemetry(self, k: int, torque: bool = True, wrap: bool = True) -> dict:
         if not self.steps:
             return {}
-        s = self.steps[k % len(self.steps)]
-        return {key: s[key] for key in ("joint_torque_nm", "temp_mos_c", "temp_rotor_c", "temp_c") if key in s}
+        s = self.steps[k % len(self.steps) if wrap else min(k, len(self.steps) - 1)]
+        keys = (
+            ("joint_torque_nm", "temp_mos_c", "temp_rotor_c", "temp_c")
+            if torque
+            else ("temp_mos_c", "temp_rotor_c", "temp_c")
+        )
+        return {key: s[key] for key in keys if key in s}
+
+    def measured(self, k: int) -> np.ndarray:
+        """The joints measured at recorded step k (the last one after the end of the recording)."""
+        return np.asarray(self.steps[min(k, len(self.steps) - 1)]["pos"], dtype=float)
 
 
 class _Bus:
+    """The Damiao bus as the Metal driver sees it: a per-motor cache of the last reply, updated by `_process_response`."""
+
     def __init__(self):
         self._last_known_states: dict = {}
+
+    def _process_response(self, motor: str, msg: dict) -> None:
+        self._last_known_states[motor] = dict(msg)
 
 
 class _Cfg:
@@ -100,10 +126,18 @@ class ReplayRobot:
     calibration_fpath = "(hardware-in-the-loop mock)"
 
     def __init__(
-        self, fx: Fixture, prof: Profile, cameras: list[str] | None = None, noise_deg: float = 0.0, seed: int = 0
+        self,
+        fx: Fixture,
+        prof: Profile,
+        cameras: list[str] | None = None,
+        noise_deg: float = 0.0,
+        seed: int = 0,
+        playback: bool = False,
+        fault: dict | None = None,
     ):
         self.fx, self.prof = fx, prof
-        self.q = fx.start.copy()
+        self.playback = bool(playback and fx.steps)
+        self.q = fx.measured(0) if self.playback else fx.start.copy()
         self.cmd = self.q.copy()
         self.cameras = cameras if cameras is not None else fx.cameras
         self.k = 0
@@ -113,48 +147,73 @@ class ReplayRobot:
         self.config = _Cfg()
         self.rng = np.random.default_rng(seed)
         self.noise = float(noise_deg)
+        self.fault = dict(fault or {})
+
+    def _faulty(self, kind: str) -> bool:
+        return self.fault.get("kind") == kind and self.k >= int(self.fault.get("at_step", 0))
 
     def connect(self, calibrate: bool = True) -> None:
         self.connected = True
+        self._update_bus()
+
+    def _telemetry(self) -> dict:
+        # tracking mode: temperatures only (the recorded torques belong to the recorded motion)
+        return self.fx.telemetry(self.k, torque=self.playback, wrap=not self.playback)
 
     def _update_bus(self) -> None:
-        if self.bus is None:
+        if self.bus is None or self._faulty("stale"):  # stale: no replies, the cache keeps the last ones
             return
-        tel = self.fx.telemetry(self.k)
-        st = {}
-        for i, n in enumerate(self.prof.joints):
-            st[n] = {
-                "torque": (tel.get("joint_torque_nm") or [0.0] * 7)[i],
-                "temp_mos": (tel.get("temp_mos_c") or [30.0] * 7)[i],
-                "temp_rotor": (tel.get("temp_rotor_c") or [30.0] * 7)[i],
+        tel = self._telemetry()
+        n = len(self.prof.joints)
+        for i, name in enumerate(self.prof.joints):
+            msg = {
+                "position": float(self.q[i]),
+                "temp_mos": (tel.get("temp_mos_c") or [30.0] * n)[i],
+                "temp_rotor": (tel.get("temp_rotor_c") or [30.0] * n)[i],
                 "velocity": 0.0,
             }
-        self.bus._last_known_states = st
+            if "joint_torque_nm" in tel:
+                msg["torque"] = tel["joint_torque_nm"][i]
+            self.bus._process_response(name, msg)
 
     def get_observation(self) -> dict:
         if not self.connected:
             raise RuntimeError("not connected")
+        if self._faulty("dead"):
+            raise ConnectionError("hardware-in-the-loop mock fault: the link is gone")
+        if self._faulty("slow") and self.k < int(self.fault.get("at_step", 0)) + int(self.fault.get("steps", 1)):
+            time.sleep(float(self.fault.get("seconds", 1.0)))
         self._update_bus()
-        out = {f"{n}.pos": float(v) for n, v in zip(self.prof.joints, self.q, strict=False)}
-        for cam in self.cameras:
+        if self.bus is not None:  # positions come from the bus cache, as on the Damiao bus
+            st = self.bus._last_known_states
+            q = [float(st[n]["position"]) for n in self.prof.joints]
+        else:
+            q = [float(v) for v in self.q]
+        out: dict = {f"{n}.pos": v for n, v in zip(self.prof.joints, q, strict=False)}
+        for cam in self.cameras:  # the cameras see the arm where it is, whatever the bus serves
             img = self.fx.image(cam, self.q)
             if img is not None:
                 out[cam] = img
         if self.bus is None:
-            out["_telemetry"] = self.fx.telemetry(self.k)
+            out["_telemetry"] = self._telemetry()
         return out
 
     def send_action(self, action: dict) -> dict:
         if not self.connected:
             raise RuntimeError("not connected")
+        if self._faulty("dead"):
+            raise ConnectionError("hardware-in-the-loop mock fault: the link is gone")
         cmd = np.asarray([float(action[f"{n}.pos"]) for n in self.prof.joints], dtype=float)
         self.sent.append(cmd.round(3).tolist())
         self.cmd = cmd
+        self.k += 1
+        if self.playback:  # the joints as measured at this step of the recording
+            self.q = self.fx.measured(self.k)
+            return action
         # the fitted tracking model: one control period of motion toward the command
         self.q = self.q + self.fx.gain * (cmd - self.q) + self.fx.bias
         if self.noise:
             self.q = self.q + self.rng.normal(0.0, self.noise, size=self.q.shape)
-        self.k += 1
         return action
 
     def disconnect(self) -> None:

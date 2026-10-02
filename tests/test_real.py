@@ -63,6 +63,25 @@ def test_hil_conformance_no_vetoes_on_recorded_session():
     assert r["vetoed_steps"] == 0 and r["tracking_open_loop_rms_deg"] < 0.5
 
 
+def test_playback_serves_the_recording(tmp_path):
+    """Playback mode: each control step returns the next step recorded on the bench (joints and torques), whatever is
+    commanded. Tracking mode reports the recorded temperatures but no torque: those belong to the recorded motion."""
+    from robouse.real.replay import Fixture
+
+    fx = Fixture("metal-bowl-121853")
+    ep = _episode("real-metal-reach", tmp_path, mock_playback=True)
+    robot = ep.backend.driver.robot
+    for _ in range(3):
+        assert ep.handle({"op": "act", "action": list(ep.backend.q)})["ok"]
+    assert np.allclose(ep.backend.q, fx.steps[robot.k]["pos"])
+    assert ep.backend.extra["joint_torque_nm"] == fx.steps[robot.k]["joint_torque_nm"]
+    ep.close()
+    ep = _episode("real-metal-reach", tmp_path / "b")
+    assert ep.handle({"op": "act", "action": list(ep.backend.q)})["ok"]
+    assert "joint_torque_nm" not in ep.backend.extra and ep.backend.extra["temp_mos_c"]
+    ep.close()
+
+
 def test_oracle_style_move_and_pose_verdict(tmp_path):
     ep = _episode("real-metal-reach", tmp_path)
     r = ep.handle({"op": "skill", "name": "move_to", "args": ["0.30", "-0.10", "0.08"]})
