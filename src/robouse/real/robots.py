@@ -231,7 +231,11 @@ PIPER = Profile(
     envelope=EnvelopeDefaults(
         joint_speed_deg_s=20.0, slow_joint_speed_deg_s=8.0, windup_deg=6.0, windup_gripper=10.0, gripper_speed=40.0
     ),
-    notes="Piper joint limits from the user manual. No kinematic chain yet: only joint limits and speed limits are enforced.",
+    notes=(
+        "Piper joint limits from the user manual. No kinematic chain yet: only joint limits and speed limits are "
+        "enforced. No contact watch: the Piper driver reads no joint torque, and without a kinematic chain there is no "
+        "stall check, so nothing detects the arm pushing against an object."
+    ),
     tested_on_hardware=False,
 )
 
@@ -262,7 +266,14 @@ def _bimanual(p: Profile, name: str, display: str) -> Profile:
         ),
         notes=(
             f"Two {p.display}s facing the bench from its far edge, left and right as the operator sees them. "
-            "Each arm: " + p.notes
+            "Each arm: "
+            + p.notes
+            + (
+                ""
+                if p.contact.dtorque
+                else " No contact watch on this rig: there is no kinematic chain across both arms for the stall check, "
+                "and the driver reads no joint torque, so nothing detects an arm pushing against an object."
+            )
         ),
         tested_on_hardware=False,
     )
