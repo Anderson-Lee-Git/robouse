@@ -658,3 +658,11 @@ table.list.rt td.oc{white-space:nowrap}  /* an outcome never orphans its last wo
 .card.sum a.ln{color:var(--ink);text-decoration:underline;text-decoration-color:var(--link-line);text-underline-offset:2px}
 .card.sum a.ln:hover{color:var(--accent);text-decoration-color:currentColor}
 .sums > .card:only-child{grid-column:1/-1}  /* Setup alone (no Result to add) takes the row */
+/* Compare as it loads: its skeleton has the page's geometry, the columns keep their height until each trial's data is in,
+   and a video box shows the panel colour, not black, until its poster paints (no jump, no flash) */
+.cskl .col{display:flex;flex-direction:column;gap:var(--sp-12)}
+.cskl .vbox{width:100%;margin-top:var(--sp-12)}
+.cskl .cskl-list{height:420px;margin-top:var(--sp-12)}
+.compare[aria-busy="true"]{min-height:100vh}
+.cmpgrid .cbody[aria-busy="true"]{min-height:760px}
+.cmpgrid .vbox{background:var(--panel)}

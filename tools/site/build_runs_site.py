@@ -16,7 +16,8 @@ Reads the trial folders of the final jobs (runs/final-*) and writes plain HTML p
   <out>/compare/index.html       two trials of one task side by side (?a=<trial>&b=<trial>)
   <out>/jobs/index.html          the jobs, and <out>/jobs/<job>/index.html with their trials
   <out>/d/<trial>.json           trial data (trajectory clipped and redacted)
-  <out>/d/trials.json            index of every published trial (for the compare picker, and the hub's task results)
+  <out>/d/trials.json            index of every published trial (for the compare picker, and the hub's task results), and
+                                 of every run (for the leaderboard's links)
 
 Solve rates, suites and per-task results live on the hub (robouse.ai/hub/, tools/build_hub.py in the site repo, which
 also writes the 308s from the old /runs/, /runs/<suite>/ and /runs/task/<task>/ pages). Build the hub first: a trial's
@@ -1170,6 +1171,15 @@ def player_controls(noimg: bool = False) -> str:
             f'<p class="cap">Plays only while the robot moves.</p></div>')
 
 
+def compare_skeleton() -> str:
+    """Compare before its data loads, in the page's own geometry (the task picker, then two columns, each a trial picker,
+    a square video box, the result line and the step list), so nothing jumps when it renders (runs.css .cskl)."""
+    col = ('<div class="col"><span class="skel" style="width:100%;height:34px"></span><div class="vbox skel"></div>'
+           '<span class="skel" style="width:46%;height:14px;margin-top:12px"></span><span class="skel cskl-list"></span></div>')
+    return (f'<div class="cskl" aria-hidden="true"><span class="skel" style="width:min(100%,520px);height:34px"></span>'
+            f'<span class="skel" style="width:30%;height:14px;margin:20px 0"></span><div class="cmpgrid">{col}{col}</div></div>')
+
+
 def skeleton() -> str:
     return ('<div class="skl" aria-hidden="true"><span class="skel" style="width:38%;height:12px"></span>'
             + "".join(f'<span class="skel" style="width:{w}%;height:14px"></span>' for w in (92, 84, 88, 70, 90, 78, 86, 64, 80, 74)) + "</div>")
@@ -1345,7 +1355,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 def build_compare() -> str:
     body = f"""
 {runs_head("compare")}
-<div id="compare" class="compare" aria-busy="true">{skeleton()}</div>
+<div id="compare" class="compare" aria-busy="true">{compare_skeleton()}</div>
 <noscript><style>#compare{{display:none}}</style><p class="muted">Compare needs JavaScript. Each trial page plays its own recording.</p></noscript>
 """
     return page("Compare · Runs · Robo Use", body, cls="comparepage", canonical="https://robouse.ai/runs/compare/",
@@ -1765,7 +1775,9 @@ def main(argv: list[str] | None = None) -> int:
     (out / "d" / "moved.json").write_text(json.dumps(dict(sorted(moved.items())), indent=1))
     index = {"hm": [[p["label"], p["key"]] for p in HM], "suites": {s: SUITE_TITLE.get(s, s) for s in suites},
              "trials": {t["trial"]: [t["task"], t["hm"], status(t), int(t["counted"])] for t in trials},
-             "titles": {k: v["title"] for k, v in tinfo.items()}, "urls": {k: HUB[k][0] for k in tinfo if k in HUB}}
+             "titles": {k: v["title"] for k, v in tinfo.items()}, "urls": {k: HUB[k][0] for k in tinfo if k in HUB},
+             # each run as [pair key, dataset, slug, zero-shot probe]: the leaderboard's heatmap cell opens the run page
+             "runs": sorted([[HM[r["hm"]]["key"], r["ds"], r["slug"], bool(r["probe"])] for r in RUN_OF.values()])}
     (out / "d" / "trials.json").write_text(json.dumps(redact_all(index), ensure_ascii=False, separators=(",", ":")))
     for name in ("runs.css", "runs.js"):
         shutil.copyfile(ASSETS / name, out / name)
