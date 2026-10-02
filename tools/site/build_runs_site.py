@@ -630,7 +630,7 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
         "steps_used": t["steps_used"], "max_steps": t["max_steps"], "requests": ep.get("requests") if ep.get("requests") is not None else t["checks"].get("robo_requests"),
         "motion": t["checks"].get("motion_requests"), "robo_errors": t["checks"].get("robo_errors"),
         "wall": t["wall"], "ep_wall": ep.get("wall_time_s"), "started": t["started"], "finished": t["finished"],
-        "video": video, "duration": rindex.get("duration_s"), "fps": rindex.get("fps"),
+        "video": video, "duration": rindex.get("duration_s"), "fps": rindex.get("fps"), "size": list(jpeg_size(POSTERS / f"{t['trial']}.jpg") or []) or None,
         "sprite": sprite, "obs": [], "withheld": withheld, "tokens": tokens,
         "verdict": {"claim": claim, "claim_text": "" if withheld else clip(claim_text or ep.get("agent_text") or "", 3000),
                     "last_message": "" if withheld else clip(t["final_message"], 2000),
@@ -987,17 +987,24 @@ def nb(s: str) -> str:
     return " ".join(f'<span class="nw">{esc(w)}</span>' if "-" in w else esc(w) for w in str(s).split(" "))
 
 
+def named(mark: str, name: str) -> str:
+    """A mark (or a model's empty slot) and its name: the mark glued to the name's first word (.mkw in the site's /ui.css;
+    UI.named in /ui.js; build_hub.named), so a narrow cell never leaves a mark or a slot alone on a line."""
+    first, _, rest = str(name).partition(" ")
+    return (f'<span class="mkw">{mark}{nb(first)}</span>' + (" " + nb(rest) if rest else "")) if mark else nb(name)
+
+
 def pair_html(i: int) -> str:
     """mark Model · mark Harness, for titles, breadcrumbs and who lines (phtml is the list cell); a model without a mark
     gets no empty slot here, since nothing lines up with a title."""
     p = HM[i]
-    return (f'{model_mark(p) if p.get("icon") else ""}{nb(p.get("model_label") or p["label"])} · '
-            f'{harness_mark(p)}{nb(p.get("harness_label") or p["harness"])}')
+    return (f'{named(model_mark(p) if p.get("icon") else "", p.get("model_label") or p["label"])} · '
+            f'{named(harness_mark(p), p.get("harness_label") or p["harness"])}')
 
 
 def run_title_html(r: dict) -> str:
     """A run's title with the model's and the harness's marks: "mark GLM-5.3 · mark Codex · robouse-menagerie"."""
-    return pair_html(r["hm"]) + f' · {esc(r["ds"].split("/")[-1])}' + (" · zero-shot probe" if r["probe"] else "")
+    return pair_html(r["hm"]) + f' · {nb(r["ds"].split("/")[-1])}' + (" · zero-shot probe" if r["probe"] else "")  # the dataset whole too
 
 
 def phtml(i: int, noimg: bool | None = None) -> str:
@@ -1005,7 +1012,7 @@ def phtml(i: int, noimg: bool | None = None) -> str:
     `_noimg`, unless the caller says otherwise for its own set of trials, e.g. a run)."""
     p = HM[i]
     tag = noimg_tag() if (p.get("_noimg") if noimg is None else noimg) else ""
-    return (f'<span class="pm">{model_mark(p)}{nb(p.get("model_label") or p["label"])}</span> <span class="ph">· {harness_mark(p)}{nb(p.get("harness_label") or p["harness"])}</span>'
+    return (f'<span class="pm">{named(model_mark(p), p.get("model_label") or p["label"])}</span> <span class="ph">· {named(harness_mark(p), p.get("harness_label") or p["harness"])}</span>'
             + (" " + tag if tag else ""))
 
 
@@ -1160,7 +1167,7 @@ def trial_crumbs(t: dict) -> str:
     """Runs / the run; the task title is the h1 right below."""
     r = RUN_OF.get(t.get("run", ""), {})
     run = f'<a href="/runs/r/{r["slug"]}/">{run_title_html(r)}</a>' if r else esc(t["job"])  # the run, with its marks
-    return f'<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{run}</nav>'
+    return f'<nav class="crumbs" aria-label="Breadcrumb"><span class="cgp"><a href="/runs/">Runs</a><span>/</span></span>{run}</nav>'
 
 
 def jpeg_size(p: Path) -> tuple[int, int] | None:
@@ -1186,9 +1193,16 @@ def box_style(t: dict) -> str:
     return f' style="--ar:{wh[0]}/{wh[1]}"' if wh and wh[1] else ""
 
 
+def player_width(t: dict) -> int | None:
+    """How wide the player may be: the recordings are small (256 to 480 px), so the player stays near their own size (a
+    quarter larger at most, 500 px at most) instead of blowing a 320 px clip up to 500 (runs.css --pw)."""
+    wh = jpeg_size(POSTERS / f"{t['trial']}.jpg")
+    return min(500, round(wh[0] * 1.25)) if wh and wh[0] else None
+
+
 def poster_attr(t: dict) -> str:
-    """A still from the middle of the recording (runs/p/<trial>.jpg, extracted with ffmpeg on the build VM), so the player
-    is never a black box before it plays."""
+    """The recording's first frame at its own size (runs/p/<trial>.jpg, from the published encode by
+    tools/site/make_posters.sh on the build VM), so the player is never a black box and Play starts on the same picture."""
     return f' poster="/runs/p/{t["trial"]}.jpg"' if (POSTERS / f"{t['trial']}.jpg").is_file() else ""
 
 
@@ -1238,7 +1252,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     body = head + f"""<nav class="tabs" role="tablist" aria-label="Trial views" data-fade>
   {"".join(f'<a href="#{k}" role="tab" data-tab="{k}" aria-selected="false" aria-controls="panel">{x}{extra}</a>' for k, x, extra in tabs)}
 </nav>
-<div id="stage" class="stage t-recording"{"" if video else " data-novid"}>
+<div id="stage" class="stage t-recording"{"" if video else " data-novid"}{f' style="--pw:{player_width(t)}px"' if video and player_width(t) else ""}>
   <div class="player" id="player">{vid}</div>
   <div id="panel" class="panel" role="tabpanel" aria-busy="true">{skeleton()}</div>
 </div>
@@ -1263,7 +1277,7 @@ def ds_cell(ds: str) -> str:
     org, _, name = ds.rpartition("/")
     if not org:
         return esc(ds)
-    return f'<span class="ds"><span class="dso" title="{esc(org)}">{esc(org)}</span><span class="dss">/</span><wbr><span class="dsn">{esc(name)}</span></span>'
+    return f'<span class="ds"><span class="dso" title="{esc(org)}">{esc(org)}</span><span class="dss">/</span><wbr><span class="dsn">{nb(name)}</span></span>'
 
 
 def build_runs(runs: dict) -> str:
@@ -1278,8 +1292,11 @@ def build_runs(runs: dict) -> str:
         rate = r["solved"] / r["scored"] if r["scored"] else -1
         tag = ' <span class="rtag">zero-shot probe</span>' if r["probe"] else ""
         state = ' <span class="state running">running</span>' if r["state"] == "running" else ""
+        org, _, dsn = r["ds"].rpartition("/")
+        # phones: the dataset under the pair, in the same cell (the Dataset column drops; a name never breaks at a hyphen)
+        under = f'<span class="rds">{nb(dsn)}{f" <span class={chr(34)}rdo{chr(34)}>{esc(org)}</span>" if org else ""}{tag}</span>'
         rows.append(f'<tr {pair_attrs(i)} data-dataset="{esc(r["ds"])}" data-q="{esc((plab(i) + " " + r["ds"] + (" zero-shot probe" if r["probe"] else "")).lower())}">'
-                    f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, False)}</a>{" " + noimg_tag() if r["noimg"] else ""}</th>'
+                    f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, False)}</a>{" " + noimg_tag() if r["noimg"] else ""}{under}</th>'
                     f'<td class="sus" data-v="{esc(r["ds"])}">{ds_cell(r["ds"])}{tag}</td>'
                     f'<td class="muted num" data-v="{esc(r["start"])}">{esc(fmt_date(r["start"]))}{state}</td>'
                     f'<td class="n num" data-v="{r["scored"]}">{r["scored"]}</td>'
@@ -1298,7 +1315,7 @@ def build_runs(runs: dict) -> str:
 {ctrl}
 <div class="scroll tbl"><table class="list runs">
   <caption class="vh">Main runs first, newest first; zero-shot probes after them. Sort by any column.</caption>
-  <thead><tr>{th_sort('Model<span class="hh"> · harness</span>', "num", "tcol")}{th_sort("Dataset", "text")}{th_sort("Date", "text").replace('<th ', '<th data-first="descending" ', 1)}{th_sort('<span class="sl-l">Scored trials</span><span class="sl-s">Scored</span>', "num", "n", title="Trials that count toward the solve rate; the run page lists every trial")}{th_sort('<span class="sl-l">Solve rate</span><span class="sl-s">Solved</span>', "num", "n")}</tr></thead>
+  <thead><tr>{th_sort('<span class="ml-l">Model<span class="hh"> · harness</span></span><span class="ml-s">Run</span>', "num", "tcol")}{th_sort("Dataset", "text", "dsc")}{th_sort("Date", "text", "n").replace('<th ', '<th data-first="descending" ', 1)}{th_sort('<span class="sl-l">Scored trials</span><span class="sl-s">Scored</span>', "num", "n", title="Trials that count toward the solve rate; the run page lists every trial")}{th_sort('<span class="sl-l">Solve rate</span><span class="sl-s">Solved</span>', "num", "n")}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("runs", "Clear the search or the filters.")}
@@ -1343,7 +1360,7 @@ def build_run(r: dict) -> str:
             + (f'<select data-lf="outcome" aria-label="Result"><option value="">Any result</option>{opts}</select>' if len(states) > 1 else "")
             + '<span class="count push" data-lcount aria-live="polite"></span></div></div>')
     body = f"""
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a><span>/</span>{run_title_html(r)}</nav>
+<nav class="crumbs" aria-label="Breadcrumb"><span class="cgp"><a href="/runs/">Runs</a><span>/</span></span><span aria-current="page">{run_title_html(r)}</span></nav>
 <section class="page-head head">
   <h1 class="rh1">{run_title_html(r)}</h1>
   <p class="meta">{esc(r["ds"])} · {esc(fmt_date(r["start"]))} · {f'{r["solved"]} of {r["scored"]} solved' if r["scored"] else "no scored trial"}{' · <span class="state running">running</span>' if r["state"] == "running" else ""}{" " + noimg_tag() if r["noimg"] else ""}</p>
