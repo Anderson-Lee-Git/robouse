@@ -6,11 +6,13 @@ settings. Everything the agent sends goes through the safety guard (real/safety.
 e-stop latch, joint-limit clamp, workspace envelope by forward kinematics (vetoed before anything moves), per-step
 velocity limit (slower near the table), wind-up guard, stale-telemetry stop, thermal stop and loop watchdog; the
 contact watch (real/contact.py) stops a move that touches something near the table and the episode on any other
-contact. After any stop, at the end of the episode and when the server is interrupted, every joint is retargeted to its
-measured position at once; the arm then parks slowly at the profile's rest pose and torque is released there, or it
-keeps holding where it is and the operator is told why (`_secure`). The operator channel (real/operator.py) confirms a
-physical e-stop before a live robot is armed, gates arming and scene reset and, for tasks without a measurable goal,
-gives the verdict.
+contact (and, during the settle steps after the episode ends, any contact). After any stop, at the end of the episode
+and when the server is interrupted, the arm joints' command is brought to their measured position within the
+per-step delta limit while the gripper keeps its command; the arm then parks slowly at the profile's rest pose and
+torque is released there, or it keeps holding where it is (something in the gripper, no rest pose, the e-stop
+latched) and the operator is told why (`_secure`). Between requests the arm is checked at least once a second
+(`idle_check`). The operator channel (real/operator.py) confirms a physical e-stop before a live robot is armed, gates
+arming and scene reset and, for tasks without a measurable goal, gives the verdict.
 
 Action (`robo act`): absolute joint targets in the profile's units, one per joint including the gripper, applied at the
 control rate through the guard; `--repeat N` keeps commanding the same target for N control steps. Skills:
@@ -102,6 +104,9 @@ class RealArmBackend(EmbodiedBackend):
         self.disconnected = False
         self.close_cause = "end of episode"
         self._park_delta: np.ndarray | None = None
+        self._park_moved = False  # the last parking attempt moved the arm
+        self.ending = False  # the settle steps after the episode ended (`begin_settle`): any contact is a stop
+        self._last_check = 0.0  # time.monotonic() of the last control step or idle check (`idle_check`)
         self.operator = Operator(
             self.cfg.get("operator", "script" if self.mock else "tty"),
             mock=self.mock,
@@ -249,6 +254,7 @@ class RealArmBackend(EmbodiedBackend):
                 "stop_s": self.guard.hard_s,
                 "stalls_in_a_row": e.watchdog_max_stalls,
             },
+            "idle_check_s": self.IDLE_CHECK_S,  # between requests: e-stop, fresh reading, temperature
             "telemetry_timeout_s": e.telemetry_timeout_s,
             "contact_watch": self._contact_spec(),
             "rest_pose": list(self.prof.park) or None,  # where the arm parks after a stop and at the end
@@ -318,6 +324,7 @@ class RealArmBackend(EmbodiedBackend):
             self.guard.last_cmd = self.q.copy()
             self.target = self.q.copy()
             self.watch.reset()
+            self._last_check = time.monotonic()
             self._event("connect", pose=self.q.round(2).tolist(), mode=self.mode, driver=self.driver.description)
             if self.attended:
                 scene = self.cfg.get("scene_setup") or "Set up the scene as the task describes."
@@ -359,36 +366,29 @@ class RealArmBackend(EmbodiedBackend):
     PARK_SETTLE_STEPS = 30  # control steps allowed for the arm to come to rest at the rest pose
 
     def _secure(self, cause: str) -> None:
-        """(1) Retarget every joint at once to its measured present position, so nothing keeps pushing. (2) If the
-        profile has a rest pose, the e-stop is clear and the path there stays in the workspace, move there slowly and
-        release torque only once the arm is at rest (a driver that cannot release torque, the ROS bridge, holds it
-        there). (3) Otherwise keep holding at the present position and tell the session log and the operator why.
-        Without a fresh reading the present position is unknown: the last command is the hold."""
+        """(1) Bring every arm joint's command to its measured position through the per-step delta limit (`_retarget`),
+        so nothing keeps pushing; the gripper keeps its command, so a grasp holds. A stale reading is never sent:
+        without a fresh one the last command is held. (2) If the gripper holds nothing, the profile has a rest
+        pose, the e-stop is clear and the path there stays in the workspace, move there slowly and release torque only
+        once the arm is at rest (a driver that cannot release torque, the ROS bridge, holds it there). (3) Otherwise
+        keep holding, and tell the session log and the operator why."""
         if not self.connected:
             return
-        present = self._present()
-        if present is None:
-            last = self.guard.last_cmd
-            self._hold(
-                cause,
-                None if last is None else np.asarray(last, dtype=float).copy(),
-                "no fresh reading of the present position (the link may be down), so the last command is held",
-            )
-            return
-        if self._command(present):
-            self._event("retarget", cause=cause, pose=present.round(2).tolist())
-        why = self._park(cause)
-        if why is None and not getattr(self.driver, "releases_torque", True):  # e.g. a ROS arm's controller
-            if (present := self._present()) is not None:
-                self._command(present)
+        why = self._retarget(cause)
+        if why is None:
+            why = self._grasp()
+        if why is None and (why := self._park(cause)) is not None and self._park_moved:
+            why = f"{why}; {self._retarget(cause) or 'it holds where it stopped'}"  # parking stopped part-way
+        if why is not None:
+            self._hold(cause, why)
+        elif not getattr(self.driver, "releases_torque", True):  # e.g. a ROS arm's controller
             self.secured = "parked at the rest pose, holding there (the driver cannot release torque)"
             self._event("parked", cause=cause, pose=self.q.round(2).tolist(), torque="on: the driver cannot release it")
             self.operator.notify(
                 f"{self.prof.display} ({cause}): parked at its rest pose and holding there with torque on (the driver "
                 "cannot release torque)."
             )
-            return
-        if why is None:
+        else:
             self._event("torque_released", cause=cause, pose=self.q.round(2).tolist())
             self.secured = "parked at the rest pose, torque released"
             self.connected, self.disconnected = False, True
@@ -397,9 +397,59 @@ class RealArmBackend(EmbodiedBackend):
             except Exception as e:  # noqa: BLE001 - the motors then keep holding the rest pose
                 self._event("release_failed", error=f"{type(e).__name__}: {e}")
             self.operator.notify(f"{self.prof.display} ({cause}): parked at its rest pose and released (torque off).")
-            return
+
+    def _retarget(self, cause: str) -> str | None:
+        """Bring the arm joints' command to where a fresh reading puts them, through the per-step delta limit (the slow
+        limit in the slow zone), one paced control step at a time, with a fresh reading at every step; the gripper keeps
+        its command. A stale reading is never sent: without a fresh one the command stays where it is. None once the
+        command is there, else why it stays."""
+        g, arm = self.guard, self.prof.arm_idx
+        if g.last_cmd is None:
+            return "the arm was never commanded"
+        cmd = np.asarray(g.last_cmd, dtype=float).copy()
+        stale = "no fresh reading of the present position (the link may be down), so the last command is held"
         present = self._present()
-        self._hold(cause, present, why)
+        if present is None:
+            self._event("retarget", cause=cause, pose=cmd.round(2).tolist(), steps=0, done=False, reason=stale)
+            return stale
+        goal = cmd.copy()
+        goal[arm] = present[arm]
+        g.last_pos = present
+        n = 0
+        while True:
+            t0 = time.perf_counter()
+            step = g.max_step_slow if g.env.in_slow_zone(cmd) else g.max_step
+            cmd = np.clip(goal, cmd - step, cmd + step)
+            if not self._command(cmd):
+                return "the hold command could not be sent (the link may be down)"
+            n += 1
+            self.log.step(label="retarget", cmd=cmd.round(3).tolist(), pos=self.q.round(3).tolist())
+            if np.allclose(cmd, goal, atol=1e-9):
+                break
+            if self.pace:
+                time.sleep(max(0.0, 1.0 / self.hz - (time.perf_counter() - t0)))
+            if self._present() is None:  # the link went silent part-way: the command stays where it got to
+                self._event("retarget", cause=cause, pose=cmd.round(2).tolist(), steps=n, done=False, reason=stale)
+                return stale
+        self._event("retarget", cause=cause, pose=cmd.round(2).tolist(), steps=n)
+        return None
+
+    GRASP_LEAD = 1.0  # gripper units: jaws this far open of their command are held open by something
+
+    def _grasp(self) -> str | None:
+        """Why the arm must not be parked and released: a gripper whose jaws stay open of their command (an object in
+        the grasp, which parking would carry and releasing torque would drop). None when every gripper is free."""
+        p, cmd = self.prof, self.guard.last_cmd
+        if cmd is None:
+            return None
+        closes = 1.0 if p.gripper_closed <= p.gripper_open else -1.0  # the direction that closes the jaws
+        held = [i for i in p.gidx if closes * (self.q[i] - cmd[i]) > self.GRASP_LEAD]
+        if not held:
+            return None
+        jaws = ", ".join(f"{p.joints[i]} at {self.q[i]:.1f}, commanded {cmd[i]:.1f}" for i in held)
+        return (
+            f"the gripper holds something ({jaws}): it keeps its grip; take the object out before the arm is released"
+        )
 
     def _present(self) -> np.ndarray | None:
         """The measured joint positions from a fresh reading, or None when there is none (dead or silent link)."""
@@ -415,7 +465,7 @@ class RealArmBackend(EmbodiedBackend):
         return np.asarray(r.q, dtype=float).copy()
 
     def _command(self, pose: np.ndarray) -> bool:
-        """Send a hold command (bypassing the guard: it is where the arm is, or where it was last commanded)."""
+        """Send a hold command (bypassing the guard's limits: the caller keeps it within the per-step delta limit)."""
         try:
             self.driver.send(pose)
         except Exception as e:  # noqa: BLE001 - a dead link cannot take the hold either
@@ -425,11 +475,14 @@ class RealArmBackend(EmbodiedBackend):
         self.target = pose.copy()
         return True
 
-    def _hold(self, cause: str, pose: np.ndarray | None, why: str) -> None:
+    def _hold(self, cause: str, why: str) -> None:
+        """The arm keeps the command it has (where it is after a retarget, else the last command), sent once more
+        unchanged; on a dead link that fails too, and is logged."""
+        pose = self.guard.last_cmd
         if pose is not None:
-            self._command(pose)
+            self._command(np.asarray(pose, dtype=float))
         self.secured = f"holding at the present position: {why}"
-        self._event("holding", cause=cause, pose=None if pose is None else pose.round(2).tolist(), reason=why)
+        self._event("holding", cause=cause, pose=None if pose is None else np.round(pose, 2).tolist(), reason=why)
         self.operator.notify(
             f"{self.prof.display} ({cause}): holding at its present position with torque on; it was not parked: "
             f"{why}. The physical e-stop cuts the power."
@@ -439,6 +492,7 @@ class RealArmBackend(EmbodiedBackend):
         """Move slowly (the slow joint speed) to the rest pose with every check on; None once the arm is at rest there,
         else why not."""
         p = self.prof
+        self._park_moved = False
         if not p.park:
             return "the robot profile has no rest pose"
         if latch := estop_engaged():
@@ -450,6 +504,7 @@ class RealArmBackend(EmbodiedBackend):
         except Veto as v:
             return f"the way to the rest pose leaves the workspace ({v})"
         self._event("park", cause=cause, goal=goal.round(2).tolist(), speed_deg_s=self.guard.e.slow_joint_speed_deg_s)
+        self._park_moved = True
         start = np.asarray(self.guard.last_cmd, dtype=float).copy()
         n = int(max(1, np.ceil(np.max(np.abs(goal - start) / self.guard.max_step_slow))))
         self.watch.reset()
@@ -544,6 +599,7 @@ class RealArmBackend(EmbodiedBackend):
                 time.sleep(max(0.0, 1.0 / self.hz - (time.perf_counter() - t0)))
             self._read()
             dt = time.perf_counter() - t0
+            self._last_check = time.monotonic()
             self.n_steps += 1
             self.log.step(
                 i=self.n_steps,
@@ -587,6 +643,14 @@ class RealArmBackend(EmbodiedBackend):
         rec = {**c.record(), "what": c.describe(), "pose": self.q.round(2).tolist()}
         if self.guard.env.chain is not None:
             rec["tool_pos"] = self._tool().round(4).tolist()
+        # where the arm is held: the arm joints' command goes to where they are, through the per-step delta limit, and
+        # the gripper keeps its command, so a grasp holds
+        hold = np.asarray(self.guard.last_cmd, dtype=float).copy()
+        hold[self.prof.arm_idx] = self.q[self.prof.arm_idx]
+        if self.ending:  # the settle steps after the episode ended: there is no move to stop and no agent to tell
+            act = "safety stop: a contact during the settle steps after the end"
+            self._event("contact", **rec, action=act, hold=hold.round(2).tolist())
+            raise SafetyStop(f"contact during the settle steps after the episode ended: {c.describe()}", "contact")
         if not c.watched:
             self._event("contact", **rec, action="safety stop: a contact outside a watched move")
             raise SafetyStop(f"contact outside a watched move: {c.describe()}", "contact")
@@ -597,9 +661,6 @@ class RealArmBackend(EmbodiedBackend):
                 f"repeated contacts ({self.n_contacts} in this episode, limit {s.max_contacts}): {c.describe()}",
                 "contact",
             )
-        # stop the move: the arm holds where it is (the gripper keeps its command, so a grasp holds)
-        hold = np.asarray(self.guard.last_cmd, dtype=float).copy()
-        hold[self.prof.arm_idx] = self.q[self.prof.arm_idx]
         self._event(
             "contact",
             **rec,
@@ -607,9 +668,9 @@ class RealArmBackend(EmbodiedBackend):
             action="move stopped; the arm holds at the measured pose",
             hold=hold.round(2).tolist(),
         )
-        self.driver.send(hold)
-        self.guard.last_cmd = hold
-        self.target = hold
+        if why := self._retarget("contact"):
+            kind = "telemetry_lost" if why.startswith("no fresh") else "hardware_fault"  # a stale or a dead link
+            raise SafetyStop(f"the arm could not be held after a contact: {why}", kind)
         self._motion_event = {
             "contact": {
                 "what": c.describe(),
@@ -628,7 +689,43 @@ class RealArmBackend(EmbodiedBackend):
         return ev
 
     def hold_action(self) -> list[float]:
+        """What "hold still" is now: the last command (after a contact, the hold), read again for every settle step."""
         return [float(x) for x in (self.guard.last_cmd if self.guard.last_cmd is not None else self.q)]
+
+    def begin_settle(self) -> None:
+        """The episode server's hook before the settle steps that follow the end of an episode: the agent can no longer
+        react, so any contact from now on is a safety stop (and holds the batch) instead of stopping a move."""
+        self.ending = True
+
+    IDLE_CHECK_S = 1.0  # between requests, the arm is checked at least this often
+
+    def idle_check(self) -> None:
+        """The episode server's hook between requests (the agent thinking): at most once a second, the checks a control
+        step makes that need no motion, namely the e-stop latch, a fresh joint reading and the thermal guard, while the
+        motors keep the last command (sent again, unchanged). A failed check latches a stop and secures the arm, as
+        during a control step."""
+        if not self.connected or self.halted or self.guard.last_cmd is None:
+            return
+        if time.monotonic() - self._last_check < self.IDLE_CHECK_S:
+            return
+        self._last_check = time.monotonic()
+        try:
+            self.guard.check_estop()
+            self.driver.send(np.asarray(self.guard.last_cmd, dtype=float))
+            self._read()
+            self.log.step(
+                label="idle",
+                cmd=np.round(self.guard.last_cmd, 3).tolist(),
+                pos=self.q.round(3).tolist(),
+                **{k: v for k, v in self.extra.items() if isinstance(v, list)},
+            )
+            self.guard.check_telemetry(self.stamp)
+            self.guard.check_thermal(self.extra)
+            self.guard.last_pos = np.asarray(self.q, dtype=float)
+        except SafetyStop as e:
+            self._halt(str(e), e.kind)
+        except Exception as e:  # noqa: BLE001 - a driver fault while idle
+            self._halt(f"hardware fault while idle: {type(e).__name__}: {e}", "hardware_fault")
 
     # ---- observation ------------------------------------------------------------------------------------------------
     def metrics_point(self):

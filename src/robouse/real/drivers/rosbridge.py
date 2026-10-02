@@ -12,7 +12,8 @@ Rig keys (`real:` block or the rig file, robot `ros`):
   command_type      trajectory_msgs/JointTrajectory (one point per step) or std_msgs/Float64MultiArray
   cameras           {name: /camera/image_raw/compressed}  (sensor_msgs/CompressedImage, JPEG or PNG)
   control_hz        10
-  stale_s           1.0   a joint state older than this is a fault (the robot stopped publishing)
+  stale_s           1.0   a joint state older than this is lost telemetry (the robot stopped publishing): the
+                          episode stops and the arm keeps its last command (the frozen state is never sent)
 
 Protocol used: {"op": "subscribe", "topic", "type"}, {"op": "advertise", "topic", "type"}, {"op": "publish", "topic",
 "msg"}, {"op": "unsubscribe" / "unadvertise"}. Messages arrive as {"op": "publish", "topic", "msg"}.
@@ -164,7 +165,12 @@ class RosbridgeDriver(ArmDriver):
                 raise RuntimeError(f"rosbridge connection lost: {self._err}")
             age = time.monotonic() - self._state_t
             if age > float(self.cfg.get("stale_s", 1.0)):
-                raise RuntimeError(f"joint states are {age:.1f} s old (the robot stopped publishing)")
+                # lost telemetry, not a hardware fault: the stop holds the last command and never sends this frozen state
+                from ..safety import SafetyStop  # at the raise: the class of the safety module now loaded
+
+                raise SafetyStop(
+                    f"lost telemetry: joint states are {age:.1f} s old (the robot stopped publishing)", "telemetry_lost"
+                )
             q = np.asarray([self._state[j] / self.to_rad for j in self.profile.joints], dtype=float)
             imgs = dict(self._images)
             extra = {}

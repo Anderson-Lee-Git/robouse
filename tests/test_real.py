@@ -343,8 +343,8 @@ def test_watchdog_one_stall_is_logged_and_the_episode_goes_on(tmp_path):
 
 
 def test_watchdog_hard_limit_stops_and_secures_the_arm(tmp_path):
-    """A stalled step stops the episode; every joint is then retargeted to its measured position, and the arm parks
-    slowly at its rest pose and is released there (the tracking mock follows the parking commands)."""
+    """A stalled step stops the episode; every arm joint's command is then brought to its measured position, and the
+    arm parks slowly at its rest pose and is released there (the tracking mock follows the parking commands)."""
     from robouse.real.robots import METAL
 
     ep = _episode(
@@ -362,10 +362,11 @@ def test_watchdog_hard_limit_stops_and_secures_the_arm(tmp_path):
     ep.close()
     ev = _events(tmp_path / "ep")
     steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
-    stalled = [s for s in steps if s.get("label") != "park"][-1]
+    stalled = [s for s in steps if "label" not in s][-1]  # the last control step of the episode
     assert any(e["event"] == "stop" and e.get("kind") == "watchdog" and e["dt"] > 0.3 for e in ev)
     retarget = next(e for e in ev if e["event"] == "retarget")
-    assert retarget["cause"] == "safety stop (watchdog)" and np.allclose(retarget["pose"], stalled["pos"], atol=0.006)
+    assert retarget["cause"] == "safety stop (watchdog)"
+    assert np.allclose(retarget["pose"][:6], stalled["pos"][:6], atol=0.006)  # the arm joints held where they were
     names = [e["event"] for e in ev]
     assert names.index("retarget") < names.index("park") < names.index("torque_released") < names.index("close")
     assert np.allclose([s for s in steps if s.get("label") == "park"][-1]["pos"][:6], METAL.park[:6], atol=2.0)
@@ -406,7 +407,9 @@ def test_stale_telemetry_stops_instead_of_going_on(tmp_path):
     steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
     assert steps[-1]["pos"] == steps[-2]["pos"]  # the frozen reading
     holding = next(e for e in ev if e["event"] == "holding")  # the present position is unknown: no retarget, no parking
-    assert "no fresh reading" in holding["reason"] and not any(e["event"] in ("retarget", "park") for e in ev)
+    retarget = next(e for e in ev if e["event"] == "retarget")
+    assert "no fresh reading" in holding["reason"] and retarget["done"] is False and retarget["steps"] == 0
+    assert not any(e["event"] == "park" for e in ev)
     assert np.allclose(holding["pose"], steps[-1]["cmd"], atol=0.006)  # the last command ...
     assert not np.allclose(holding["pose"], steps[-1]["pos"], atol=0.5)  # ... not the stale reading
     assert next(e for e in ev if e.get("kind") == "telemetry_lost")["age_s"] > 0.3
@@ -493,9 +496,9 @@ def test_contact_watch_rules():
 def test_contact_watch_quiet_on_recorded_motion_then_stops_at_the_elbow_stop(tmp_path, monkeypatch, wiggle):
     """Verified contact (2026-09-05 13:16, fixture metal-hanoi-131602 from the recorder's log): 91 s of normal motion
     replay without a contact; then the elbow straightens against its mechanical stop, away from the table: a contact
-    outside a watched move stops the episode, and every joint is retargeted to where it is, so nothing pushes against
-    the stop. The guard itself no longer commands the elbow past 174 deg (Sep 5 commanded 180). The same with the
-    gripper command moving every step (a streaming policy): gripper motion does not mute the arm's watch."""
+    outside a watched move stops the episode, and the arm joints' command goes to where they are, so nothing pushes
+    against the stop. The guard itself no longer commands the elbow past 174 deg (Sep 5 commanded 180). The same with
+    the gripper command moving every step (a streaming policy): gripper motion does not mute the arm's watch."""
     ep, fx = _playback(tmp_path, monkeypatch, "metal-hanoi-131602")
     hits = _replay(ep, fx, wiggle=wiggle)
     assert len(hits) == 1
@@ -508,11 +511,11 @@ def test_contact_watch_quiet_on_recorded_motion_then_stops_at_the_elbow_stop(tmp
     contact = next(e for e in ev if e["event"] == "contact")
     assert contact["watched"] is False and contact["change"]["elbow_flex"] > 5.0
     steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
-    episode = [s for s in steps if s.get("label") != "park"]
+    episode = [s for s in steps if "label" not in s]  # the episode's control steps (not the retarget or parking)
     assert max(s["cmd"][2] for s in episode) <= 174.0  # the elbow command stays under the soft limit ...
     assert max(s["pos"][2] for s in episode) > 176.0  # ... while the recorded arm sat at its stop
     retarget = next(e for e in ev if e["event"] == "retarget")
-    assert retarget["pose"][2] == pytest.approx(176.36, abs=0.05)  # retargeted to where the elbow is
+    assert retarget["pose"][2] == pytest.approx(176.36, abs=0.05)  # the command goes to where the elbow is
 
 
 def test_contact_stall_on_the_recorded_table_touchdown(tmp_path, monkeypatch):
@@ -566,17 +569,30 @@ def test_contact_stops_act_repeat_and_skill(tmp_path, monkeypatch):
 # ---- after a stop, at the end and when interrupted: no push, then park and release, or hold ------------------------------
 
 
+def _steps(ep_dir: Path) -> list[dict]:
+    return [json.loads(l) for l in (ep_dir / "session" / "log.jsonl").read_text().splitlines()]
+
+
+def _within_delta_limit(sent, guard) -> bool:
+    """Every command differs from the one before by at most the per-step limit (commands are recorded to 1e-3)."""
+    return bool(np.all(np.abs(np.diff(np.asarray(sent, dtype=float), axis=0)) <= guard.max_step + 2e-3))
+
+
 def test_stop_and_close_leave_no_push_on_the_elbow_replay(tmp_path, monkeypatch):
-    """The 13:16 replay: after the contact stop, and again after close(), the last command sent to the motors is the
-    latest measured pose, so nothing pushes against the stop. The replayed arm does not follow commands, so it never
-    reaches its rest pose: it is held, and the session log and the operator are told why."""
+    """The 13:16 replay: after the contact stop, and again after close(), the arm joints' last command is where the arm
+    is, so nothing pushes against the stop. Every command got there through the per-step delta limit, and the gripper
+    kept its command. The replayed arm does not follow commands, so it never reaches its rest pose: it is held, and the
+    session log and the operator are told why."""
     ep, fx = _playback(tmp_path, monkeypatch, "metal-hanoi-131602")
-    robot = ep.backend.driver.robot
+    robot, b = ep.backend.driver.robot, ep.backend
     _replay(ep, fx)
     assert ep.outcome == "safety_stop" and ep.result["session"]["secured"].startswith("holding at the present position")
-    assert np.allclose(robot.sent[-1], ep.backend.q, atol=2e-3)  # after the stop
+    assert np.abs(np.subtract(robot.sent[-1][:6], b.q[:6])).max() < 0.05  # after the stop: the command is the arm
     ep.close()
-    assert np.allclose(robot.sent[-1], ep.backend.q, atol=2e-3)  # after close()
+    assert np.abs(np.subtract(robot.sent[-1][:6], b.q[:6])).max() < 0.05  # after close()
+    n = sum(1 for s in _steps(tmp_path / "ep") if "label" not in s)  # sent[0] holds at connect, then one per step
+    assert _within_delta_limit(robot.sent[n:], b.guard)  # from the stopping step on (retarget, parking, holds)
+    assert {c[6] for c in robot.sent[n:]} == {robot.sent[n][6]}  # from the stopping step on, the gripper's command
     ev = _events(tmp_path / "ep")
     holds = [e for e in ev if e["event"] == "holding"]
     assert [h["cause"] for h in holds] == ["safety stop (contact)", "end of episode"]
@@ -609,16 +625,20 @@ def test_estop_stop_holds_at_the_present_position_and_says_why(tmp_path):
     ep = _episode("real-metal-reach", tmp_path)
     robot = ep.backend.driver.robot
     assert ep.handle({"op": "act", "action": list(ep.backend.q), "repeat": 2})["ok"]
+    gripper = ep.backend.guard.last_cmd[6]  # the gripper's command when the e-stop comes
     safety.set_estop("test")
     assert not ep.handle({"op": "act", "action": list(ep.backend.q)})["ok"]
-    assert ep.outcome == "safety_stop" and np.allclose(robot.sent[-1], ep.backend.q, atol=2e-3)
+    assert ep.outcome == "safety_stop"
     ep.close()
     safety.clear_estop()
     ev = _events(tmp_path / "ep")
     holds = [e for e in ev if e["event"] == "holding"]
     assert len(holds) == 2 and all(h["reason"].startswith("the e-stop is latched") for h in holds)
     assert not any(e["event"] in ("park", "torque_released") for e in ev)
-    assert np.allclose(robot.sent[-1], ep.backend.q, atol=2e-3)
+    # the arm joints' last command is where the last retarget measured them; the gripper kept its command
+    retarget = [e for e in ev if e["event"] == "retarget"][-1]
+    assert np.allclose(robot.sent[-1][:6], retarget["pose"][:6], atol=6e-3)
+    assert robot.sent[-1][6] == pytest.approx(gripper, abs=1e-3)
 
 
 def test_operator_notices_reach_the_file_channel():
@@ -849,33 +869,83 @@ def test_mock_skips_the_physical_estop_unless_the_task_asks(tmp_path, monkeypatc
     ep.close()
 
 
-# ---- independent review, 2026-10-02 -------------------------------------------------------------------------------------
+# ---- independent review, 2026-10-02 (R1-R8) ------------------------------------------------------------------------------
 
 
-def test_watchdog_limits_scale_with_the_control_period():
-    """R7: the loop watchdog's limits are 0.5 s and 2 s, or 3 and 10 control periods on a slow rig, whichever is
-    longer: every shipped profile keeps 0.5 s and 2 s, and a 2 Hz rig is not stopped by its own period."""
-    import dataclasses
+def test_settle_contact_on_the_recorded_descent_is_a_safety_stop(tmp_path, monkeypatch):
+    """R1 on recorded torque (metal-bowl-121853): `done` just before the first recorded contact, so the arm settles onto
+    it during the settle steps. That contact is a safety stop that holds a batch, no later command returns to the one
+    from before it, and the motors are left on where the arm is."""
+    from robouse.real import batch
 
-    from robouse.real.drivers.rosbridge import ros_profile
-    from robouse.real.robots import METAL, PROFILES
-    from robouse.real.safety import Guard, SafetyStop
+    ep, fx = _playback(tmp_path, monkeypatch, "metal-bowl-121853")
+    robot = ep.backend.driver.robot
+    assert _replay(ep, fx, until=56.2) == []
+    before = np.asarray(robot.sent[-1], dtype=float)  # the last command before `done`
+    ep.handle({"op": "done", "text": ""})
+    assert ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "contact" and not ep.result["success"]
+    assert "settle steps" in ep.result["session"]["safety_stop"]
+    ep.close()
+    contact = next(e for e in _events(tmp_path / "ep") if e["event"] == "contact")
+    assert contact["watched"] and contact["action"].startswith("safety stop: a contact during the settle steps")
+    n = sum(1 for s in _steps(tmp_path / "ep") if "label" not in s)  # connect, then the episode's and settle steps
+    after = np.asarray(robot.sent[n + 1 :], dtype=float)  # everything after the step that met the contact
+    assert len(after) and not np.any(np.all(np.abs(after[:, :6] - before[:6]) < 1e-3, axis=1))
+    retarget = [e for e in _events(tmp_path / "ep") if e["event"] == "retarget"][-1]
+    assert np.allclose(robot.sent[-1][:6], retarget["pose"][:6], atol=6e-3)  # left on where the arm is
+    trial = tmp_path / "trial"
+    trial.mkdir()
+    (trial / "result.json").write_text(json.dumps({"episode": ep.result}))
+    assert batch.stop_of(trial)["kind"] == "contact"  # run-many holds the batch
 
-    for p in [*PROFILES.values(), ros_profile({})]:
-        g = Guard(p)
-        assert (g.stall_s, g.hard_s) == (0.5, 2.0), p.name
-    slow = dataclasses.replace(METAL, control_hz=2.0)
-    g = Guard(slow)
-    assert (g.stall_s, g.hard_s) == (1.5, 5.0)
-    for _ in range(10):
-        g.check_loop(0.55)  # a 2 Hz step with some jitter
-    assert g.stalls == 0
-    g.check_loop(1.6)
-    g.check_loop(1.6)
-    with pytest.raises(SafetyStop, match="3 control steps in a row slower than 1.5 s"):
-        g.check_loop(1.6)
-    with pytest.raises(SafetyStop, match=r"limit 5 s"):
-        Guard(slow).check_loop(5.1)
+
+def test_settle_contact_injected_on_the_tracking_mock(tmp_path):
+    """R1: a contact reported at the third settle step ends the settle steps as a safety stop (the episode is not
+    `done`); the arm is secured from where it is."""
+    from robouse.real.contact import Contact
+
+    ep = _episode("real-metal-reach", tmp_path)
+    b = ep.backend
+    target = np.asarray(b.q, dtype=float)
+    target[0] += 6.0  # a sideways move
+    assert ep.handle({"op": "act", "action": list(target), "repeat": 4})["ok"]
+    orig, calls = b.watch.update, []
+
+    def update(cmd, q, extra, watched):
+        calls.append(1)
+        hit = orig(cmd, q, extra, watched)
+        return Contact("stall", True, {"tool_shortfall_mm": 5.0}, b.watch.n) if len(calls) == 3 else hit
+
+    b.watch.update = update
+    ep.handle({"op": "done", "text": ""})
+    assert sum(1 for s in _steps(tmp_path / "ep") if "label" not in s) == 4 + 3  # no settle step after the contact
+    assert ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "contact"
+    names = [e["event"] for e in _events(tmp_path / "ep")]
+    assert names.index("contact") < names.index("stop") < names.index("retarget")
+    ep.close()
+
+
+def test_ros_frozen_joint_states_keep_the_last_command(tmp_path):
+    """R3: the robot stops publishing /joint_states but still takes commands. The stop is lost telemetry (not a
+    hardware fault), and the robot keeps the last command: the frozen reading behind it is never sent."""
+    ep = _episode("real-ros-joint-pose", tmp_path)
+    b, srv = ep.backend, ep.backend.driver.mock_server
+    target = np.asarray(b.q, dtype=float)
+    target[0] += 40.0
+    assert ep.handle({"op": "act", "action": list(target), "repeat": 3})["ok"]
+    srv._stop.set()  # no more joint states; the command topic still works
+    t0 = time.time()
+    while ep.handle({"op": "act", "action": list(target)})["ok"]:
+        assert time.time() - t0 < 5
+    assert ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "telemetry_lost"
+    frozen = float(b.q[0])
+    ep.close()
+    cmds = np.degrees(np.asarray(srv.commands, dtype=float))
+    last = int(np.argmax(cmds[:, 0]))  # the furthest command toward the target ...
+    assert np.allclose(cmds[last:], cmds[last], atol=1e-6)  # ... is the last one the robot gets: no jump back
+    assert cmds[-1][0] - frozen > 2.0  # the frozen reading, degrees behind it, was never sent
+    holding = next(e for e in _events(tmp_path / "ep") if e["event"] == "holding")
+    assert "no fresh reading" in holding["reason"]
 
 
 def _failing_batch_root(tmp_path):
@@ -937,6 +1007,59 @@ def test_batch_fails_closed_through_the_cli(tmp_path, monkeypatch):
     assert rc == 3
 
 
+@pytest.mark.parametrize("fault", ["estop", "overtemperature", "telemetry_lost"])
+def test_idle_check_watches_the_arm_between_requests(tmp_path, fault):
+    """R5: while the agent thinks, the arm is read at least once a second: an e-stop, a hot motor or a link gone
+    quiet stops the episode and secures the arm, as at a control step. Right after a step it waits."""
+    from robouse.real import safety
+
+    real = {"envelope": {"telemetry_timeout_s": 0.3}, "mock_fault": {"kind": "stale", "at_step": 2}}
+    ep = _episode("real-metal-reach", tmp_path, **(real if fault == "telemetry_lost" else {}))
+    b, robot = ep.backend, ep.backend.driver.robot
+    assert ep.handle({"op": "act", "action": list(b.q)})["ok"]
+    ep.idle()
+    assert not any(s.get("label") == "idle" for s in _steps(tmp_path / "ep"))  # checked less than a second ago
+    if fault == "estop":
+        safety.set_estop("idle test")
+    elif fault == "overtemperature":
+        robot.fx.telemetry = lambda k, **kw: {"temp_mos_c": [30.0] * 7, "temp_rotor_c": [30.0] * 6 + [70.0]}
+    else:
+        time.sleep(0.4)  # the bus answers nothing more
+    b._last_check -= b.IDLE_CHECK_S  # a second has passed
+    ep.idle()
+    safety.clear_estop()
+    assert ep.finished and ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == fault
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    if fault == "telemetry_lost":  # the present position is unknown: the last command is held
+        assert next(e for e in ev if e["event"] == "holding")["reason"].startswith("no fresh reading")
+    else:
+        assert any(e["event"] == "retarget" for e in ev)
+
+
+def test_server_watches_the_arm_while_no_request_comes(tmp_path):
+    """R5 end to end: an e-stop latched while the agent sends nothing ends the episode within about a second."""
+    from robouse.real import safety
+    from robouse.session import serve
+    from robouse.tasks import load_task
+
+    spec = load_task(_real_task_root(tmp_path) / "real-metal-reach").spec
+    ready, sock = tmp_path / "ready", str(tmp_path / "s.sock")
+    th = threading.Thread(target=serve, args=(spec, tmp_path / "ep", sock), kwargs={"ready_file": ready}, daemon=True)
+    th.start()
+    for _ in range(300):
+        if ready.exists():
+            break
+        time.sleep(0.05)
+    t0 = time.time()
+    safety.set_estop("idle test")
+    th.join(timeout=15)
+    safety.clear_estop()
+    res = json.loads((tmp_path / "ep" / "result.json").read_text())
+    assert not th.is_alive() and time.time() - t0 < 5
+    assert res["outcome"] == "safety_stop" and res["session"]["stop_kind"] == "estop" and res["requests"] == 0
+
+
 def test_live_rig_trials_run_one_at_a_time(tmp_path, monkeypatch, capsys):
     """R6: with a rig from ROBOUSE_RIG (not only --rig), live-robot trials run one at a time whatever --concurrency
     says, so a stop holds every later trial."""
@@ -970,3 +1093,62 @@ def test_live_rig_trials_run_one_at_a_time(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(jobs, "run_trial", run_trial)
     assert len(jobs.run_many(root, "noop", "", tmp_path / "job", seeds="0-3", concurrency=4)) == 4
     assert peak[0] == 1
+
+
+def test_watchdog_limits_scale_with_the_control_period():
+    """R7: the loop watchdog's limits are 0.5 s and 2 s, or 3 and 10 control periods on a slow rig, whichever is
+    longer: every shipped profile keeps 0.5 s and 2 s, and a 2 Hz rig is not stopped by its own period."""
+    import dataclasses
+
+    from robouse.real.drivers.rosbridge import ros_profile
+    from robouse.real.robots import METAL, PROFILES
+    from robouse.real.safety import Guard, SafetyStop
+
+    for p in [*PROFILES.values(), ros_profile({})]:
+        g = Guard(p)
+        assert (g.stall_s, g.hard_s) == (0.5, 2.0), p.name
+    slow = dataclasses.replace(METAL, control_hz=2.0)
+    g = Guard(slow)
+    assert (g.stall_s, g.hard_s) == (1.5, 5.0)
+    for _ in range(10):
+        g.check_loop(0.55)  # a 2 Hz step with some jitter
+    assert g.stalls == 0
+    g.check_loop(1.6)
+    g.check_loop(1.6)
+    with pytest.raises(SafetyStop, match="3 control steps in a row slower than 1.5 s"):
+        g.check_loop(1.6)
+    with pytest.raises(SafetyStop, match=r"limit 5 s"):
+        Guard(slow).check_loop(5.1)
+
+
+def test_a_stop_keeps_the_grasp(tmp_path):
+    """R8: a stop never lets go of a grasped object. The gripper keeps its command on every stop path, and an arm
+    holding something is neither parked nor released: parking would carry the object, releasing torque would drop it."""
+    from robouse.real import safety
+
+    ep = _episode("real-metal-reach", tmp_path)
+    b, robot = ep.backend, ep.backend.driver.robot
+    send = robot.send_action
+
+    def blocked(action):  # an object between the jaws: they stop at 20 however far the command closes them
+        out = send(action)
+        robot.q[6] = max(robot.q[6], 20.0)
+        return out
+
+    robot.send_action = blocked
+    pose = list(b.q)
+    assert ep.handle({"op": "act", "action": pose[:6] + [40.0], "repeat": 6})["ok"]  # open
+    assert ep.handle({"op": "act", "action": pose[:6] + [4.0], "repeat": 10})["ok"]  # close on the object
+    grip = float(b.guard.last_cmd[6])
+    assert b.q[6] >= 20.0 and grip < b.q[6] - 1.0  # the command leads the blocked jaws, up to the gripper wind-up
+    k = len(robot.sent)
+    safety.set_estop("grasp test")
+    assert not ep.handle({"op": "act", "action": pose[:6] + [4.0]})["ok"]
+    safety.clear_estop()
+    ep.close()
+    assert len(robot.sent) > k and all(c[6] == pytest.approx(grip, abs=1e-3) for c in robot.sent[k:])
+    ev = _events(tmp_path / "ep")
+    holds = [e for e in ev if e["event"] == "holding"]
+    assert len(holds) == 2 and all(h["reason"].startswith("the gripper holds something") for h in holds)
+    assert not any(e["event"] in ("park", "torque_released") for e in ev)
+    assert next(e for e in ev if e["event"] == "close")["release_torque"] is False

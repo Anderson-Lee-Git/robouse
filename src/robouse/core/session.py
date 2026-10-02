@@ -259,6 +259,12 @@ class Episode:
         if halted and not self.finished:
             self.finish("safety_stop", clip(halted, 500), settle=False)
 
+    def idle(self) -> None:
+        """Between requests: a real robot's idle checks (the backend's `idle_check`), whose stop ends the episode."""
+        if not self.finished and (check := _hook(self.backend, "idle_check")):
+            check()
+            self._check_halt()
+
     def info(self) -> dict:
         s = self.backend.action_spec
         extra = _hook(self.backend, "info_extra")
@@ -480,9 +486,14 @@ class Episode:
         if getattr(self.backend, "halted", None):
             settle = False
         hold = self._hold()
+        # real robots: from here a contact is a safety stop, and each settle step holds what the safety layer holds now
+        # (after a contact, the hold), never the command from before it
+        live_hold = _hook(self.backend, "begin_settle") if settle else None
+        if live_hold:
+            live_hold()
         for _ in range(SETTLE_STEPS if settle else 0):  # settle; success must still hold afterwards
             try:
-                self.backend.step(hold)
+                self.backend.step(self._hold() if live_hold else hold)
             except Exception:  # noqa: BLE001 - a backend that cannot step further is judged on its current state
                 break
             self._record_frame(force=True)
@@ -583,6 +594,7 @@ def serve(
     stop_after: float | None = None
     try:
         while True:
+            ep.idle()  # real robots: the arm is watched while the agent thinks (at most once a second)
             if time.time() > deadline and not ep.finished:
                 ep.finish("wall_time_exhausted", "")
             if ep.finished and stop_after is None:
