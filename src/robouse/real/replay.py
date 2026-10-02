@@ -22,7 +22,8 @@ recorded frames whose pose is closest to the mock's current pose. Two modes (`mo
 `mock_fault` injects a link failure from a control step on (tests of the watchdog and the stale-telemetry stop):
 {"at_step": K, "kind": "stale"} (the bus stops getting replies and keeps serving its cache, as the Damiao bus does when
 the CAN link dies), "dead" (reads and writes raise, as when the USB adapter is unplugged) or "slow" (each read takes
-"seconds" longer, for "steps" steps).
+"seconds" longer, for "steps" steps); on the Piper mock, "silent_pair" (one joint pair's feedback frames stop).
+
 
 `conformance()` is the strict replay check behind `robouse hil-check`: it feeds the recorded command sequence through the
 Robo Use safety guard, with the measured joints taken from the recording, and reports vetoes, clamps and how well the
@@ -34,6 +35,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -220,12 +222,24 @@ class ReplayRobot:
         self.connected = False
 
 
-class ReplayPiperSDK:
-    """piper_sdk-shaped mock for the Piper driver (synthetic fixture: no Piper recordings exist yet)."""
+class _Obj:
+    def __init__(self, **kw: Any):
+        self.__dict__.update(kw)
 
-    def __init__(self, fx: Fixture, prof: Profile):
+
+class ReplayPiperSDK:
+    """piper_sdk-shaped mock for the Piper driver (synthetic fixture: no Piper recordings exist yet). As in piper_sdk
+    0.6.2's C_PiperInterface_V2, the joints arrive in three feedback frames (joints 1-2, 3-4, 5-6), each passed to the
+    name-mangled `__UpdateArmJointState`, which updates that pair's joints and the one `ArmJoint.time_stamp`; here the
+    frames arrive whenever the driver reads. `mock_fault` {"kind": "silent_pair", "pair": "34", "at_step": K}: from
+    control step K on, that pair's frames stop and its joints freeze, while the other pairs keep the time stamp fresh."""
+
+    def __init__(self, fx: Fixture, prof: Profile, fault: dict | None = None):
         self.robot = ReplayRobot(fx, prof, cameras=[])
         self.robot.connect()
+        self.fault = dict(fault or {})
+        joint_state = _Obj(**{f"joint_{i}": 0 for i in range(1, 7)})
+        self._joint_msgs: Any = _Obj(time_stamp=0.0, Hz=0.0, joint_state=joint_state)  # the SDK's ArmJoint
 
     def ConnectPort(self):
         return True
@@ -236,28 +250,35 @@ class ReplayPiperSDK:
     def DisablePiper(self):
         return True
 
+    def _C_PiperInterface_V2__UpdateArmJointState(self, msg):  # the SDK's own update, for one joint feedback frame
+        a = int(msg.type_.name[-2])  # PiperMsgJointFeedBack_34 -> joints 3 and 4
+        for j in (a, a + 1):
+            setattr(self._joint_msgs.joint_state, f"joint_{j}", getattr(msg.arm_joint_feedback, f"joint_{j}"))
+        self._joint_msgs.time_stamp = msg.time_stamp
+        return self._joint_msgs
+
+    def _receive(self) -> None:
+        """The SDK's receive thread: one frame per joint pair, as decoded by ParseCANFrame."""
+        f = self.fault
+        on = f.get("kind") == "silent_pair" and self.robot.k >= int(f.get("at_step", 0))
+        silent = str(f.get("pair")) if on else ""
+        joints = {f"joint_{i + 1}": int(round(v * 1000)) for i, v in enumerate(self.robot.q[:6])}
+        for pair in ("12", "34", "56"):
+            if pair != silent:
+                msg = _Obj(
+                    type_=_Obj(name=f"PiperMsgJointFeedBack_{pair}"),
+                    time_stamp=time.time(),  # python-can's frame time (wall clock on socketcan)
+                    arm_joint_feedback=_Obj(**joints),
+                )
+                self._C_PiperInterface_V2__UpdateArmJointState(msg)
+
     def GetArmJointMsgs(self):
-        q = self.robot.q
-
-        class JS:
-            time_stamp = 0.0
-
-        js = JS()
-        for i in range(6):
-            setattr(js, f"joint_{i + 1}", int(round(q[i] * 1000)))
-        m = JS()
-        m.joint_state = js
-        m.time_stamp = time.time()  # the SDK dates each message by when its CAN thread received it
-        return m
+        self._receive()
+        return self._joint_msgs
 
     def GetArmGripperMsgs(self):
-        class G:
-            pass
-
-        g, m = G(), G()
-        g.grippers_angle = int(round(self.robot.q[6] * 1000))
-        m.gripper_state = g
-        return m
+        state = _Obj(grippers_angle=int(round(self.robot.q[6] * 1000)))
+        return _Obj(time_stamp=time.time(), gripper_state=state)
 
     def MotionCtrl_2(self, *a):
         return True

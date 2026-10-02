@@ -97,6 +97,7 @@ class RealArmBackend(EmbodiedBackend):
         self.move_goal: np.ndarray | None = None  # the running skill's final joint target
         self._motion_event: dict | None = None  # what the safety layer did to the current request's motion
         self.stamp: float | None = None  # when the last joint reading was measured (driver's clock, time.monotonic)
+        self.stamp_of: str | None = None  # which source that oldest value came from (the Piper's joint pairs)
         self.connected = False
         self.stop_kind: str | None = None
         self.estop_confirmed: dict | None = None
@@ -319,7 +320,7 @@ class RealArmBackend(EmbodiedBackend):
             self.driver.connect()
             self.connected = True
             self._read()
-            self.guard.check_telemetry(self.stamp)
+            self.guard.check_telemetry(self.stamp, source=self.stamp_of)
             self.guard.check_thermal(self.extra)  # a motor still hot from the last run does not start
             self.guard.last_cmd = self.q.copy()
             self.target = self.q.copy()
@@ -459,7 +460,7 @@ class RealArmBackend(EmbodiedBackend):
             return None
         if r.stamp is not None and time.monotonic() - r.stamp > self.guard.e.telemetry_timeout_s:
             return None
-        self.q, self.extra, self.stamp = r.q, r.extra, r.stamp
+        self.q, self.extra, self.stamp, self.stamp_of = r.q, r.extra, r.stamp, r.stamp_of
         if r.images:
             self.images = r.images
         return np.asarray(r.q, dtype=float).copy()
@@ -547,7 +548,7 @@ class RealArmBackend(EmbodiedBackend):
             dt=round(dt, 4),
             **{k: v for k, v in self.extra.items() if isinstance(v, list)},
         )
-        self.guard.check_telemetry(self.stamp)
+        self.guard.check_telemetry(self.stamp, source=self.stamp_of)
         self.guard.check_loop(dt)
         self.guard.last_pos = np.asarray(self.q, dtype=float)
         c = self.watch.update(cmd, self.q, self.extra, watched=False)
@@ -569,7 +570,7 @@ class RealArmBackend(EmbodiedBackend):
 
     def _read(self) -> None:
         r = self.driver.read()
-        self.q, self.extra, self.stamp = r.q, r.extra, r.stamp
+        self.q, self.extra, self.stamp, self.stamp_of = r.q, r.extra, r.stamp, r.stamp_of
         if r.images:
             self.images = r.images
 
@@ -610,7 +611,7 @@ class RealArmBackend(EmbodiedBackend):
                 dt=round(dt, 4),
                 **{k: v for k, v in self.extra.items() if isinstance(v, list)},
             )
-            self.guard.check_telemetry(self.stamp)  # before anything uses this reading
+            self.guard.check_telemetry(self.stamp, source=self.stamp_of)  # before anything uses this reading
             self.guard.after_step(self.q, self.extra, dt)  # thermal guard and loop watchdog
             self._advance_stages()
             self._watch_contact(cmd)
@@ -719,7 +720,7 @@ class RealArmBackend(EmbodiedBackend):
                 pos=self.q.round(3).tolist(),
                 **{k: v for k, v in self.extra.items() if isinstance(v, list)},
             )
-            self.guard.check_telemetry(self.stamp)
+            self.guard.check_telemetry(self.stamp, source=self.stamp_of)
             self.guard.check_thermal(self.extra)
             self.guard.last_pos = np.asarray(self.q, dtype=float)
         except SafetyStop as e:

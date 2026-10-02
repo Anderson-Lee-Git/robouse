@@ -278,18 +278,19 @@ class Guard:
             self.log("stop", kind="watchdog", reason=why, dt=round(dt, 3), in_a_row=self.stalls)
             raise SafetyStop(f"watchdog: {why}", "watchdog")
 
-    def check_telemetry(self, stamp: float | None, now: float | None = None) -> None:
+    def check_telemetry(self, stamp: float | None, now: float | None = None, source: str | None = None) -> None:
         """Stale telemetry: a joint reading older than telemetry_timeout_s stops the episode instead of letting it go on
         on old state (a cached bus keeps serving its last values when the link dies). A driver that cannot date its
-        readings (stamp None) is not checked."""
+        readings (stamp None) is not checked. `source`: what the stamp dates (e.g. the Piper's joints 3-4), named in
+        the stop."""
         if stamp is None:
             return
         age = (time.monotonic() if now is None else now) - stamp
         if age > self.e.telemetry_timeout_s:
-            why = (
-                f"no fresh joint reading for {age:.1f} s (limit {self.e.telemetry_timeout_s:g} s); the link may be down"
-            )
-            self.log("stop", kind="telemetry_lost", reason=why, age_s=round(age, 3), limit_s=self.e.telemetry_timeout_s)
+            of, limit = (f" from {source}" if source else ""), self.e.telemetry_timeout_s
+            why = f"no fresh joint reading{of} for {age:.1f} s (limit {limit:g} s); the link may be down"
+            extra = {"source": source} if source else {}
+            self.log("stop", kind="telemetry_lost", reason=why, age_s=round(age, 3), limit_s=limit, **extra)
             raise SafetyStop(f"lost telemetry: {why}", "telemetry_lost")
 
 

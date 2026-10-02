@@ -224,10 +224,68 @@ def test_piper_driver_on_mock_sdk(tmp_path):
     ep = _episode("real-piper-joint-pose", tmp_path)
     r = ep.handle({"op": "skill", "name": "move_joints", "args": ["20", "40", "-50", "0", "20", "0"]})
     assert r["ok"] and r["result"]["arrived"]
-    assert ep.backend.stamp is not None  # the SDK's message time dates each reading
+    assert ep.backend.stamp is not None and ep.backend.stamp_of in ("joints 1-2", "joints 3-4", "joints 5-6")
     ep.finish("done", "")
     assert ep.result["success"]
     ep.close()
+
+
+def test_piper_silent_joint_pair_stops_the_episode(tmp_path):
+    """The Piper's joints arrive in three feedback frames (joints 1-2, 3-4, 5-6), and piper_sdk keeps one time stamp
+    for all of them, refreshed by whichever came last. The driver dates each pair itself: when joints 3-4 fall silent
+    (the other pairs still arriving, the SDK's stamp still fresh), the episode stops as lost telemetry naming the pair,
+    and the arm keeps its last command."""
+    ep = _episode(
+        "real-piper-joint-pose",
+        tmp_path,
+        envelope={"telemetry_timeout_s": 0.3},
+        mock_fault={"kind": "silent_pair", "pair": "34", "at_step": 3},
+    )
+    sdk = ep.backend.driver.sdk
+    target = list(np.asarray(ep.backend.q) + np.array([4.0, 0, 4.0, 0, 0, 0, 0]))
+    assert ep.handle({"op": "act", "action": target, "repeat": 2})["ok"]  # joints 3-4 go silent after this
+    time.sleep(0.4)
+    r = ep.handle({"op": "act", "action": target})
+    assert time.time() - sdk.GetArmJointMsgs().time_stamp < 0.3  # the SDK's one stamp would have missed it
+    assert not r["ok"] and "lost telemetry: no fresh joint reading from joints 3-4" in r["error"]
+    assert ep.result["session"]["stop_kind"] == "telemetry_lost"
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    assert next(e for e in ev if e.get("kind") == "telemetry_lost")["source"] == "joints 3-4"
+    holding = next(e for e in ev if e["event"] == "holding")
+    last = [s for s in _steps(tmp_path / "ep") if "label" not in s][-1]
+    assert holding["reason"].startswith("no fresh reading") and np.allclose(holding["pose"], last["cmd"], atol=6e-3)
+
+
+def test_piper_pair_stamps_on_piper_sdk():
+    """The per-pair stamps against the real SDK (piper_sdk 0.6.2; runs where piper_sdk and python-can are installed):
+    joint feedback frames go through C_PiperInterface_V2.ParseCANFrame, without a CAN bus."""
+    import struct
+
+    can = pytest.importorskip("can")
+    piper_sdk = pytest.importorskip("piper_sdk")
+    from robouse.real.drivers.piper import PiperDriver
+    from robouse.real.robots import PIPER
+
+    sdk = piper_sdk.C_PiperInterface_V2("robouse-test", can_auto_init=False)
+    drv = PiperDriver(PIPER, {}, sdk_factory=lambda cfg: sdk)
+    drv.sdk = sdk
+    drv._stamp_pairs()
+
+    def frame(can_id: int, a: int, b: int) -> None:  # two joints in 0.001 deg, as the arm sends them
+        sdk.ParseCANFrame(can.Message(arbitration_id=can_id, data=struct.pack(">ii", a, b), timestamp=time.time()))
+
+    for can_id in (0x2A5, 0x2A6, 0x2A7):  # joints 1-2, 3-4, 5-6
+        frame(can_id, 1000, 2000)
+    assert all(t is not None for t in drv._pairs.values())
+    time.sleep(0.2)
+    frame(0x2A5, 3000, 4000)
+    frame(0x2A7, 3000, 4000)
+    frame(0x2A6, 4_000_000, 0)  # an abnormal frame, dropped by the SDK: it does not refresh joints 3-4
+    r = drv.read()
+    assert r.stamp_of == "joints 3-4" and time.monotonic() - r.stamp >= 0.2
+    assert time.time() - sdk.GetArmJointMsgs().time_stamp < 0.1  # the SDK's own stamp: the newest pair
+    assert r.q[:6].tolist() == [3.0, 4.0, 1.0, 2.0, 3.0, 4.0]  # joints 3-4 kept their last values
 
 
 def test_rosbridge_driver_against_mock_server():

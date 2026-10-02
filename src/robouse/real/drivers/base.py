@@ -22,6 +22,7 @@ class Reading:
     images: dict = field(default_factory=dict)  # camera name -> HxWx3 uint8
     # time.monotonic() when the oldest joint value in q was measured; None when the driver cannot tell
     stamp: float | None = None
+    stamp_of: str | None = None  # which source that oldest value came from, when the driver dates several (Piper)
 
 
 class ArmDriver:

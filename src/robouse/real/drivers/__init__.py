@@ -40,7 +40,9 @@ def make_driver(prof: Profile, cfg: dict) -> ArmDriver:
         if prof.name == "piper":
             from .piper import PiperDriver
 
-            return PiperDriver(prof, cfg, sdk_factory=lambda c: ReplayPiperSDK(fx, prof), mock=True)
+            return PiperDriver(
+                prof, cfg, sdk_factory=lambda c: ReplayPiperSDK(fx, prof, fault=cfg.get("mock_fault")), mock=True
+            )
         from .lerobot_arm import LeRobotArmDriver
 
         cams = list(cfg.get("cameras") or fx.cameras)
