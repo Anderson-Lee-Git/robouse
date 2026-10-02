@@ -15,6 +15,10 @@ Harnesses
   (claude-code-glm, codex-glm and mini-swe-agent-glm: hidden aliases for the three above with a baseten/ model)
   dimcode                Dimensional's dimcode (built on Pi); model: a provider-prefixed id, always through the
                          gateway (default baseten/zai-org/GLM-5.3); see dimcode.py
+  show-harness           NUS Show Lab's Show-Harness: a VLM picks one parameter-free action unit at a time
+                         (MV_FWD, GRASP, ...) and an interpreter grounds it; model: a provider-prefixed id through
+                         the gateway (zero-shot mode, default baseten/zai-org/GLM-5.3) or a self-hosted fine-tuned
+                         model at $ROBOUSE_SHOW_HARNESS_URL; see show_harness/
   molmoact2              MolmoAct2 VLA policy: molmoact2/client.py drives `robo` with action chunks from a policy
                          server at $ROBOUSE_MOLMOACT2_URL; model e.g. allenai/MolmoAct2-LIBERO-LeRobot
   vla                    any served VLA (vla/client.py): --model is a preset from vla/presets.json; server at
@@ -266,6 +270,12 @@ def _dimcode(model, prompt, workspace, task, env) -> Launch:
     return dimcode.build(model, prompt, workspace, task, env)
 
 
+def _show_harness(model, prompt, workspace, task, env) -> Launch:
+    from . import show_harness
+
+    return show_harness.build(model, prompt, workspace, task, env)
+
+
 HARNESSES: dict[str, Builder] = {
     "oracle": _oracle,
     "noop": _noop,
@@ -275,6 +285,7 @@ HARNESSES: dict[str, Builder] = {
     "molmoact2": _molmoact2,
     "vla": _vla,
     "dimcode": _dimcode,
+    "show-harness": _show_harness,
 }
 
 
