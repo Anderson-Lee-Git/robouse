@@ -469,10 +469,47 @@ STATUS_LONG = {"partial": "Stopped before it finished, not scored", "infra": "In
 NOIMG_WHY = "The model received no camera images in these runs; vision tasks were attempted from text observations only."
 
 
-def noimg_tag(title: str = NOIMG_WHY, spaced: bool = True) -> str:
+def noimg_tag(title: str = NOIMG_WHY, spaced: bool = True, hm: int | None = None) -> str:
     """The quiet "no image input" tag. spaced: a space before it, widened (.nis in runs.css), that collapses where the
-    tag starts a line, so a wrapped tag shares the left edge of the lines around it (a margin would indent it)."""
+    tag starts a line, so a wrapped tag shares the left edge of the lines around it (a margin would indent it). A pair
+    whose camera images were sent and rejected (hm in REJECTED) says that instead of "attempted from text"."""
+    if hm is not None and hm in REJECTED:
+        title = REJECTED[hm]
     return ('<span class="nis"> </span>' if spaced else "") + f'<span class="noimg" title="{esc(title)}">no image input</span>'
+
+
+# an infrastructure failure's cause as a clause (the hub's leaderboard footnote reads these notes from d/trials.json)
+INFRA_CLAUSE = {"server_start": "the episode server did not start", "image_rejected": "the model's API rejected the camera image the harness attached",
+                "usage_limit": "the harness hit its usage limit", "rate_limit": "rate limits ended the agent's session",
+                "connection": "the harness lost its connection to the API", "auth": "the API rejected the harness's credentials",
+                "timeout": "the agent timed out before it moved", "episode": "the episode server stopped early", "other": "a harness or API error"}
+REJECTED: dict[int, str] = {}  # pair index -> its note, for a pair whose camera images its model's API rejected (rejected_notes)
+
+
+def rejected_notes(trials: list[dict]) -> dict[int, str]:
+    """The one sentence, with exact counts, for a pair whose model's API rejected the camera images its harness attached
+    (infra cause image_rejected) and whose counted trials saw no images: its vision trials are infrastructure failures,
+    not attempts from text. Counted as the hub's leaderboard counts a pair (each hub task once, its first counted
+    trial), so the leaderboard, /runs/, run pages and trial pages say the same; the hub reads it from d/trials.json."""
+    out = {}
+    for i, p in enumerate(HM):
+        mine = [t for t in trials if t["hm"] == i and t["counted"] and (not HUB or t["task"] in HUB)]
+        if not mine or not all(t.get("image_input") is False for t in mine):
+            continue
+        first = {}
+        for t in mine:
+            first.setdefault(t["task"], t)
+        infra = [t for t in first.values() if status(t) == "infra"]
+        causes = Counter(((t.get("infra_cause") or {}).get("key") or "other") for t in mine if status(t) == "infra")
+        rej = causes.pop("image_rejected", 0)
+        if not rej:
+            continue
+        rest = sum(causes.values())
+        others = ("" if not rest else f"; the other {rest} because {INFRA_CLAUSE.get(next(iter(causes)), INFRA_CLAUSE['other'])}" if len(causes) == 1
+                  else f"; the other {rest}: " + ", ".join(f"{n} because {INFRA_CLAUSE.get(k, INFRA_CLAUSE['other'])}" for k, n in causes.most_common()))
+        out[i] = (f"{p['label']}: the model's API rejected the camera images the harness attached, so its vision trials failed as "
+                  f"infrastructure failures and are not scored ({rej} of its {len(infra)}{others}). Its scored trials saw no images.")
+    return out
 
 
 def spend(x) -> str:
@@ -628,7 +665,8 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
         "id": t["trial"], "task": t["task"], "title": t["title"], "suite": t["suite"], "hm": t["hm"], "pair": HM[t["hm"]]["key"], "label": plab(t["hm"]), "model_label": HM[t["hm"]].get("model_label") or "",
         "harness_label": HM[t["hm"]].get("harness_label") or "", "kind": HM[t["hm"]].get("kind") or "agent", "job": t["job"], "seed": t.get("seed"),
         "status": status(t), "counted": t["counted"], "others": t["others"], "reward": t["reward"], "outcome": t["outcome"],
-        "image_input": t.get("image_input"), "spend_cap_usd": t["cfg"].get("spend_cap_usd"),
+        "image_input": t.get("image_input"), "noimg_note": REJECTED.get(t["hm"]) if t.get("image_input") is False else None,
+        "spend_cap_usd": t["cfg"].get("spend_cap_usd"),
         "budget_stop": t.get("budget"), "earlier_condition": bool(t.get("earlier_condition")),
         "steps_used": t["steps_used"], "max_steps": t["max_steps"], "requests": ep.get("requests") if ep.get("requests") is not None else t["checks"].get("robo_requests"),
         "motion": t["checks"].get("motion_requests"), "robo_errors": t["checks"].get("robo_errors"),
@@ -1052,7 +1090,7 @@ def phtml(i: int, noimg: bool | None = None) -> str:
     """A pair, model first, with the "no image input" tag when its model got no images (a column-wide fact, the pair's
     `_noimg`, unless the caller says otherwise for its own set of trials, e.g. a run)."""
     p = HM[i]
-    tag = noimg_tag() if (p.get("_noimg") if noimg is None else noimg) else ""
+    tag = noimg_tag(hm=i) if (p.get("_noimg") if noimg is None else noimg) else ""
     return (f'<span class="pm">{named(model_mark(p), p.get("model_label") or p["label"])}</span> <span class="ph">· {named(harness_mark(p), p.get("harness_label") or p["harness"])}</span>'
             + tag)
 
@@ -1330,7 +1368,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 {trial_crumbs(t)}
 <section class="page-head head trial">
   <h1>{esc(t['title'])}</h1>
-  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag(spaced=False) if noimg else ""}{counted}{task_link(t)}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
+  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag(spaced=False, hm=t["hm"]) if noimg else ""}{counted}{task_link(t)}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
   {f'<p class="why">{esc(why or "The harness or the model API ended the trial before the agent acted.")}</p>' if never_ran else f'<dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>'}
 </section>
 """
@@ -1386,7 +1424,7 @@ def build_runs(runs: dict) -> str:
         # phones: the dataset under the pair, in the same cell (the Dataset column drops; a name never breaks at a hyphen)
         under = f'<span class="rds">{nb(dsn)}{f" <span class={chr(34)}rdo{chr(34)}>{esc(org)}</span>" if org else ""}{tag}</span>'
         rows.append(f'<tr {pair_attrs(i)} data-dataset="{esc(r["ds"])}" data-q="{esc((plab(i) + " " + r["ds"] + (" zero-shot probe" if r["probe"] else "")).lower())}">'
-                    f'<th scope="row" data-v="{esc(plab(i).lower())}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, False)}</a>{noimg_tag() if r["noimg"] else ""}{under}</th>'
+                    f'<th scope="row" data-v="{esc(plab(i).lower())}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, False)}</a>{noimg_tag(hm=i) if r["noimg"] else ""}{under}</th>'
                     f'<td class="sus" data-v="{esc(r["ds"])}">{ds_cell(r["ds"])}{tag}</td>'
                     f'<td class="muted num" data-v="{esc(r["start"])}">{esc(fmt_date(r["start"]))}{state}</td>'
                     f'<td class="n num" data-v="{r["scored"]}">{r["scored"]}</td>'
@@ -1454,7 +1492,7 @@ def build_run(r: dict) -> str:
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a></nav>
 <section class="page-head head">
   <h1 class="rh1">{run_title_html(r, parts=True)}</h1>
-  <p class="meta">{tparts(run_meta(r))}{noimg_tag() if r["noimg"] else ""}</p>
+  <p class="meta">{tparts(run_meta(r))}{noimg_tag(hm=r["hm"]) if r["noimg"] else ""}</p>{f'{chr(10)}  <p class="rnote">{esc(REJECTED[r["hm"]])}</p>' if r["noimg"] and r["hm"] in REJECTED else ""}
   {f'<p class="prov">{esc(HM[r["hm"]]["provenance"])}</p>' if HM[r["hm"]].get("provenance") else ""}
 </section>
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
@@ -1675,6 +1713,7 @@ def main(argv: list[str] | None = None) -> int:
         mine = [t for ts in chosen.values() for t in ts if t["hm"] == i]
         p["_noimg"] = bool(mine) and all(t.get("image_input") is False for t in mine)
     HUB.update(hub_tasks(site))
+    REJECTED.update(rejected_notes(trials))
     RUN_OF.update(group_runs(trials, jobs))
     for t in trials:
         BY_TASK[t["task"]].append(t)
@@ -1776,6 +1815,8 @@ def main(argv: list[str] | None = None) -> int:
     index = {"hm": [[p["label"], p["key"]] for p in HM], "suites": {s: SUITE_TITLE.get(s, s) for s in suites},
              "trials": {t["trial"]: [t["task"], t["hm"], status(t), int(t["counted"])] for t in trials},
              "titles": {k: v["title"] for k, v in tinfo.items()}, "urls": {k: HUB[k][0] for k in tinfo if k in HUB},
+             # a pair's note where its camera images were rejected (rejected_notes): the leaderboard's footnote says the same
+             "notes": {HM[i]["key"]: n for i, n in sorted(REJECTED.items())},
              # each run as [pair key, dataset, slug, zero-shot probe]: the leaderboard's heatmap cell opens the run page
              "runs": sorted([[HM[r["hm"]]["key"], r["ds"], r["slug"], bool(r["probe"])] for r in RUN_OF.values()])}
     (out / "d" / "trials.json").write_text(json.dumps(redact_all(index), ensure_ascii=False, separators=(",", ":")))

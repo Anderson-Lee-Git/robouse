@@ -666,3 +666,5 @@ table.list.rt td.oc{white-space:nowrap}  /* an outcome never orphans its last wo
 .compare[aria-busy="true"]{min-height:100vh}
 .cmpgrid .cbody[aria-busy="true"]{min-height:760px}
 .cmpgrid .vbox{background:var(--panel)}
+/* a run page's note under its facts: why this pair's vision trials are not scored (its camera images were rejected) */
+.head .rnote{margin:var(--sp-8) 0 0;max-width:720px;font:400 var(--fs-small)/1.5 var(--sans);color:var(--ink2)}
