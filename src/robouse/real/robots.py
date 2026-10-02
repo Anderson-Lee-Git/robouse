@@ -113,22 +113,25 @@ class Profile:
         return Chain(load_chain_file(self.chain_file), self.joint_map, self.tool, self.points)
 
 
-# MakerMods Metal: vendor soft limits (LeRobot MetalFollowerConfigBase.joint_limits) shaved by 1 deg; gripper capped at
-# 115 deg (widest documented jaw opening), 0 = closed. Tool point: 0.122 m along Link6's x axis (fingertip measured on
-# the bench on 2026-09-05; table at z = -0.0088 m in the base frame from the stall touchdown calibration).
+# MakerMods Metal: vendor soft limits (LeRobot MetalFollowerConfigBase.joint_limits) shaved by 1 deg, and kept at least
+# 2.2 deg inside the mechanical stops measured on the bench on 2026-09-05 (~/benchflow/robot/recordings): elbow_flex
+# 174 (the forearm stopped at 176.37 against its stop while commanded to 180, 13:16 session), shoulder_lift -2.5 (with
+# torque off the parked arm reads up to +0.09) and gripper 2 (the closed jaws read -0.25). Gripper capped at 115 deg
+# (the vendor stroke table's widest jaw opening), 0 = closed. Tool point: 0.122 m along Link6's x axis (fingertip
+# measured on the bench; table at z = -0.0088 m in the base frame from the stall touchdown calibration).
 METAL = Profile(
     name="metal",
     display="MakerMods Metal arm",
     joints=["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_yaw", "wrist_roll", "gripper"],
-    low=[-159.0, -179.0, 1.0, -122.0, -84.0, -144.0, 0.0],
-    high=[159.0, -1.0, 179.0, 80.0, 84.0, 144.0, 115.0],
+    low=[-159.0, -179.0, 1.0, -122.0, -84.0, -144.0, 2.0],
+    high=[159.0, -2.5, 174.0, 80.0, 84.0, 144.0, 115.0],
     units=["deg"] * 7,
     gripper=6,
     gripper_open=60.0,
     gripper_closed=4.0,
     control_hz=10.0,
     home=[0.0, -110.0, 84.0, -60.0, 0.0, 0.0, 4.0],
-    park=[0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 4.0],
+    park=[0.0, -2.5, 1.0, 0.0, 0.0, 0.0, 4.0],
     chain_file="metal_chain.json",
     joint_map={i: (f"joint{i + 1}", D2R, 0.0) for i in range(6)},
     tool=("link6", [0.122, 0.0, 0.0]),
@@ -157,13 +160,17 @@ METAL = Profile(
 )
 
 # SO-101 follower. LeRobot DEGREES mode puts 0 at the middle of each calibrated range; the so101_new_calib URDF uses
-# the same zero. Gripper in LeRobot's RANGE_0_100 (0 = closed). Limits: URDF limits shaved by 2 deg.
+# the same zero. Gripper in LeRobot's RANGE_0_100 (0 = closed). Limits: URDF limits shaved by 2 deg; checked against the
+# ranges of motion recorded by calibrating this bench's two followers on 2026-09-05 (lerobot calibration files
+# so_follower/benchmark_left|right: the stops sit at +-121 pan, +-106 shoulder_lift, +-97.3 elbow_flex, +-104
+# wrist_flex, +-169 wrist_roll), so every arm joint stays at least 2.5 deg inside them. The gripper's 0 and 100 are the
+# calibrated stops themselves: 2 and 98 keep it about 2.7 deg inside.
 SO101 = Profile(
     name="so101",
     display="SO-101 follower arm",
     joints=["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"],
-    low=[-108.0, -98.0, -94.8, -93.0, -155.2, 0.0],
-    high=[108.0, 98.0, 94.8, 93.0, 160.8, 100.0],
+    low=[-108.0, -98.0, -94.8, -93.0, -155.2, 2.0],
+    high=[108.0, 98.0, 94.8, 93.0, 160.8, 98.0],
     units=["deg"] * 5 + ["0-100"],
     gripper=5,
     gripper_open=60.0,

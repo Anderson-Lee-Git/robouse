@@ -78,6 +78,29 @@ def test_hil_check_counts_clamps(monkeypatch):
     assert r["clamp_events"] > 0 and r["vetoed_steps"] == 0
 
 
+def test_soft_limits_sit_inside_the_measured_stops(monkeypatch):
+    """Mechanical stops measured on the bench on 2026-09-05 (~/benchflow/robot): the Metal's elbow stopped at 176.37 deg
+    (13:16 session, in the metal-hanoi-131602 fixture); with torque off its parked shoulder_lift rests at up to +0.09
+    and its closed gripper at -0.25 (connect poses of the recorded sessions); the two SO-101 followers' calibrated
+    ranges of motion (lerobot calibration so_follower/benchmark_left|right) end at +-121.1 pan, +-105.6 shoulder_lift,
+    +-97.3 elbow_flex, +-104.0 wrist_flex, +-168.7 wrist_roll, and the gripper's 0 and 100. Every soft limit stays at
+    least 2.2 deg (2 % of the gripper's range) inside them."""
+    from robouse.real.replay import Fixture
+    from robouse.real.robots import METAL, SO101, SO101_BI
+
+    monkeypatch.setenv("ROBOUSE_HIL_DIR", str(HIL))
+    elbow_stop = max(s["pos"][2] for s in Fixture("metal-hanoi-131602").steps)
+    assert elbow_stop == pytest.approx(176.37, abs=0.01)
+    assert METAL.high[2] <= elbow_stop - 2.2 and METAL.high[1] <= 0.09 - 2.2 and METAL.low[6] >= -0.25 + 2.2
+    so101_stops = [121.1, 105.6, 97.3, 104.0, 168.7]
+    for i, stop in enumerate(so101_stops):
+        assert -stop + 2.2 <= SO101.low[i] and SO101.high[i] <= stop - 2.2, SO101.joints[i]
+    assert SO101.low[5] >= 2.0 and SO101.high[5] <= 98.0
+    assert SO101_BI.low == SO101.low * 2 and SO101_BI.high == SO101.high * 2
+    for p in (METAL, SO101):  # the rest poses stay inside the new limits
+        assert all(lo <= v <= hi for lo, v, hi in zip(p.low, p.park, p.high, strict=True)), p.name
+
+
 def test_playback_serves_the_recording(tmp_path):
     """Playback mode: each control step returns the next step recorded on the bench (joints and torques), whatever is
     commanded. Tracking mode reports the recorded temperatures but no torque: those belong to the recorded motion."""
@@ -443,8 +466,9 @@ def test_contact_watch_rules():
 
 def test_contact_watch_quiet_on_recorded_motion_then_stops_at_the_elbow_stop(tmp_path, monkeypatch):
     """Verified contact (2026-09-05 13:16, fixture metal-hanoi-131602 from the recorder's log): 91 s of normal motion
-    replay without a contact; then the elbow folds against its mechanical stop, away from the table: a contact outside
-    a watched move stops the episode, and the hold at the measured pose leaves no push against the stop."""
+    replay without a contact; then the elbow straightens against its mechanical stop, away from the table: a contact
+    outside a watched move stops the episode, and the hold at the measured pose leaves no push against the stop. The
+    guard no longer commands the elbow past 174 deg (Sep 5 commanded 180)."""
     ep, fx = _playback(tmp_path, monkeypatch, "metal-hanoi-131602")
     hits = _replay(ep, fx)
     assert len(hits) == 1
@@ -458,7 +482,8 @@ def test_contact_watch_quiet_on_recorded_motion_then_stops_at_the_elbow_stop(tmp
     assert contact["watched"] is False and contact["change"]["elbow_flex"] > 5.0
     stop = next(e for e in ev if e["event"] == "stop" and e.get("cause") == "contact")
     steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
-    assert steps[-1]["cmd"][2] > 178.0  # the command pushed the elbow 2+ deg into the stop
+    assert max(s["cmd"][2] for s in steps) <= 174.0  # the elbow command stays under the soft limit ...
+    assert max(s["pos"][2] for s in steps) > 176.0  # ... while the recorded arm sat at its stop
     assert stop["hold"][2] == pytest.approx(176.36, abs=0.05)  # held where the elbow is
 
 
