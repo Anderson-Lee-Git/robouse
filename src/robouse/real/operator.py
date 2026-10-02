@@ -10,11 +10,14 @@ the operator for the verdict. Channels (task `real.operator`, or ROBOUSE_OPERATO
           hardware-in-the-loop mock (never with a live robot)
 
 Gates: `physical_estop` (a power cut-off is within the operator's reach; asked before arming every live robot, and no
-setting skips it), `arm` (before torque is enabled), `reset` (the scene is set up for this episode), `release` (before
-torque is released at the end). A gate that is refused or times out stops the episode (`safety_stop`) before anything
-moves. Between trials of a batch, `inspect` asks the operator to look at the robot after a safety stop before the next
-trial (runner/jobs.py). Verdicts: yes / no / partial / skip, plus a note; skip and timeouts score 0 and are recorded as
-unjudged.
+setting skips it), `arm` (before torque is enabled) and `reset` (the scene is set up for this episode). A gate that is
+refused or times out stops the episode (`safety_stop`) before anything moves. Between trials of a batch, `inspect` asks
+the operator to look at the robot after a safety stop before the next trial (runner/jobs.py). Verdicts: yes / no /
+partial / skip, plus a note; skip and timeouts score 0 and are recorded as unjudged.
+
+Notices need no answer: after a stop and at the end of the episode the operator is told whether the arm was parked and
+released or is holding at its present position, and why (the terminal, or `robouse operator status` on the file
+channel; always in the session log).
 
 Live feedback: `robouse operator say "text"` appends a remark that the next `robo observe` returns under
 `operator_notes` (typed, feedback-only: it cannot end the episode or change the verdict).
@@ -34,7 +37,7 @@ from .. import config
 from .safety import OPERATOR_DIR, SafetyStop
 
 VERDICTS = ("yes", "no", "partial", "skip")
-GATES = ("physical_estop", "arm", "reset", "release", "inspect")  # the scripted operator answers these yes by default
+GATES = ("physical_estop", "arm", "reset", "inspect")  # the scripted operator answers these yes by default
 
 
 class Operator:
@@ -112,6 +115,21 @@ class Operator:
         ans, note = self._ask(key, prompt, ("yes", "no"))
         self.log("operator_gate", gate=key, answer=ans or "none", note=note, channel=self.channel)
         return ans == "yes", ans or "none", note
+
+    def notify(self, text: str) -> None:
+        """Tell the operator something that needs no answer (how the arm was left after a stop): on the operator's
+        terminal (tty), in the operator folder for `robouse operator status` (file), and in the session log (always)."""
+        self.log("operator_notice", text=text, channel=self.channel)
+        if self.channel == "tty":
+            try:
+                with open("/dev/tty", "w") as tty:
+                    tty.write(f"\n[robouse operator] {text}\n")
+            except OSError:
+                pass
+        elif self.channel == "file":
+            OPERATOR_DIR.mkdir(parents=True, exist_ok=True)
+            with open(OPERATOR_DIR / "notices.jsonl", "a") as fh:
+                fh.write(json.dumps({"at": time.strftime("%Y-%m-%d %H:%M:%S"), "text": text}) + "\n")
 
     def gate(self, key: str, prompt: str) -> None:
         ok, ans, note = self.confirm(key, prompt)

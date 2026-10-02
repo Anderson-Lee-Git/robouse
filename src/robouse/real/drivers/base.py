@@ -29,6 +29,7 @@ class ArmDriver:
     mock: bool = False
     cameras: list[str] = []
     description: str = ""
+    releases_torque: bool = True  # disconnect(release_torque=True) turns the motors off
 
     def connect(self) -> None:
         """Open the connection; after this the arm must hold its measured pose (never go limp or jump)."""

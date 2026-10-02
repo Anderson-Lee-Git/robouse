@@ -336,7 +336,11 @@ def test_watchdog_one_stall_is_logged_and_the_episode_goes_on(tmp_path):
     assert not any(e["event"] == "stop" for e in ev)
 
 
-def test_watchdog_hard_limit_stops_and_holds_the_last_command(tmp_path):
+def test_watchdog_hard_limit_stops_and_secures_the_arm(tmp_path):
+    """A stalled step stops the episode; every joint is then retargeted to its measured position, and the arm parks
+    slowly at its rest pose and is released there (the tracking mock follows the parking commands)."""
+    from robouse.real.robots import METAL
+
     ep = _episode(
         "real-metal-reach",
         tmp_path,
@@ -348,12 +352,18 @@ def test_watchdog_hard_limit_stops_and_holds_the_last_command(tmp_path):
     r = ep.handle({"op": "act", "action": q})
     assert not r["ok"] and "watchdog: a control step took" in r["error"]
     assert ep.finished and ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "watchdog"
+    assert ep.result["session"]["secured"] == "parked at the rest pose, torque released"
     ep.close()
     ev = _events(tmp_path / "ep")
     steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
+    stalled = [s for s in steps if s.get("label") != "park"][-1]
     assert any(e["event"] == "stop" and e.get("kind") == "watchdog" and e["dt"] > 0.3 for e in ev)
-    stop = next(e for e in ev if e["event"] == "stop" and e.get("cause") == "watchdog")
-    assert np.allclose(stop["hold"], steps[-1]["cmd"], atol=0.006)  # the hold is the last command
+    retarget = next(e for e in ev if e["event"] == "retarget")
+    assert retarget["cause"] == "safety stop (watchdog)" and np.allclose(retarget["pose"], stalled["pos"], atol=0.006)
+    names = [e["event"] for e in ev]
+    assert names.index("retarget") < names.index("park") < names.index("torque_released") < names.index("close")
+    assert np.allclose([s for s in steps if s.get("label") == "park"][-1]["pos"][:6], METAL.park[:6], atol=2.0)
+    assert next(e for e in ev if e["event"] == "close")["release_torque"] is True
     assert ep.result["safety_events"]
 
 
@@ -389,9 +399,10 @@ def test_stale_telemetry_stops_instead_of_going_on(tmp_path):
     ev = _events(tmp_path / "ep")
     steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
     assert steps[-1]["pos"] == steps[-2]["pos"]  # the frozen reading
-    stop = next(e for e in ev if e["event"] == "stop" and e.get("cause") == "telemetry_lost")
-    assert np.allclose(stop["hold"], steps[-1]["cmd"], atol=0.006)  # the last command ...
-    assert not np.allclose(stop["hold"], steps[-1]["pos"], atol=0.5)  # ... not the stale reading
+    holding = next(e for e in ev if e["event"] == "holding")  # the present position is unknown: no retarget, no parking
+    assert "no fresh reading" in holding["reason"] and not any(e["event"] in ("retarget", "park") for e in ev)
+    assert np.allclose(holding["pose"], steps[-1]["cmd"], atol=0.006)  # the last command ...
+    assert not np.allclose(holding["pose"], steps[-1]["pos"], atol=0.5)  # ... not the stale reading
     assert next(e for e in ev if e.get("kind") == "telemetry_lost")["age_s"] > 0.3
 
 
@@ -467,8 +478,8 @@ def test_contact_watch_rules():
 def test_contact_watch_quiet_on_recorded_motion_then_stops_at_the_elbow_stop(tmp_path, monkeypatch):
     """Verified contact (2026-09-05 13:16, fixture metal-hanoi-131602 from the recorder's log): 91 s of normal motion
     replay without a contact; then the elbow straightens against its mechanical stop, away from the table: a contact
-    outside a watched move stops the episode, and the hold at the measured pose leaves no push against the stop. The
-    guard no longer commands the elbow past 174 deg (Sep 5 commanded 180)."""
+    outside a watched move stops the episode, and every joint is retargeted to where it is, so nothing pushes against
+    the stop. The guard itself no longer commands the elbow past 174 deg (Sep 5 commanded 180)."""
     ep, fx = _playback(tmp_path, monkeypatch, "metal-hanoi-131602")
     hits = _replay(ep, fx)
     assert len(hits) == 1
@@ -478,13 +489,14 @@ def test_contact_watch_quiet_on_recorded_motion_then_stops_at_the_elbow_stop(tmp
     assert ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "contact"
     ep.close()
     ev = _events(tmp_path / "ep")
-    (contact,) = [e for e in ev if e["event"] == "contact"]
+    contact = next(e for e in ev if e["event"] == "contact")
     assert contact["watched"] is False and contact["change"]["elbow_flex"] > 5.0
-    stop = next(e for e in ev if e["event"] == "stop" and e.get("cause") == "contact")
     steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
-    assert max(s["cmd"][2] for s in steps) <= 174.0  # the elbow command stays under the soft limit ...
-    assert max(s["pos"][2] for s in steps) > 176.0  # ... while the recorded arm sat at its stop
-    assert stop["hold"][2] == pytest.approx(176.36, abs=0.05)  # held where the elbow is
+    episode = [s for s in steps if s.get("label") != "park"]
+    assert max(s["cmd"][2] for s in episode) <= 174.0  # the elbow command stays under the soft limit ...
+    assert max(s["pos"][2] for s in episode) > 176.0  # ... while the recorded arm sat at its stop
+    retarget = next(e for e in ev if e["event"] == "retarget")
+    assert retarget["pose"][2] == pytest.approx(176.36, abs=0.05)  # retargeted to where the elbow is
 
 
 def test_contact_stall_on_the_recorded_table_touchdown(tmp_path, monkeypatch):
@@ -531,6 +543,124 @@ def test_contact_stops_act_repeat_and_skill(tmp_path, monkeypatch):
     assert r["ok"] and r["result"]["stopped"] == "by the safety layer" and r["result"]["contact"]["count"] == 2
     assert r["result"]["executed_steps"] == 1 and not ep.finished
     ep.close()
+
+
+# ---- after a stop, at the end and when interrupted: no push, then park and release, or hold ------------------------------
+
+
+def test_stop_and_close_leave_no_push_on_the_elbow_replay(tmp_path, monkeypatch):
+    """The 13:16 replay: after the contact stop, and again after close(), the last command sent to the motors is the
+    latest measured pose, so nothing pushes against the stop. The replayed arm does not follow commands, so it never
+    reaches its rest pose: it is held, and the session log and the operator are told why."""
+    ep, fx = _playback(tmp_path, monkeypatch, "metal-hanoi-131602")
+    robot = ep.backend.driver.robot
+    _replay(ep, fx)
+    assert ep.outcome == "safety_stop" and ep.result["session"]["secured"].startswith("holding at the present position")
+    assert np.allclose(robot.sent[-1], ep.backend.q, atol=2e-3)  # after the stop
+    ep.close()
+    assert np.allclose(robot.sent[-1], ep.backend.q, atol=2e-3)  # after close()
+    ev = _events(tmp_path / "ep")
+    holds = [e for e in ev if e["event"] == "holding"]
+    assert [h["cause"] for h in holds] == ["safety stop (contact)", "end of episode"]
+    assert all("rest pose" in h["reason"] for h in holds)
+    notices = [e["text"] for e in ev if e["event"] == "operator_notice"]
+    assert len(notices) == 2 and all("holding at its present position with torque on" in n for n in notices)
+    assert next(e for e in ev if e["event"] == "close")["release_torque"] is False
+
+
+def test_end_of_episode_parks_and_releases_torque_at_rest(tmp_path):
+    from robouse.real.robots import METAL
+
+    ep = _episode("real-metal-reach", tmp_path)
+    robot = ep.backend.driver.robot
+    assert ep.handle({"op": "skill", "name": "move_to", "args": ["0.30", "-0.10", "0.08"]})["ok"]
+    ep.finish("done", "")
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    names = [e["event"] for e in ev]
+    assert names.index("retarget") < names.index("park") < names.index("torque_released") < names.index("close")
+    assert next(e for e in ev if e["event"] == "retarget")["cause"] == "end of episode"
+    assert next(e for e in ev if e["event"] == "close")["release_torque"] is True and not robot.connected
+    parked = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()][-1]
+    assert parked["label"] == "park" and np.allclose(parked["pos"][:6], METAL.park[:6], atol=2.0)  # at rest there
+
+
+def test_estop_stop_holds_at_the_present_position_and_says_why(tmp_path):
+    from robouse.real import safety
+
+    ep = _episode("real-metal-reach", tmp_path)
+    robot = ep.backend.driver.robot
+    assert ep.handle({"op": "act", "action": list(ep.backend.q), "repeat": 2})["ok"]
+    safety.set_estop("test")
+    assert not ep.handle({"op": "act", "action": list(ep.backend.q)})["ok"]
+    assert ep.outcome == "safety_stop" and np.allclose(robot.sent[-1], ep.backend.q, atol=2e-3)
+    ep.close()
+    safety.clear_estop()
+    ev = _events(tmp_path / "ep")
+    holds = [e for e in ev if e["event"] == "holding"]
+    assert len(holds) == 2 and all(h["reason"].startswith("the e-stop is latched") for h in holds)
+    assert not any(e["event"] in ("park", "torque_released") for e in ev)
+    assert np.allclose(robot.sent[-1], ep.backend.q, atol=2e-3)
+
+
+def test_operator_notices_reach_the_file_channel():
+    from robouse.real import operator
+    from robouse.real.operator import Operator
+
+    logged: list = []
+    Operator("file", mock=False, log=lambda kind, **kw: logged.append((kind, kw))).notify("the arm is holding")
+    notice = json.loads((operator.OPERATOR_DIR / "notices.jsonl").read_text().splitlines()[-1])
+    assert notice["text"] == "the arm is holding"
+    assert logged == [("operator_notice", {"text": "the arm is holding", "channel": "file"})]
+
+
+def test_interruption_secures_the_arm(tmp_path):
+    """A terminate request to a real-robot episode server (a run interrupted) ends the episode and parks the arm before
+    the server exits."""
+    import signal
+    import subprocess
+    import sys
+
+    task = _real_task_root(tmp_path) / "real-metal-reach"
+    run_dir, ready = tmp_path / "ep", tmp_path / "ready"
+    cmd = [sys.executable, "-m", "robouse.cli", "serve", "--task", str(task), "--run-dir", str(run_dir)]
+    proc = subprocess.Popen(cmd + ["--socket", str(tmp_path / "s.sock"), "--ready-file", str(ready)])
+    for _ in range(600):
+        if ready.exists():
+            break
+        time.sleep(0.1)
+    assert ready.exists()
+    proc.send_signal(signal.SIGTERM)
+    proc.wait(timeout=60)
+    ev = _events(run_dir)
+    assert next(e for e in ev if e["event"] == "retarget")["cause"] == "interruption"
+    assert any(e["event"] == "torque_released" for e in ev)
+    assert next(e for e in ev if e["event"] == "close")["release_torque"] is True
+    assert json.loads((run_dir / "result.json").read_text())["outcome"] == "agent_exited"
+
+
+def test_ros_rig_without_a_rest_pose_holds(tmp_path):
+    """A ROS arm parks only at a rest pose its rig file names (an all-zero pose may be an outstretched arm)."""
+    ep = _episode("real-ros-joint-pose", tmp_path, park=None)
+    assert not any(s.startswith("park") for s in ep.handle({"op": "info"})["result"]["skills"])
+    ep.close()
+    holding = next(e for e in _events(tmp_path / "ep") if e["event"] == "holding")
+    assert holding["reason"] == "the robot profile has no rest pose"
+
+
+def test_ros_arm_parks_and_keeps_holding(tmp_path):
+    """The ROS bridge cannot turn the motors off: at the end the arm parks at the rig's rest pose and holds there, and
+    the session log and the operator are told so."""
+    ep = _episode("real-ros-joint-pose", tmp_path)
+    assert ep.handle({"op": "skill", "name": "move_joints", "args": ["30", "-70", "60", "-80", "-90", "20"]})["ok"]
+    ep.finish("done", "")
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    names = [e["event"] for e in ev]
+    assert names.index("retarget") < names.index("park") < names.index("parked") < names.index("close")
+    assert "torque_released" not in names and ev[names.index("close")]["release_torque"] is False
+    assert ep.backend.secured == "parked at the rest pose, holding there (the driver cannot release torque)"
+    assert any("holding there with torque on" in e["text"] for e in ev if e["event"] == "operator_notice")
 
 
 # ---- gap 3: a safety stop halts a batch on a real robot -----------------------------------------------------------------
@@ -655,6 +785,7 @@ def _live_episode(tmp_path, monkeypatch, answers: dict, **real_overrides):
             operator="file",
             port="test",
             operator_timeout_s=10,
+            pace=False,  # the replay robot needs no real-time pacing (parking at the end is 20 s paced)
             **real_overrides,
         )
     finally:

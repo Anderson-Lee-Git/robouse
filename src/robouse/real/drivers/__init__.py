@@ -22,7 +22,8 @@ def make_driver(prof: Profile, cfg: dict) -> ArmDriver:
             if not isinstance(cfg.get("cameras"), dict)
             else cfg["cameras"]
         )
-        srv = MockRosbridge(prof.joints, [v * scale for v in prof.park], cameras=list(topics.values()))
+        start = prof.park or [0.0] * len(prof.joints)
+        srv = MockRosbridge(prof.joints, [v * scale for v in start], cameras=list(topics.values()))
         drv = RosbridgeDriver(prof, {**cfg, "url": srv.url, "cameras": topics}, mock=True)
         drv.mock_server = srv
         return drv

@@ -35,6 +35,7 @@ def stop_of(trial_dir: Path, spec: dict | None = None) -> dict | None:
             "reason": sess.get("safety_stop") or ep.get("agent_text") or "safety stop",
             "attended": bool(sess.get("attended", True)),
             "channel": sess.get("operator_channel") or ("script" if mode == "hil-mock" else "tty"),
+            "secured": sess.get("secured"),
         }
     if not ep and spec is not None:
         from ..backends.real.backend import real_config, real_mode
@@ -75,8 +76,9 @@ def inspect(stop: dict, job_dir: Path) -> bool:
     if stop["attended"]:
         latch = estop_engaged()
         prompt = (
-            f"Trial {stop['trial']} ended in a safety stop ({stop['kind']}: {stop['reason']}). Inspect the robot and "
-            "its workspace before anything else moves."
+            f"Trial {stop['trial']} ended in a safety stop ({stop['kind']}: {stop['reason']})."
+            + (f" The arm is {stop['secured']}." if stop.get("secured") else "")
+            + " Inspect the robot and its workspace before anything else moves."
             + (f" The e-stop latch is set ({latch}): clear it with `robouse estop --clear` when safe." if latch else "")
             + " Start the next trial?"
         )

@@ -21,7 +21,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import socket
+import threading
 import time
 from collections.abc import Callable, Generator
 from pathlib import Path
@@ -566,6 +568,9 @@ def serve(
     """Run one episode on a Unix socket until it finishes (plus `linger_s`) or the runner sends `shutdown`. `secrets`:
     the reference solution's token and the key that signs result.json."""
     ep = Episode(spec, run_dir, workspace, secrets=secrets)
+    if ep.mode != "sim" and threading.current_thread() is threading.main_thread():
+        # a real robot: a terminate request ends the episode like Ctrl-C, so close() secures the arm on the way out
+        signal.signal(signal.SIGTERM, _interrupt)
     if os.path.exists(sock_path):
         os.unlink(sock_path)
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -599,9 +604,17 @@ def serve(
                 except Exception as e:  # noqa: BLE001 - a malformed request gets an error reply
                     resp = {"ok": False, "error": clip(f"bad request: {e}", 300)}
                 send_reply(conn, resp)  # a client that went away does not end the episode
+    except KeyboardInterrupt:
+        if on_interrupt := _hook(ep.backend, "on_interrupt"):  # real robots: close() records why it ran
+            on_interrupt()
+        raise
     finally:
         ep.close()
         srv.close()
         if os.path.exists(sock_path):
             os.unlink(sock_path)
     return ep.result
+
+
+def _interrupt(signum: int, frame: Any) -> None:
+    raise KeyboardInterrupt

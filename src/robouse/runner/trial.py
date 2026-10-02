@@ -501,8 +501,10 @@ def run_trial(
                 )
             except OSError:  # the server went away (e.g. it got the same Ctrl-C)
                 pass
+        # a real arm's server secures the arm before it exits (holds, then parks slowly): give it the time to
+        real = task.spec.get("backend") == "real"
         try:
-            server.wait(timeout=5 if interrupted or INTERRUPTED.is_set() else 60)
+            server.wait(timeout=120 if real else 5 if interrupted or INTERRUPTED.is_set() else 60)
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait()

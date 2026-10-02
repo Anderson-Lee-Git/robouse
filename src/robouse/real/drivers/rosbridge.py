@@ -55,7 +55,8 @@ def ros_profile(cfg: dict) -> Profile:
         gripper_closed=float(cfg.get("gripper_closed", low[g] if g is not None else 0)),
         control_hz=float(cfg.get("control_hz", 10.0)),
         home=[float(x) for x in cfg.get("home", [0.0] * n)],
-        park=[float(x) for x in cfg.get("park", [0.0] * n)],
+        # a rest pose only when the rig names one: an all-zero pose may be an outstretched arm
+        park=[float(x) for x in cfg.get("park") or []],
         envelope=EnvelopeDefaults(
             joint_speed_deg_s=speed,
             slow_joint_speed_deg_s=speed / 2,
@@ -71,6 +72,8 @@ def ros_profile(cfg: dict) -> Profile:
 
 
 class RosbridgeDriver(ArmDriver):
+    releases_torque = False  # the bridge cannot turn the motors off: the arm's controller holds its last command
+
     def __init__(self, prof: Profile, cfg: dict, mock: bool = False):
         self.profile, self.cfg, self.mock = prof, dict(cfg), mock
         cams = cfg.get("cameras") or {}
