@@ -9,9 +9,10 @@ the operator for the verdict. Channels (task `real.operator`, or ROBOUSE_OPERATO
   script  answers from ROBOUSE_OPERATOR_SCRIPT, e.g. "arm=yes,reset=yes,verdict=no"; only allowed with the
           hardware-in-the-loop mock (never with a live robot)
 
-Gates: `arm` (before torque is enabled), `reset` (the scene is set up for this episode), `release` (before torque is
-released at the end). A gate that is refused or times out stops the episode (`safety_stop`) before anything moves.
-Verdicts: yes / no / partial / skip, plus a note; skip and timeouts score 0 and are recorded as unjudged.
+Gates: `physical_estop` (a power cut-off is within the operator's reach; asked before arming every live robot, and no
+setting skips it), `arm` (before torque is enabled), `reset` (the scene is set up for this episode), `release` (before
+torque is released at the end). A gate that is refused or times out stops the episode (`safety_stop`) before anything
+moves. Verdicts: yes / no / partial / skip, plus a note; skip and timeouts score 0 and are recorded as unjudged.
 
 Live feedback: `robouse operator say "text"` appends a remark that the next `robo observe` returns under
 `operator_notes` (typed, feedback-only: it cannot end the episode or change the verdict).
@@ -31,6 +32,7 @@ from .. import config
 from .safety import OPERATOR_DIR, SafetyStop
 
 VERDICTS = ("yes", "no", "partial", "skip")
+GATES = ("physical_estop", "arm", "reset", "release")  # the scripted operator answers these yes by default
 
 
 class Operator:
@@ -53,7 +55,7 @@ class Operator:
     # ---- prompts ---------------------------------------------------------------------------------------------------
     def _ask(self, key: str, prompt: str, choices: tuple[str, ...]) -> tuple[str, str]:
         if self.channel == "script":  # mock only; gates default to yes unless the script says otherwise
-            ans = self._script.get(key, self._script.get("*", "yes" if key in ("arm", "reset", "release") else ""))
+            ans = self._script.get(key, self._script.get("*", "yes" if key in GATES else ""))
             return (ans if ans in choices else "", "scripted operator (hardware-in-the-loop mock)")
         if self.channel == "tty":
             try:
@@ -103,11 +105,17 @@ class Operator:
                     pass
         return ("", "timed out waiting for the operator")
 
-    def gate(self, key: str, prompt: str) -> None:
+    def confirm(self, key: str, prompt: str) -> tuple[bool, str, str]:
+        """Ask a yes/no question; (confirmed, answer, note), recorded as an operator_gate event."""
         ans, note = self._ask(key, prompt, ("yes", "no"))
         self.log("operator_gate", gate=key, answer=ans or "none", note=note, channel=self.channel)
-        if ans != "yes":
-            raise SafetyStop(f"operator did not confirm the {key} gate ({note or ans or 'no answer'})", "operator_gate")
+        return ans == "yes", ans or "none", note
+
+    def gate(self, key: str, prompt: str) -> None:
+        ok, ans, note = self.confirm(key, prompt)
+        if not ok:
+            why = note or (ans if ans != "none" else "no answer")
+            raise SafetyStop(f"operator did not confirm the {key} gate ({why})", "operator_gate")
 
     def verdict(self, prompt: str, choices: tuple[str, ...] = VERDICTS) -> tuple[str, str]:
         ans, note = self._ask("verdict", prompt, choices)

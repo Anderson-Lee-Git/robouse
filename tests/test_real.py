@@ -1,10 +1,12 @@
 """Real-robot backend on the hardware-in-the-loop mock: kinematics against hardware logs, safety guard, e-stop,
-operator gates and verdicts, rig switch, and the safety layer's stops: loop watchdog and lost telemetry.
+operator gates and verdicts, rig switch, and the safety layer's stops: loop watchdog, lost telemetry and the physical
+e-stop confirmation.
 Run: PYTHONPATH=src python -m pytest tests/test_real.py -q"""
 
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -350,4 +352,95 @@ def test_hot_motor_does_not_start(tmp_path):
     ep = _episode("real-metal-reach", tmp_path, envelope={"temp_stop_c": 20.0})  # recorded motors are at ~28 C
     ep.handle({"op": "observe"})
     assert ep.outcome == "safety_stop" and ep.steps == 0 and ep.result["session"]["stop_kind"] == "overtemperature"
+    ep.close()
+
+
+# ---- gap 4: a live robot is not armed without a confirmed physical e-stop -------------------------------------------------
+
+
+def _live_metal(monkeypatch) -> list:
+    """The LeRobot driver (a live driver, not the mock) on a replay robot, as if the Metal arm were plugged in."""
+    from robouse.real.drivers import lerobot_arm
+    from robouse.real.replay import Fixture, ReplayRobot
+
+    made: list = []
+
+    def factory(cfg, prof):
+        made.append(ReplayRobot(Fixture("metal-bowl-121853"), prof, cameras=[]))
+        return made[-1]
+
+    monkeypatch.setitem(lerobot_arm.FACTORIES, "metal", factory)
+    return made
+
+
+def _operator_terminal(answers: dict, stop: threading.Event) -> None:
+    """Answers each pending operator request from `answers` (`robouse operator answer` in another terminal)."""
+    from robouse.real import operator
+
+    done: set = set()
+    while not stop.is_set():
+        try:
+            req = json.loads((operator.OPERATOR_DIR / "pending.json").read_text())
+        except (OSError, ValueError):
+            req = None
+        if req and req["id"] not in done:
+            done.add(req["id"])
+            operator.answer(answers.get(req["key"], "no"), note=f"test operator: {req['key']}")
+        time.sleep(0.02)
+
+
+def _live_episode(tmp_path, monkeypatch, answers: dict, **real_overrides):
+    made = _live_metal(monkeypatch)
+    stop = threading.Event()
+    threading.Thread(target=_operator_terminal, args=(answers, stop), daemon=True).start()
+    try:
+        ep = _episode(
+            "real-metal-reach",
+            tmp_path,
+            driver="lerobot",
+            operator="file",
+            port="test",
+            operator_timeout_s=10,
+            **real_overrides,
+        )
+    finally:
+        stop.set()
+    return ep, made
+
+
+def test_live_robot_needs_a_confirmed_physical_estop(tmp_path, monkeypatch):
+    ep, made = _live_episode(tmp_path, monkeypatch, {"physical_estop": "yes", "arm": "yes", "reset": "yes"})
+    assert ep.mode == "real" and not ep.finished and made
+    safety = ep.handle({"op": "info"})["result"]["embodiment"]["safety"]
+    assert safety["physical_estop"] == "confirmed by the operator before the robot is armed"
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    order = [(e["event"], e.get("gate")) for e in ev]
+    assert order.index(("operator_gate", "physical_estop")) < order.index(("connect", None))
+    gate = next(e for e in ev if e.get("gate") == "physical_estop")
+    assert gate["answer"] == "yes" and gate["channel"] == "file"
+    assert ep.result["session"]["physical_estop"]["answer"] == "yes"
+
+
+def test_physical_estop_cannot_be_skipped_for_a_live_robot(tmp_path, monkeypatch):
+    monkeypatch.setenv("ROBOUSE_REAL_UNATTENDED", "1")
+    ep, made = _live_episode(tmp_path, monkeypatch, {"physical_estop": "no"}, attended=False, estop_check=False)
+    ep.handle({"op": "observe"})
+    assert ep.outcome == "safety_stop" and ep.steps == 0 and ep.result["session"]["stop_kind"] == "physical_estop"
+    assert not made  # never connected: nothing was armed
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    assert next(e for e in ev if e.get("gate") == "physical_estop")["answer"] == "no"
+    assert not any(e["event"] == "connect" for e in ev)
+
+
+def test_mock_skips_the_physical_estop_unless_the_task_asks(tmp_path, monkeypatch):
+    ep = _episode("real-metal-reach", tmp_path)
+    assert ep.handle({"op": "info"})["result"]["embodiment"]["safety"]["physical_estop"].startswith("not asked")
+    ep.close()
+    assert any(e["event"] == "physical_estop" and e["confirmed"] is None for e in _events(tmp_path / "ep"))
+    monkeypatch.setenv("ROBOUSE_OPERATOR_SCRIPT", "physical_estop=no")
+    ep = _episode("real-metal-reach", tmp_path / "b", estop_check=True)
+    ep.handle({"op": "observe"})
+    assert ep.outcome == "safety_stop" and ep.steps == 0
     ep.close()

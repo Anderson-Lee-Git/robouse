@@ -5,8 +5,8 @@ hardware, `mock` for the hardware-in-the-loop mock that replays a recorded sessi
 settings. Everything the agent sends goes through the safety guard (real/safety.py) inside this trusted process:
 e-stop latch, joint-limit clamp, workspace envelope by forward kinematics (vetoed before anything moves), per-step
 velocity limit (slower near the table), wind-up guard, stale-telemetry stop, thermal stop and loop watchdog. The
-operator channel (real/operator.py) gates arming and scene reset and, for tasks without a measurable goal, gives the
-verdict.
+operator channel (real/operator.py) confirms a physical e-stop before a live robot is armed, gates arming and scene
+reset and, for tasks without a measurable goal, gives the verdict.
 
 Action (`robo act`): absolute joint targets in the profile's units, one per joint including the gripper, applied at the
 control rate through the guard; `--repeat N` keeps commanding the same target for N control steps. Skills:
@@ -68,6 +68,7 @@ class RealArmBackend(EmbodiedBackend):
         self.stamp: float | None = None  # when the last joint reading was measured (driver's clock, time.monotonic)
         self.connected = False
         self.stop_kind: str | None = None
+        self.estop_confirmed: dict | None = None
         self.operator = Operator(
             self.cfg.get("operator", "script" if self.mock else "tty"),
             mock=self.mock,
@@ -216,6 +217,9 @@ class RealArmBackend(EmbodiedBackend):
             },
             "telemetry_timeout_s": e.telemetry_timeout_s,
             "estop": "latched file (robouse estop)",
+            "physical_estop": "not asked (hardware-in-the-loop mock)"
+            if self.mock and not self.cfg.get("estop_check")
+            else "confirmed by the operator before the robot is armed",
             "attended": self.attended,
             "operator_channel": self.operator.channel,
         }
@@ -250,6 +254,7 @@ class RealArmBackend(EmbodiedBackend):
             why = estop_engaged()
             if why:
                 raise SafetyStop(f"e-stop is engaged ({why}); clear it with `robouse estop --clear` when safe", "estop")
+            self._confirm_physical_estop()
             if self.attended:
                 self.operator.gate(
                     "arm",
@@ -269,6 +274,28 @@ class RealArmBackend(EmbodiedBackend):
                 self.operator.gate("reset", f"Scene for this episode: {scene} Ready to start?")
         except SafetyStop as e:
             self._halt(str(e), e.kind)
+
+    def _confirm_physical_estop(self) -> None:
+        """Before a live robot is armed, the operator confirms a physical e-stop (a power cut-off) is within reach:
+        motors keep their last command when software stops talking to them (2026-09-05: with the controller gone, the
+        Metal arm held its last pose against its elbow stop until the motor reached 76 C). No setting skips this for a
+        live driver; on the mock it is asked only when the task sets `estop_check: true`."""
+        if self.mock and not self.cfg.get("estop_check"):
+            self._event("physical_estop", confirmed=None, note="not asked: hardware-in-the-loop mock")
+            return
+        ok, ans, note = self.operator.confirm(
+            "physical_estop",
+            f"Physical e-stop: is a power cut-off (e-stop button or switch) for the {self.prof.display} present and "
+            "within your reach now? Software cannot stop motors that keep their last command when the link dies.",
+        )
+        self.estop_confirmed = {
+            "answer": ans,
+            "note": note,
+            "channel": self.operator.channel,
+            "at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        if not ok:
+            raise SafetyStop(f"no physical e-stop confirmed ({note or ans}); the robot was not armed", "physical_estop")
 
     def _halt(self, reason: str, kind: str = "safety_stop") -> None:
         """Latch the stop and command a hold: the last command when the reading may be stale (lost telemetry, a late
@@ -652,6 +679,7 @@ class RealArmBackend(EmbodiedBackend):
             "warnings": sum(1 for e in ev if e["event"] == "warn"),
             "safety_stop": self.halted,
             "stop_kind": self.stop_kind,
+            "physical_estop": self.estop_confirmed,
             "operator": [e for e in ev if e["event"].startswith("operator_")],
         }
 
