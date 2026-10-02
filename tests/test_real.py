@@ -1469,3 +1469,98 @@ def test_piper_first_hold_waits_for_every_joint_pair():
     drv.send = lambda q: (sent.append([round(float(x), 2) for x in q]), send(q))[1]
     drv.connect()
     assert sent[0][4:6] == [30.0, 20.0]
+
+
+# ---- parks: watched by tracking lag, with torque as the backstop ------------------------------------------------------
+
+
+def _park_replay(steps, settings=None, until: float = 1e9):
+    """Recorded steps watched as one park (contact.ParkWatch with the Metal's settings): the first stop, or None."""
+    from robouse.real.contact import ParkWatch
+    from robouse.real.robots import METAL
+    from robouse.real.safety import Envelope
+
+    env = Envelope(METAL)
+    w = ParkWatch(METAL, settings or METAL.contact, tool=env.chain.tool, table_z=env.e.table_z)
+    for s in steps:
+        if s["t"] > until:
+            return None
+        if (c := w.update(s["cmd"], s["pos"], {"joint_torque_nm": s.get("joint_torque_nm")})) is not None:
+            return s["t"], c
+    return None
+
+
+@pytest.mark.parametrize(
+    "fixture, window, alone",
+    [("metal-hanoi-131602", (91.7, 94.2), "lag"), ("metal-touchdown-121740", (41.9, 47.2), "stall")],
+)
+def test_the_park_watch_catches_the_verified_contacts(monkeypatch, fixture, window, alone):
+    """Each verified contact of the 2026-09-05 recordings, replayed as one park over its session's motion: the park watch
+    stops inside the contact's window and not before. The lag watch alone catches the 13:16 elbow stop (the elbow lags
+    3.63 deg, the limit is 3.3); near the table, the stall check alone catches the 12:17 touchdown."""
+    import dataclasses
+
+    from robouse.real.replay import Fixture
+    from robouse.real.robots import METAL
+
+    monkeypatch.setenv("ROBOUSE_HIL_DIR", str(HIL))
+    steps = Fixture(fixture).steps
+    t, c = _park_replay(steps, until=window[1])
+    assert window[0] <= t <= window[1]
+    no_torque = dataclasses.replace(METAL.contact, dtorque={})
+    t, c = _park_replay(steps, no_torque, until=window[1])  # tracking lag and the stall check, no torque
+    assert window[0] <= t <= window[1] and c.kind == alone
+
+
+def test_the_park_watch_is_quiet_on_recorded_motion():
+    """The packaged 12:18:53 recording (up to the first contact the Sep 5 watch flagged), cut into park-length stretches
+    and each watched as a park: no stop. The Metal's park settings are the calibrated ones."""
+    from robouse.real.replay import Fixture
+    from robouse.real.robots import METAL
+
+    s = METAL.contact
+    assert (s.park_lag_deg, s.park_speed_deg_s, s.park_torque_factor) == (3.3, 6.0, 4.0)
+    steps = [s for s in Fixture("metal-bowl-121853").steps if s["t"] < 56.0]
+    stretches = [steps[i : i + 250] for i in range(0, len(steps), 250)]
+    assert len(stretches) >= 2 and all(_park_replay(st) is None for st in stretches)
+
+
+def test_a_held_back_joint_stops_the_park_by_lag(tmp_path, monkeypatch):
+    """At a normal end the arm parks; something holds the shoulder back on the way. Its lag climbs past the limit, the
+    park stops within a few steps of the block and the arm holds there; the stop after the end is recorded."""
+    monkeypatch.setenv("ROBOUSE_OPERATOR_SCRIPT", "park=no")
+    ep = _episode("real-metal-reach", tmp_path)
+    robot = ep.backend.driver.robot
+    block = float(robot.q[1]) + 5.0  # the park lifts the shoulder; 5 deg on, it is held back
+    send = robot.send_action
+
+    def held_back(action):
+        out = send(action)
+        robot.q[1] = min(robot.q[1], block)
+        return out
+
+    robot.send_action = held_back
+    ep.handle({"op": "done", "text": ""})
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    contact = next(e for e in ev if e["event"] == "contact")
+    assert contact["kind"] == "lag" and contact["action"] == "parking stopped"
+    assert 3.3 < contact["change"]["shoulder_lift"] <= 4.5
+    assert ep.result["session"]["stop_after_end"]["kind"] == "contact"
+    park = [s for s in _steps(tmp_path / "ep") if s.get("label") == "park"]
+    reached = next(i for i, s in enumerate(park) if s["pos"][1] >= block - 0.01)
+    assert len(park) - reached <= 8  # stopped within 8 steps of being held back
+    assert not any(e["event"] == "torque_released" for e in ev)
+
+
+def test_parks_keep_to_the_calibrated_speed(tmp_path):
+    """A rig that raises the slow joint speed does not speed up parks past the 6 deg/s the lag limit was calibrated at."""
+    ep = _episode("real-metal-reach", tmp_path, envelope={"slow_joint_speed_deg_s": 12.0})
+    ep.handle({"op": "done", "text": ""})
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    park = next(e for e in ev if e["event"] == "park")
+    assert park["speed_deg_s"] == 6.0 and park["lag_limit_deg"] == 3.3
+    cmds = np.asarray([s["cmd"][:6] for s in _steps(tmp_path / "ep") if s.get("label") == "park"])
+    assert len(cmds) > 10 and np.abs(np.diff(cmds, axis=0)).max() <= 0.6 + 2e-3
+    assert any(e["event"] == "torque_released" for e in ev)

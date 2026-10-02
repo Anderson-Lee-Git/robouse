@@ -46,9 +46,9 @@ from .robots import ContactSettings, Profile
 
 @dataclass
 class Contact:
-    kind: str  # moving | settled | holding | stall
+    kind: str  # moving | settled | holding | stall | lag (parks)
     watched: bool  # in a watched move (near the table)
-    change: dict[str, float]  # torque change per joint against its reference, or {"tool_shortfall_mm": mm} for a stall
+    change: dict[str, float]  # torque change per joint, {"tool_shortfall_mm": mm} for a stall, {joint: deg} for a lag
     step: int  # the watch's control step count when it was seen
 
     def describe(self) -> str:
@@ -57,6 +57,9 @@ class Contact:
                 f"the tool point stopped {self.change['tool_shortfall_mm']:.1f} mm above where the commanded descent "
                 "puts it (it is resting on something)"
             )
+        if self.kind == "lag":
+            ((j, v),) = self.change.items()
+            return f"{j} lags its command by {v:.2f} deg (something holds the arm back)"
         what = {
             "moving": "a torque jump during the move",
             "settled": "a torque shift after the move",
@@ -110,10 +113,10 @@ class ContactWatch:
         self.move_z0: float | None = None  # commanded tool height before the current move
         self.recent: list[np.ndarray] = []  # torque of the last steps holding still
 
-    def update(self, cmd, q, extra: dict, watched: bool, full: bool = False) -> Contact | None:
+    def update(self, cmd, q, extra: dict, watched: bool, factor: float | None = None) -> Contact | None:
         """One control step: the command just sent, the joints and telemetry read after it. `watched`: the step is in
-        a watched move (near the table); `full`: the torque thresholds apply at their base values even where the move
-        is not watched (parking, which runs unattended)."""
+        a watched move (near the table). `factor`: the torque thresholds are this many times their base values
+        everywhere (parking uses its own); by default 1 in a watched move and `unwatched_factor` elsewhere."""
         self.n += 1
         cmd, q = np.asarray(cmd, dtype=float), np.asarray(q, dtype=float)
         raw = extra.get(self.s.torque_key)
@@ -131,7 +134,7 @@ class ContactWatch:
         settled = self._phase(moving, watched, q)
         hit = self._stall(cmd, q, watched, settled)
         if hit is None and tq is not None:
-            hit = self._torque(tq, watched, settled, descended=dz < -0.001, full=full)
+            hit = self._torque(tq, watched, settled, descended=dz < -0.001, factor=factor)
         self.prev_cmd, self.prev_q, self.prev_zc = cmd, q, zc
         if tq is not None:
             self.prev_tq = tq
@@ -170,8 +173,11 @@ class ContactWatch:
         return False
 
     # ---- torque ---------------------------------------------------------------------------------------------------
-    def _torque(self, tq: np.ndarray, watched: bool, settled: bool, descended: bool, full: bool) -> Contact | None:
-        lim = self.lim if watched or full else self.lim * self.s.unwatched_factor
+    def _torque(
+        self, tq: np.ndarray, watched: bool, settled: bool, descended: bool, factor: float | None
+    ) -> Contact | None:
+        lim = self.lim * (factor if factor is not None else 1.0 if watched else self.s.unwatched_factor)
+        settle_lim = self.lim * (factor if factor is not None else 1.0)  # the settled rule: watched descents only
         if self.phase == "moving":
             if (
                 self.move_k == self.s.transient_steps
@@ -186,8 +192,8 @@ class ContactWatch:
             ref, self.hold_ref = self.baseline, tq
             if self.move_watched and descended and ref is not None:  # a contact from below ends a descent
                 d = tq - ref
-                over = np.abs(d) > self.lim
-                if over.sum() >= self.s.settle_joints or bool(np.any(np.abs(d) > self.s.strong * self.lim)):
+                over = np.abs(d) > settle_lim
+                if over.sum() >= self.s.settle_joints or bool(np.any(np.abs(d) > self.s.strong * settle_lim)):
                     return Contact("settled", True, self._joints(d, over), self.n)
             return None
         if self.phase == "holding":
@@ -243,3 +249,37 @@ class ContactWatch:
         if descent_mm > self.s.stall_mm and shortfall_mm > self.s.stall_mm:
             return Contact("stall", True, {"tool_shortfall_mm": round(shortfall_mm, 1)}, self.n)
         return None
+
+
+class ParkWatch:
+    """The watch on a park, the unattended move to the rest pose, where the contact watch's torque rules alone would
+    stop most parks (`unwatched_factor` exists because gravity loads change far more on moves away from the table than a
+    touch does). Three detectors, any of which stops the park:
+
+      lag     an arm joint's measured position lags its command by more than `park_lag_deg`. A blocked joint's lag
+              climbs to the wind-up limit; the threshold is calibrated per profile from recorded motion at the park speed
+              (robots.py), which is why parks are held to `park_speed_deg_s`
+      stall   near the table, the tool point stops short of a commanded descent (the contact watch's stall check)
+      torque  the contact watch's torque rules at `park_torque_factor` times the contact thresholds: the backstop
+    """
+
+    def __init__(self, prof: Profile, settings: ContactSettings, tool: Callable | None = None, table_z: float = 0.0):
+        self.s, self.arm, self.names = settings, list(prof.arm_idx), list(prof.joints)
+        self.tool, self.table_z = tool, table_z
+        self.watch = ContactWatch(prof, settings, tool=tool)
+
+    def reset(self) -> None:
+        self.watch.reset()
+
+    def update(self, cmd, q, extra: dict) -> Contact | None:
+        cmd, q = np.asarray(cmd, dtype=float), np.asarray(q, dtype=float)
+        if self.s.park_lag_deg > 0:
+            lag = np.abs(cmd[self.arm] - q[self.arm])
+            j = int(np.argmax(lag))
+            if lag[j] > self.s.park_lag_deg:
+                self.watch.n += 1
+                return Contact("lag", False, {self.names[self.arm[j]]: round(float(lag[j]), 2)}, self.watch.n)
+        near = False
+        if self.tool is not None:
+            near = float(np.asarray(self.tool(cmd), dtype=float)[2]) - self.table_z < self.s.watch_height
+        return self.watch.update(cmd, q, extra, near, factor=self.s.park_torque_factor)

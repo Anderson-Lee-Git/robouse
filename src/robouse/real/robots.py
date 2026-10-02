@@ -66,6 +66,12 @@ class ContactSettings:
     stall_mm: float = 4.0  # watched descent: the tool point this far above where the commanded descent puts it
     max_contacts: int = 2  # contacts in watched moves before the episode stops (a contact elsewhere stops it at once)
     torque_key: str = "joint_torque_nm"  # telemetry field with one torque per joint
+    # parks (contact.ParkWatch): an arm joint lagging its command by more than park_lag_deg stops the park (0: no lag
+    # watch: the profile has no calibration); parks move at most park_speed_deg_s (0: the slow joint speed), the speed
+    # the lag was calibrated at; the torque rules run at park_torque_factor times the thresholds
+    park_lag_deg: float = 0.0
+    park_speed_deg_s: float = 0.0
+    park_torque_factor: float = 4.0
 
 
 @dataclass
@@ -152,8 +158,17 @@ METAL = Profile(
         [-40.0, -133.0, 89.0, -48.0, 0.0, 0.0],
     ],
     envelope=EnvelopeDefaults(table_z=-0.0088),
-    # the 2026-09-05 harness's contact thresholds (robot/safety.py: contact_dtorque, contact_jump 0.35)
-    contact=ContactSettings(dtorque={"shoulder_lift": 1.5, "elbow_flex": 0.8, "wrist_flex": 0.5}),
+    # the 2026-09-05 harness's contact thresholds (robot/safety.py: contact_dtorque, contact_jump 0.35). Parks: on the
+    # 2026-09-05 recordings, no arm joint lagged its command by more than 2.55 deg at 6 deg/s or slower, or holding
+    # (wrist_yaw in 12:22:04; shoulder_lift 1.97, elbow_flex 1.36), so 3.3, halfway to the 4 deg wind-up limit a blocked
+    # joint's lag climbs to; the 13:16 elbow stop lagged 3.63. Replayed as parks, that and the stall check catch both
+    # verified contacts with no stop in 56 park-length stretches of normal motion; torque at 3x would stop 2 of them
+    # (the elbow's torque building up as a slow move starts), at 4x none.
+    contact=ContactSettings(
+        dtorque={"shoulder_lift": 1.5, "elbow_flex": 0.8, "wrist_flex": 0.5},
+        park_lag_deg=3.3,
+        park_speed_deg_s=6.0,
+    ),
     notes=(
         "Joint zero is the vendor's parked pose: upper arm horizontal pointing backward, forearm folded over it. "
         "shoulder_lift 0 = horizontal backward, -90 = vertical, -180 = horizontal forward; elbow_flex 0 = folded, "

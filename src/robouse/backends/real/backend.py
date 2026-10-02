@@ -9,11 +9,11 @@ contact watch (real/contact.py) stops a move that touches something near the tab
 contact (and, during the settle steps after the episode ends, any contact). Nothing moves on its own after a stop or a
 refused gate: the arm joints' command goes to their measured position within the per-step delta limit, the gripper
 keeps its command, and the arm holds; it is watched (temperatures, telemetry) until the operator has answered at close,
-and parks only on their yes (`_leave_arm`). After a normal end it parks slowly at the profile's rest pose with the
-contact watch at full sensitivity and torque is released there; a park that meets anything holds and is recorded as a
-stop after the end. Between requests and during operator questions the arm is checked at least once a second
-(`idle_check`). The operator channel (real/operator.py) confirms a physical e-stop before a live robot is armed, gates
-arming and scene reset and, for tasks without a measurable goal, gives the verdict.
+and parks only on their yes (`_leave_arm`). After a normal end it parks slowly at the profile's rest pose, watched by
+tracking lag, the stall check and torque (contact.ParkWatch), and torque is released there; a park that meets anything
+holds and is recorded as a stop after the end. Between requests and during operator questions the arm is checked at
+least once a second (`idle_check`). The operator channel (real/operator.py) confirms a physical e-stop before a live
+robot is armed, gates arming and scene reset and, for tasks without a measurable goal, gives the verdict.
 
 Action (`robo act`): absolute joint targets in the profile's units, one per joint including the gripper, applied at the
 control rate through the guard; `--repeat N` keeps commanding the same target for N control steps. Skills:
@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 
 from ... import config
-from ...real.contact import ContactWatch
+from ...real.contact import ContactWatch, ParkWatch
 from ...real.drivers import make_driver
 from ...real.operator import Operator
 from ...real.robots import ContactSettings
@@ -89,10 +89,11 @@ class RealArmBackend(EmbodiedBackend):
         self.log = EventLog(None)
         self.guard = Guard(self.prof, self.cfg.get("envelope"), log=self._event, estop_check=estop_engaged)
         chain = self.guard.env.chain
-        self.watch = ContactWatch(
-            self.prof,
-            ContactSettings(**{**self.prof.contact.__dict__, **(self.cfg.get("contact") or {})}),
-            tool=chain.tool if chain is not None else None,
+        settings = ContactSettings(**{**self.prof.contact.__dict__, **(self.cfg.get("contact") or {})})
+        self.watch = ContactWatch(self.prof, settings, tool=chain.tool if chain is not None else None)
+        # parks: tracking lag, the stall check near the table, torque at the park factor (contact.ParkWatch)
+        self.park_watch = ParkWatch(
+            self.prof, settings, tool=chain.tool if chain is not None else None, table_z=self.guard.e.table_z
         )
         self.n_contacts = 0
         self.move_goal: np.ndarray | None = None  # the running skill's final joint target
@@ -380,8 +381,8 @@ class RealArmBackend(EmbodiedBackend):
 
     def _leave_arm(self) -> None:
         """How the arm is left when the episode server closes:
-        - after a normal end, it parks slowly at its rest pose with the contact watch at full sensitivity and torque is
-          released there (`_end_park`); a park that is stopped holds where it stopped, is recorded as a stop after the
+        - after a normal end, it parks slowly at its rest pose, watched by the park watch (contact.ParkWatch), and torque
+          is released there (`_end_park`); a park that is stopped holds where it stopped, is recorded as a stop after the
           end (which holds a run-many batch) and is never retried on its own;
         - after a safety stop, or such a park stop, the arm holds, and an attended operator is asked to inspect it and
           may approve parking (`_ask_to_park`); the thermal guard and the telemetry checks run until they answer;
@@ -434,7 +435,7 @@ class RealArmBackend(EmbodiedBackend):
         ok, ans, _ = self.operator.confirm(
             "park",
             f"{what} Inspect the robot and its workspace.{latch} Park the arm at its rest pose now? yes: it moves "
-            "slowly there, with the contact watch at full sensitivity, and is released; no: it keeps holding.",
+            "slowly there, stopping if anything holds it back, and is released; no: it keeps holding.",
             tick=self._tick,
         )
         if not ok:
@@ -609,9 +610,10 @@ class RealArmBackend(EmbodiedBackend):
         )
 
     def _park(self, cause: str) -> str | None:
-        """Move slowly (the slow joint speed) to the rest pose with every check on and the contact watch at full
-        sensitivity; None once the arm is at rest there, else why not (`_park_moved`: it had started moving;
-        `_park_stop_kind`: what stopped it). Called at a normal end, or once per operator approval: never retried."""
+        """Move slowly (the slow joint speed, at most the park speed the lag watch was calibrated at) to the rest pose
+        with every check on and the park watch (`_park_step`); None once the arm is at rest there, else why not
+        (`_park_moved`: it had started moving; `_park_stop_kind`: what stopped it). Called at a normal end, or once per
+        operator approval: never retried."""
         p = self.prof
         self._park_moved, self._park_stop_kind = False, "park"
         if not p.park:
@@ -624,11 +626,17 @@ class RealArmBackend(EmbodiedBackend):
             self.guard.env.check_path(self.guard.last_cmd, goal)
         except Veto as v:
             return f"the way to the rest pose leaves the workspace ({v})"
-        self._event("park", cause=cause, goal=goal.round(2).tolist(), speed_deg_s=self.guard.e.slow_joint_speed_deg_s)
+        # at most the park speed the lag watch was calibrated at (the slow joint speed, if that is slower)
+        s, step = self.park_watch.s, self.guard.max_step_slow.copy()
+        if s.park_speed_deg_s > 0:
+            step[p.arm_idx] = np.minimum(step[p.arm_idx], s.park_speed_deg_s / self.hz)
+        speed = round(float(np.max(step[p.arm_idx])) * self.hz, 2)
+        lag = s.park_lag_deg or None
+        self._event("park", cause=cause, goal=goal.round(2).tolist(), speed_deg_s=speed, lag_limit_deg=lag)
         self._park_moved = True
         start = np.asarray(self.guard.last_cmd, dtype=float).copy()
-        n = int(max(1, np.ceil(np.max(np.abs(goal - start) / self.guard.max_step_slow))))
-        self.watch.reset()
+        n = int(max(1, np.ceil(np.max(np.abs(goal - start) / step))))
+        self.park_watch.reset()
         self._park_delta = None
         try:
             for k in range(1, n + 1):
@@ -653,8 +661,9 @@ class RealArmBackend(EmbodiedBackend):
 
     def _park_step(self, target: np.ndarray) -> None:
         """One parking control step through the guard (e-stop latch, limits, speed, wind-up, workspace), then the
-        stale-telemetry check, the loop watchdog and the contact watch. Temperature is not checked: resting with torque
-        off is how a hot motor cools."""
+        stale-telemetry check, the loop watchdog and the park watch (tracking lag, the stall check near the table, torque
+        at the park factor: contact.ParkWatch). Temperature is not checked: resting with torque off is how a hot motor
+        cools."""
         t0 = time.perf_counter()
         cmd = self.guard.step_command(target)
         self.driver.send(cmd)
@@ -677,7 +686,7 @@ class RealArmBackend(EmbodiedBackend):
         self.guard.check_telemetry(self.stamp, source=self.stamp_of)
         self.guard.check_loop(dt)
         self.guard.last_pos = np.asarray(self.q, dtype=float)
-        c = self.watch.update(cmd, self.q, self.extra, watched=False, full=True)  # no 5x factor while parking
+        c = self.park_watch.update(cmd, self.q, self.extra)
         if c is not None:
             what = c.describe()
             self._event("contact", **c.record(), what=what, pose=self.q.round(2).tolist(), action="parking stopped")
