@@ -142,6 +142,7 @@ class PointTable(FakeBackend):
         self.max_steps = int(spec.get("max_steps", 400))
         self.goal = np.asarray(spec.get("goal", [0.04, 0.0, 0.05]), dtype=float)
         self.empty = bool(spec.get("empty_gripper", False))
+        self.frozen = bool(spec.get("frozen", False))  # a hand that cannot move (blocked)
 
     def reset(self, seed: int) -> None:
         self.pos = np.array([0.0, 0.0, 0.05])
@@ -154,6 +155,12 @@ class PointTable(FakeBackend):
             "hand_pos": [round(float(x), 5) for x in self.pos],
             "gripper_open": 0.0 if (closed and self.empty) else (0.4 if closed else 1.0),
         }
+
+    def step(self, action):
+        info = super().step(action)
+        if self.frozen:
+            self.pos = np.array([0.0, 0.0, 0.05])
+        return info
 
     def success(self) -> bool:
         return bool(np.linalg.norm(self.pos - self.goal) < 0.002)
@@ -369,6 +376,30 @@ def test_recovery_reopens_an_empty_grasp_and_rolls_back(tmp_path, monkeypatch, s
     text = Scripted.bodies[-1]["messages"][0]["content"][-1]["text"]
     assert "Recovery: Empty close; do not retry on an edge/corner." in text
     assert "Recent moves, newest first: GRASP(empty)" in text
+
+
+def test_a_blocked_unit_stops_when_the_hand_stops(tmp_path, monkeypatch, scripted) -> None:
+    sock, ws, out, th = _episode(tmp_path, monkeypatch, frozen=True, max_steps=400)
+    Scripted.plan = {
+        "subgoals": [
+            {
+                "id": "go",
+                "target": "goal",
+                "affordance": "the goal point",
+                "motion": "MOVE",
+                "description": "move right",
+                "completion": "at the goal",
+            }
+        ]
+    }
+    Scripted.replies = [_decision("MV_RIGHT"), _decision("DONE", "stop")]
+    p, ev = _run_client(sock, ws, scripted, "Move right.", {"mode": "zs"})
+    th.join(timeout=30)
+    assert p.returncode == 0, p.stderr
+    d = [e for e in ev if e["type"] == "decision"]
+    # the setpoint is reachable but the hand does not move: the unit ends after 3 still control steps, not 24
+    assert d[0]["result"]["stalled"] is True and d[0]["result"]["control_steps"] == 3
+    assert d[0]["result"]["moved_m"] == 0.0 and d[0]["steps_used"] == 3
 
 
 def test_an_unsupported_robot_is_refused_before_acting(tmp_path, monkeypatch, scripted) -> None:
@@ -624,7 +655,7 @@ def test_a_fine_tuned_trial_on_a_served_model_with_the_stuck_guard(tmp_path, mon
     dec = [e for e in ev if e["type"] == "decision"]
     assert [e["unit"] for e in dec] == ["MV_LEFT", "MV_LEFT", "MV_LEFT", "MV_UP", "DONE"]
     assert dec[3]["blocked"] == ["MV_LEFT"] and dec[3]["result"]["kind"] == "none"
-    # a blocked unit ends once the hand has stopped for 3 control steps (not the executor's 24), and a unit this robot
-    # cannot carry out (MV_UP on the plane) counts toward the guard as a move of 0 mm
-    assert dec[1]["result"]["stalled"] is True and dec[1]["result"]["control_steps"] == 3
-    assert dec[3]["steps_used"] == 1 + 3 + 3 and dec[4]["blocked"] == ["MV_LEFT"]
+    # past the square's edge the setpoint is projected back into the workspace, so the unit commands nothing; a unit
+    # this robot cannot carry out (MV_UP on the plane) also counts toward the guard as a move of 0 mm
+    assert dec[1]["result"]["control_steps"] == 0 and dec[1]["result"]["moved_m"] == 0.0
+    assert dec[3]["steps_used"] == 1 and dec[4]["blocked"] == ["MV_LEFT"]

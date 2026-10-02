@@ -274,6 +274,9 @@ PROFILES = {
         "unit_m": 0.01,
         "max_cmd_m": 0.02,
         "table_z": 0.0,
+        # the backend's tool-point limits (scene.HAND_LO, HAND_HI): the setpoint is projected into them (the paper's
+        # Pi_E, as the real interpreters' workspace box and Z floor do)
+        "workspace": ((-0.34, -0.27, 0.012), (0.34, 0.28, 0.35)),
         "width": "fraction_10cm",
         "gripper_steps": 20,
         "wrist": ("wrist",),
@@ -334,6 +337,7 @@ PROFILES = {
         "pos_scale_m": 0.5,
         "unit_m": 0.5,
         "max_cmd_m": 0.05,
+        "workspace": ((0.0, 0.0, -1.0), (0.5, 0.5, 1.0)),  # the unit square
         "table_z": None,
         "width": None,
         "gripper_steps": 0,
@@ -975,9 +979,12 @@ class Arm:
         d = self.p["dirs"][token]
         start = self.hand()
         target = [c + d[i] * step_m for i, c in enumerate(self.lattice_node(start, lattice_m))]
+        box = self.p.get("workspace")
         for i in range(3):
             if self.p["pos"][i] is None:
                 target[i] = start[i]
+            elif box is not None:  # the workspace projection: a setpoint the hand cannot reach is never commanded
+                target[i] = _clamp(target[i], box[0][i], box[1][i])
         n, still, prev = 0, 0, start
         for n in range(1, MAX_CTRL_STEPS + 1):
             err = [target[i] - self.hand()[i] for i in range(3)]
