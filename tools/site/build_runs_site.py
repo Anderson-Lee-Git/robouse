@@ -430,7 +430,7 @@ def status(t: dict) -> str:
 
 
 OUTCOME_TEXT = {"success_reached": "Goal reached", "done": "Agent said done", "gave_up": "Agent gave up", "budget_exhausted": "Step budget used up",
-                "agent_timeout": "Agent timed out", "wall_time_exhausted": "Time limit reached", "agent_exited": "Agent exited", "no result": "No result",
+                "agent_timeout": "Harness timeout", "wall_time_exhausted": "Trial time limit", "agent_exited": "Agent exited", "no result": "No result",
                 "budget_stop": "Stopped at the model budget"}
 
 
@@ -468,8 +468,10 @@ STATUS_LONG = {"partial": "Stopped before it finished, not scored", "infra": "In
 NOIMG_WHY = "The model received no camera images in these runs; vision tasks were attempted from text observations only."
 
 
-def noimg_tag(title: str = NOIMG_WHY) -> str:
-    return f'<span class="noimg" title="{esc(title)}">no image input</span>'
+def noimg_tag(title: str = NOIMG_WHY, spaced: bool = True) -> str:
+    """The quiet "no image input" tag. spaced: a space before it, widened (.nis in runs.css), that collapses where the
+    tag starts a line, so a wrapped tag shares the left edge of the lines around it (a margin would indent it)."""
+    return ('<span class="nis"> </span>' if spaced else "") + f'<span class="noimg" title="{esc(title)}">no image input</span>'
 
 
 def spend(x) -> str:
@@ -922,8 +924,11 @@ def hub_tasks(site: Path) -> dict[str, tuple[str, str]]:
 
 
 def runs_head(active: str) -> str:
-    """The title block both tabs of /runs/ share (All runs, Compare): one h1, one lede, the tabs, so the tab bar never moves."""
-    return (f'<section class="page-head head">\n  <h1>Runs</h1>\n  <p class="lede">Each run is a batch of trials of one model on one dataset.</p>\n  {subnav(active)}\n</section>')
+    """The title block both tabs of /runs/ share (All runs, Compare): an h1 and a one-line lede of the tab's own, then the
+    tabs, so the tab bar stays where it is."""
+    h1, lede = (("Compare", "Two trials of one task, side by side.") if active == "compare"
+                else ("Runs", "Each run is a batch of trials of one model on one dataset."))
+    return f'<section class="page-head head">\n  <h1>{h1}</h1>\n  <p class="lede">{lede}</p>\n  {subnav(active)}\n</section>'
 
 
 def subnav(active: str) -> str:
@@ -937,10 +942,21 @@ def brk(s: str) -> str:
 
 
 def fmt_s(x) -> str:
+    """A duration, the one way every robouse.ai page writes it (build_hub.fmt_dur, runs.js dur): "5.9 s", "43 s",
+    "1 min 42 s", "1 h 5 min"."""
     if x is None:
         return ""
     x = float(x)
-    return f"{x:.0f} s" if x < 120 else f"{x / 60:.1f} min"
+    if x < 9.95:
+        return f"{x:.1f} s"
+    if x < 59.5:
+        return f"{x:.0f} s"
+    t = round(x)
+    if t < 3600:
+        m, sec = divmod(t, 60)
+        return f"{m} min" + (f" {sec} s" if sec else "")
+    h, m = divmod(round(t / 60), 60)
+    return f"{h} h" + (f" {m} min" if m else "")
 
 
 def fmt_date(ts: str) -> str:
@@ -1002,9 +1018,28 @@ def pair_html(i: int) -> str:
             f'{named(harness_mark(p), p.get("harness_label") or p["harness"])}')
 
 
-def run_title_html(r: dict) -> str:
-    """A run's title with the model's and the harness's marks: "mark GLM-5.3 · mark Codex · robouse-menagerie"."""
-    return pair_html(r["hm"]) + f' · {nb(r["ds"].split("/")[-1])}' + (" · zero-shot probe" if r["probe"] else "")  # the dataset whole too
+def run_title_html(r: dict, parts: bool = False) -> str:
+    """A run's title with the model's and the harness's marks: "mark GLM-5.3 · mark Codex · robouse-menagerie". parts (the
+    run page's h1): each part one unit (.tpart, runs.css), so a line breaks only between the parts, never inside a name."""
+    p = HM[r["hm"]]
+    bits = [named(model_mark(p) if p.get("icon") else "", p.get("model_label") or p["label"]),
+            named(harness_mark(p), p.get("harness_label") or p["harness"]), nb(r["ds"].split("/")[-1])] + (["zero-shot probe"] if r["probe"] else [])
+    return tparts(bits) if parts else " · ".join(bits)
+
+
+def tparts(bits: list[str]) -> str:
+    """Parts as units that break only between them, each keeping the dot after it ("A · B · C"), so no line starts with
+    a dot (an inline-block part leaves a break before a dot outside it)."""
+    return " ".join(f'<span class="tpart">{b}{chr(160) + "·" if k < len(bits) - 1 else ""}</span>' for k, b in enumerate(bits))
+
+
+def run_meta(r: dict) -> list[str]:
+    """The run page's facts under its title: dataset, date, solved of scored, and how many other trials it holds
+    (earlier, stopped, failed or pilot trials: listed, not scored), so the counts on the page add up."""
+    other = len(r["trials"]) - r["scored"]
+    return ([esc(r["ds"]), esc(fmt_date(r["start"])), f'{r["solved"]} of {r["scored"]} solved' if r["scored"] else "no scored trial"]
+            + ([f'{other} other {"trial" if other == 1 else "trials"} not scored'] if other else [])
+            + (['<span class="state running">running</span>'] if r["state"] == "running" else []))
 
 
 def phtml(i: int, noimg: bool | None = None) -> str:
@@ -1013,7 +1048,7 @@ def phtml(i: int, noimg: bool | None = None) -> str:
     p = HM[i]
     tag = noimg_tag() if (p.get("_noimg") if noimg is None else noimg) else ""
     return (f'<span class="pm">{named(model_mark(p), p.get("model_label") or p["label"])}</span> <span class="ph">· {named(harness_mark(p), p.get("harness_label") or p["harness"])}</span>'
-            + (" " + tag if tag else ""))
+            + tag)
 
 
 def fnum(x) -> str:
@@ -1060,16 +1095,20 @@ DIFF_RANK = {"easy": 1, "medium": 2, "hard": 3}
 ST_RANK = {"ok": 4, "some": 3, "no": 2, "budget": 2, "partial": 1, "infra": 0, "none": -1}
 
 
-def th_sort(label: str, kind: str = "text", cls: str = "", extra: str = "", title: str = "") -> str:
-    """A sortable column heading: a button that carries the label and the direction."""
+def th_sort(label: str, kind: str = "text", cls: str = "", extra: str = "", title: str = "", key: str = "") -> str:
+    """A sortable column heading: a button that carries the label and the direction; key names the column in the URL
+    (?sort=key&dir=asc, runs.js), so a reload or a shared link keeps the order."""
     t = f' title="{esc(title)}"' if title else ""
-    return (f'<th scope="col" class="{cls}" data-sort="{kind}" aria-sort="none"{extra}><button type="button" class="sb"{t}>'
+    k = f' data-key="{key}"' if key else ""
+    return (f'<th scope="col" class="{cls}" data-sort="{kind}" aria-sort="none"{k}{extra}><button type="button" class="sb"{t}>'
             f'<span class="sl">{label}</span><i class="si" aria-hidden="true"></i></button></th>')
 
 
-def list_foot(noun: str, hint: str) -> str:
+def list_foot(noun: str, hint: str = "") -> str:
+    """"Show N more", and the empty state: one line saying what matched nothing and one button that undoes it (runs.js
+    words both for the search or filters in use)."""
     return (f'<div class="lmore" hidden><button type="button" class="btn quiet sm" data-lmore></button></div>'
-            f'<div class="empty-state lempty" data-lempty hidden><b>No {noun} match these filters.</b>{hint} '
+            f'<div class="empty-state lempty" data-lempty hidden><b>No {noun} match these filters.</b> '
             f'<button type="button" class="tbtn" data-lclear>Clear filters</button></div>')
 
 
@@ -1088,6 +1127,12 @@ def pair_attrs(i: int) -> str:
 
 def sel_opts(values: list[str]) -> str:
     return "".join(f'<option value="{esc(v)}">{esc(v)}</option>' for v in values)
+
+
+def ds_opts(values: list[str]) -> str:
+    """Datasets for a select: the dataset's own name, its org after it in quieter type (/ui.js data-sub), sorted by name."""
+    return "".join(f'<option value="{esc(v)}" data-sub="{esc(v.rpartition("/")[0])}">{esc(v.rpartition("/")[2])}</option>'
+                   for v in sorted(values, key=lambda v: v.rpartition("/")[2]))
 
 
 def scope_select() -> str:
@@ -1242,7 +1287,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 {trial_crumbs(t)}
 <section class="page-head head trial">
   <h1>{esc(t['title'])}</h1>
-  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag() if noimg else ""}{counted}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
+  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag(spaced=False) if noimg else ""}{counted}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
   {f'<p class="why">{esc(why or "The harness or the model API ended the trial before the agent acted.")}</p>' if never_ran else f'<dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>'}
 </section>
 """
@@ -1265,7 +1310,6 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 def build_compare() -> str:
     body = f"""
 {runs_head("compare")}
-<p class="meta tabnote">Pick two trials of one task.</p>
 <div id="compare" class="compare" aria-busy="true">{skeleton()}</div>
 <noscript><style>#compare{{display:none}}</style><p class="muted">Compare needs JavaScript. Each trial page plays its own recording.</p></noscript>
 """
@@ -1296,7 +1340,7 @@ def build_runs(runs: dict) -> str:
         # phones: the dataset under the pair, in the same cell (the Dataset column drops; a name never breaks at a hyphen)
         under = f'<span class="rds">{nb(dsn)}{f" <span class={chr(34)}rdo{chr(34)}>{esc(org)}</span>" if org else ""}{tag}</span>'
         rows.append(f'<tr {pair_attrs(i)} data-dataset="{esc(r["ds"])}" data-q="{esc((plab(i) + " " + r["ds"] + (" zero-shot probe" if r["probe"] else "")).lower())}">'
-                    f'<th scope="row" data-v="{i:04d}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, False)}</a>{" " + noimg_tag() if r["noimg"] else ""}{under}</th>'
+                    f'<th scope="row" data-v="{esc(plab(i).lower())}"><a class="rl" href="/runs/r/{r["slug"]}/">{phtml(i, False)}</a>{noimg_tag() if r["noimg"] else ""}{under}</th>'
                     f'<td class="sus" data-v="{esc(r["ds"])}">{ds_cell(r["ds"])}{tag}</td>'
                     f'<td class="muted num" data-v="{esc(r["start"])}">{esc(fmt_date(r["start"]))}{state}</td>'
                     f'<td class="n num" data-v="{r["scored"]}">{r["scored"]}</td>'
@@ -1307,7 +1351,7 @@ def build_runs(runs: dict) -> str:
     ctrl = ('<div class="fbar"><div class="frow ctl-row">'
             + '<label class="search"><span class="vh">Search runs</span><input type="search" data-lq placeholder="Search runs" autocomplete="off" spellcheck="false"></label>'
             + (f'<select data-lf="harness" aria-label="Harness"><option value="">All harnesses</option>{"".join(f"<option value={chr(34)}{esc(k)}{chr(34)}>{esc(v)}</option>" for k, v in harn)}</select>' if len(harn) > 1 else "")
-            + (f'<select data-lf="dataset" aria-label="Dataset"><option value="">All datasets</option>{sel_opts(dss)}</select>' if len(dss) > 1 else "")
+            + (f'<select data-lf="dataset" aria-label="Dataset"><option value="">All datasets</option>{ds_opts(dss)}</select>' if len(dss) > 1 else "")
             + '<span class="count push" data-lcount aria-live="polite"></span></div></div>')
     body = f"""
 {runs_head("runs")}
@@ -1315,7 +1359,8 @@ def build_runs(runs: dict) -> str:
 {ctrl}
 <div class="scroll tbl"><table class="list runs">
   <caption class="vh">Main runs first, newest first; zero-shot probes after them. Sort by any column.</caption>
-  <thead><tr>{th_sort('<span class="ml-l">Model<span class="hh"> · harness</span></span><span class="ml-s">Run</span>', "num", "tcol")}{th_sort("Dataset", "text", "dsc")}{th_sort("Date", "text", "n").replace('<th ', '<th data-first="descending" ', 1)}{th_sort('<span class="sl-l">Scored trials</span><span class="sl-s">Scored</span>', "num", "n", title="Trials that count toward the solve rate; the run page lists every trial")}{th_sort('<span class="sl-l">Solve rate</span><span class="sl-s">Solved</span>', "num", "n")}</tr></thead>
+  <colgroup><col class="c-run"><col class="c-ds"><col class="c-date"><col class="c-n"><col class="c-n"></colgroup>
+  <thead><tr>{th_sort('<span class="ml-l">Model<span class="hh"> · harness</span></span><span class="ml-s">Run</span>', "text", "tcol", key="model")}{th_sort("Dataset", "text", "dsc", key="dataset")}{th_sort("Date", "text", "n", key="date").replace('<th ', '<th data-first="descending" ', 1)}{th_sort('<span class="sl-l">Scored trials</span><span class="sl-s">Scored</span>', "num", "n", title="Trials that count toward the solve rate; the run page lists every trial", key="scored")}{th_sort('<span class="sl-l">Solve rate</span><span class="sl-s">Solved</span>', "num", "n", key="rate")}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
 </table></div>
 {list_foot("runs", "Clear the search or the filters.")}
@@ -1354,16 +1399,16 @@ def build_run(r: dict) -> str:
                     + (f'<td class="n num stc" data-v="{num_attr(t["steps_used"])}">{steps_html(t)}</td>' if show_steps else "")
                     + (f'<td class="n num" data-v="{num_attr(t["wall"])}">{esc(fmt_s(t["wall"])) if t["wall"] is not None else NOT_RECORDED}</td>' if show_time else "") + "</tr>")
     states = {status(t) for t in r["trials"]}
-    opts = "".join(f'<option value="{k}">{v}</option>' for k, v in (("ok", "Solved"), ("no", "Not solved"), ("budget", "Stopped at budget"), ("infra", "Infrastructure failure"), ("partial", "Partial")) if k in states)
+    opts = "".join(f'<option value="{k}">{v}</option>' for k, v in (("ok", "Solved"), ("no", "Not solved"), ("budget", "Stopped at budget"), ("infra", "Infra failure"), ("partial", "Partial")) if k in states)
     ctrl = ('<div class="fbar"><div class="frow ctl-row">'
             '<label class="search"><span class="vh">Search tasks</span><input type="search" data-lq placeholder="Search tasks" autocomplete="off" spellcheck="false"></label>'
             + (f'<select data-lf="outcome" aria-label="Result"><option value="">Any result</option>{opts}</select>' if len(states) > 1 else "")
             + '<span class="count push" data-lcount aria-live="polite"></span></div></div>')
     body = f"""
-<nav class="crumbs" aria-label="Breadcrumb"><span class="cgp"><a href="/runs/">Runs</a><span>/</span></span><span aria-current="page">{run_title_html(r)}</span></nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a></nav>
 <section class="page-head head">
-  <h1 class="rh1">{run_title_html(r)}</h1>
-  <p class="meta">{esc(r["ds"])} · {esc(fmt_date(r["start"]))} · {f'{r["solved"]} of {r["scored"]} solved' if r["scored"] else "no scored trial"}{' · <span class="state running">running</span>' if r["state"] == "running" else ""}{" " + noimg_tag() if r["noimg"] else ""}</p>
+  <h1 class="rh1">{run_title_html(r, parts=True)}</h1>
+  <p class="meta">{tparts(run_meta(r))}{noimg_tag() if r["noimg"] else ""}</p>
   {f'<p class="prov">{esc(HM[r["hm"]]["provenance"])}</p>' if HM[r["hm"]].get("provenance") else ""}
 </section>
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">

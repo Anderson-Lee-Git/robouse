@@ -29,6 +29,7 @@ h2 .nt{margin-left:0;font-size:var(--fs-meta)}
 p.meta{margin:var(--sp-6) 0 0;max-width:var(--measure);font:400 var(--fs-small)/1.5 var(--sans);color:var(--muted)}
 p.meta + .lede{margin-top:var(--sp-12)}
 nav.sub.tabs{margin:var(--sp-24) 0 0}
+nav.sub.tabs a:focus-visible{outline-offset:2px}  /* the ring clears the label instead of cutting through it */
 .gen{margin-top:var(--sp-48);font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted)}
 ul.notes{margin:var(--sp-16) 0 0;padding:0;list-style:none;max-width:860px;font:400 var(--fs-meta)/1.55 var(--sans);color:var(--muted)}
 ul.notes li{margin:var(--sp-4) 0}
@@ -225,6 +226,7 @@ nav.tabs[role=tablist]{margin:var(--sp-24) 0 var(--sp-20)}
 .player{position:sticky;top:var(--sp-16);min-width:0}
 .vbox{position:relative;aspect-ratio:var(--ar,1/1);border-radius:var(--r-md);background:var(--media-bg);overflow:hidden}
 .vbox video{display:block;width:100%;height:100%;object-fit:contain;border-radius:0}
+.vbox video:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}  /* inside the box, so its rounded clip never cuts the ring */
 #vid{cursor:pointer}
 .vbox.novideo{display:grid;place-items:center;background:none}
 .vbox.novideo .empty-state{width:100%;height:100%;display:flex;flex-direction:column;justify-content:center}
@@ -280,6 +282,8 @@ p.meta.tabnote{margin:0 0 var(--sp-20)}
 .slist .i{font:400 var(--fs-micro)/1.4 var(--mono);color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
 .slist .t{font:400 var(--fs-micro)/1.4 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .slist .a{overflow:hidden;font:400 var(--fs-caption)/1.4 var(--mono);text-overflow:ellipsis;white-space:nowrap}
+/* Compare's narrow columns: a command takes up to two lines before it is cut */
+.cmpgrid .slist .a{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere}
 .slist .a.msg{font-family:var(--sans);color:var(--ink2)}
 .slist .a.msg a{color:var(--ink2);text-decoration:underline;text-decoration-color:var(--link-line);text-underline-offset:2px}
 .slist .a.msg a:hover{color:var(--accent);text-decoration-color:currentColor}
@@ -431,6 +435,8 @@ details.res{margin:var(--sp-2) 0 var(--sp-6)}
   .frow .lb-btn{width:100%}
   .frow .count{flex:1 1 100%;margin-left:0}
   .frow [data-lscope] + .lb{flex-basis:100%}
+  .frow select[data-lf=harness] + .lb{flex-basis:calc(42% - var(--sp-8))}  /* a dataset name needs the wider half ("gymnasium-robotics") */
+  .frow select[data-lf=dataset] + .lb{flex-basis:calc(58% - var(--sp-8))}
   table.tasks tbody th[scope=row],a.tk{max-width:180px}
   table.trials .rowh{max-width:200px}
   .slist li{grid-template-columns:28px 46px minmax(0,1fr)}
@@ -506,7 +512,8 @@ table.list.runs th[scope="row"],table.list.runs td.sus{white-space:normal}
 table.list.runs td.sus{min-width:0;max-width:none;overflow-wrap:anywhere}
 .rtag{display:inline-block;margin-left:var(--sp-6);padding:0 var(--sp-6);border:1px solid var(--line);border-radius:var(--r-xs);font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted);white-space:nowrap}
 /* "no image input": quiet text, no box, so a column of them reads cleanly (build_runs_site.noimg_tag) */
-.noimg{margin-left:var(--sp-6);font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted);white-space:nowrap}
+.noimg{position:relative;z-index:1;font:400 var(--fs-caption)/1.5 var(--sans);color:var(--muted);white-space:nowrap}  /* above the row link, so its tooltip shows */
+.nis{word-spacing:var(--sp-6)}  /* the space before the tag, widened; where the tag starts a line it collapses, so the tag keeps the left edge */
 .sl-s{display:none}
 /* a run's title with its marks: the marks a little smaller than the serif heading's text */
 .rh1 .model-mark{width:.78em;height:.78em;vertical-align:-.04em}
@@ -551,7 +558,7 @@ table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-
 /* run page on phones: Task (with the outcome under its title), Result and Time; Outcome and Steps columns drop, no sideways scroll */
 .oc2{display:none}
 @media (max-width:640px){
-  table.list.rt th.oc,table.list.rt td.oc,table.list.rt .stc,table.list.rt .rnc{display:none}
+  table.list.rt th.oc,table.list.rt td.oc,table.list.rt .stc{display:none}
   table.list.rt th[scope="row"]{width:auto;min-width:0}
   table.list.rt .oc2,table.list.rt .tmeta{display:block;margin-top:var(--sp-2);font-size:var(--fs-caption);line-height:1.4;color:var(--muted)}
   table.list.rt .tvar{display:block}  /* the variant ("vision") under the title */
@@ -578,3 +585,28 @@ table.vt td{padding:var(--sp-4) 0;color:var(--ink);font-variant-numeric:tabular-
 .crumbs .cgp{margin:0;color:inherit;white-space:nowrap}  /* a crumb and the "/" after it never part */
 .crumbs .cgp > a{white-space:normal}
 .crumbs > span[aria-current] .model-mark{margin-right:.4em}
+
+/* /runs/: a run's name hangs from its mark: wrapped lines, the tag and the dataset line start under the name, not the
+   mark; a row's cells share their first line; the whole row opens the run */
+table.list.runs tbody th{padding-left:1.4em;text-indent:-1.4em}
+table.list.runs .rds{text-indent:0}
+table.list.runs tbody th,table.list.runs tbody td{vertical-align:baseline}
+table.list.runs tbody tr,table.list.rt tbody tr{position:relative}
+table.list.runs a.rl::after,table.list.rt a.rtk::after{content:"";position:absolute;inset:0}
+table.list.runs tbody tr:hover a.rl,table.list.rt tbody tr:hover a.rtk{color:var(--accent)}
+/* /runs/ at desktop widths: fixed columns, so sorting or filtering never moves them */
+@media (min-width:621px){
+  table.list.runs{table-layout:fixed}
+  table.list.runs col.c-run{width:34%}table.list.runs col.c-ds{width:28%}table.list.runs col.c-date{width:15%}table.list.runs col.c-n{width:11.5%}
+}
+@media (max-width:620px){table.list.runs th:last-child,table.list.runs td:last-child{padding-right:0}}  /* the last column ends at the search's edge */
+/* run pages on phones: a retried task says "not counted"; the variant stays on the title's line, quieter */
+@media (max-width:640px){
+  table.list.rt .tvar{display:inline;font-weight:400;color:var(--ink2)}
+  table.list.rt .tvar .tsep{display:inline}
+}
+table.list.rt td.oc{white-space:nowrap}  /* an outcome never orphans its last word ("Agent gave / up") */
+@media (max-width:360px){.frow .lb{flex-basis:100%}}  /* the narrowest phones: one select per row, each value whole */
+/* a run page's title and its facts break only between their parts ("pi0-FAST-LIBERO (LeRobot) · VLA · libero"): each
+   part moves to the next line whole, and wraps at its own spaces only when it is wider than the line */
+.rh1 .tpart,.page-head .meta .tpart{display:inline-block;max-width:100%;overflow-wrap:normal}
