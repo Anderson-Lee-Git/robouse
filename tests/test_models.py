@@ -57,8 +57,8 @@ def test_model_ids_resolve_to_a_provider_in_benchflow_style() -> None:
 def test_image_capability_comes_from_registry_metadata() -> None:
     assert models.accepts_images(models.resolve("codex", "baseten/zai-org/GLM-5.3")) is True
     assert models.max_images(models.resolve("codex", "baseten/zai-org/GLM-5.3")) == 8
-    # GLM-5.3-Flash took up to 64 images per request in a probe but miscounted them beyond 16: capped at 8 like GLM-5.3,
-    # so a long CLI session never sends it more than 8 per request
+    # GLM-5.3-Flash took 50 images in one request in a probe (its limit is 64) but miscounted them beyond 16: capped
+    # at 8 like GLM-5.3, so a long CLI session never sends it more than 8 per request
     from robouse.harnesses.gateway import image_cap
 
     flash = models.resolve("claude-code", "baseten/zai-org/GLM-5.3-Flash")
