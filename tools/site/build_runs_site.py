@@ -867,7 +867,9 @@ def glue(html_text: str) -> str:
     return _COUNT_NOUN.sub("\u00a0", _COUNT_OF.sub("\u00a0of\u00a0", _GLUE_BEFORE.sub("\u00a0", html_text)))
 
 
-def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str = "", data: str = "") -> str:
+def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str = "", data: str = "", image: str = "") -> str:
+    """A runs page. Its social card is the hub's template: a trial's own poster (a JPEG, image) as a large card, else the
+    site's card; every page says twitter:card."""
     body = glue(body)
     synth = ('<div class="synth" role="note"><b>SYNTHETIC TEST DATA</b><span>Fabricated results that test how the viewer holds at scale '
              f'({len(HM)} harness + model pairs, several seeds per task). These are not real runs.</span></div>') if SYNTH else ""
@@ -882,7 +884,9 @@ def page(title: str, body: str, *, desc: str = "", canonical: str = "", cls: str
 {f'<link rel="canonical" href="{esc(canonical)}">' if canonical and not SYNTH else ''}
 <meta property="og:site_name" content="Robo Use">
 <meta property="og:title" content="{esc(title)}">
-<meta property="og:image" content="https://robouse.ai/og/landing.png?v=7">
+<meta property="og:description" content="{esc(desc or 'Final runs of Robo Use: agent harnesses as robot policies in simulation.')}">
+<meta property="og:image" content="{esc("https://robouse.ai" + image if image else "https://robouse.ai/og/landing.png?v=7")}">
+<meta name="twitter:card" content="summary_large_image">
 {FAVICON}
 <script src="/theme.js"></script>
 {CHROME["link"]}
@@ -1334,7 +1338,8 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 <noscript><style>.pctl,nav.tabs,#panel{{display:none}}</style><p class="muted">The trajectory, verdict and files need JavaScript; the recording plays above.</p></noscript>
 """
     return page(f"{t['title']} · {label} · Runs · Robo Use", body, desc=f"{t['title']}: {label}, {long_status(t, st).lower()}.",
-                cls="trialpage", data=f' data-trial="{esc(t["trial"])}"', canonical=f"https://robouse.ai/runs/t/{t['trial']}/")
+                cls="trialpage", data=f' data-trial="{esc(t["trial"])}"', canonical=f"https://robouse.ai/runs/t/{t['trial']}/",
+                image=f"/runs/p/{t['trial']}.jpg" if (POSTERS / f"{t['trial']}.jpg").is_file() else "")
 
 
 def build_compare() -> str:
@@ -1343,7 +1348,8 @@ def build_compare() -> str:
 <div id="compare" class="compare" aria-busy="true">{skeleton()}</div>
 <noscript><style>#compare{{display:none}}</style><p class="muted">Compare needs JavaScript. Each trial page plays its own recording.</p></noscript>
 """
-    return page("Compare · Runs · Robo Use", body, cls="comparepage", canonical="https://robouse.ai/runs/compare/")
+    return page("Compare · Runs · Robo Use", body, cls="comparepage", canonical="https://robouse.ai/runs/compare/",
+                desc="Two trials of one task, side by side: their recordings, steps and results.")
 
 
 def ds_cell(ds: str) -> str:

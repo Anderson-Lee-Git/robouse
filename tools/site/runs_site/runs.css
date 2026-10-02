@@ -5,7 +5,7 @@
 
 .rv{font-size:var(--fs-small);line-height:1.55;
   /* status text on its own tint: the status colour pulled toward the ink so it keeps AA (4.5:1) in both themes */
-  --ok-ink:color-mix(in srgb,var(--ok) 78%,var(--ink));--no-ink:color-mix(in srgb,var(--no) 80%,var(--ink));--warn-ink:color-mix(in srgb,var(--warn) 80%,var(--ink))}
+  --warn-ink:color-mix(in srgb,var(--warn) 80%,var(--ink))}  /* --ok-ink and --no-ink: /ui.css, with the status badge */
 .rv a{color:inherit;text-decoration:none}
 .mono{font-family:var(--mono)}
 .num{font-variant-numeric:tabular-nums}
@@ -182,11 +182,7 @@ dl.facts dd{overflow-wrap:break-word}
 .rv dd{margin:var(--sp-2) 0 0;font-weight:500;font-variant-numeric:tabular-nums}
 .rv dd a{border-radius:var(--r-xs);transition:color var(--t-fast)}
 .rv dd a:hover{color:var(--accent)}
-.badge{display:inline-flex;align-items:center;height:var(--ctl-xs);padding:0 var(--sp-8);border-radius:var(--r-xs);font:500 var(--fs-caption)/1 var(--sans);white-space:nowrap}
-.badge.ok{color:var(--ok-ink);background:color-mix(in srgb,var(--ok) 10%,transparent)}
-.badge.no{color:var(--no-ink);background:color-mix(in srgb,var(--no) 9%,transparent)}
-.badge.infra,.badge.partial,.badge.some{color:var(--ink2);background:var(--press)}
-.badge.budget{color:var(--ink2);background:color-mix(in srgb,var(--muted) 12%,transparent)}
+/* the status badge (a mark and a word) is the site's: /ui.css .badge, the same on the hub */
 .state{font:500 var(--fs-meta)/1 var(--sans);color:var(--muted)}
 .state.running{color:var(--ink2)}
 .chip{display:inline-flex;align-items:center;height:var(--ctl-xs);padding:0 var(--sp-8);border:var(--hairline);border-radius:var(--r-pill);font:400 var(--fs-caption)/1 var(--sans);color:var(--ink2)}
