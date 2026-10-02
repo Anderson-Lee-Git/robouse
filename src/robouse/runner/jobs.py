@@ -1,10 +1,13 @@
-"""Sets of trials: task selection, seeds, epochs, retries and resume."""
+"""Sets of trials: task selection, seeds, epochs, retries and resume. On a real robot a safety stop holds the batch until
+the operator has inspected the robot (real/batch.py)."""
 
 from __future__ import annotations
 
 import concurrent.futures as cf
 import json
 import shutil
+import sys
+import threading
 import time
 from pathlib import Path
 
@@ -84,6 +87,10 @@ def run_many(
     interface: str | None = None,
 ) -> list[dict]:
     tasks = select_tasks(root, filt, ids, include, exclude, limit, sample, sample_seed, mode)
+    if concurrency > 1 and any(t.spec.get("backend") == "real" and _live(t.spec) for t in tasks):
+        # one live robot, one trial at a time (a rig from --rig or ROBOUSE_RIG): a stop must hold every later trial
+        print("robouse: live-robot trials run one at a time (--concurrency is ignored)", file=sys.stderr, flush=True)
+        concurrency = 1
     runs = [(t, sd, ep) for t in tasks for sd in parse_seeds(seeds) for ep in range(max(1, epochs))]
     if (
         resume
@@ -126,41 +133,86 @@ def run_many(
         )
     )
     results = []
+    not_run: list[str] = []
+    halt = threading.Event()  # a real-robot safety stop the operator did not clear: no further trial starts
+    hold = threading.Lock()  # held while the operator inspects the robot: the next trial waits
+
+    def label_of(item) -> str:
+        t, sd, ep = item
+        return t.id + (f"@seed{sd}" if sd is not None else "") + (f"#e{ep}" if epochs > 1 else "")
 
     def one(item) -> dict:
         t, sd, ep = item
-        for attempt in range(retries + 1):  # infrastructure failures only (a model's failure is a result, not retried)
-            r = run_trial(
-                t,
-                harness,
-                model,
-                job_dir,
-                timeout=timeout,
-                seed=sd,
-                epoch=ep,
-                split=split,
-                extra_instruction=extra_instruction,
-                prior_learnings=prior_learnings,
-                attempt=attempt,
-                interface=interface,
-            )
-            if not r["exception"]:
-                break
-            if attempt < retries:
-                bad = job_dir / r["trial"]
-                dest = job_dir / "_infra_failed"
-                dest.mkdir(exist_ok=True)
-                if bad.exists():
-                    shutil.move(str(bad), str(dest / bad.name))
-                time.sleep(min(60, 5 * 2**attempt))
-        r["task"] = t.id + (f"@seed{sd}" if sd is not None else "") + (f"#e{ep}" if epochs > 1 else "")
+        label = label_of(item)
+        with hold:
+            if halt.is_set():
+                return {"task": label, "not_run": True}
+        real = t.spec.get("backend") == "real"
+        live = real and _live(t.spec)
+        r: dict = {}
+        try:
+            for attempt in range(retries + 1):  # infrastructure failures only (a model's failure is a result)
+                r = run_trial(
+                    t,
+                    harness,
+                    model,
+                    job_dir,
+                    timeout=timeout,
+                    seed=sd,
+                    epoch=ep,
+                    split=split,
+                    extra_instruction=extra_instruction,
+                    prior_learnings=prior_learnings,
+                    attempt=attempt,
+                    interface=interface,
+                )
+                if not r["exception"] or live:  # a live robot is never retried blind: a failed trial holds the batch
+                    break
+                if attempt < retries:
+                    bad = job_dir / r["trial"]
+                    dest = job_dir / "_infra_failed"
+                    dest.mkdir(exist_ok=True)
+                    if bad.exists():
+                        shutil.move(str(bad), str(dest / bad.name))
+                    time.sleep(min(60, 5 * 2**attempt))
+            r["task"] = label
+            if real:
+                from ..real import batch
+
+                stop = batch.stop_of(job_dir / r["trial"], t.spec)
+                if stop is not None:
+                    with hold:  # the operator inspects the robot; no other trial starts meanwhile
+                        if not halt.is_set() and not batch.inspect(stop, job_dir):
+                            halt.set()
+                            r["halted_batch"] = stop
+        except Exception as e:  # a real robot's batch fails closed: no further trial starts
+            if not real:
+                raise
+            from ..backends.real.backend import real_mode
+            from ..real import batch
+
+            halt.set()
+            r = {
+                "trial": r.get("trial"),
+                "reward": r.get("reward", 0.0),
+                "outcome": r.get("outcome"),
+                "steps": r.get("steps"),
+                "wall_s": r.get("wall_s", 0.0),
+                "exception": r.get("exception") or f"{type(e).__name__}: {e}",
+                "task": label,
+                "halted_batch": batch.fail_closed(job_dir, label, r.get("trial"), real_mode(t.spec), e),
+            }
         return r
 
+    real_batch = any(t.spec.get("backend") == "real" for t, _, _ in runs)
     with open(job_dir / "run_log.jsonl", "a") as log, cf.ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:
-        futs = [ex.submit(one, x) for x in runs]
+        futs = {ex.submit(one, x): x for x in runs}
         try:
             for fut in cf.as_completed(futs):
                 r = fut.result()
+                if r.get("not_run"):
+                    not_run.append(r["task"])
+                    continue
                 results.append(r)
                 log.write(json.dumps(r) + "\n")
                 log.flush()
@@ -173,6 +225,33 @@ def run_many(
             interrupt_all()
             ex.shutdown(wait=True, cancel_futures=True)
             raise
+        except Exception as e:
+            if not real_batch:  # a simulated batch as before: the trials already queued still run, then the error
+                raise
+            halt.set()  # a real robot's batch fails closed: no further trial starts
+            ex.shutdown(wait=True, cancel_futures=True)
+            from ..real import batch
+
+            stop = batch.fail_closed(job_dir, "(batch)", None, None, e)
+            results.append(
+                {"task": "(batch)", "reward": 0.0, "exception": f"{type(e).__name__}: {e}", "halted_batch": stop}
+            )
+            not_run += [label_of(x) for f, x in futs.items() if f.cancelled()]
+        stops = [r["halted_batch"] for r in results if r.get("halted_batch")]
+        if stops:
+            from ..real import batch
+
+            try:
+                log.write(json.dumps({"halted": stops[0], "not_run": sorted(not_run)}) + "\n")
+            except OSError:  # the halt is still reported below and by the exit status
+                pass
+            print(batch.halt_message(stops[0], len(not_run)), file=sys.stderr, flush=True)
     ok = sum(r["reward"] for r in results)
     print(f"{harness}/{model or '-'}: {ok:.0f}/{len(results)} solved")
     return results
+
+
+def _live(spec: dict) -> bool:
+    from ..backends.real.backend import real_mode
+
+    return real_mode(spec) == "real"

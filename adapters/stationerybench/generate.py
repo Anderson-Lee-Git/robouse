@@ -50,9 +50,15 @@ def body(key: str, t: dict, budget: int) -> str:
         f"**Controls.** `robo act` takes one absolute target per joint in this order: {joints}. Targets are approached at "
         f"the safety speed limit over the following control steps ({p.control_hz:g} Hz). Skills: `move_joints` (both arms' "
         "ten arm joints, interpolated), `grip VALUE [left|right|both]`, `home`, `park`. The safety layer clamps joint limits, "
-        "limits speed, bounds how far a command may lead the measured position, stops on over-temperature or the operator's "
-        "e-stop, and lets the operator gate every episode.\n\n**Observation.** `robo observe` reports `joint_pos` by name, "
-        "`gripper` per arm, `target`, `telemetry` and `mode` (`real` or `hil-mock`); `robo observe --image` shows the cameras. "
+        "limits speed, bounds how far a command may lead the measured position, stops the episode on over-temperature, "
+        "the operator's e-stop, a stalled control loop or joint readings that stop arriving (also checked between "
+        "requests), and lets the operator gate every episode. Nothing detects an arm touching something: the arms "
+        "report no joint torque and the rig has no kinematic model. After a stop the arms hold their measured "
+        "positions and the grippers keep their commands, so a grasped object is not let go, and nothing moves until "
+        "the operator has inspected them. When the episode ends otherwise, the arms hold where they are: their parks "
+        "are not calibrated, so they park only when the operator approves.\n\n"
+        "**Observation.** `robo observe` reports `joint_pos` by name, `gripper` per arm, `target`, `telemetry` and "
+        "`mode` (`real` or `hil-mock`); `robo observe --image` shows the cameras. "
         f"Remarks from the operator appear under `operator_notes`.\n\nThe budget is {budget} control steps ({MAX_SECONDS} s, "
         "upstream's time limit).\n\n" + EMBODIED_USAGE
     )

@@ -511,8 +511,15 @@ def run_trial(
                 )
             except OSError:  # the server went away (e.g. it got the same Ctrl-C)
                 pass
+        # a real arm's server leaves the arm before it exits (parks it slowly after a normal end; after a stop it holds
+        # and may ask the operator first): give it the operator's time and the park's
+        wait_s = 5.0 if interrupted or INTERRUPTED.is_set() else 60.0
+        if task.spec.get("backend") == "real":
+            from ..backends.real.backend import real_config
+
+            wait_s = float(real_config(task.spec).get("operator_timeout_s", 600)) + 180.0
         try:
-            server.wait(timeout=5 if interrupted or INTERRUPTED.is_set() else 60)
+            server.wait(timeout=wait_s)
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait()

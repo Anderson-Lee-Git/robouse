@@ -11,6 +11,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from .. import config
 from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_task_path
 
 HARNESS_HELP = (
@@ -287,7 +288,7 @@ def run_many(a: argparse.Namespace) -> int:
                     "epochs": a.epochs,
                     "trials": len(ts) * len(plan_seeds) * max(1, a.epochs),
                     "split": a.split,
-                    "concurrency": 1 if a.rig else a.concurrency,
+                    "concurrency": 1 if a.rig or config.env("ROBOUSE_RIG") else a.concurrency,
                     "rig": a.rig,
                     "retries": a.retries,
                 },
@@ -306,7 +307,7 @@ def run_many(a: argparse.Namespace) -> int:
         Path(a.out),
         filt=a.filter,
         limit=a.limit,
-        concurrency=1 if a.rig else a.concurrency,
+        concurrency=1 if a.rig or config.env("ROBOUSE_RIG") else a.concurrency,  # one trial at a time on a rig
         timeout=a.timeout,
         ids=ids,
         resume=a.resume,
@@ -329,6 +330,8 @@ def run_many(a: argparse.Namespace) -> int:
             f"robouse: {failed} trial(s) failed on infrastructure (exception_info in their result.json)",
             file=sys.stderr,
         )
+    if any(r.get("halted_batch") for r in results):  # a real robot stopped and the operator did not clear it
+        return 3
     return 1 if failed else 0
 
 
