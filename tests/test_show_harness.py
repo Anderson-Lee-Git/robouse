@@ -49,6 +49,11 @@ def test_parser_follows_the_repository_ladder() -> None:
     assert C.parse_wrist_marker(raw) is False and C.parse_wrist_marker("WRIST: yes then WRIST: NO") is False
     assert C.parse_plan(raw, 3) == ["MV_BACK", "MV_BACK", "MV_LEFT"] and C.parse_plan("no plan", 3) == []
     assert C.recover_allowed_token("MV_LEFT or MV_RIGHT, hard to say", units) == ""  # two candidates: no guess
+    # a cue word matches case-insensitively ("so ... grasp"); a lowercase word is not a unit (regression, 2026-10-02:
+    # a reply that only said "grasp" was executed as nothing); the controller then asks again for the token
+    assert C.recover_allowed_token("so I will grasp it now", units) == "grasp"
+    with pytest.raises(ValueError):
+        C.parse_single_token("so I will grasp it now", units)
 
 
 def test_subtask_plan_parsing_merges_a_pure_reach_into_its_grasp() -> None:
@@ -300,6 +305,33 @@ def test_zero_shot_plans_moves_on_the_lattice_and_ends_with_done(tmp_path, monke
     reported = [r for e in ev for r in e.get("requests") or []]
     assert len(reported) == len(trace)
     assert [r.split()[1] for r in reported] == [t["req"]["op"].replace("_", "-") for t in trace]
+
+
+def test_a_reply_without_an_exact_unit_is_asked_again(tmp_path, monkeypatch, scripted) -> None:
+    sock, ws, out, th = _episode(tmp_path, monkeypatch, goal=[0.02, 0.0, 0.05], max_steps=400)
+    Scripted.plan = {
+        "subgoals": [
+            {
+                "id": "go",
+                "target": "goal",
+                "affordance": "the goal point",
+                "motion": "MOVE",
+                "description": "move right",
+                "completion": "at the goal",
+            }
+        ]
+    }
+    # "so ... grasp": a cue word with a lowercase word, not a unit; the token-only retry answers MV_RIGHT
+    Scripted.replies = ["so I would grasp it now", "MV_RIGHT", _decision("DONE", "at the goal")]
+    p, ev = _run_client(sock, ws, scripted, "Move right.", {"mode": "zs"})
+    th.join(timeout=30)
+    assert p.returncode == 0, p.stderr
+    d = [e for e in ev if e["type"] == "decision"]
+    assert d[0]["unit"] == "MV_RIGHT" and d[0]["source"] == "token_retry"
+    assert [c["role"] for c in d[0]["calls"]] == ["controller", "token_retry"]
+    retry = Scripted.bodies[2]["messages"][0]["content"][-1]["text"]
+    assert retry.startswith("Answer with exactly one token from this list and nothing else:\nMV_FWD MV_BACK")
+    assert "Return JSON only" not in retry and out["success"] is True
 
 
 def test_recovery_reopens_an_empty_grasp_and_rolls_back(tmp_path, monkeypatch, scripted) -> None:

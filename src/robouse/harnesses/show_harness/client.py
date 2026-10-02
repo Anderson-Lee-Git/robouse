@@ -736,7 +736,7 @@ def parse_single_token(raw: str, allowed) -> str:
     if m:
         return m.group(1)
     rec = recover_allowed_token(stripped, allowed)
-    if rec:
+    if rec in allowed:  # the cue patterns match case-insensitively; only an exact unit counts
         return rec
     raise ValueError(f"invalid token {raw[:200]!r}; allowed tokens are {list(allowed)}")
 
@@ -1246,7 +1246,7 @@ class ZeroShot:
         # the cot path's "reasoning" is the whole reply on one line; the WRIST marker and PLAN are read from it
         reasoning = one_line(raw)
         source = "model"
-        if not token:
+        if token not in self.allowed:  # nothing recovered, or a case-insensitive cue match ("grasp"): retry
             token, source = self._token_retry(prompt, images, previous, calls)
         extra = {
             "target_in_wrist": parse_wrist_marker(reasoning) if self.wants_wrist else None,
