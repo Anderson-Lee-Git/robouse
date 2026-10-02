@@ -301,16 +301,19 @@ def _playback(tmp_path, monkeypatch, fixture: str, **real_overrides):
     return ep, fx
 
 
-def _replay(ep, fx, until: float | None = None) -> list[tuple[dict, dict]]:
+def _replay(ep, fx, until: float | None = None, wiggle: float = 0.0) -> list[tuple[dict, dict]]:
     """Send the recorded commands as `robo act`, each matched to the recorded step the mock serves next (a hold the
-    safety layer commands takes a step too); returns (recorded step, response) for every error or reported contact."""
+    safety layer commands takes a step too); returns (recorded step, response) for every error or reported contact.
+    `wiggle` moves each gripper command by +-wiggle, as a policy streaming joint targets does."""
     robot = ep.backend.driver.robot
     out = []
     while robot.k + 1 < len(fx.steps) and not ep.finished:
         s = fx.steps[robot.k + 1]
         if until is not None and s["t"] > until:
             break
-        r = ep.handle({"op": "act", "action": s["cmd"]})
+        cmd = list(s["cmd"])
+        cmd[-1] += wiggle * (1 if len(robot.sent) % 2 else -1)
+        r = ep.handle({"op": "act", "action": cmd})
         if not r["ok"] or "contact" in r["result"]:
             out.append((s, r))
     return out
@@ -428,8 +431,8 @@ def test_hot_motor_does_not_start(tmp_path):
 
 
 def test_contact_watch_rules():
-    """The watch on synthetic streams: Sep 5 thresholds in a watched move, unwatched_factor x them elsewhere, gripper
-    motion ignored, and the stall (the touchdown criterion) on settled poses."""
+    """The watch on synthetic streams: Sep 5 thresholds in a watched move, unwatched_factor x them elsewhere, the arm
+    still watched while the gripper moves, and the stall (the touchdown criterion) on settled poses."""
     from robouse.real.contact import ContactWatch
     from robouse.real.robots import METAL
 
@@ -457,8 +460,16 @@ def test_contact_watch_rules():
     hold = [(0, 4, 0 * drop)] * 4
     (hit,) = feed(ContactWatch(METAL, METAL.contact), hold + [(0, 4, push)], watched=False)
     assert hit.kind == "holding"
-    grasp = [(0, 4 + 10 * i, drop * (i % 2)) for i in range(1, 6)]  # the gripper closes; the arm torque twitches
+    # the gripper closes and the shoulder twitches by 0.72 N m (Sep 5: gripper motion moved it by up to 0.74 x 1.5)
+    grasp = [(0, 4 + 10 * i, 0.45 * drop * (i % 2)) for i in range(1, 6)]
     assert feed(ContactWatch(METAL, METAL.contact), hold + grasp + hold, watched=True) == []
+    bump = [(0, 4 + 10 * i, drop * (i >= 3)) for i in range(1, 6)]  # ... or something pushes the arm meanwhile
+    (hit,) = feed(ContactWatch(METAL, METAL.contact), hold + bump, watched=True)
+    assert hit.kind == "holding" and hit.change == {"shoulder_lift": -1.6}
+    for grip_step in (0.2, 1.0):  # a policy streaming joint targets moves the gripper every step: the same contact
+        streamed = [(dcmd, 4 + grip_step * k, dtq) for k, (dcmd, _, dtq) in enumerate(move)]
+        (hit,) = feed(ContactWatch(METAL, METAL.contact), streamed, watched=True)
+        assert hit.kind == "moving" and hit.change == {"shoulder_lift": -1.6}
 
     # the stall: tool height in mm on shoulder_pan for the test; the command descends 2 mm a move, the arm stops at 0
     def tool(q):
@@ -475,13 +486,15 @@ def test_contact_watch_rules():
     assert hit.kind == "stall" and hit.change["tool_shortfall_mm"] == pytest.approx(4.5)  # at the -4 mm command
 
 
-def test_contact_watch_quiet_on_recorded_motion_then_stops_at_the_elbow_stop(tmp_path, monkeypatch):
+@pytest.mark.parametrize("wiggle", [0.0, 0.05])
+def test_contact_watch_quiet_on_recorded_motion_then_stops_at_the_elbow_stop(tmp_path, monkeypatch, wiggle):
     """Verified contact (2026-09-05 13:16, fixture metal-hanoi-131602 from the recorder's log): 91 s of normal motion
     replay without a contact; then the elbow straightens against its mechanical stop, away from the table: a contact
     outside a watched move stops the episode, and every joint is retargeted to where it is, so nothing pushes against
-    the stop. The guard itself no longer commands the elbow past 174 deg (Sep 5 commanded 180)."""
+    the stop. The guard itself no longer commands the elbow past 174 deg (Sep 5 commanded 180). The same with the
+    gripper command moving every step (a streaming policy): gripper motion does not mute the arm's watch."""
     ep, fx = _playback(tmp_path, monkeypatch, "metal-hanoi-131602")
-    hits = _replay(ep, fx)
+    hits = _replay(ep, fx, wiggle=wiggle)
     assert len(hits) == 1
     step, r = hits[0]
     assert step["label"] == "peg1_s_3" and 91.8 <= step["t"] <= 92.0
@@ -517,12 +530,14 @@ def test_contact_stall_on_the_recorded_table_touchdown(tmp_path, monkeypatch):
     assert contact["watched"] is True and contact["action"].startswith("move stopped")
 
 
-def test_contacts_in_watched_moves_then_one_too_many(tmp_path, monkeypatch):
+@pytest.mark.parametrize("wiggle", [0.0, 0.05])
+def test_contacts_in_watched_moves_then_one_too_many(tmp_path, monkeypatch, wiggle):
     """The HIL fixture's own recording (12:18:53): the Sep 5 watch flagged two contacts on the way down to a bead (the
     second, on the final descent, very likely real: the grasp that followed needs the tips at table level). The first
-    stops the move and is reported to the agent; the second is one too many."""
+    stops the move and is reported to the agent; the second is one too many. The same with the gripper command
+    moving +-0.05 every step, as a policy streaming joint targets sends it."""
     ep, fx = _playback(tmp_path, monkeypatch, "metal-bowl-121853")
-    hits = _replay(ep, fx)
+    hits = _replay(ep, fx, wiggle=wiggle)
     assert [round(s["t"], 2) for s, _ in hits] == [56.24, 63.17]
     first, second = hits[0][1], hits[1][1]
     assert first["ok"] and first["result"]["contact"]["count"] == 1 and first["result"]["contact"]["kind"] == "moving"

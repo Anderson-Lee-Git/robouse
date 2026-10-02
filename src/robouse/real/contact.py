@@ -18,9 +18,11 @@ command stream (a move, the arm settling after it, a hold) and reports a contact
 A step is watched when the command or the target puts the tool point within `watch_height` of the table (the backend
 decides; the Sep 5 harness watched its descents below 3 cm) and the move is not rising. Elsewhere the torque
 thresholds are `unwatched_factor` times larger: moves away from the table, and above it, change the gravity load far
-more than a light touch does. Gripper motion is not a move: grasping is contact by design, so the watch takes fresh
-torque references once the gripper command stops. What a contact does (stop the move and back off, or stop the
-episode) is up to the backend (backends/real/backend.py).
+more than a light touch does. Gripper motion is not a move, and the gripper's own torque is not watched (grasping is
+contact by design), but the arm joints stay watched while the gripper moves, as when a policy streams joint targets
+that move both at once: on the Sep 5 recordings, the 24 gripper motions made with the arm still moved the arm joints'
+torque by at most 0.74 of a threshold (shoulder_lift) against the torque before the gripper started. What a contact
+does (stop the move and hold, or stop the episode) is up to the backend (backends/real/backend.py).
 
 Measured offline on the 2026-09-05 recordings (10,747 control steps in 22 sessions with torque), the watch fires on
 both verified contacts (the 12:17 table touchdown as a stall, the 13:16 elbow stop as a jump outside a watched move),
@@ -76,10 +78,10 @@ class ContactWatch:
     def __init__(self, prof: Profile, settings: ContactSettings, tool: Callable | None = None):
         self.s = settings
         self.names = list(prof.joints)
-        self.ti = [i for i, j in enumerate(prof.joints) if j in settings.dtorque]  # joints with a torque threshold
-        self.lim = np.asarray([settings.dtorque[prof.joints[i]] for i in self.ti], dtype=float)
         self.arm = list(prof.arm_idx)
-        self.grip = list(prof.gidx)
+        # arm joints with a torque threshold (a gripper threshold is ignored: grasping is contact by design)
+        self.ti = [i for i in self.arm if prof.joints[i] in settings.dtorque]
+        self.lim = np.asarray([settings.dtorque[prof.joints[i]] for i in self.ti], dtype=float)
         self.tool = tool  # q -> tool point (m, base frame); None: no stall check
         self.n = 0
         self.reset()
@@ -101,7 +103,6 @@ class ContactWatch:
         self.settle_k = 0
         self.still = 0
         self.hold_ref: np.ndarray | None = None  # torque where the current hold started
-        self.quiet = 0  # steps without torque checks (gripper motion and its transient)
         self.descent: tuple[np.ndarray, np.ndarray] | None = None  # (commanded, measured) tool point at its start
         self.low_z = 0.0  # lowest commanded tool height of the descent
         self.rest: tuple[np.ndarray, np.ndarray] | None = None  # (commanded, measured) tool point last at rest
@@ -118,9 +119,6 @@ class ContactWatch:
             tq = np.asarray(raw, dtype=float)[self.ti]
         prev = self.prev_cmd
         moving = prev is not None and float(np.max(np.abs(cmd[self.arm] - prev[self.arm]))) > self.MOVE_EPS
-        gripping = (
-            prev is not None and bool(self.grip) and float(np.max(np.abs(cmd[self.grip] - prev[self.grip]))) > 0.01
-        )
         zc = float(np.asarray(self.tool(cmd), dtype=float)[2]) if self.tool is not None else None
         if moving and self.phase != "moving":
             self.move_z0 = self.prev_zc  # the commanded tool height this move starts from
@@ -129,19 +127,13 @@ class ContactWatch:
         watched = watched and not dz > 0.001  # a rising move leaves the table: the larger thresholds
         settled = self._phase(moving, watched, q)
         hit = self._stall(cmd, q, watched, settled)
-        if gripping:  # grasping is contact by design: no torque checks until the gripper transient has passed
-            self.quiet = self.s.transient_steps + 1
         if hit is None and tq is not None:
-            if self.quiet:
-                self.quiet -= 1
-                self.moving_base = self.hold_ref = self.baseline = None
-            else:
-                hit = self._torque(tq, watched, settled, descended=dz < -0.001)
+            hit = self._torque(tq, watched, settled, descended=dz < -0.001)
         self.prev_cmd, self.prev_q, self.prev_zc = cmd, q, zc
         if tq is not None:
             self.prev_tq = tq
             # the last few readings while holding still: the next move's baseline
-            self.recent = (self.recent + [tq])[-3:] if self.phase == "holding" and not self.quiet else []
+            self.recent = (self.recent + [tq])[-3:] if self.phase == "holding" else []
         if hit is not None:
             # fresh references once the arm has settled at the hold: the contact force releasing is not a new contact
             self.reset()
