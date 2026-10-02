@@ -433,7 +433,7 @@
     if (v) v.removeAttribute("controls");  /* native controls are the no-script fallback; the page has its own */
     var below = document.createElement("div"); below.id = "below"; stage.parentNode.insertBefore(below, stage.nextSibling);
     var tabs = $$("nav.tabs [role=tab]");
-    function tabOf(hash) { var t = (hash || "").replace(/^#/, "").split("/")[0]; return /^(recording|trajectory|verdict|run|files)$/.test(t) ? t : "recording"; }
+    function tabOf(hash) { var t = (hash || "").replace(/^#/, "").split("/")[0]; if (t === "run") t = "timing"; return /^(recording|trajectory|verdict|timing|files)$/.test(t) ? t : "recording"; }  // #run: the tab's old address
     stage.className = "stage t-" + tabOf(location.hash);
     tabs.forEach(function (a) { a.setAttribute("aria-selected", a.getAttribute("data-tab") === tabOf(location.hash) ? "true" : "false"); a.tabIndex = a.getAttribute("aria-selected") === "true" ? 0 : -1; });
     getJSON("/runs/d/" + id + ".json").then(function (d) {
@@ -575,12 +575,12 @@
         current = tab;
         tabs.forEach(function (a) { var on = a.getAttribute("data-tab") === tab; a.setAttribute("aria-selected", on ? "true" : "false"); a.tabIndex = on ? 0 : -1; if (on && focusTab) a.focus(); });
         stage.className = "stage t-" + tab;
-        if (v && (tab === "run" || tab === "files")) v.pause();
+        if (v && (tab === "timing" || tab === "files")) v.pause();
         below.innerHTML = "";
-        panel.innerHTML = ({recording: recording, trajectory: trajectory, verdict: verdict, run: run, files: files})[tab]();
+        panel.innerHTML = ({recording: recording, trajectory: trajectory, verdict: verdict, timing: run, files: files})[tab]();
         panel.setAttribute("aria-busy", "false");
         if (tab === "recording" && d.sprite) below.innerHTML = strip();
-        if (tab === "run") bindRun();
+        if (tab === "timing") bindRun();
         if (tab === "files") mountFiles();
         if (sync) { var i = sync.now(); if (i != null) { $$('[data-i="' + i + '"]').forEach(function (el) { el.classList.add("cur"); }); markTiles(i); } }
         /* a phone's tab bar scrolls: the selected tab is always in view */
@@ -649,8 +649,8 @@
           var moved = !!(s.v && s.env && s.env[1] > s.env[0]);
           var head = '<div class="sh"><span class="num">' + sn(d, s.i) + "</span>" + (s.src !== "agent" ? '<span class="src">' + ({system: "System", user: "Prompt"}[s.src] || h(s.src)) + "</span>" : "") +
             (s.ts != null ? '<span class="num">+' + dur(s.ts) + "</span>" : "") +
-            (s.tk ? (outOk ? '<span class="num" title="input and output tokens of this step">' + kfmt(s.tk[0]) + " in" + "\u00a0" + "·" + "\u00a0" + kfmt(s.tk[1]) + " out</span>"
-              : '<span class="num" title="input tokens of this step">' + kfmt(s.tk[0]) + " in</span>") : "") +
+            (s.tk ? (outOk ? '<span class="num" title="Input and output tokens of this step">' + kfmt(s.tk[0]) + " in" + "\u00a0" + "·" + "\u00a0" + kfmt(s.tk[1]) + " out</span>"
+              : '<span class="num" title="Input tokens of this step">' + kfmt(s.tk[0]) + " in</span>") : "") +
             (moved ? '<button type="button" class="seek" data-seek="' + s.v[0] + '" title="Seek the recording here">' + t2(s.v[0]) + "</button>" : "") + "</div>";
           var body = "", ep = s.src === "system" && /^episode: /.test(s.m || "");
           if (ep) {  /* the runner's closing line ("episode: outcome=done success=True steps_used=677/1400") as the Verdict says it */
@@ -807,7 +807,8 @@
         var rbody = (agent.length ? "<p>" + (vla ? "Policy" : "Agent") + " process: " + agent.join(", ") + ".</p>" : "") +
           (ep.agent_text && !said(ep.agent_text) ? "<blockquote>" + h(unrunner(ep.agent_text)) + "</blockquote>" : "");
         var result = rbody ? '<section class="card sum"><h2>Result</h2>' + rbody + "</section>" : "";
-        var chips = [meta.source_benchmark, meta.category && meta.category.replace(/-/g, " "), DIFFICULTY[meta.difficulty] || meta.difficulty].filter(Boolean)
+        var cat = meta.category ? meta.category.replace(/-/g, " ") : "";  // "Rule inference", as the task page's chips
+        var chips = [cat && cat.charAt(0).toUpperCase() + cat.slice(1), DIFFICULTY[meta.difficulty] ? DIFFICULTY[meta.difficulty] + " difficulty" : meta.difficulty].filter(Boolean)
           .map(function (x) { return '<span class="chip">' + h(x) + "</span>"; }).join("") +
           (meta.tags || []).map(function (x) { return '<span class="chip tag">' + h(x) + "</span>"; }).join("");
         var setup = '<section class="card sum"><h2>Setup</h2><p>' + h(vla && d.model_label ? d.model_label + ", a VLA policy" : who || "Agent") +
@@ -866,6 +867,7 @@
         if (window.FileTree) window.FileTree.mount(el, manifest(), {key: "files"});
         else el.innerHTML = emptyState("Could not load the file viewer.", "Reload the page to try again.");
       }
+      if (location.hash === "#run") history.replaceState(null, "", location.pathname + location.search + "#timing");  // the tab's old address, kept working
       show(location.hash.slice(1) || "recording");
     }).catch(function (err) {
       panel.setAttribute("aria-busy", "false");
