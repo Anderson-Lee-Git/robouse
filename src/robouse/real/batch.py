@@ -99,6 +99,29 @@ def inspect(stop: dict, job_dir: Path) -> bool:
     return ok
 
 
+def fail_closed(job_dir: Path, task: str, trial: str | None, mode: str | None, error: BaseException) -> dict:
+    """A batch hold that could not be checked or recorded (an exception in the trial, in reading its result, in the
+    inspection or in writing the logs) ends the batch: nobody knows how the robot was left. Writes halt.json if it can
+    and says why on stderr; run-many then exits 3."""
+    import sys
+
+    stop = {
+        "trial": trial or "(unknown)",
+        "task": task,
+        "mode": mode or "real",
+        "kind": "batch_error",
+        "reason": f"the batch hold could not be checked or recorded ({type(error).__name__}: {error})",
+        "attended": False,
+        "at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    try:
+        (job_dir / "halt.json").write_text(json.dumps(stop, indent=2))
+    except OSError as e:
+        stop["halt_json"] = f"not written ({type(e).__name__}: {e})"
+    print(f"robouse: {stop['reason']}: the batch stops, no further trial starts", file=sys.stderr, flush=True)
+    return stop
+
+
 def halt_message(stop: dict, not_run: int) -> str:
     return (
         f"robouse: batch halted: trial {stop['trial']} ({stop['task']}, {stop['mode']}) ended in a safety stop "

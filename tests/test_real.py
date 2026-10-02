@@ -876,3 +876,97 @@ def test_watchdog_limits_scale_with_the_control_period():
         g.check_loop(1.6)
     with pytest.raises(SafetyStop, match=r"limit 5 s"):
         Guard(slow).check_loop(5.1)
+
+
+def _failing_batch_root(tmp_path):
+    from robouse.real import safety
+
+    safety.set_estop("review test")  # every trial stops at reset
+    return _real_task_root(tmp_path, attended=False)
+
+
+@pytest.mark.parametrize("where", ["inspect", "stop_of", "run_trial"])
+def test_batch_fails_closed(tmp_path, monkeypatch, where):
+    """R4: an exception in the batch hold (the trial itself, reading its result, the inspection; e.g. a full disk)
+    ends the batch: no further trial starts, and halt.json says why."""
+    from robouse.real import batch, safety
+    from robouse.runner import jobs, run_many
+
+    def fail(*a, **kw):
+        raise OSError(28, "No space left on device")
+
+    if where == "run_trial":
+        real_run = jobs.run_trial
+
+        def run_trial(*a, **kw):
+            real_run(*a, **kw)
+            fail()
+
+        monkeypatch.setattr(jobs, "run_trial", run_trial)
+    else:
+        monkeypatch.setattr(batch, where, fail)
+    root = _failing_batch_root(tmp_path)
+    try:
+        results = run_many(root, "noop", "", tmp_path / "job", seeds="0-3")
+    finally:
+        safety.clear_estop()
+    assert len([p for p in (tmp_path / "job").iterdir() if p.is_dir()]) == 1  # one trial ran, three never started
+    (r,) = results
+    assert r["halted_batch"]["kind"] == "batch_error" and "No space left on device" in r["halted_batch"]["reason"]
+    assert json.loads((tmp_path / "job" / "halt.json").read_text())["kind"] == "batch_error"
+
+
+def test_batch_fails_closed_through_the_cli(tmp_path, monkeypatch):
+    """R4: run-many prints the reason and exits 3."""
+    from robouse.cli import main
+    from robouse.core import gl
+    from robouse.real import batch, safety
+
+    def fail(*a, **kw):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(batch, "inspect", fail)
+    monkeypatch.setattr(gl, "auto_select", lambda: None)  # leave the process's GL settings alone
+    root = _failing_batch_root(tmp_path)
+    try:
+        rc = main(
+            ["run-many", "--tasks", str(root), "--harness", "noop", "--out", str(tmp_path / "job"), "--seeds", "0-3"]
+        )
+    finally:
+        safety.clear_estop()
+    assert rc == 3
+
+
+def test_live_rig_trials_run_one_at_a_time(tmp_path, monkeypatch, capsys):
+    """R6: with a rig from ROBOUSE_RIG (not only --rig), live-robot trials run one at a time whatever --concurrency
+    says, so a stop holds every later trial."""
+    import uuid
+
+    from robouse.cli import main
+    from robouse.runner import jobs
+
+    rig = tmp_path / "rig.yaml"
+    rig.write_text("metal:\n  driver: lerobot\n  port: /dev/null\n")
+    monkeypatch.setenv("ROBOUSE_RIG", str(rig))
+    root = _real_task_root(tmp_path)
+    assert main(["run-many", "--tasks", str(root), "--harness", "noop", "--out", str(tmp_path / "x"),
+                 "--seeds", "0-3", "--concurrency", "4", "--dry-run"]) == 0  # fmt: skip
+    assert json.loads(capsys.readouterr().out)["concurrency"] == 1
+    lock, running, peak = threading.Lock(), [0], [0]
+
+    def run_trial(t, harness, model, job_dir, **kw):  # a stand-in trial: no robot is driven
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        time.sleep(0.2)
+        name = f"{t.id}__{uuid.uuid4().hex[:6]}"
+        (job_dir / name).mkdir(parents=True)
+        res = {"episode": {"outcome": "done", "embodiment_mode": "real", "session": {}}}
+        (job_dir / name / "result.json").write_text(json.dumps(res))
+        with lock:
+            running[0] -= 1
+        return {"trial": name, "reward": 0.0, "outcome": "done", "steps": 0, "wall_s": 0.2, "exception": None}
+
+    monkeypatch.setattr(jobs, "run_trial", run_trial)
+    assert len(jobs.run_many(root, "noop", "", tmp_path / "job", seeds="0-3", concurrency=4)) == 4
+    assert peak[0] == 1
