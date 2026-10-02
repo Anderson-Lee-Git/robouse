@@ -1490,31 +1490,59 @@ def _park_replay(steps, settings=None, until: float = 1e9):
     return None
 
 
+def _through_the_guard(tmp_path, monkeypatch, fixture: str, until: float) -> list[dict]:
+    """A recorded session sent through the safety layer up to `until` (playback mock: each step reads the recorded
+    joints and torques, whatever is commanded). Per control step: the recorded time, the command the guard sent and
+    the joints and torques read after it, as a park watch would see them."""
+    ep, fx = _playback(tmp_path, monkeypatch, fixture)
+    b, robot = ep.backend, ep.backend.driver.robot
+    seen: list[dict] = []
+    watch = b._watch_contact
+
+    def tap(cmd):
+        rec = {"t": fx.steps[robot.k]["t"], "cmd": list(cmd), "pos": list(b.q)}
+        seen.append({**rec, "joint_torque_nm": b.extra.get("joint_torque_nm")})
+        return watch(cmd)
+
+    b._watch_contact = tap
+    _replay(ep, fx, until=until)
+    ep.close()
+    return seen
+
+
 @pytest.mark.parametrize(
-    "fixture, window, alone",
-    [("metal-hanoi-131602", (91.7, 94.2), "lag"), ("metal-touchdown-121740", (41.9, 47.2), "stall")],
+    "fixture, window", [("metal-hanoi-131602", (91.7, 94.2)), ("metal-touchdown-121740", (41.9, 47.2))]
 )
-def test_the_park_watch_catches_the_verified_contacts(monkeypatch, fixture, window, alone):
-    """Each verified contact of the 2026-09-05 recordings, replayed as one park over its session's motion: the park watch
-    stops inside the contact's window and not before. The lag watch alone catches the 13:16 elbow stop (the elbow lags
-    3.63 deg, the limit is 3.3); near the table, the stall check alone catches the 12:17 touchdown."""
+def test_the_park_watch_catches_the_verified_contacts(tmp_path, monkeypatch, fixture, window):
+    """Each verified contact of the 2026-09-05 recordings, its session sent through the safety layer (the commands
+    robouse sends, the recorded joints and torques) and watched as one park: the park watch stops inside the contact's
+    window and not before. 12:17: the stall check catches the table touchdown, also without the torque watch. 13:16:
+    only the torque backstop (4x) catches the elbow stop. The lag watch does not: robouse caps the elbow at 174 (that
+    day's harness sent it to 180, and it stopped at 176.37), so its lag against the recorded joints peaks at 2.36 deg,
+    under the 3.3 limit. An arm following the capped command would not reach that stop at all; what the lag watch
+    catches is a joint held back (test_a_held_back_joint_stops_the_park_by_lag)."""
     import dataclasses
 
-    from robouse.real.replay import Fixture
     from robouse.real.robots import METAL
 
-    monkeypatch.setenv("ROBOUSE_HIL_DIR", str(HIL))
-    steps = Fixture(fixture).steps
-    t, c = _park_replay(steps, until=window[1])
+    seen = _through_the_guard(tmp_path, monkeypatch, fixture, until=window[1])
+    t, c = _park_replay(seen)
     assert window[0] <= t <= window[1]
-    no_torque = dataclasses.replace(METAL.contact, dtorque={})
-    t, c = _park_replay(steps, no_torque, until=window[1])  # tracking lag and the stall check, no torque
-    assert window[0] <= t <= window[1] and c.kind == alone
+    no_torque = _park_replay(seen, dataclasses.replace(METAL.contact, dtorque={}))  # lag and the stall check
+    if fixture == "metal-touchdown-121740":
+        assert no_torque is not None and window[0] <= no_torque[0] <= window[1] and no_torque[1].kind == "stall"
+    else:
+        assert c.kind in ("moving", "settled", "holding") and "elbow_flex" in c.change  # a torque rule, at 4x
+        assert no_torque is None
+        assert max(s["cmd"][2] for s in seen) == pytest.approx(174.0)
+        lag = max(abs(s["cmd"][2] - s["pos"][2]) for s in seen if s["t"] >= window[0])
+        assert lag == pytest.approx(2.36, abs=0.02)
 
 
 def test_the_park_watch_is_quiet_on_recorded_motion():
     """The packaged 12:18:53 recording (up to the first contact the Sep 5 watch flagged), cut into park-length stretches
-    and each watched as a park: no stop. The Metal's park settings are the calibrated ones."""
+    and each watched as a park (the recorded targets as commands, with the recorded joints and torques): no stop. The
+    Metal's park settings are the calibrated ones."""
     from robouse.real.replay import Fixture
     from robouse.real.robots import METAL
 

@@ -161,9 +161,16 @@ METAL = Profile(
     # the 2026-09-05 harness's contact thresholds (robot/safety.py: contact_dtorque, contact_jump 0.35). Parks: on the
     # 2026-09-05 recordings, no arm joint lagged its command by more than 2.55 deg at 6 deg/s or slower, or holding
     # (wrist_yaw in 12:22:04; shoulder_lift 1.97, elbow_flex 1.36), so 3.3, halfway to the 4 deg wind-up limit a blocked
-    # joint's lag climbs to; the 13:16 elbow stop lagged 3.63. Replayed as parks, that and the stall check catch both
-    # verified contacts with no stop in 56 park-length stretches of normal motion; torque at 3x would stop 2 of them
-    # (the elbow's torque building up as a slow move starts), at 4x none.
+    # joint's lag climbs to (on the mock, a joint held back stops the park by lag). Replayed as parks with the recorded
+    # joints and torques, the park watch stops none of 56 park-length stretches of normal motion (the recorded targets
+    # as commands) and, with the commands robouse sends, catches both verified contacts: the 12:17 table touchdown by
+    # the stall check, the 13:16 elbow stop only by torque at 4x (+3.53 N m against 3.2). Lag does not catch 13:16: its
+    # 3.63 deg lag was against the 180 deg the harness sent that day; robouse caps the elbow at 174, so the lag peaks at
+    # 2.36, and an arm following the capped command would not reach the 176.37 stop at all. The 4x was picked on the
+    # same 56 stretches it is scored on: 3x stops 2 of them (the elbow's torque building up as a slow move starts), the
+    # first stop comes just under 3.925x, so 4x is 1.9% above it, and picked with the session under test left out, 1 of
+    # the 56 stops (a lift in 12:22:04, at the 3.75x picked without that session). A false stop only holds the arm: it
+    # costs availability, not safety.
     contact=ContactSettings(
         dtorque={"shoulder_lift": 1.5, "elbow_flex": 0.8, "wrist_flex": 0.5},
         park_lag_deg=3.3,
