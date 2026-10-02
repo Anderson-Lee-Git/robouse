@@ -225,11 +225,11 @@ def run_many(
             interrupt_all()
             ex.shutdown(wait=True, cancel_futures=True)
             raise
-        except Exception as e:  # any other error: no further trial starts, and a real robot's batch fails closed
-            halt.set()
-            ex.shutdown(wait=True, cancel_futures=True)
-            if not real_batch:
+        except Exception as e:
+            if not real_batch:  # a simulated batch as before: the trials already queued still run, then the error
                 raise
+            halt.set()  # a real robot's batch fails closed: no further trial starts
+            ex.shutdown(wait=True, cancel_futures=True)
             from ..real import batch
 
             stop = batch.fail_closed(job_dir, "(batch)", None, None, e)

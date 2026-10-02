@@ -1338,6 +1338,33 @@ def test_a_park_stopped_after_a_normal_end_holds_the_batch(tmp_path, monkeypatch
     assert stop is not None and stop["kind"] == "contact" and "parking after the end stopped" in stop["reason"]
 
 
+def test_a_simulated_batch_runs_on_after_an_error_as_before(tmp_path, monkeypatch):
+    """N4: the fail-closed batch handling is for batches with a real-robot task. A simulated batch whose first trial
+    raises still runs the trials already queued and then raises, as before (a real batch stops at once:
+    test_batch_fails_closed)."""
+    import shutil
+
+    from robouse.runner import jobs
+
+    calls: list = []
+
+    def run_trial(t, harness, model, job_dir, **kw):
+        calls.append(kw.get("seed"))
+        if len(calls) == 1:
+            raise OSError(28, "No space left on device")
+        name = f"{t.id}__{harness}__{kw.get('seed')}"
+        (job_dir / name).mkdir(parents=True, exist_ok=True)
+        return {"trial": name, "reward": 1.0, "outcome": "done", "steps": 1, "wall_s": 0.1, "exception": None}
+
+    monkeypatch.setattr(jobs, "run_trial", run_trial)
+    root = tmp_path / "tasks"
+    shutil.copytree(ROOT / "tasks" / "cubepick" / "cubepick-reach-layout-0", root / "cubepick-reach-layout-0")
+    with pytest.raises(OSError, match="No space left on device"):
+        jobs.run_many(root, "noop", "", tmp_path / "job", seeds="0-3")
+    assert sorted(calls) == [0, 1, 2, 3]  # every trial started
+    assert not (tmp_path / "job" / "halt.json").exists()
+
+
 def test_the_arm_is_watched_while_the_operator_gives_the_verdict(tmp_path):
     """N5: the operator takes their time over the verdict, and the e-stop is latched meanwhile. The checks keep running
     while the question is open, so the episode ends as a safety stop, not `done`, whatever the operator answers."""
