@@ -484,6 +484,8 @@ class Episode:
             except Exception:  # noqa: BLE001 - a backend that cannot step further is judged on its current state
                 break
             self._record_frame(force=True)
+        if (halted := getattr(self.backend, "halted", None)) and outcome != "safety_stop":
+            outcome, text = "safety_stop", clip(str(halted), 500)  # a real robot stopped, e.g. during the settle steps
         success, judge_error = self._verdict(outcome, text)
         self.finished, self.outcome, self.agent_text = True, outcome, text
         b = self.backend

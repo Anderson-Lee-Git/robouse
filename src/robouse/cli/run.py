@@ -329,6 +329,8 @@ def run_many(a: argparse.Namespace) -> int:
             f"robouse: {failed} trial(s) failed on infrastructure (exception_info in their result.json)",
             file=sys.stderr,
         )
+    if any(r.get("halted_batch") for r in results):  # a real robot stopped and the operator did not clear it
+        return 3
     return 1 if failed else 0
 
 

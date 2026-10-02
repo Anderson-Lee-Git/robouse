@@ -36,24 +36,37 @@ from ...real.safety import EventLog, Guard, HardwareLock, SafetyStop, Veto, esto
 from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Sensor, Skill, SkillArg
 
 
+def real_config(spec: dict) -> dict:
+    """The task's `real:` block; the operator's rig file (ROBOUSE_RIG) switches the same task onto live hardware."""
+    cfg = dict(spec.get("real") or {})
+    rig = config.env("ROBOUSE_RIG")
+    if rig:
+        import yaml
+
+        entry = (yaml.safe_load(Path(rig).read_text()) or {}).get(cfg.get("robot", "metal"))
+        if entry:
+            cfg = {
+                **{k: v for k, v in cfg.items() if k != "fixture"},
+                **entry,
+                "envelope": {**(cfg.get("envelope") or {}), **(entry.get("envelope") or {})},
+                "contact": {**(cfg.get("contact") or {}), **(entry.get("contact") or {})},
+            }
+    return cfg
+
+
+def real_mode(spec: dict) -> str | None:
+    """ "real" (a live driver), "hil-mock" (the hardware-in-the-loop mock) or None (not a real-robot task)."""
+    if spec.get("backend") != "real":
+        return None
+    return "hil-mock" if real_config(spec).get("driver", "mock") == "mock" else "real"
+
+
 class RealArmBackend(EmbodiedBackend):
     name = "real"
 
     def __init__(self, spec: dict):
         super().__init__(spec)
-        self.cfg = dict(spec.get("real") or {})
-        rig = config.env("ROBOUSE_RIG")  # the operator's rig file switches the same task onto live hardware
-        if rig:
-            import yaml
-
-            entry = (yaml.safe_load(Path(rig).read_text()) or {}).get(self.cfg.get("robot", "metal"))
-            if entry:
-                self.cfg = {
-                    **{k: v for k, v in self.cfg.items() if k != "fixture"},
-                    **entry,
-                    "envelope": {**(self.cfg.get("envelope") or {}), **(entry.get("envelope") or {})},
-                    "contact": {**(self.cfg.get("contact") or {}), **(entry.get("contact") or {})},
-                }
+        self.cfg = real_config(spec)
         if self.cfg.get("robot") == "ros":  # any ROS arm: the profile comes from the rig / task configuration
             from ...real.drivers.rosbridge import ros_profile
 
@@ -773,6 +786,8 @@ class RealArmBackend(EmbodiedBackend):
             "contacts": sum(1 for e in ev if e["event"] == "contact"),
             "safety_stop": self.halted,
             "stop_kind": self.stop_kind,
+            "attended": self.attended,
+            "operator_channel": self.operator.channel,
             "physical_estop": self.estop_confirmed,
             "operator": [e for e in ev if e["event"].startswith("operator_")],
         }

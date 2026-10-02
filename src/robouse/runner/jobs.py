@@ -1,10 +1,13 @@
-"""Sets of trials: task selection, seeds, epochs, retries and resume."""
+"""Sets of trials: task selection, seeds, epochs, retries and resume. On a real robot a safety stop holds the batch until
+the operator has inspected the robot (real/batch.py)."""
 
 from __future__ import annotations
 
 import concurrent.futures as cf
 import json
 import shutil
+import sys
+import threading
 import time
 from pathlib import Path
 
@@ -126,9 +129,17 @@ def run_many(
         )
     )
     results = []
+    not_run: list[str] = []
+    halt = threading.Event()  # a real-robot safety stop the operator did not clear: no further trial starts
+    hold = threading.Lock()  # held while the operator inspects the robot: the next trial waits
 
     def one(item) -> dict:
         t, sd, ep = item
+        label = t.id + (f"@seed{sd}" if sd is not None else "") + (f"#e{ep}" if epochs > 1 else "")
+        with hold:
+            if halt.is_set():
+                return {"task": label, "not_run": True}
+        live = t.spec.get("backend") == "real" and _live(t.spec)
         for attempt in range(retries + 1):  # infrastructure failures only (a model's failure is a result, not retried)
             r = run_trial(
                 t,
@@ -144,7 +155,7 @@ def run_many(
                 attempt=attempt,
                 interface=interface,
             )
-            if not r["exception"]:
+            if not r["exception"] or live:  # a live robot is never retried blind: a failed trial holds the batch
                 break
             if attempt < retries:
                 bad = job_dir / r["trial"]
@@ -153,7 +164,16 @@ def run_many(
                 if bad.exists():
                     shutil.move(str(bad), str(dest / bad.name))
                 time.sleep(min(60, 5 * 2**attempt))
-        r["task"] = t.id + (f"@seed{sd}" if sd is not None else "") + (f"#e{ep}" if epochs > 1 else "")
+        r["task"] = label
+        if t.spec.get("backend") == "real":
+            from ..real import batch
+
+            stop = batch.stop_of(job_dir / r["trial"], t.spec)
+            if stop is not None:
+                with hold:  # the operator inspects the robot; no other trial starts meanwhile
+                    if not halt.is_set() and not batch.inspect(stop, job_dir):
+                        halt.set()
+                        r["halted_batch"] = stop
         return r
 
     with open(job_dir / "run_log.jsonl", "a") as log, cf.ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:
@@ -161,6 +181,9 @@ def run_many(
         try:
             for fut in cf.as_completed(futs):
                 r = fut.result()
+                if r.get("not_run"):
+                    not_run.append(r["task"])
+                    continue
                 results.append(r)
                 log.write(json.dumps(r) + "\n")
                 log.flush()
@@ -173,6 +196,18 @@ def run_many(
             interrupt_all()
             ex.shutdown(wait=True, cancel_futures=True)
             raise
+        stops = [r["halted_batch"] for r in results if r.get("halted_batch")]
+        if stops:
+            from ..real import batch
+
+            log.write(json.dumps({"halted": stops[0], "not_run": sorted(not_run)}) + "\n")
+            print(batch.halt_message(stops[0], len(not_run)), file=sys.stderr, flush=True)
     ok = sum(r["reward"] for r in results)
     print(f"{harness}/{model or '-'}: {ok:.0f}/{len(results)} solved")
     return results
+
+
+def _live(spec: dict) -> bool:
+    from ..backends.real.backend import real_mode
+
+    return real_mode(spec) == "real"

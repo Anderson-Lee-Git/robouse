@@ -12,7 +12,9 @@ the operator for the verdict. Channels (task `real.operator`, or ROBOUSE_OPERATO
 Gates: `physical_estop` (a power cut-off is within the operator's reach; asked before arming every live robot, and no
 setting skips it), `arm` (before torque is enabled), `reset` (the scene is set up for this episode), `release` (before
 torque is released at the end). A gate that is refused or times out stops the episode (`safety_stop`) before anything
-moves. Verdicts: yes / no / partial / skip, plus a note; skip and timeouts score 0 and are recorded as unjudged.
+moves. Between trials of a batch, `inspect` asks the operator to look at the robot after a safety stop before the next
+trial (runner/jobs.py). Verdicts: yes / no / partial / skip, plus a note; skip and timeouts score 0 and are recorded as
+unjudged.
 
 Live feedback: `robouse operator say "text"` appends a remark that the next `robo observe` returns under
 `operator_notes` (typed, feedback-only: it cannot end the episode or change the verdict).
@@ -32,7 +34,7 @@ from .. import config
 from .safety import OPERATOR_DIR, SafetyStop
 
 VERDICTS = ("yes", "no", "partial", "skip")
-GATES = ("physical_estop", "arm", "reset", "release")  # the scripted operator answers these yes by default
+GATES = ("physical_estop", "arm", "reset", "release", "inspect")  # the scripted operator answers these yes by default
 
 
 class Operator:

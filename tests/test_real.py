@@ -1,6 +1,6 @@
 """Real-robot backend on the hardware-in-the-loop mock: kinematics against hardware logs, safety guard, e-stop,
 operator gates and verdicts, rig switch, and the safety layer's stops: loop watchdog, lost telemetry, contact watch
-(replaying the 2026-09-05 Metal recordings in tests/fixtures/hil) and the physical e-stop confirmation.
+(replaying the 2026-09-05 Metal recordings in tests/fixtures/hil), batch halting and the physical e-stop confirmation.
 Run: PYTHONPATH=src python -m pytest tests/test_real.py -q"""
 
 from __future__ import annotations
@@ -506,6 +506,82 @@ def test_contact_stops_act_repeat_and_skill(tmp_path, monkeypatch):
     assert r["ok"] and r["result"]["stopped"] == "by the safety layer" and r["result"]["contact"]["count"] == 2
     assert r["result"]["executed_steps"] == 1 and not ep.finished
     ep.close()
+
+
+# ---- gap 3: a safety stop halts a batch on a real robot -----------------------------------------------------------------
+
+
+def _real_task_root(tmp_path: Path, **real_extra) -> Path:
+    """A copy of real-metal-reach with extra `real:` settings; the server exits as soon as the episode ends."""
+    import shutil
+
+    root = tmp_path / "tasks"
+    shutil.copytree(ROOT / "tasks" / "real" / "real-metal-reach", root / "real-metal-reach")
+    md = root / "real-metal-reach" / "task.md"
+    text = md.read_text().replace("  max_steps: 300\n", "  max_steps: 300\n  linger_s: 0\n")
+    extra = "".join(f"    {k}: {json.dumps(v)}\n" for k, v in real_extra.items())
+    md.write_text(text.replace("    driver: mock\n", "    driver: mock\n" + extra))
+    return root
+
+
+def test_batch_halts_after_a_safety_stop_without_an_operator(tmp_path):
+    from robouse.real import safety
+    from robouse.runner import run_many
+
+    safety.set_estop("operator test")  # every trial would stop at reset
+    results = run_many(_real_task_root(tmp_path, attended=False), "noop", "", tmp_path / "job", seeds="0-2")
+    safety.clear_estop()
+    (r,) = results  # the first trial stopped; the other two never started
+    assert r["outcome"] == "safety_stop" and r["halted_batch"]["kind"] == "estop"
+    halt = json.loads((tmp_path / "job" / "halt.json").read_text())
+    assert halt["trial"] == r["trial"] and "e-stop is engaged" in halt["reason"] and halt["answer"] == "none"
+    log = [json.loads(l) for l in (tmp_path / "job" / "run_log.jsonl").read_text().splitlines()]
+    assert log[-1]["not_run"] == ["real-metal-reach@seed1", "real-metal-reach@seed2"]
+    ev = _events(tmp_path / "job" / r["trial"] / "episode")
+    assert [e["event"] for e in ev][-2:] == ["batch_hold", "batch_halt"]
+
+
+@pytest.mark.parametrize("answer", ["yes", "no"])
+def test_batch_waits_for_the_operator_after_a_safety_stop(tmp_path, monkeypatch, answer):
+    from robouse.real import safety
+    from robouse.runner import run_many
+
+    monkeypatch.setenv("ROBOUSE_OPERATOR_SCRIPT", f"inspect={answer}")  # the mock's scripted operator
+    safety.set_estop("operator test")
+    results = run_many(_real_task_root(tmp_path), "noop", "", tmp_path / "job", seeds="0-1")
+    safety.clear_estop()
+    assert len(results) == (2 if answer == "yes" else 1)
+    assert all(r["outcome"] == "safety_stop" for r in results)
+    assert (tmp_path / "job" / "halt.json").exists() == (answer == "no")
+    for r in results:  # the inspection is in the stopped trial's session log
+        ev = _events(tmp_path / "job" / r["trial"] / "episode")
+        gate = next(e for e in ev if e.get("gate") == "inspect")
+        assert gate["answer"] == answer and gate["channel"] == "script"
+        assert ev[-1]["event"] == ("batch_resume" if answer == "yes" else "batch_halt")
+
+
+def test_batch_inspection_on_the_file_channel(tmp_path):
+    """A live rig's operator answers from another terminal (`robouse operator answer yes --note ...`)."""
+    from robouse.real import batch, operator
+
+    stop = {"trial": "t1", "task": "real-metal-reach", "mode": "real", "kind": "contact", "reason": "contact",
+            "attended": True, "channel": "file"}  # fmt: skip
+    answered = threading.Event()
+
+    def operator_terminal():
+        for _ in range(400):
+            if (operator.OPERATOR_DIR / "pending.json").exists():
+                operator.answer("yes", "checked the elbow and the table")
+                answered.set()
+                return
+            time.sleep(0.02)
+
+    threading.Thread(target=operator_terminal, daemon=True).start()
+    assert batch.inspect(stop, tmp_path)
+    assert answered.is_set() and not (tmp_path / "halt.json").exists()
+    ev = _events(tmp_path / "t1" / "episode")
+    gate = next(e for e in ev if e.get("gate") == "inspect")
+    assert gate["answer"] == "yes" and gate["note"] == "checked the elbow and the table" and gate["channel"] == "file"
 
 
 # ---- gap 4: a live robot is not armed without a confirmed physical e-stop -------------------------------------------------
