@@ -40,6 +40,9 @@ GITHUB = "https://github.com/benchflow-ai/robouse"
 # Absolute links to docs in the repository (README uses them so they work on PyPI) map to the generated pages.
 GITHUB_DOC_RE = re.compile(re.escape(GITHUB) + r"/(?:blob|tree)/main/((?:docs/|README\.md).*)$")
 MARKER = ".build_docs"  # written into --out so a rebuild only ever clears a directory this script owns
+# The social card, from the hub and runs pages' template (tools/build_hub.py og_card, tools/site/build_runs_site.py
+# page): the site's card, since a docs page has no picture of its own, and the page's own description (PAGES).
+CARD = "https://robouse.ai/og/landing.png?v=7"
 
 
 WRAP_AT = 56  # long robouse and bench commands go one flag per line beyond this many characters
@@ -182,11 +185,11 @@ PAGES: list[tuple[str, str, str, str, str]] = [
     ("Get started", "docs/quickstart.md", "quickstart", "Quickstart",
      "Install robouse and let Claude Code solve arc-gravity, a rule-inference task on a table, in 35 robo calls."),
     ("Get started", "docs/supported.md", "supported", "Supported",
-     "The models, harnesses, platforms, isolation modes and formats Robo Use 0.3.1 supports, and what each needs."),
+     "The models, harnesses, platforms, isolation modes and formats Robo Use 0.4.0 supports, and what each needs."),
     ("Get started", "docs/concepts.md", "concepts", "Concepts",
      "Tasks, scoring, episodes, the robo command, harnesses and the trial folder: how one Robo Use trial works."),
     ("Guides", "docs/run-agents.md", "run-agents", "Run agents and VLAs",
-     "Run Claude Code, Codex, mini-swe-agent, dimcode or a VLA policy server as the robot's policy on one task."),
+     "Run Claude Code, Codex, mini-swe-agent, dimcode, Show-Harness or a VLA policy server as the robot's policy on one task."),
     ("Guides", "docs/mcp.md", "mcp", "MCP",
      "Drive the robot through the robo MCP tools instead of the robo command: the tools, robo mcp and --interface."),
     ("Guides", "docs/write-a-task.md", "write-a-task", "Write or compose a task",
@@ -736,6 +739,8 @@ def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: P
 <meta property="og:title" content="{e(title)}">
 <meta property="og:description" content="{e(p.description)}">
 <meta property="og:url" content="{canonical}">
+<meta property="og:image" content="{CARD}">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.png">
 <script src="/theme.js"></script>
 {chrome.LINK}

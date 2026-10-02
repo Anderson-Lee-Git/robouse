@@ -30,3 +30,6 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 | `ROBOUSE_MOLMOACT2_TOKEN` | bearer token for the MolmoAct2 server |
 | `ROBOUSE_DIMCODE` | the dimcode executable for the `dimcode` harness (default: `dimcode` on PATH) |
 | `ROBOUSE_DIMCODE_NODE` | Node 24 or 26 that runs dimcode (default: `node` on PATH) |
+| `ROBOUSE_SHOW_HARNESS_URL` | OpenAI-compatible server (base URL ending in /v1) of a self-hosted model for the `show-harness` harness, e.g. vLLM serving a Show-Harness adapter |
+| `ROBOUSE_SHOW_HARNESS_TOKEN` | token for that server: a bearer token, or sent under the overrides' `token_header` |
+| `ROBOUSE_SHOW_HARNESS_CONFIG` | JSON file of `show-harness` overrides (mode zs or ft, step sizes, plugins) |
