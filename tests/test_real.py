@@ -1,9 +1,11 @@
 """Real-robot backend on the hardware-in-the-loop mock: kinematics against hardware logs, safety guard, e-stop,
-operator gates and verdicts, rig switch. Run: PYTHONPATH=src python -m pytest tests/test_real.py -q"""
+operator gates and verdicts, rig switch, and the safety layer's stops: loop watchdog and lost telemetry.
+Run: PYTHONPATH=src python -m pytest tests/test_real.py -q"""
 
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -197,6 +199,7 @@ def test_piper_driver_on_mock_sdk(tmp_path):
     ep = _episode("real-piper-joint-pose", tmp_path)
     r = ep.handle({"op": "skill", "name": "move_joints", "args": ["20", "40", "-50", "0", "20", "0"]})
     assert r["ok"] and r["result"]["arrived"]
+    assert ep.backend.stamp is not None  # the SDK's message time dates each reading
     ep.finish("done", "")
     assert ep.result["success"]
     ep.close()
@@ -229,6 +232,7 @@ def test_rosbridge_driver_against_mock_server():
         assert np.allclose(r.q, [10, 20, 30], atol=1.0), r.q
         assert np.allclose(srv.commands[-1], [math.radians(10), math.radians(20), math.radians(30)])
         assert "cam" in r.images and r.images["cam"].shape[2] == 3
+        assert r.stamp is not None and time.monotonic() - r.stamp < 1.0  # dated by the last joint state message
         srv._stop.set()  # the robot stops publishing: reads fail once the joint state is stale
         time.sleep(1.3)
         with pytest.raises(RuntimeError):
@@ -242,4 +246,108 @@ def test_ros_task_on_mock_rosbridge(tmp_path):
     assert r["ok"] and r["result"]["arrived"], r
     ep.finish("done", "")
     assert ep.result["success"] and ep.result["embodiment_mode"] == "hil-mock"
+    ep.close()
+
+
+# ---- safety stops: helpers ---------------------------------------------------------------------------------------------
+
+
+def _events(ep_dir: Path) -> list[dict]:
+    return [json.loads(l) for l in (ep_dir / "session" / "events.jsonl").read_text().splitlines()]
+
+
+# ---- gap 1: the loop watchdog acts; lost telemetry stops -----------------------------------------------------------------
+
+
+def test_watchdog_one_stall_is_logged_and_the_episode_goes_on(tmp_path):
+    ep = _episode(
+        "real-metal-reach",
+        tmp_path,
+        envelope={"watchdog_s": 0.1, "watchdog_hard_s": 2.0, "watchdog_max_stalls": 3},
+        mock_fault={"kind": "slow", "at_step": 3, "steps": 1, "seconds": 0.25},
+    )
+    q = list(ep.backend.q)
+    for _ in range(3):
+        assert ep.handle({"op": "act", "action": q})["ok"]
+    assert not ep.finished
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    assert [e["in_a_row"] for e in ev if e.get("kind") == "loop_stall"] == [1]
+    assert not any(e["event"] == "stop" for e in ev)
+
+
+def test_watchdog_hard_limit_stops_and_holds_the_last_command(tmp_path):
+    ep = _episode(
+        "real-metal-reach",
+        tmp_path,
+        envelope={"watchdog_s": 0.1, "watchdog_hard_s": 0.3},
+        mock_fault={"kind": "slow", "at_step": 3, "steps": 1, "seconds": 0.45},
+    )
+    q = list(ep.backend.q)
+    assert ep.handle({"op": "act", "action": q})["ok"]
+    r = ep.handle({"op": "act", "action": q})
+    assert not r["ok"] and "watchdog: a control step took" in r["error"]
+    assert ep.finished and ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "watchdog"
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
+    assert any(e["event"] == "stop" and e.get("kind") == "watchdog" and e["dt"] > 0.3 for e in ev)
+    stop = next(e for e in ev if e["event"] == "stop" and e.get("cause") == "watchdog")
+    assert np.allclose(stop["hold"], steps[-1]["cmd"], atol=0.006)  # the hold is the last command
+    assert ep.result["safety_events"]
+
+
+def test_watchdog_stalls_in_a_row_stop(tmp_path):
+    ep = _episode(
+        "real-metal-reach",
+        tmp_path,
+        envelope={"watchdog_s": 0.05, "watchdog_hard_s": 5.0, "watchdog_max_stalls": 3},
+        mock_fault={"kind": "slow", "at_step": 3, "steps": 3, "seconds": 0.1},
+    )
+    r = ep.handle({"op": "act", "action": list(ep.backend.q), "repeat": 6})
+    assert not r["ok"] and "3 control steps in a row slower than 0.05 s" in r["error"]
+    assert ep.outcome == "safety_stop" and ep.steps == 3
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    assert [e["in_a_row"] for e in ev if e.get("kind") == "loop_stall"] == [1, 2, 3]
+
+
+def test_stale_telemetry_stops_instead_of_going_on(tmp_path):
+    """The Damiao bus keeps serving its last replies when the CAN link dies; with the bus silent for longer than the
+    timeout, the next step stops the episode and holds the last command, not the stale reading."""
+    ep = _episode(
+        "real-metal-reach", tmp_path, envelope={"telemetry_timeout_s": 0.2}, mock_fault={"kind": "stale", "at_step": 3}
+    )
+    target = list(np.asarray(ep.backend.q) + np.array([3.0, 0, 0, 0, 0, 0, 0]))  # 3 deg of shoulder pan
+    assert ep.handle({"op": "act", "action": target})["ok"]
+    assert ep.handle({"op": "act", "action": target})["ok"]  # the bus has gone silent; its cache is still young
+    time.sleep(0.3)  # the agent thinks; the link stays dead
+    r = ep.handle({"op": "act", "action": target})
+    assert not r["ok"] and "lost telemetry: no fresh joint reading" in r["error"]
+    assert ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "telemetry_lost"
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
+    assert steps[-1]["pos"] == steps[-2]["pos"]  # the frozen reading
+    stop = next(e for e in ev if e["event"] == "stop" and e.get("cause") == "telemetry_lost")
+    assert np.allclose(stop["hold"], steps[-1]["cmd"], atol=0.006)  # the last command ...
+    assert not np.allclose(stop["hold"], steps[-1]["pos"], atol=0.5)  # ... not the stale reading
+    assert next(e for e in ev if e.get("kind") == "telemetry_lost")["age_s"] > 0.2
+
+
+def test_dead_link_stops(tmp_path):
+    ep = _episode("real-metal-reach", tmp_path, mock_fault={"kind": "dead", "at_step": 3})
+    q = list(ep.backend.q)
+    assert ep.handle({"op": "act", "action": q})["ok"]
+    r = ep.handle({"op": "act", "action": q})
+    assert not r["ok"] and "hardware fault: ConnectionError" in r["error"]
+    assert ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "hardware_fault"
+    ep.close()
+    assert any(e["event"] == "hold_failed" for e in _events(tmp_path / "ep"))  # a dead link takes no hold either
+
+
+def test_hot_motor_does_not_start(tmp_path):
+    ep = _episode("real-metal-reach", tmp_path, envelope={"temp_stop_c": 20.0})  # recorded motors are at ~28 C
+    ep.handle({"op": "observe"})
+    assert ep.outcome == "safety_stop" and ep.steps == 0 and ep.result["session"]["stop_kind"] == "overtemperature"
     ep.close()

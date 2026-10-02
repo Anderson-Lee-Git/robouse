@@ -240,13 +240,14 @@ class ReplayPiperSDK:
         q = self.robot.q
 
         class JS:
-            pass
+            time_stamp = 0.0
 
         js = JS()
         for i in range(6):
             setattr(js, f"joint_{i + 1}", int(round(q[i] * 1000)))
         m = JS()
         m.joint_state = js
+        m.time_stamp = time.time()  # the SDK dates each message by when its CAN thread received it
         return m
 
     def GetArmGripperMsgs(self):

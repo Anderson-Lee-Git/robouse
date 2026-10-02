@@ -37,7 +37,9 @@ class Operator:
     def __init__(self, channel: str, *, mock: bool, timeout_s: float = 600.0, log=None):
         channel = config.env("ROBOUSE_OPERATOR", channel)
         if channel == "script" and not mock:
-            raise SafetyStop("the scripted operator is only allowed with the hardware-in-the-loop mock driver")
+            raise SafetyStop(
+                "the scripted operator is only allowed with the hardware-in-the-loop mock driver", "config"
+            )
         if channel not in ("tty", "file", "script"):
             raise ValueError(f"unknown operator channel {channel!r} (tty, file or script)")
         self.channel, self.timeout_s = channel, float(timeout_s)
@@ -61,7 +63,8 @@ class Operator:
                     line = tty.readline().strip()
             except OSError as e:
                 raise SafetyStop(
-                    f"no operator terminal ({e}); use ROBOUSE_OPERATOR=file and `robouse operator answer`"
+                    f"no operator terminal ({e}); use ROBOUSE_OPERATOR=file and `robouse operator answer`",
+                    "operator_channel",
                 ) from e
             ans, _, note = line.partition(" ")
             return (ans.lower() if ans.lower() in choices else "", note.strip())
@@ -104,7 +107,7 @@ class Operator:
         ans, note = self._ask(key, prompt, ("yes", "no"))
         self.log("operator_gate", gate=key, answer=ans or "none", note=note, channel=self.channel)
         if ans != "yes":
-            raise SafetyStop(f"operator did not confirm the {key} gate ({note or ans or 'no answer'})")
+            raise SafetyStop(f"operator did not confirm the {key} gate ({note or ans or 'no answer'})", "operator_gate")
 
     def verdict(self, prompt: str, choices: tuple[str, ...] = VERDICTS) -> tuple[str, str]:
         ans, note = self._ask("verdict", prompt, choices)

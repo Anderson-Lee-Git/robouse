@@ -20,6 +20,8 @@ class Reading:
     q: np.ndarray  # measured joint positions, profile units
     extra: dict = field(default_factory=dict)  # telemetry: temp_c / temp_mos_c / temp_rotor_c, joint_torque_nm, ...
     images: dict = field(default_factory=dict)  # camera name -> HxWx3 uint8
+    # time.monotonic() when the oldest joint value in q was measured; None when the driver cannot tell
+    stamp: float | None = None
 
 
 class ArmDriver:
@@ -33,6 +35,9 @@ class ArmDriver:
         raise NotImplementedError
 
     def read(self) -> Reading:
+        """The measured state. A driver whose SDK serves a cache (and keeps serving it when the link dies) sets
+        `stamp` to when the values were last refreshed; the guard stops the episode when that is older than the
+        profile's telemetry_timeout_s. A synchronous read that raises on failure stamps the time of the read."""
         raise NotImplementedError
 
     def send(self, q: np.ndarray) -> None:

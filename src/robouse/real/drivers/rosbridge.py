@@ -77,7 +77,7 @@ class RosbridgeDriver(ArmDriver):
         self.to_rad = math.pi / 180 if prof.units[0] == "deg" else 1.0
         self.ws = None
         self._state: dict[str, float] = {}
-        self._state_t = 0.0
+        self._state_t = 0.0  # time.monotonic() of the last joint state message
         self._images: dict[str, np.ndarray] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -138,7 +138,7 @@ class RosbridgeDriver(ArmDriver):
                 with self._lock:
                     for name, pos in zip(msg.get("name", []), msg.get("position", []), strict=False):
                         self._state[name] = float(pos)
-                    self._state_t = time.time()
+                    self._state_t = time.monotonic()
             elif m.get("topic") in cams:
                 try:
                     from PIL import Image
@@ -153,12 +153,13 @@ class RosbridgeDriver(ArmDriver):
         with self._lock:
             if self._err and not self._stop.is_set():
                 raise RuntimeError(f"rosbridge connection lost: {self._err}")
-            age = time.time() - self._state_t
+            age = time.monotonic() - self._state_t
             if age > float(self.cfg.get("stale_s", 1.0)):
                 raise RuntimeError(f"joint states are {age:.1f} s old (the robot stopped publishing)")
             q = np.asarray([self._state[j] / self.to_rad for j in self.profile.joints], dtype=float)
             imgs = dict(self._images)
-        return Reading(q=q, extra={}, images=imgs)
+            stamp = self._state_t
+        return Reading(q=q, extra={}, images=imgs, stamp=stamp)
 
     def send(self, q) -> None:
         pos = [float(v) * self.to_rad for v in np.asarray(q, dtype=float)]

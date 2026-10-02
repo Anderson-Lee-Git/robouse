@@ -4,8 +4,9 @@ The task's `real:` block picks the robot profile (metal, so101, piper), the driv
 hardware, `mock` for the hardware-in-the-loop mock that replays a recorded session) and the safety and operator
 settings. Everything the agent sends goes through the safety guard (real/safety.py) inside this trusted process:
 e-stop latch, joint-limit clamp, workspace envelope by forward kinematics (vetoed before anything moves), per-step
-velocity limit (slower near the table), wind-up guard, thermal stop and loop watchdog. The operator channel
-(real/operator.py) gates arming and scene reset and, for tasks without a measurable goal, gives the verdict.
+velocity limit (slower near the table), wind-up guard, stale-telemetry stop, thermal stop and loop watchdog. The
+operator channel (real/operator.py) gates arming and scene reset and, for tasks without a measurable goal, gives the
+verdict.
 
 Action (`robo act`): absolute joint targets in the profile's units, one per joint including the gripper, applied at the
 control rate through the guard; `--repeat N` keeps commanding the same target for N control steps. Skills:
@@ -64,6 +65,9 @@ class RealArmBackend(EmbodiedBackend):
         self.run_dir = None  # set by the episode server (session files next to the episode record)
         self.log = EventLog(None)
         self.guard = Guard(self.prof, self.cfg.get("envelope"), log=self._event, estop_check=estop_engaged)
+        self.stamp: float | None = None  # when the last joint reading was measured (driver's clock, time.monotonic)
+        self.connected = False
+        self.stop_kind: str | None = None
         self.operator = Operator(
             self.cfg.get("operator", "script" if self.mock else "tty"),
             mock=self.mock,
@@ -74,7 +78,7 @@ class RealArmBackend(EmbodiedBackend):
         self.cameras_list = list(self.driver.cameras)
         self.camera = "all" if self.cameras_list else ""
         self.halted: str | None = None
-        self.target = None
+        self.target: np.ndarray | None = None
         self.q = np.asarray(self.prof.park, dtype=float)
         self.images: dict = {}
         self.extra: dict = {}
@@ -205,6 +209,12 @@ class RealArmBackend(EmbodiedBackend):
             else None,
             "windup_deg": e.windup_deg,
             "temp_stop_c": e.temp_stop_c,
+            "watchdog": {
+                "stall_s": e.watchdog_s,
+                "stop_s": e.watchdog_hard_s,
+                "stalls_in_a_row": e.watchdog_max_stalls,
+            },
+            "telemetry_timeout_s": e.telemetry_timeout_s,
             "estop": "latched file (robouse estop)",
             "attended": self.attended,
             "operator_channel": self.operator.channel,
@@ -239,7 +249,7 @@ class RealArmBackend(EmbodiedBackend):
                 self.lock = HardwareLock(self.prof.name, str(self.cfg.get("port", "")))
             why = estop_engaged()
             if why:
-                raise SafetyStop(f"e-stop is engaged ({why}); clear it with `robouse estop --clear` when safe")
+                raise SafetyStop(f"e-stop is engaged ({why}); clear it with `robouse estop --clear` when safe", "estop")
             if self.attended:
                 self.operator.gate(
                     "arm",
@@ -247,7 +257,10 @@ class RealArmBackend(EmbodiedBackend):
                     "switch. Enable torque? The arm will hold its current pose.",
                 )
             self.driver.connect()
+            self.connected = True
             self._read()
+            self.guard.check_telemetry(self.stamp)
+            self.guard.check_thermal(self.extra)  # a motor still hot from the last run does not start
             self.guard.last_cmd = self.q.copy()
             self.target = self.q.copy()
             self._event("connect", pose=self.q.round(2).tolist(), mode=self.mode, driver=self.driver.description)
@@ -255,33 +268,42 @@ class RealArmBackend(EmbodiedBackend):
                 scene = self.cfg.get("scene_setup") or "Set up the scene as the task describes."
                 self.operator.gate("reset", f"Scene for this episode: {scene} Ready to start?")
         except SafetyStop as e:
-            self._halt(str(e))
+            self._halt(str(e), e.kind)
 
-    def _halt(self, reason: str) -> None:
+    def _halt(self, reason: str, kind: str = "safety_stop") -> None:
+        """Latch the stop and command a hold: the last command when the reading may be stale (lost telemetry, a late
+        loop), otherwise the measured pose, which also takes away any push from a command leading the arm."""
         if self.halted:
             return
-        self.halted = reason
-        self._event("stop", kind="safety_stop", reason=reason)
-        try:  # hold where it is
-            if (
-                self.driver
-                and getattr(self.driver, "robot", None) is not None
-                or getattr(self.driver, "sdk", None) is not None
-            ):
-                self.driver.send(self.q)
-        except Exception:  # noqa: BLE001
-            pass
+        self.halted, self.stop_kind = reason, kind
+        hold = None
+        if self.connected:
+            keep = kind in ("telemetry_lost", "watchdog") and self.guard.last_cmd is not None
+            hold = np.asarray(self.guard.last_cmd if keep else self.q, dtype=float).copy()
+        self._event(
+            "stop",
+            kind="safety_stop",
+            cause=kind,
+            reason=reason,
+            hold=None if hold is None else hold.round(2).tolist(),
+        )
+        if hold is not None:
+            try:
+                self.driver.send(hold)
+                self.guard.last_cmd = hold
+            except Exception as e:  # noqa: BLE001 - a dead link cannot take the hold either
+                self._event("hold_failed", error=f"{type(e).__name__}: {e}")
 
     def _read(self) -> None:
         r = self.driver.read()
-        self.q, self.extra = r.q, r.extra
+        self.q, self.extra, self.stamp = r.q, r.extra, r.stamp
         if r.images:
             self.images = r.images
 
     # ---- stepping --------------------------------------------------------------------------------------------------
     def step(self, action):
         if self.halted:
-            raise SafetyStop(self.halted)
+            raise SafetyStop(self.halted, self.stop_kind or "safety_stop")
         a = np.asarray(action, dtype=float)
         if not np.all(np.isfinite(a)):
             raise ValueError("action values must be finite numbers")
@@ -314,16 +336,17 @@ class RealArmBackend(EmbodiedBackend):
                 dt=round(dt, 4),
                 **{k: v for k, v in self.extra.items() if isinstance(v, list)},
             )
+            self.guard.check_telemetry(self.stamp)  # before anything uses this reading
+            self.guard.after_step(self.q, self.extra, dt)  # thermal guard and loop watchdog
             self._advance_stages()
-            self.guard.after_step(self.q, self.extra, dt if self.pace else 0.0)
         except SafetyStop as e:
-            self._halt(str(e))
+            self._halt(str(e), e.kind)
             raise
         except Veto:
             raise
         except Exception as e:  # driver fault: halt for a human
-            self._halt(f"hardware fault: {type(e).__name__}: {e}")
-            raise SafetyStop(self.halted) from e
+            self._halt(f"hardware fault: {type(e).__name__}: {e}", "hardware_fault")
+            raise SafetyStop(str(self.halted), "hardware_fault") from e
 
     def hold_action(self) -> list[float]:
         return [float(x) for x in (self.guard.last_cmd if self.guard.last_cmd is not None else self.q)]
@@ -609,6 +632,7 @@ class RealArmBackend(EmbodiedBackend):
                     except SafetyStop:
                         release = False
                 self._event("close", pose=self.q.round(2).tolist(), release_torque=release)
+                self.connected = False
                 self.driver.disconnect(release_torque=release)
         finally:
             if self.lock:
@@ -627,6 +651,7 @@ class RealArmBackend(EmbodiedBackend):
             "clamps": sum(1 for e in ev if e["event"] == "clamp"),
             "warnings": sum(1 for e in ev if e["event"] == "warn"),
             "safety_stop": self.halted,
+            "stop_kind": self.stop_kind,
             "operator": [e for e in ev if e["event"].startswith("operator_")],
         }
 

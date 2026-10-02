@@ -52,11 +52,17 @@ class PiperDriver(ArmDriver):
         self.send(self.read().q)  # hold where it is
 
     def read(self) -> Reading:
-        js = self.sdk.GetArmJointMsgs().joint_state
+        jm = self.sdk.GetArmJointMsgs()
+        js = jm.joint_state
         q = [getattr(js, f"joint_{i}") / 1000.0 for i in range(1, 7)]
         g = self.sdk.GetArmGripperMsgs().gripper_state.grippers_angle / 1000.0
         images = {n: c.frame() for n, c in self._cams.items() if c.frame() is not None}
-        return Reading(q=np.asarray(q + [g], dtype=float), extra={}, images=images)
+        # the SDK serves the last joint message its CAN thread received; its receive time (wall clock) dates it
+        ts = getattr(jm, "time_stamp", None)
+        stamp = (
+            time.monotonic() - max(0.0, time.time() - float(ts)) if isinstance(ts, (int, float)) and ts > 0 else None
+        )
+        return Reading(q=np.asarray(q + [g], dtype=float), extra={}, images=images, stamp=stamp)
 
     def send(self, q) -> None:
         q = np.asarray(q, dtype=float)
