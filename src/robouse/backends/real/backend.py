@@ -6,11 +6,12 @@ settings. Everything the agent sends goes through the safety guard (real/safety.
 e-stop latch, joint-limit clamp, workspace envelope by forward kinematics (vetoed before anything moves), per-step
 velocity limit (slower near the table), wind-up guard, stale-telemetry stop, thermal stop and loop watchdog; the
 contact watch (real/contact.py) stops a move that touches something near the table and the episode on any other
-contact (and, during the settle steps after the episode ends, any contact). After any stop, at the end of the episode
-and when the server is interrupted, the arm joints' command is brought to their measured position within the
-per-step delta limit while the gripper keeps its command; the arm then parks slowly at the profile's rest pose and
-torque is released there, or it keeps holding where it is (something in the gripper, no rest pose, the e-stop
-latched) and the operator is told why (`_secure`). Between requests the arm is checked at least once a second
+contact (and, during the settle steps after the episode ends, any contact). Nothing moves on its own after a stop or a
+refused gate: the arm joints' command goes to their measured position within the per-step delta limit, the gripper
+keeps its command, and the arm holds; it is watched (temperatures, telemetry) until the operator has answered at close,
+and parks only on their yes (`_leave_arm`). After a normal end it parks slowly at the profile's rest pose with the
+contact watch at full sensitivity and torque is released there; a park that meets anything holds and is recorded as a
+stop after the end. Between requests and during operator questions the arm is checked at least once a second
 (`idle_check`). The operator channel (real/operator.py) confirms a physical e-stop before a live robot is armed, gates
 arming and scene reset and, for tasks without a measurable goal, gives the verdict.
 
@@ -106,6 +107,9 @@ class RealArmBackend(EmbodiedBackend):
         self.close_cause = "end of episode"
         self._park_delta: np.ndarray | None = None
         self._park_moved = False  # the last parking attempt moved the arm
+        self._park_stop_kind = "park"  # what stopped it
+        self.stop_after_end: dict | None = None  # a park after a normal end that was stopped (holds a run-many batch)
+        self._hold_alarms: set[str] = set()  # warnings given while the arm holds after a stop (`_watch_hold`)
         self.ending = False  # the settle steps after the episode ended (`begin_settle`): any contact is a stop
         self._last_check = 0.0  # time.monotonic() of the last control step or idle check (`idle_check`)
         self.operator = Operator(
@@ -258,7 +262,7 @@ class RealArmBackend(EmbodiedBackend):
             "idle_check_s": self.IDLE_CHECK_S,  # between requests: e-stop, fresh reading, temperature
             "telemetry_timeout_s": e.telemetry_timeout_s,
             "contact_watch": self._contact_spec(),
-            "rest_pose": list(self.prof.park) or None,  # where the arm parks after a stop and at the end
+            "rest_pose": list(self.prof.park) or None,  # where the arm parks at a normal end (after a stop: on a yes)
             "estop": "latched file (robouse estop)",
             "physical_estop": "not asked (hardware-in-the-loop mock)"
             if self.mock and not self.cfg.get("estop_check")
@@ -329,7 +333,7 @@ class RealArmBackend(EmbodiedBackend):
             self._event("connect", pose=self.q.round(2).tolist(), mode=self.mode, driver=self.driver.description)
             if self.attended:
                 scene = self.cfg.get("scene_setup") or "Set up the scene as the task describes."
-                self.operator.gate("reset", f"Scene for this episode: {scene} Ready to start?")
+                self.operator.gate("reset", f"Scene for this episode: {scene} Ready to start?", tick=self._tick)
         except SafetyStop as e:
             self._halt(str(e), e.kind)
 
@@ -356,48 +360,163 @@ class RealArmBackend(EmbodiedBackend):
             raise SafetyStop(f"no physical e-stop confirmed ({note or ans}); the robot was not armed", "physical_estop")
 
     def _halt(self, reason: str, kind: str = "safety_stop") -> None:
-        """Latch the stop and secure the arm (see `_secure`)."""
+        """Latch the stop and hold the arm where it is (`_hold_here`): nothing moves on its own after a stop."""
         if self.halted:
             return
         self.halted, self.stop_kind = reason, kind
         self._event("stop", kind="safety_stop", cause=kind, reason=reason)
-        self._secure(f"safety stop ({kind})")
+        self._hold_here(f"safety stop ({kind})")
 
-    # ---- securing the arm: after any stop, at the end of the episode, when interrupted ----------------------------
+    # ---- the arm after a stop and at the end: hold, park only at a normal end or when the operator approves ----------
     PARK_SETTLE_STEPS = 30  # control steps allowed for the arm to come to rest at the rest pose
+    REFUSALS = ("operator_gate", "physical_estop", "operator_channel")  # stops the operator chose: nothing is asked
 
-    def _secure(self, cause: str) -> None:
-        """(1) Bring every arm joint's command to its measured position through the per-step delta limit (`_retarget`),
-        so nothing keeps pushing; the gripper keeps its command, so a grasp holds. A stale reading is never sent:
-        without a fresh one the last command is held. (2) If the gripper holds nothing, the profile has a rest
-        pose, the e-stop is clear and the path there stays in the workspace, move there slowly and release torque only
-        once the arm is at rest (a driver that cannot release torque, the ROS bridge, holds it there). (3) Otherwise
-        keep holding, and tell the session log and the operator why."""
-        if not self.connected:
+    def _hold_here(self, cause: str) -> None:
+        """Hold where the arm is: the arm joints' command goes to a fresh measured pose within the per-step delta limit
+        (`_retarget`; without a fresh reading the last command stays), the gripper keeps its command, and nothing else
+        moves: no parking, no release. Before torque is on, nothing is commanded."""
+        if self.connected:
+            self._hold(cause, self._retarget(cause) or "after a stop the arm does not move on its own")
+
+    def _leave_arm(self) -> None:
+        """How the arm is left when the episode server closes:
+        - after a normal end, it parks slowly at its rest pose with the contact watch at full sensitivity and torque is
+          released there (`_end_park`); a park that is stopped holds where it stopped, is recorded as a stop after the
+          end (which holds a run-many batch) and is never retried on its own;
+        - after a safety stop, or such a park stop, the arm holds, and an attended operator is asked to inspect it and
+          may approve parking (`_ask_to_park`); the thermal guard and the telemetry checks run until they answer;
+        - after a refused gate or an interruption, the arm holds and nothing is asked."""
+        if self.close_cause == "interruption":
+            if not self.halted:
+                self._hold_here("interruption")
             return
-        why = self._retarget(cause)
+        if not self.halted:
+            self._end_park()
+        stopped = (self.halted and self.stop_kind not in self.REFUSALS) or self.stop_after_end
+        if stopped and self.attended and self.connected:
+            self._ask_to_park()
+
+    def _end_park(self) -> None:
+        cause = "end of episode"
+        why = self._retarget(cause) or self._grasp()
         if why is None:
-            why = self._grasp()
-        if why is None and (why := self._park(cause)) is not None and self._park_moved:
-            why = f"{why}; {self._retarget(cause) or 'it holds where it stopped'}"  # parking stopped part-way
-        if why is not None:
-            self._hold(cause, why)
-        elif not getattr(self.driver, "releases_torque", True):  # e.g. a ROS arm's controller
+            why = self._park(cause)
+            if why is None:
+                self._release(cause)
+                return
+            if self._park_moved:  # stopped part-way: a stop after the end
+                stop = {"kind": self._park_stop_kind, "reason": f"parking after the end stopped: {why}"}
+                self.stop_after_end = stop
+                self._event("stop", kind="safety_stop", cause=stop["kind"], reason=stop["reason"])
+                why = f"{why}; {self._retarget(cause) or 'it holds where it stopped'}"
+        self._hold(cause, why)
+
+    def _ask_to_park(self) -> None:
+        """After a stop, with an attended operator: the arm holds while they inspect it; parking happens only on their
+        yes, once (a park they approve that is stopped holds where it stopped). Until they answer, `_tick` keeps the
+        thermal guard and the telemetry checks running (`_watch_hold`)."""
+        stop = self.stop_after_end or {"kind": self.stop_kind, "reason": self.halted}
+        what = (
+            f"{self.prof.display}: safety stop ({stop['kind']}: {stop['reason']}). The arm is holding at its present "
+            "position with torque on."
+        )
+        cause = "after the stop"
+        if blocker := self._park_blocker():
+            ok, _, _ = self.operator.confirm(
+                "hold_ack",
+                f"{what} It cannot be parked: {blocker}. Inspect it, then answer yes; until you answer, the motor "
+                "temperatures and the link are watched.",
+                tick=self._tick,
+            )
+            self._hold(cause, f"{blocker} ({'acknowledged by the operator' if ok else 'not acknowledged'})")
+            return
+        latch = " Clear the e-stop latch first (`robouse estop --clear`)." if estop_engaged() else ""
+        ok, ans, _ = self.operator.confirm(
+            "park",
+            f"{what} Inspect the robot and its workspace.{latch} Park the arm at its rest pose now? yes: it moves "
+            "slowly there, with the contact watch at full sensitivity, and is released; no: it keeps holding.",
+            tick=self._tick,
+        )
+        if not ok:
+            self._hold(cause, "the operator did not approve parking" if ans == "no" else "no answer: it was not parked")
+            return
+        cause = "parking approved by the operator"
+        why = self._park(cause)
+        if why is None:
+            self._release(cause)
+            return
+        if self._park_moved:
+            reason = f"approved parking stopped: {why}"
+            self._event("stop", kind="safety_stop", cause=self._park_stop_kind, reason=reason)
+            why = f"{why}; {self._retarget(cause) or 'it holds where it stopped'}"
+        self._hold(cause, why)
+
+    def _park_blocker(self) -> str | None:
+        """Why the arm cannot be parked now (the e-stop latch aside, which the operator may clear), or None."""
+        if not self.prof.park:
+            return "the robot profile has no rest pose"
+        if (why := self._grasp()) is not None:
+            return why
+        if self._present() is None:
+            return "no fresh reading of the present position (the link may be down)"
+        return None
+
+    def _release(self, cause: str) -> None:
+        """At rest at the rest pose: release torque (a driver that cannot, the ROS bridge, keeps holding there)."""
+        if not getattr(self.driver, "releases_torque", True):
             self.secured = "parked at the rest pose, holding there (the driver cannot release torque)"
             self._event("parked", cause=cause, pose=self.q.round(2).tolist(), torque="on: the driver cannot release it")
             self.operator.notify(
                 f"{self.prof.display} ({cause}): parked at its rest pose and holding there with torque on (the driver "
                 "cannot release torque)."
             )
+            return
+        self._event("torque_released", cause=cause, pose=self.q.round(2).tolist())
+        self.secured = "parked at the rest pose, torque released"
+        self.connected, self.disconnected = False, True
+        try:
+            self.driver.disconnect(release_torque=True)
+        except Exception as e:  # noqa: BLE001 - the motors then keep holding the rest pose
+            self._event("release_failed", error=f"{type(e).__name__}: {e}")
+        self.operator.notify(f"{self.prof.display} ({cause}): parked at its rest pose and released (torque off).")
+
+    def _tick(self) -> None:
+        """While an operator question is open: the checks between requests (`idle_check`), at most once a second."""
+        self.idle_check()
+
+    def _watch_hold(self) -> None:
+        """The arm holds after a stop, until the operator has answered: read it, and run the telemetry check and the
+        thermal guard. They warn loudly (an operator notice and the session log) but change nothing: the arm keeps
+        holding, as only the operator may move it now."""
+        try:
+            self._read()
+        except Exception as e:  # noqa: BLE001 - a dead link: the motors keep their last command
+            self._hold_alarm("link", f"its link does not answer ({type(e).__name__}: {e})")
+            return
+        lists = {k: v for k, v in self.extra.items() if isinstance(v, list)}
+        self.log.step(label="hold", pos=self.q.round(3).tolist(), **lists)
+        limit = self.guard.e.telemetry_timeout_s
+        if self.stamp is not None and (age := time.monotonic() - self.stamp) > limit:
+            of = f" from {self.stamp_of}" if self.stamp_of else ""
+            self._hold_alarm("link", f"no fresh joint reading{of} for {age:.1f} s (limit {limit:g} s)")
         else:
-            self._event("torque_released", cause=cause, pose=self.q.round(2).tolist())
-            self.secured = "parked at the rest pose, torque released"
-            self.connected, self.disconnected = False, True
-            try:
-                self.driver.disconnect(release_torque=True)
-            except Exception as e:  # noqa: BLE001 - the motors then keep holding the rest pose
-                self._event("release_failed", error=f"{type(e).__name__}: {e}")
-            self.operator.notify(f"{self.prof.display} ({cause}): parked at its rest pose and released (torque off).")
+            self._hold_alarms.discard("link")
+        temps = [float(x) for k in ("temp_mos_c", "temp_rotor_c", "temp_c") for x in (self.extra.get(k) or [])]
+        stop_c = self.guard.e.temp_stop_c
+        if temps and max(temps) > stop_c:
+            self._hold_alarm("temperature", f"a motor is at {max(temps):.0f} C, above the {stop_c:.0f} C stop limit")
+        elif temps and max(temps) < stop_c - 2:
+            self._hold_alarms.discard("temperature")
+
+    def _hold_alarm(self, alarm: str, what: str) -> None:
+        if alarm in self._hold_alarms:  # once until the condition clears
+            return
+        self._hold_alarms.add(alarm)
+        self._event("hold_alarm", alarm=alarm, what=what)
+        self.operator.notify(
+            f"WARNING: {self.prof.display} is holding after a stop and {what}. It keeps holding with torque on; the "
+            "physical e-stop cuts the power."
+        )
 
     def _retarget(self, cause: str) -> str | None:
         """Bring the arm joints' command to where a fresh reading puts them, through the per-step delta limit (the slow
@@ -485,15 +604,16 @@ class RealArmBackend(EmbodiedBackend):
         self.secured = f"holding at the present position: {why}"
         self._event("holding", cause=cause, pose=None if pose is None else np.round(pose, 2).tolist(), reason=why)
         self.operator.notify(
-            f"{self.prof.display} ({cause}): holding at its present position with torque on; it was not parked: "
-            f"{why}. The physical e-stop cuts the power."
+            f"{self.prof.display} ({cause}): holding at its present position with torque on ({why}). The physical "
+            "e-stop cuts the power."
         )
 
     def _park(self, cause: str) -> str | None:
-        """Move slowly (the slow joint speed) to the rest pose with every check on; None once the arm is at rest there,
-        else why not."""
+        """Move slowly (the slow joint speed) to the rest pose with every check on and the contact watch at full
+        sensitivity; None once the arm is at rest there, else why not (`_park_moved`: it had started moving;
+        `_park_stop_kind`: what stopped it). Called at a normal end, or once per operator approval: never retried."""
         p = self.prof
-        self._park_moved = False
+        self._park_moved, self._park_stop_kind = False, "park"
         if not p.park:
             return "the robot profile has no rest pose"
         if latch := estop_engaged():
@@ -519,10 +639,16 @@ class RealArmBackend(EmbodiedBackend):
                 self._park_step(goal)
             return None if self._at_rest(goal) else "the arm did not reach the rest pose"
         except KeyboardInterrupt:
+            self._park_stop_kind = "interruption"
             return "parking was interrupted"
-        except (SafetyStop, Veto) as e:
+        except SafetyStop as e:
+            self._park_stop_kind = e.kind
+            return f"parking stopped: {e}"
+        except Veto as e:
+            self._park_stop_kind = "veto"
             return f"parking stopped: {e}"
         except Exception as e:  # noqa: BLE001 - a driver fault while parking
+            self._park_stop_kind = "hardware_fault"
             return f"parking stopped by a hardware fault: {type(e).__name__}: {e}"
 
     def _park_step(self, target: np.ndarray) -> None:
@@ -551,7 +677,7 @@ class RealArmBackend(EmbodiedBackend):
         self.guard.check_telemetry(self.stamp, source=self.stamp_of)
         self.guard.check_loop(dt)
         self.guard.last_pos = np.asarray(self.q, dtype=float)
-        c = self.watch.update(cmd, self.q, self.extra, watched=False)
+        c = self.watch.update(cmd, self.q, self.extra, watched=False, full=True)  # no 5x factor while parking
         if c is not None:
             what = c.describe()
             self._event("contact", **c.record(), what=what, pose=self.q.round(2).tolist(), action="parking stopped")
@@ -565,7 +691,7 @@ class RealArmBackend(EmbodiedBackend):
         return still and bool(np.all(np.abs(self.q[arm] - goal[arm]) <= tol))
 
     def on_interrupt(self) -> None:
-        """The episode server's hook when the run is interrupted (Ctrl-C or SIGTERM): close() then secures the arm."""
+        """The episode server's hook when the run is interrupted (Ctrl-C or SIGTERM): close() then holds the arm."""
         self.close_cause = "interruption"
 
     def _read(self) -> None:
@@ -701,15 +827,19 @@ class RealArmBackend(EmbodiedBackend):
     IDLE_CHECK_S = 1.0  # between requests, the arm is checked at least this often
 
     def idle_check(self) -> None:
-        """The episode server's hook between requests (the agent thinking): at most once a second, the checks a control
-        step makes that need no motion, namely the e-stop latch, a fresh joint reading and the thermal guard, while the
-        motors keep the last command (sent again, unchanged). A failed check latches a stop and secures the arm, as
-        during a control step."""
-        if not self.connected or self.halted or self.guard.last_cmd is None:
+        """The episode server's hook between requests (the agent thinking, the episode lingering) and while an operator
+        question is open (`_tick`): at most once a second, the checks a control step makes that need no motion, namely
+        the e-stop latch, a fresh joint reading and the thermal guard, while the motors keep the last command (sent
+        again, unchanged). A failed check latches a stop and holds the arm, as during a control step. After a stop the
+        arm is only watched (`_watch_hold`) until the server closes."""
+        if not self.connected or self.guard.last_cmd is None:
             return
         if time.monotonic() - self._last_check < self.IDLE_CHECK_S:
             return
         self._last_check = time.monotonic()
+        if self.halted or self.stop_after_end:
+            self._watch_hold()
+            return
         try:
             self.guard.check_estop()
             self.driver.send(np.asarray(self.guard.last_cmd, dtype=float))
@@ -981,7 +1111,8 @@ class RealArmBackend(EmbodiedBackend):
                 self._event("operator_verdict", verdict=ans, note=note, channel="script")
             else:
                 prompt = "Highest stage reached: " + "; ".join(f"{i} = {d}" for i, d in enumerate(rubric))
-                ans, note = self.operator.verdict(prompt, choices=tuple(str(i) for i in range(top + 1)) + ("skip",))
+                stages = tuple(str(i) for i in range(top + 1)) + ("skip",)
+                ans, note = self.operator.verdict(prompt, choices=stages, tick=self._tick)  # the arm watched meanwhile
             self.rubric_stage = int(ans) if ans.isdigit() else None
             self.last_judge = {
                 "verdict": "operator_rubric",
@@ -998,18 +1129,18 @@ class RealArmBackend(EmbodiedBackend):
             self._event("operator_verdict", verdict=ans, note=note, channel="script")
         else:
             ans, note = self.operator.verdict(
-                f"Task: {self.cfg.get('goal_text') or self.spec.get('id')}. Did the robot succeed?"
+                f"Task: {self.cfg.get('goal_text') or self.spec.get('id')}. Did the robot succeed?", tick=self._tick
             )
         self.last_judge = {"verdict": "operator", "answer": ans, "note": note, "channel": self.operator.channel}
         return ans == "yes"
 
     def close(self) -> None:
-        """End of the episode (or the server interrupted): secure the arm, then let the driver go. Torque is released
-        only at the rest pose; a holding arm keeps its present position after this process ends."""
+        """End of the episode, or the server interrupted: leave the arm (`_leave_arm`), then let the driver go. Torque is
+        released only at the rest pose; a holding arm keeps its present position after this process ends."""
         try:
             if self.driver is not None:
                 if self.connected:
-                    self._secure(self.close_cause)
+                    self._leave_arm()
                 self._event("close", pose=self.q.round(2).tolist(), release_torque=self.disconnected)
                 # holding, or never connected (the driver still cleans up, e.g. a mock server)
                 if not self.disconnected:
@@ -1035,6 +1166,7 @@ class RealArmBackend(EmbodiedBackend):
             "safety_stop": self.halted,
             "stop_kind": self.stop_kind,
             "secured": self.secured,
+            "stop_after_end": self.stop_after_end,
             "attended": self.attended,
             "operator_channel": self.operator.channel,
             "physical_estop": self.estop_confirmed,

@@ -110,7 +110,10 @@ class ContactWatch:
         self.move_z0: float | None = None  # commanded tool height before the current move
         self.recent: list[np.ndarray] = []  # torque of the last steps holding still
 
-    def update(self, cmd, q, extra: dict, watched: bool) -> Contact | None:
+    def update(self, cmd, q, extra: dict, watched: bool, full: bool = False) -> Contact | None:
+        """One control step: the command just sent, the joints and telemetry read after it. `watched`: the step is in
+        a watched move (near the table); `full`: the torque thresholds apply at their base values even where the move
+        is not watched (parking, which runs unattended)."""
         self.n += 1
         cmd, q = np.asarray(cmd, dtype=float), np.asarray(q, dtype=float)
         raw = extra.get(self.s.torque_key)
@@ -128,7 +131,7 @@ class ContactWatch:
         settled = self._phase(moving, watched, q)
         hit = self._stall(cmd, q, watched, settled)
         if hit is None and tq is not None:
-            hit = self._torque(tq, watched, settled, descended=dz < -0.001)
+            hit = self._torque(tq, watched, settled, descended=dz < -0.001, full=full)
         self.prev_cmd, self.prev_q, self.prev_zc = cmd, q, zc
         if tq is not None:
             self.prev_tq = tq
@@ -167,8 +170,8 @@ class ContactWatch:
         return False
 
     # ---- torque ---------------------------------------------------------------------------------------------------
-    def _torque(self, tq: np.ndarray, watched: bool, settled: bool, descended: bool) -> Contact | None:
-        lim = self.lim if watched else self.lim * self.s.unwatched_factor
+    def _torque(self, tq: np.ndarray, watched: bool, settled: bool, descended: bool, full: bool) -> Contact | None:
+        lim = self.lim if watched or full else self.lim * self.s.unwatched_factor
         if self.phase == "moving":
             if (
                 self.move_k == self.s.transient_steps

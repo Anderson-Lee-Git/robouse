@@ -400,9 +400,10 @@ def test_watchdog_one_stall_is_logged_and_the_episode_goes_on(tmp_path):
     assert not any(e["event"] == "stop" for e in ev)
 
 
-def test_watchdog_hard_limit_stops_and_secures_the_arm(tmp_path):
-    """A stalled step stops the episode; every arm joint's command is then brought to its measured position, and the
-    arm parks slowly at its rest pose and is released there (the tracking mock follows the parking commands)."""
+def test_watchdog_hard_limit_stops_and_holds_until_the_operator_approves_parking(tmp_path):
+    """A stalled step stops the episode; every arm joint's command is then brought to its measured position and the
+    arm holds there: nothing moves on its own. At close the operator inspects it and approves parking (the scripted
+    operator says yes): only then does it park slowly at its rest pose and is released there."""
     from robouse.real.robots import METAL
 
     ep = _episode(
@@ -416,8 +417,9 @@ def test_watchdog_hard_limit_stops_and_secures_the_arm(tmp_path):
     r = ep.handle({"op": "act", "action": q})
     assert not r["ok"] and "watchdog: a control step took" in r["error"]
     assert ep.finished and ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "watchdog"
-    assert ep.result["session"]["secured"] == "parked at the rest pose, torque released"
+    assert ep.result["session"]["secured"].startswith("holding at the present position")  # no parking on its own
     ep.close()
+    assert ep.result["session"]["secured"] == "parked at the rest pose, torque released"  # after the operator's yes
     ev = _events(tmp_path / "ep")
     steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
     stalled = [s for s in steps if "label" not in s][-1]  # the last control step of the episode
@@ -426,7 +428,10 @@ def test_watchdog_hard_limit_stops_and_secures_the_arm(tmp_path):
     assert retarget["cause"] == "safety stop (watchdog)"
     assert np.allclose(retarget["pose"][:6], stalled["pos"][:6], atol=0.006)  # the arm joints held where they were
     names = [e["event"] for e in ev]
-    assert names.index("retarget") < names.index("park") < names.index("torque_released") < names.index("close")
+    gate = next(i for i, e in enumerate(ev) if e.get("gate") == "park")  # the operator's answer at close
+    park = names.index("park")
+    assert names.index("retarget") < names.index("holding") < gate < park < names.index("torque_released")
+    assert ev[gate]["answer"] == "yes" and ev[park]["cause"] == "parking approved by the operator"
     assert np.allclose([s for s in steps if s.get("label") == "park"][-1]["pos"][:6], METAL.park[:6], atol=2.0)
     assert next(e for e in ev if e["event"] == "close")["release_torque"] is True
     assert ep.result["safety_events"]
@@ -524,8 +529,10 @@ def test_contact_watch_rules():
     hold = [(0, 4, 0 * drop)] * 4
     (hit,) = feed(ContactWatch(METAL, METAL.contact), hold + [(0, 4, push)], watched=False)
     assert hit.kind == "holding"
-    # the gripper closes and the shoulder twitches by 0.72 N m (Sep 5: gripper motion moved it by up to 0.74 x 1.5)
-    grasp = [(0, 4 + 10 * i, 0.45 * drop * (i % 2)) for i in range(1, 6)]
+    # the gripper closes and the shoulder twitches by 1.11 N m every other step: the most gripper motion moved it on the
+    # Sep 5 recordings (0.74 of its 1.5 N m threshold)
+    twitch = np.array([0, -1.11, 0, 0, 0, 0, 0])
+    grasp = [(0, 4 + 10 * i, twitch * (i % 2)) for i in range(1, 6)]
     assert feed(ContactWatch(METAL, METAL.contact), hold + grasp + hold, watched=True) == []
     bump = [(0, 4 + 10 * i, drop * (i >= 3)) for i in range(1, 6)]  # ... or something pushes the arm meanwhile
     (hit,) = feed(ContactWatch(METAL, METAL.contact), hold + bump, watched=True)
@@ -624,7 +631,7 @@ def test_contact_stops_act_repeat_and_skill(tmp_path, monkeypatch):
     ep.close()
 
 
-# ---- after a stop, at the end and when interrupted: no push, then park and release, or hold ------------------------------
+# ---- after a stop, at the end and when interrupted: no push; park only at a normal end or on the operator's yes ----------
 
 
 def _steps(ep_dir: Path) -> list[dict]:
@@ -639,22 +646,30 @@ def _within_delta_limit(sent, guard) -> bool:
 def test_stop_and_close_leave_no_push_on_the_elbow_replay(tmp_path, monkeypatch):
     """The 13:16 replay: after the contact stop, and again after close(), the arm joints' last command is where the arm
     is, so nothing pushes against the stop. Every command got there through the per-step delta limit, and the gripper
-    kept its command. The replayed arm does not follow commands, so it never reaches its rest pose: it is held, and the
-    session log and the operator are told why."""
+    kept its command. Nothing moved on its own: the only park is the one the operator approved at close, and the
+    replayed arm, which does not follow commands, never reaches its rest pose, so it holds and the operator is told."""
     ep, fx = _playback(tmp_path, monkeypatch, "metal-hanoi-131602")
     robot, b = ep.backend.driver.robot, ep.backend
     _replay(ep, fx)
     assert ep.outcome == "safety_stop" and ep.result["session"]["secured"].startswith("holding at the present position")
-    assert np.abs(np.subtract(robot.sent[-1][:6], b.q[:6])).max() < 0.05  # after the stop: the command is the arm
+    # the command is the pose the arm was measured at when it stopped (the recording itself moves on; a real arm would not)
+    stopped = [e for e in _events(tmp_path / "ep") if e["event"] == "retarget"][-1]
+    assert stopped["pose"][2] == pytest.approx(176.36, abs=0.05)
+    assert np.allclose(robot.sent[-1][:6], stopped["pose"][:6], atol=6e-3)
     ep.close()
-    assert np.abs(np.subtract(robot.sent[-1][:6], b.q[:6])).max() < 0.05  # after close()
+    last = [e for e in _events(tmp_path / "ep") if e["event"] == "retarget"][-1]  # after the approved park stopped
+    assert np.allclose(robot.sent[-1][:6], last["pose"][:6], atol=6e-3)
     n = sum(1 for s in _steps(tmp_path / "ep") if "label" not in s)  # sent[0] holds at connect, then one per step
     assert _within_delta_limit(robot.sent[n:], b.guard)  # from the stopping step on (retarget, parking, holds)
     assert {c[6] for c in robot.sent[n:]} == {robot.sent[n][6]}  # from the stopping step on, the gripper's command
     ev = _events(tmp_path / "ep")
     holds = [e for e in ev if e["event"] == "holding"]
-    assert [h["cause"] for h in holds] == ["safety stop (contact)", "end of episode"]
-    assert all("rest pose" in h["reason"] for h in holds)
+    assert [h["cause"] for h in holds] == ["safety stop (contact)", "parking approved by the operator"]
+    assert holds[0]["reason"] == "after a stop the arm does not move on its own"
+    assert holds[1]["reason"].endswith("it holds where it stopped")  # the approved park could not reach rest
+    names = [e["event"] for e in ev]
+    gate = next(i for i, e in enumerate(ev) if e.get("gate") == "park")
+    assert names.count("park") == 1 and names.index("holding") < gate < names.index("park")  # one approved attempt
     notices = [e["text"] for e in ev if e["event"] == "operator_notice"]
     assert len(notices) == 2 and all("holding at its present position with torque on" in n for n in notices)
     assert next(e for e in ev if e["event"] == "close")["release_torque"] is False
@@ -690,8 +705,9 @@ def test_estop_stop_holds_at_the_present_position_and_says_why(tmp_path):
     ep.close()
     safety.clear_estop()
     ev = _events(tmp_path / "ep")
-    holds = [e for e in ev if e["event"] == "holding"]
-    assert len(holds) == 2 and all(h["reason"].startswith("the e-stop is latched") for h in holds)
+    holds = [e for e in ev if e["event"] == "holding"]  # at the stop, and after the operator's yes to parking:
+    assert holds[0]["reason"] == "after a stop the arm does not move on its own"
+    assert len(holds) == 2 and holds[1]["reason"].startswith("the e-stop is latched")  # ... which the latch refused
     assert not any(e["event"] in ("park", "torque_released") for e in ev)
     # the arm joints' last command is where the last retarget measured them; the gripper kept its command
     retarget = [e for e in ev if e["event"] == "retarget"][-1]
@@ -710,9 +726,9 @@ def test_operator_notices_reach_the_file_channel():
     assert logged == [("operator_notice", {"text": "the arm is holding", "channel": "file"})]
 
 
-def test_interruption_secures_the_arm(tmp_path):
-    """A terminate request to a real-robot episode server (a run interrupted) ends the episode and parks the arm before
-    the server exits."""
+def test_interruption_holds_the_arm(tmp_path):
+    """A terminate request to a real-robot episode server (a run interrupted) ends the episode, and the arm holds where
+    it is before the server exits: nothing moves on its own, and nothing is asked."""
     import signal
     import subprocess
     import sys
@@ -730,8 +746,9 @@ def test_interruption_secures_the_arm(tmp_path):
     proc.wait(timeout=60)
     ev = _events(run_dir)
     assert next(e for e in ev if e["event"] == "retarget")["cause"] == "interruption"
-    assert any(e["event"] == "torque_released" for e in ev)
-    assert next(e for e in ev if e["event"] == "close")["release_torque"] is True
+    assert next(e for e in ev if e["event"] == "holding")["cause"] == "interruption"
+    assert not any(e["event"] in ("park", "torque_released") or e.get("gate") == "park" for e in ev)
+    assert next(e for e in ev if e["event"] == "close")["release_torque"] is False
     assert json.loads((run_dir / "result.json").read_text())["outcome"] == "agent_exited"
 
 
@@ -1068,7 +1085,7 @@ def test_batch_fails_closed_through_the_cli(tmp_path, monkeypatch):
 @pytest.mark.parametrize("fault", ["estop", "overtemperature", "telemetry_lost"])
 def test_idle_check_watches_the_arm_between_requests(tmp_path, fault):
     """R5: while the agent thinks, the arm is read at least once a second: an e-stop, a hot motor or a link gone
-    quiet stops the episode and secures the arm, as at a control step. Right after a step it waits."""
+    quiet stops the episode and holds the arm, as at a control step. Right after a step it waits."""
     from robouse.real import safety
 
     real = {"envelope": {"telemetry_timeout_s": 0.3}, "mock_fault": {"kind": "stale", "at_step": 2}}
@@ -1207,6 +1224,180 @@ def test_a_stop_keeps_the_grasp(tmp_path):
     assert len(robot.sent) > k and all(c[6] == pytest.approx(grip, abs=1e-3) for c in robot.sent[k:])
     ev = _events(tmp_path / "ep")
     holds = [e for e in ev if e["event"] == "holding"]
-    assert len(holds) == 2 and all(h["reason"].startswith("the gripper holds something") for h in holds)
-    assert not any(e["event"] in ("park", "torque_released") for e in ev)
+    assert len(holds) == 2 and holds[1]["reason"].startswith("the gripper holds something")
+    assert next(e for e in ev if e.get("gate") == "hold_ack")["answer"] == "yes"  # not offered a park: acknowledged
+    assert not any(e["event"] in ("park", "torque_released") or e.get("gate") == "park" for e in ev)
     assert next(e for e in ev if e["event"] == "close")["release_torque"] is False
+
+
+# ---- re-review, 2026-10-02 (N1-N6): nothing moves on its own after a stop or a refusal ------------------------------------
+
+
+def _inject_park_contact(b, every: int = 5) -> dict:
+    """Something on the way to the rest pose: a contact on every `every`-th parking step (of every attempt)."""
+    from robouse.real.safety import SafetyStop
+
+    orig, n = b._park_step, {"steps": 0}
+
+    def park_step(target):
+        n["steps"] += 1
+        if n["steps"] % every == 0:
+            raise SafetyStop("contact while parking: (test) something on the way to the rest pose", "contact")
+        return orig(target)
+
+    b._park_step = park_step
+    return n
+
+
+def test_refused_start_gate_moves_nothing(tmp_path, monkeypatch):
+    """N1: the operator answers no to "Ready to start?" after the arm is armed. The episode stops before anything moves:
+    after the driver's hold on arming, every command is the pose the arm was measured at; nothing parks, nothing is
+    released, nothing more is asked."""
+    monkeypatch.setenv("ROBOUSE_OPERATOR_SCRIPT", "reset=no")
+    ep = _episode("real-metal-reach", tmp_path, attended=True)
+    robot = ep.backend.driver.robot
+    assert ep.backend.halted and ep.backend.stop_kind == "operator_gate"
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    measured = next(e for e in ev if e["event"] == "connect")["pose"]
+    sent = np.asarray(robot.sent, dtype=float)
+    assert len(sent) <= 3 and np.allclose(sent[1:, :6], measured[:6], atol=6e-3)  # holding where it was measured
+    assert not any(e["event"] in ("park", "torque_released") or e.get("gate") in ("park", "hold_ack") for e in ev)
+    assert next(e for e in ev if e["event"] == "close")["release_torque"] is False
+
+
+def test_after_a_stop_nothing_moves_unless_the_operator_approves(tmp_path, monkeypatch):
+    """N1: after a safety stop the arm holds; at close the operator is asked whether to park it, and on a no it keeps
+    holding: there is no park at all."""
+    from robouse.real import safety
+
+    monkeypatch.setenv("ROBOUSE_OPERATOR_SCRIPT", "park=no")
+    ep = _episode("real-metal-reach", tmp_path)
+    robot = ep.backend.driver.robot
+    assert ep.handle({"op": "act", "action": list(ep.backend.q)})["ok"]
+    safety.set_estop("approval test")
+    assert not ep.handle({"op": "act", "action": list(ep.backend.q)})["ok"]
+    safety.clear_estop()  # parking would be possible now: only the operator's no keeps the arm where it is
+    held = np.asarray(robot.sent[-1], dtype=float)
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    assert next(e for e in ev if e.get("gate") == "park")["answer"] == "no"
+    assert not any(e["event"] in ("park", "torque_released") for e in ev)
+    assert [e for e in ev if e["event"] == "holding"][-1]["reason"] == "the operator did not approve parking"
+    assert np.allclose(robot.sent[-1], held, atol=1e-3)
+
+
+@pytest.mark.parametrize("ending", ["after a stop", "after a normal end"])
+def test_a_park_that_hits_something_is_not_retried(tmp_path, monkeypatch, ending):
+    """N2: something is on the way to the rest pose. The park stops at the contact, the arm holds where it stopped, the
+    stop is recorded, and no park is tried again on its own: after a stop, the one park is the one the operator
+    approved; after a normal end, the one park is the end's (the operator then declines another)."""
+    from robouse.real import safety
+
+    monkeypatch.setenv("ROBOUSE_OPERATOR_SCRIPT", "park=yes" if ending == "after a stop" else "park=no")
+    ep = _episode("real-metal-reach", tmp_path)
+    _inject_park_contact(ep.backend)
+    assert ep.handle({"op": "act", "action": list(ep.backend.q)})["ok"]
+    if ending == "after a stop":
+        safety.set_estop("park test")
+        assert not ep.handle({"op": "act", "action": list(ep.backend.q)})["ok"]
+        safety.clear_estop()
+    else:
+        ep.handle({"op": "done", "text": ""})
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    assert len([e for e in ev if e["event"] == "park"]) == 1
+    stops = [e for e in ev if e["event"] == "stop" and "parking" in e.get("reason", "") and "stopped" in e["reason"]]
+    assert len(stops) == 1 and stops[0]["cause"] == "contact"
+    held = [e for e in ev if e["event"] == "holding" and "parking stopped: contact while parking" in e["reason"]]
+    assert len(held) == 1 and held[0]["reason"].endswith("it holds where it stopped")
+    assert not any(e["event"] == "torque_released" for e in ev)
+
+
+def test_a_park_stopped_after_a_normal_end_holds_the_batch(tmp_path, monkeypatch):
+    """N3: the episode ends `done`, and on the way to the rest pose the arm meets something. result.json, rewritten when
+    the server closes, records the stop after the end and how the arm was left, and run-many holds the batch for it."""
+    from robouse.real import batch
+
+    monkeypatch.setenv("ROBOUSE_OPERATOR_SCRIPT", "park=no")
+    ep = _episode("real-metal-reach", tmp_path)
+    _inject_park_contact(ep.backend)
+    assert ep.handle({"op": "act", "action": list(ep.backend.q)})["ok"]
+    ep.handle({"op": "done", "text": ""})
+    assert ep.result["session"]["stop_after_end"] is None  # nothing has happened yet when the result is first written
+    ep.close()
+    res = json.loads((tmp_path / "ep" / "result.json").read_text())
+    after = res["session"]["stop_after_end"]
+    assert res["outcome"] == "done" and after["kind"] == "contact"
+    assert "parking after the end stopped" in after["reason"]
+    assert res["session"]["secured"].startswith("holding at the present position")
+    trial = tmp_path / "trial"
+    trial.mkdir()
+    (trial / "result.json").write_text(json.dumps({"task_name": "real-metal-reach", "episode": res}))
+    stop = batch.stop_of(trial)
+    assert stop is not None and stop["kind"] == "contact" and "parking after the end stopped" in stop["reason"]
+
+
+def test_the_arm_is_watched_while_the_operator_gives_the_verdict(tmp_path):
+    """N5: the operator takes their time over the verdict, and the e-stop is latched meanwhile. The checks keep running
+    while the question is open, so the episode ends as a safety stop, not `done`, whatever the operator answers."""
+    from robouse.real import operator, safety
+
+    finished = threading.Event()
+
+    def operator_terminal():  # answers every question yes; over the verdict, takes 1.5 s with the e-stop latched
+        seen: set = set()
+        while not finished.is_set():
+            try:
+                req = json.loads((operator.OPERATOR_DIR / "pending.json").read_text())
+            except (OSError, ValueError):
+                req = None
+            if req and req["id"] not in seen:
+                seen.add(req["id"])
+                if req["key"] == "verdict":
+                    safety.set_estop("verdict test")
+                    time.sleep(1.5)
+                operator.answer("yes" if req["key"] != "park" else "no", "test operator")
+            time.sleep(0.02)
+
+    th = threading.Thread(target=operator_terminal, daemon=True)
+    th.start()
+    try:
+        ep = _episode("real-metal-bead-to-bowl", tmp_path, operator="file", operator_timeout_s=20)
+        assert ep.backend.verdict_mode == "operator" and not ep.backend.halted
+        ep.handle({"op": "done", "text": ""})
+        assert ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "estop" and not ep.result["success"]
+        assert next(e for e in _events(tmp_path / "ep") if e["event"] == "operator_verdict")["verdict"] == "yes"
+        ep.close()
+    finally:
+        finished.set()
+        safety.clear_estop()
+
+
+@pytest.mark.parametrize("alarm", ["temperature", "link"])
+def test_a_held_arm_is_watched_after_a_stop(tmp_path, alarm):
+    """After a stop, until the operator has answered, the thermal guard and the telemetry check keep running on the
+    held arm: crossing the stop temperature, or the link going quiet, is reported loudly (a WARNING to the operator and
+    the session log), once, and nothing is sent: the arm keeps holding."""
+    from robouse.real import safety
+
+    real = {"envelope": {"telemetry_timeout_s": 0.3}, "mock_fault": {"kind": "stale", "at_step": 3}}
+    ep = _episode("real-metal-reach", tmp_path, **(real if alarm == "link" else {}))
+    b, robot = ep.backend, ep.backend.driver.robot
+    assert ep.handle({"op": "act", "action": list(b.q)})["ok"]
+    safety.set_estop("hold test")
+    assert not ep.handle({"op": "act", "action": list(b.q)})["ok"]
+    safety.clear_estop()
+    k = len(robot.sent)
+    if alarm == "temperature":
+        robot.fx.telemetry = lambda step, **kw: {"temp_mos_c": [30.0] * 7, "temp_rotor_c": [30.0] * 6 + [70.0]}
+    else:
+        time.sleep(0.4)  # the bus answers nothing more
+    for _ in range(3):  # three seconds of watching
+        b._last_check -= b.IDLE_CHECK_S
+        ep.idle()
+    ev = _events(tmp_path / "ep")
+    assert [e["alarm"] for e in ev if e["event"] == "hold_alarm"] == [alarm]
+    assert any(e["event"] == "operator_notice" and e["text"].startswith("WARNING") for e in ev)
+    assert len(robot.sent) == k  # watching sends nothing
+    ep.close()

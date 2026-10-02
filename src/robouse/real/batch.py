@@ -1,12 +1,12 @@
 """Batches of trials on a real robot (`run-many`): a safety stop halts the batch.
 
 A trial on a real robot (or its hardware-in-the-loop mock) that ends in a safety stop (e-stop, over-temperature,
-watchdog, lost telemetry, contact, a refused gate, a hardware fault), or a live trial that crashed before recording a
-result, holds the batch: the next trial does not start until the operator has inspected the robot and answered the
-`inspect` gate on the stopped trial's operator channel. The answer is recorded in that trial's session log
-(episode/session/events.jsonl). A refused or unanswered inspection, or a stop without an attended operator, ends the
-batch: the remaining trials are not run, and `halt.json` in the run folder says which trial stopped and why. Simulated
-trials never hold a batch.
+watchdog, lost telemetry, contact, a refused gate, a hardware fault), whose arm met a stop while parking after a normal
+end, or a live trial that crashed before recording a result, holds the batch: the next trial does not start until the
+operator has inspected the robot and answered the `inspect` gate on the stopped trial's operator channel. The answer
+is recorded in that trial's session log (episode/session/events.jsonl). A refused or unanswered inspection, or a stop
+without an attended operator, ends the batch: the remaining trials are not run, and `halt.json` in the run folder says
+which trial stopped and why. Simulated trials never hold a batch.
 """
 
 from __future__ import annotations
@@ -26,13 +26,14 @@ def stop_of(trial_dir: Path, spec: dict | None = None) -> dict | None:
     ep = res.get("episode") or {}
     sess = ep.get("session") or {}
     mode = ep.get("embodiment_mode")
-    if mode in ("real", "hil-mock") and (ep.get("outcome") == "safety_stop" or sess.get("safety_stop")):
+    after = sess.get("stop_after_end") or {}  # a park after a normal end that was stopped: the arm holds there
+    if mode in ("real", "hil-mock") and (ep.get("outcome") == "safety_stop" or sess.get("safety_stop") or after):
         return {
             "trial": trial_dir.name,
             "task": res.get("task_name") or ep.get("task"),
             "mode": mode,
-            "kind": sess.get("stop_kind") or "safety_stop",
-            "reason": sess.get("safety_stop") or ep.get("agent_text") or "safety stop",
+            "kind": sess.get("stop_kind") or after.get("kind") or "safety_stop",
+            "reason": sess.get("safety_stop") or after.get("reason") or ep.get("agent_text") or "safety stop",
             "attended": bool(sess.get("attended", True)),
             "channel": sess.get("operator_channel") or ("script" if mode == "hil-mock" else "tty"),
             "secured": sess.get("secured"),

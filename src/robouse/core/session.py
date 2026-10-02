@@ -260,8 +260,9 @@ class Episode:
             self.finish("safety_stop", clip(halted, 500), settle=False)
 
     def idle(self) -> None:
-        """Between requests: a real robot's idle checks (the backend's `idle_check`), whose stop ends the episode."""
-        if not self.finished and (check := _hook(self.backend, "idle_check")):
+        """Between requests, and while the episode lingers after its end: a real robot's checks (the backend's
+        `idle_check`); a stop they latch before the end ends the episode."""
+        if check := _hook(self.backend, "idle_check"):
             check()
             self._check_halt()
 
@@ -500,6 +501,8 @@ class Episode:
         if (halted := getattr(self.backend, "halted", None)) and outcome != "safety_stop":
             outcome, text = "safety_stop", clip(str(halted), 500)  # a real robot stopped, e.g. during the settle steps
         success, judge_error = self._verdict(outcome, text)
+        if (halted := getattr(self.backend, "halted", None)) and outcome != "safety_stop":
+            outcome, text, success = "safety_stop", clip(str(halted), 500), False  # latched during the verdict, say
         self.finished, self.outcome, self.agent_text = True, outcome, text
         b = self.backend
         summary = _hook(b, "session_summary")
@@ -552,6 +555,13 @@ class Episode:
             self.finish("agent_exited", "")
         self._trace.close()
         self.backend.close()
+        # real robots: close() decides how the arm is left (parked at the end, or holding after a stop); the result
+        # records it, and a stop met then (a park that was stopped) holds a run-many batch (real/batch.py)
+        if self.result and (summary := _hook(self.backend, "session_summary")):
+            self.result["session"] = summary()
+            if self._result_key:
+                self.result["signature"] = sign_result(self.result, self._result_key)
+            (self.run_dir / "result.json").write_text(json.dumps(self.result, indent=2))
 
 
 def _finite(x: Any) -> bool:
@@ -580,7 +590,7 @@ def serve(
     the reference solution's token and the key that signs result.json."""
     ep = Episode(spec, run_dir, workspace, secrets=secrets)
     if ep.mode != "sim" and threading.current_thread() is threading.main_thread():
-        # a real robot: a terminate request ends the episode like Ctrl-C, so close() secures the arm on the way out
+        # a real robot: a terminate request ends the episode like Ctrl-C, so close() holds the arm on the way out
         signal.signal(signal.SIGTERM, _interrupt)
     if os.path.exists(sock_path):
         os.unlink(sock_path)

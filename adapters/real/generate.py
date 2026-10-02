@@ -73,11 +73,10 @@ def safety(p, releases: bool = True) -> str:
     held = " or is holding something" if p.gidx else ""  # an arm without a gripper holds nothing
     keep = " and the gripper keeps its command, so a grasped object is not let go" if p.gidx else ""
     rest = (
-        "the arm then moves slowly to its rest pose and is released there, or keeps holding if it cannot get "
-        f"there{held}"
+        "the arm moves slowly to its rest pose and is released there, or keeps holding if it cannot get there"
         if releases
-        else "the arm then moves slowly to its rest pose and holds there (the ROS bridge cannot release torque), or "
-        f"keeps holding where it is if it cannot get there{held}"
+        else "the arm moves slowly to its rest pose and holds there (the ROS bridge cannot release torque), or keeps "
+        "holding where it is if it cannot get there"
     )
     return (
         "**Safety layer.** Every command passes the episode server's safety guard before it reaches the motors: joint "
@@ -85,8 +84,9 @@ def safety(p, releases: bool = True) -> str:
         f"more than a few degrees. {contact}Over-temperature (also at the start), an operator e-stop, a stalled "
         "control loop, joint readings that stop arriving or a hardware fault stop the episode at once (outcome "
         "`safety_stop`, score 0); the e-stop, the joint readings and the temperatures are also checked between your "
-        f"requests. After a stop and when the episode ends, every arm joint is held at its measured position{keep}; "
-        f"{rest}. `robo info` lists the limits under `embodiment.safety`."
+        f"requests. After a stop, every arm joint holds at its measured position{keep}, and nothing moves until the "
+        f"operator has inspected the robot. When the episode ends otherwise, {rest}{held}. `robo info` lists the "
+        "limits under `embodiment.safety`."
     )
 
 
