@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+HIL = ROOT / "tests" / "fixtures" / "hil"  # sessions recorded on the Metal arm, for the mock (see each note)
 
 
 @pytest.fixture(autouse=True)
@@ -61,6 +62,16 @@ def test_hil_conformance_no_vetoes_on_recorded_session():
     fx = Fixture("metal-bowl-121853")
     r = conformance(fx, METAL, fx.meta["session_envelope"])
     assert r["vetoed_steps"] == 0 and r["tracking_open_loop_rms_deg"] < 0.5
+
+
+def test_hil_check_counts_clamps(monkeypatch):
+    from robouse.real.replay import Fixture, conformance
+    from robouse.real.robots import METAL
+
+    monkeypatch.setenv("ROBOUSE_HIL_DIR", str(HIL))
+    fx = Fixture("metal-hanoi-131602")  # the elbow was commanded to 180 deg, above the 179 deg limit
+    r = conformance(fx, METAL, fx.meta["session_envelope"])
+    assert r["clamp_events"] > 0 and r["vetoed_steps"] == 0
 
 
 def test_playback_serves_the_recording(tmp_path):

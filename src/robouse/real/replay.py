@@ -294,7 +294,9 @@ def conformance(fx: Fixture, prof: Profile, overrides: dict | None = None) -> di
     from .safety import Guard, Veto
 
     events: list[dict] = []
-    g = Guard(prof, overrides, log=lambda kind, **kw: events.append({"kind": kind, **kw}), estop_check=lambda: None)
+    g = Guard(
+        prof, overrides, log=lambda _event, **kw: events.append({**kw, "event": _event}), estop_check=lambda: None
+    )
     cmd = np.asarray([s["cmd"] for s in fx.steps], dtype=float)
     pos = np.asarray([s["pos"] for s in fx.steps], dtype=float)
     vetoes, deltas, per_joint = 0, [], np.zeros(cmd.shape[1], dtype=int)
@@ -319,7 +321,7 @@ def conformance(fx: Fixture, prof: Profile, overrides: dict | None = None) -> di
         "robot": prof.name,
         "steps": int(len(cmd)),
         "vetoed_steps": vetoes,
-        "clamp_events": sum(1 for e in events if e["kind"] == "clamp"),
+        "clamp_events": sum(1 for e in events if e["event"] == "clamp"),
         "guard_changed_steps": int(sum(1 for d in deltas if d > 0.05)),
         "max_guard_change_deg": round(max(deltas) if deltas else 0.0, 3),
         "guard_changed_steps_by_joint": {n: int(c) for n, c in zip(prof.joints, per_joint, strict=False) if c},
