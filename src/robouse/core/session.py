@@ -322,12 +322,22 @@ class Episode:
         if not all(np.isfinite(x) for x in action):
             return {"ok": False, "error": "action values must be finite numbers (no nan or inf)"}
         n = 0
+        stop = None
         for _ in range(max(1, min(self.max_repeat, repeat))):
             if not self._budget_left():
                 break
             self._env_step(action)
             n += 1
-        return {"ok": True, "result": {"executed_steps": n, "state": self._state(), "steps_used": self.steps}}
+            if stop := self._motion_stop():
+                break
+        res = {"executed_steps": n, "state": self._state(), "steps_used": self.steps}
+        return {"ok": True, "result": {**res, **(stop or {})}}
+
+    def _motion_stop(self) -> dict | None:
+        """Real robots: what the safety layer did to the last step's motion (a contact), which ends the request's motion
+        and is reported in its result. Simulators have no such hook."""
+        pop = _hook(self.backend, "pop_motion_event")
+        return pop() if pop else None
 
     def move_to(self, pos: Any, grip: Any, max_steps: int, tol: float) -> dict:
         if not self.skills_enabled or "move_to" not in self.backend.skills():
@@ -427,6 +437,10 @@ class Episode:
                 break
             self._env_step(action)
             n += 1
+            if stop := self._motion_stop():
+                gen.close()
+                out = {"stopped": "by the safety layer", **stop}
+                break
         return {
             "ok": True,
             "result": {

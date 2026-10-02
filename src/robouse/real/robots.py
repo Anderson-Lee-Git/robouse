@@ -48,6 +48,24 @@ class EnvelopeDefaults:
 
 
 @dataclass
+class ContactSettings:
+    """Contact watch (real/contact.py), ported from the 2026-09-05 Metal harness: joint torque against a fresh baseline.
+    Torque in the telemetry's units (N m on the Metal's Damiao motors). No thresholds: no torque watch (the stall check
+    still runs on robots with a kinematic chain)."""
+
+    dtorque: dict[str, float] = field(default_factory=dict)  # per joint: a torque change that counts as contact
+    jump: float = 0.35  # part of the threshold that must appear within one control step (moving, holding)
+    transient_steps: int = 2  # steps skipped after a move starts (the controller's torque jumps with the first step)
+    settle_joints: int = 2  # after a watched descent: a shift on this many joints at once is a contact ...
+    strong: float = 2.5  # ... or on one joint above this many times its threshold (Sep 5: 2.0, see contact.py)
+    watch_height: float = 0.03  # a move is watched where it puts the tool point this close to the table (m)
+    unwatched_factor: float = 5.0  # elsewhere (higher, rising, holding still) thresholds are this many times larger
+    stall_mm: float = 4.0  # watched descent: the tool point this far above where the commanded descent puts it
+    max_contacts: int = 2  # contacts in watched moves before the episode stops (a contact elsewhere stops it at once)
+    torque_key: str = "joint_torque_nm"  # telemetry field with one torque per joint
+
+
+@dataclass
 class Profile:
     name: str
     display: str
@@ -67,6 +85,7 @@ class Profile:
     points: dict[str, tuple[str, list[float]]] = field(default_factory=dict)
     ik_seeds: list[list[float]] = field(default_factory=list)
     envelope: EnvelopeDefaults = field(default_factory=EnvelopeDefaults)
+    contact: ContactSettings = field(default_factory=ContactSettings)
     notes: str = ""
     tested_on_hardware: bool = False
 
@@ -127,6 +146,8 @@ METAL = Profile(
         [-40.0, -133.0, 89.0, -48.0, 0.0, 0.0],
     ],
     envelope=EnvelopeDefaults(table_z=-0.0088),
+    # the 2026-09-05 harness's contact thresholds (robot/safety.py: contact_dtorque, contact_jump 0.35)
+    contact=ContactSettings(dtorque={"shoulder_lift": 1.5, "elbow_flex": 0.8, "wrist_flex": 0.5}),
     notes=(
         "Joint zero is the vendor's parked pose: upper arm horizontal pointing backward, forearm folded over it. "
         "shoulder_lift 0 = horizontal backward, -90 = vertical, -180 = horizontal forward; elbow_flex 0 = folded, "
@@ -226,6 +247,12 @@ def _bimanual(p: Profile, name: str, display: str) -> Profile:
         home=p.home * 2,
         park=p.park * 2,
         envelope=p.envelope,
+        contact=ContactSettings(
+            **{
+                **p.contact.__dict__,
+                "dtorque": {f"{side}_{j}": v for side in ("left", "right") for j, v in p.contact.dtorque.items()},
+            }
+        ),
         notes=(
             f"Two {p.display}s facing the bench from its far edge, left and right as the operator sees them. "
             "Each arm: " + p.notes

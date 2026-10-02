@@ -1,6 +1,6 @@
 """Real-robot backend on the hardware-in-the-loop mock: kinematics against hardware logs, safety guard, e-stop,
-operator gates and verdicts, rig switch, and the safety layer's stops: loop watchdog, lost telemetry and the physical
-e-stop confirmation.
+operator gates and verdicts, rig switch, and the safety layer's stops: loop watchdog, lost telemetry, contact watch
+(replaying the 2026-09-05 Metal recordings in tests/fixtures/hil) and the physical e-stop confirmation.
 Run: PYTHONPATH=src python -m pytest tests/test_real.py -q"""
 
 from __future__ import annotations
@@ -235,6 +235,7 @@ def test_rosbridge_driver_against_mock_server():
         assert np.allclose(srv.commands[-1], [math.radians(10), math.radians(20), math.radians(30)])
         assert "cam" in r.images and r.images["cam"].shape[2] == 3
         assert r.stamp is not None and time.monotonic() - r.stamp < 1.0  # dated by the last joint state message
+        assert r.extra["joint_torque_nm"] == [0.0, 0.0, 0.0]  # the JointState effort
         srv._stop.set()  # the robot stops publishing: reads fail once the joint state is stale
         time.sleep(1.3)
         with pytest.raises(RuntimeError):
@@ -256,6 +257,40 @@ def test_ros_task_on_mock_rosbridge(tmp_path):
 
 def _events(ep_dir: Path) -> list[dict]:
     return [json.loads(l) for l in (ep_dir / "session" / "events.jsonl").read_text().splitlines()]
+
+
+def _playback(tmp_path, monkeypatch, fixture: str, **real_overrides):
+    """An episode on the replay mock in playback mode: each control step returns the next step recorded on the bench
+    (joints, torques, temperatures), whatever is commanded."""
+    from robouse.real.replay import Fixture
+
+    monkeypatch.setenv("ROBOUSE_HIL_DIR", str(HIL))
+    fx = Fixture(fixture)
+    ep = _episode(
+        "real-metal-reach",
+        tmp_path,
+        fixture=fixture,
+        mock_playback=True,
+        envelope=fx.meta.get("session_envelope"),  # the guard settings the session ran with
+        **real_overrides,
+    )
+    ep.max_steps = 5000
+    return ep, fx
+
+
+def _replay(ep, fx, until: float | None = None) -> list[tuple[dict, dict]]:
+    """Send the recorded commands as `robo act`, each matched to the recorded step the mock serves next (a hold the
+    safety layer commands takes a step too); returns (recorded step, response) for every error or reported contact."""
+    robot = ep.backend.driver.robot
+    out = []
+    while robot.k + 1 < len(fx.steps) and not ep.finished:
+        s = fx.steps[robot.k + 1]
+        if until is not None and s["t"] > until:
+            break
+        r = ep.handle({"op": "act", "action": s["cmd"]})
+        if not r["ok"] or "contact" in r["result"]:
+            out.append((s, r))
+    return out
 
 
 # ---- gap 1: the loop watchdog acts; lost telemetry stops -----------------------------------------------------------------
@@ -352,6 +387,124 @@ def test_hot_motor_does_not_start(tmp_path):
     ep = _episode("real-metal-reach", tmp_path, envelope={"temp_stop_c": 20.0})  # recorded motors are at ~28 C
     ep.handle({"op": "observe"})
     assert ep.outcome == "safety_stop" and ep.steps == 0 and ep.result["session"]["stop_kind"] == "overtemperature"
+    ep.close()
+
+
+# ---- gap 2: the contact watch, on the recorded torque traces -----------------------------------------------------------
+
+
+def test_contact_watch_rules():
+    """The watch on synthetic streams: Sep 5 thresholds in a watched move, unwatched_factor x them elsewhere, gripper
+    motion ignored, and the stall (the touchdown criterion) on settled poses."""
+    from robouse.real.contact import ContactWatch
+    from robouse.real.robots import METAL
+
+    q0 = np.asarray(METAL.home, dtype=float)
+    tq0 = np.array([0.4, 9.0, 4.0, 0.3, 0.0, 0.0, 0.0])
+
+    def feed(watch, steps, watched):
+        """steps: (command offset on shoulder_lift, gripper command, torque change) per control step"""
+        hits = []
+        for dcmd, grip, dtq in steps:
+            cmd = q0.copy()
+            cmd[1] += dcmd
+            cmd[6] = grip
+            hits.append(watch.update(cmd, cmd, {"joint_torque_nm": list(tq0 + dtq)}, watched))
+        return [h for h in hits if h is not None]
+
+    drop = np.array([0, -1.6, 0, 0, 0, 0, 0])  # the shoulder unloads by 1.6 N m (threshold 1.5)
+    move = [(0, 4, 0 * drop)] * 3 + [(0.5 * i, 4, 0 * drop) for i in range(1, 5)] + [(2.5, 4, drop)]
+    (hit,) = feed(ContactWatch(METAL, METAL.contact), move, watched=True)
+    assert hit.kind == "moving" and hit.watched and hit.change == {"shoulder_lift": -1.6}
+    assert feed(ContactWatch(METAL, METAL.contact), move, watched=False) == []  # elsewhere: 5 x 1.5 N m
+    push = np.array([0, 0, 8.0, 0, 0, 0, 0])  # the elbow pushes 8 N m (threshold 0.8 x 5)
+    (hit,) = feed(ContactWatch(METAL, METAL.contact), move[:-1] + [(2.5, 4, push)], watched=False)
+    assert hit.kind == "moving" and not hit.watched
+    hold = [(0, 4, 0 * drop)] * 4
+    (hit,) = feed(ContactWatch(METAL, METAL.contact), hold + [(0, 4, push)], watched=False)
+    assert hit.kind == "holding"
+    grasp = [(0, 4 + 10 * i, drop * (i % 2)) for i in range(1, 6)]  # the gripper closes; the arm torque twitches
+    assert feed(ContactWatch(METAL, METAL.contact), hold + grasp + hold, watched=True) == []
+
+    # the stall: tool height in mm on shoulder_pan for the test; the command descends 2 mm a move, the arm stops at 0
+    def tool(q):
+        return np.array([0.3, 0.0, q[0] / 1000])
+
+    watch = ContactWatch(METAL, METAL.contact, tool=tool)
+    hits = []
+    for z in (20.0, 18.0, 16.0, 14.0, 12.0, 10.0, 8.0, 6.0, 4.0, 2.0, 0.0, -2.0, -4.0, -6.0):
+        cmd, q = q0.copy(), q0.copy()
+        cmd[0], q[0] = z, max(z, 0.5) - 3.0  # 3 mm of sag; the table stops the tool at 0.5 mm
+        for _ in range(4):  # move, then settle
+            hits.append(watch.update(cmd, q, {}, True))
+    (hit,) = [h for h in hits if h is not None]
+    assert hit.kind == "stall" and hit.change["tool_shortfall_mm"] == pytest.approx(4.5)  # at the -4 mm command
+
+
+def test_contact_watch_quiet_on_recorded_motion_then_stops_at_the_elbow_stop(tmp_path, monkeypatch):
+    """Verified contact (2026-09-05 13:16, fixture metal-hanoi-131602 from the recorder's log): 91 s of normal motion
+    replay without a contact; then the elbow folds against its mechanical stop, away from the table: a contact outside
+    a watched move stops the episode, and the hold at the measured pose leaves no push against the stop."""
+    ep, fx = _playback(tmp_path, monkeypatch, "metal-hanoi-131602")
+    hits = _replay(ep, fx)
+    assert len(hits) == 1
+    step, r = hits[0]
+    assert step["label"] == "peg1_s_3" and 91.8 <= step["t"] <= 92.0
+    assert not r["ok"] and "contact outside a watched move" in r["error"]
+    assert ep.outcome == "safety_stop" and ep.result["session"]["stop_kind"] == "contact"
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    (contact,) = [e for e in ev if e["event"] == "contact"]
+    assert contact["watched"] is False and contact["change"]["elbow_flex"] > 5.0
+    stop = next(e for e in ev if e["event"] == "stop" and e.get("cause") == "contact")
+    steps = [json.loads(l) for l in (tmp_path / "ep" / "session" / "log.jsonl").read_text().splitlines()]
+    assert steps[-1]["cmd"][2] > 178.0  # the command pushed the elbow 2+ deg into the stop
+    assert stop["hold"][2] == pytest.approx(176.36, abs=0.05)  # held where the elbow is
+
+
+def test_contact_stall_on_the_recorded_table_touchdown(tmp_path, monkeypatch):
+    """Verified contact (2026-09-05 12:17, fixture metal-touchdown-121740): the fingertips stall on the table. Torque
+    alone did not show it on Sep 5 either; the stall check does, in a watched move: the move stops, the arm holds, the
+    agent is told, and the episode goes on."""
+    ep, fx = _playback(tmp_path, monkeypatch, "metal-touchdown-121740")
+    hits = _replay(ep, fx)
+    assert len(hits) == 1
+    step, r = hits[0]
+    assert step["label"].startswith("td_-1mm")
+    c = r["result"]["contact"]
+    assert r["ok"] and c["kind"] == "stall" and c["count"] == 1 and c["limit"] == 2
+    assert c["change"]["tool_shortfall_mm"] > 4.0 and "resting on something" in c["what"]
+    assert not ep.finished and ep.backend.target is not None
+    ep.close()
+    (contact,) = [e for e in _events(tmp_path / "ep") if e["event"] == "contact"]
+    assert contact["watched"] is True and contact["action"].startswith("move stopped")
+
+
+def test_contacts_in_watched_moves_then_one_too_many(tmp_path, monkeypatch):
+    """The HIL fixture's own recording (12:18:53): the Sep 5 watch flagged two contacts on the way down to a bead (the
+    second, on the final descent, very likely real: the grasp that followed needs the tips at table level). The first
+    stops the move and is reported to the agent; the second is one too many."""
+    ep, fx = _playback(tmp_path, monkeypatch, "metal-bowl-121853")
+    hits = _replay(ep, fx)
+    assert [round(s["t"], 2) for s, _ in hits] == [56.24, 63.17]
+    first, second = hits[0][1], hits[1][1]
+    assert first["ok"] and first["result"]["contact"]["count"] == 1 and first["result"]["contact"]["kind"] == "moving"
+    assert not second["ok"] and "repeated contacts (2 in this episode, limit 2)" in second["error"]
+    assert ep.outcome == "safety_stop" and ep.result["session"]["contacts"] == 2
+    ep.close()
+
+
+def test_contact_stops_act_repeat_and_skill(tmp_path, monkeypatch):
+    ep, fx = _playback(tmp_path, monkeypatch, "metal-bowl-121853", contact={"max_contacts": 3})
+    _replay(ep, fx, until=56.2)  # up to the step before the first recorded contact
+    s = fx.steps[ep.backend.driver.robot.k + 1]
+    r = ep.handle({"op": "act", "action": s["cmd"], "repeat": 10})
+    assert r["ok"] and r["result"]["executed_steps"] == 1 and r["result"]["contact"]["kind"] == "moving"
+    _replay(ep, fx, until=63.1)  # up to the step before the second
+    goal = fx.steps[ep.backend.driver.robot.k + 1]["cmd"]  # continue the recorded descent
+    r = ep.handle({"op": "skill", "name": "move_joints", "args": [str(v) for v in goal[:6]] + ["0.5"]})
+    assert r["ok"] and r["result"]["stopped"] == "by the safety layer" and r["result"]["contact"]["count"] == 2
+    assert r["result"]["executed_steps"] == 1 and not ep.finished
     ep.close()
 
 

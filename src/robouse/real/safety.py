@@ -15,8 +15,8 @@ inspect-robots-metal adapter, which ran the 2026-09-05 Metal arm sessions withou
 After each step: stale telemetry (a joint reading older than `telemetry_timeout_s`, as a cached bus serves when the link
 is dead, stops the episode), thermal guard (warn, then stop and hold above `temp_stop_c`; also checked at connect) and
 the loop watchdog (a step slower than `watchdog_s` is a stall: one slower than `watchdog_hard_s`, or
-`watchdog_max_stalls` stalls in a row, stop the episode). Every veto, clamp, warning and stop is appended to the
-intervention log (events.jsonl).
+`watchdog_max_stalls` stalls in a row, stop the episode). The contact watch (contact.py) runs in the backend. Every
+veto, clamp, warning and stop is appended to the intervention log (events.jsonl).
 
 `HardwareLock` makes sure only one controller uses a robot at a time (flock on ~/.config/robouse-operator/<robot>.lock).
 """

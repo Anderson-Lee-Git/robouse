@@ -4,9 +4,10 @@ The task's `real:` block picks the robot profile (metal, so101, piper), the driv
 hardware, `mock` for the hardware-in-the-loop mock that replays a recorded session) and the safety and operator
 settings. Everything the agent sends goes through the safety guard (real/safety.py) inside this trusted process:
 e-stop latch, joint-limit clamp, workspace envelope by forward kinematics (vetoed before anything moves), per-step
-velocity limit (slower near the table), wind-up guard, stale-telemetry stop, thermal stop and loop watchdog. The
-operator channel (real/operator.py) confirms a physical e-stop before a live robot is armed, gates arming and scene
-reset and, for tasks without a measurable goal, gives the verdict.
+velocity limit (slower near the table), wind-up guard, stale-telemetry stop, thermal stop and loop watchdog; the
+contact watch (real/contact.py) stops a move that touches something near the table and the episode on any other
+contact. The operator channel (real/operator.py) confirms a physical e-stop before a live robot is armed, gates arming
+and scene reset and, for tasks without a measurable goal, gives the verdict.
 
 Action (`robo act`): absolute joint targets in the profile's units, one per joint including the gripper, applied at the
 control rate through the guard; `--repeat N` keeps commanding the same target for N control steps. Skills:
@@ -26,8 +27,10 @@ from pathlib import Path
 import numpy as np
 
 from ... import config
+from ...real.contact import ContactWatch
 from ...real.drivers import make_driver
 from ...real.operator import Operator
+from ...real.robots import ContactSettings
 from ...real.robots import profile as get_profile
 from ...real.safety import EventLog, Guard, HardwareLock, SafetyStop, Veto, estop_engaged
 from ..embodied import ActionGroup, Budget, EmbodiedBackend, Embodiment, Sensor, Skill, SkillArg
@@ -49,6 +52,7 @@ class RealArmBackend(EmbodiedBackend):
                     **{k: v for k, v in self.cfg.items() if k != "fixture"},
                     **entry,
                     "envelope": {**(self.cfg.get("envelope") or {}), **(entry.get("envelope") or {})},
+                    "contact": {**(self.cfg.get("contact") or {}), **(entry.get("contact") or {})},
                 }
         if self.cfg.get("robot") == "ros":  # any ROS arm: the profile comes from the rig / task configuration
             from ...real.drivers.rosbridge import ros_profile
@@ -65,6 +69,15 @@ class RealArmBackend(EmbodiedBackend):
         self.run_dir = None  # set by the episode server (session files next to the episode record)
         self.log = EventLog(None)
         self.guard = Guard(self.prof, self.cfg.get("envelope"), log=self._event, estop_check=estop_engaged)
+        chain = self.guard.env.chain
+        self.watch = ContactWatch(
+            self.prof,
+            ContactSettings(**{**self.prof.contact.__dict__, **(self.cfg.get("contact") or {})}),
+            tool=chain.tool if chain is not None else None,
+        )
+        self.n_contacts = 0
+        self.move_goal: np.ndarray | None = None  # the running skill's final joint target
+        self._motion_event: dict | None = None  # what the safety layer did to the current request's motion
         self.stamp: float | None = None  # when the last joint reading was measured (driver's clock, time.monotonic)
         self.connected = False
         self.stop_kind: str | None = None
@@ -216,6 +229,7 @@ class RealArmBackend(EmbodiedBackend):
                 "stalls_in_a_row": e.watchdog_max_stalls,
             },
             "telemetry_timeout_s": e.telemetry_timeout_s,
+            "contact_watch": self._contact_spec(),
             "estop": "latched file (robouse estop)",
             "physical_estop": "not asked (hardware-in-the-loop mock)"
             if self.mock and not self.cfg.get("estop_check")
@@ -224,6 +238,18 @@ class RealArmBackend(EmbodiedBackend):
             "operator_channel": self.operator.channel,
         }
         return spec
+
+    def _contact_spec(self) -> dict | None:
+        s, chain = self.watch.s, self.guard.env.chain is not None
+        if not self.watch.torque_watch and not chain:
+            return None  # no torque thresholds and no kinematics: nothing to watch with
+        return {
+            "torque_change": dict(s.dtorque) or None,
+            "stall_mm": s.stall_mm if chain else None,
+            "watched_below_m": s.watch_height if chain else None,
+            "elsewhere_factor": s.unwatched_factor,
+            "contacts_allowed": s.max_contacts - 1,
+        }
 
     def info_extra(self) -> dict:
         return {
@@ -237,8 +263,9 @@ class RealArmBackend(EmbodiedBackend):
     # ---- lifecycle -----------------------------------------------------------------------------------------------
     def _event(self, _kind: str, **kw) -> None:
         self.log.event(_kind, **kw)
-        if _kind in ("estop", "stop"):  # safety events (vetoes are prevented motions, not events)
-            self.event(f"{_kind}:{len(self.log.events)}", "safety", str(kw.get("reason") or kw.get("kind") or _kind))
+        if _kind in ("estop", "stop", "contact"):  # safety events (vetoes are prevented motions, not events)
+            detail = kw.get("reason") or kw.get("what") or kw.get("kind") or _kind
+            self.event(f"{_kind}:{len(self.log.events)}", "safety", str(detail))
 
     def attach_run_dir(self, run_dir) -> None:
         """Called by the episode server: session log files go next to the episode record."""
@@ -268,6 +295,7 @@ class RealArmBackend(EmbodiedBackend):
             self.guard.check_thermal(self.extra)  # a motor still hot from the last run does not start
             self.guard.last_cmd = self.q.copy()
             self.target = self.q.copy()
+            self.watch.reset()
             self._event("connect", pose=self.q.round(2).tolist(), mode=self.mode, driver=self.driver.description)
             if self.attended:
                 scene = self.cfg.get("scene_setup") or "Set up the scene as the task describes."
@@ -366,6 +394,7 @@ class RealArmBackend(EmbodiedBackend):
             self.guard.check_telemetry(self.stamp)  # before anything uses this reading
             self.guard.after_step(self.q, self.extra, dt)  # thermal guard and loop watchdog
             self._advance_stages()
+            self._watch_contact(cmd)
         except SafetyStop as e:
             self._halt(str(e), e.kind)
             raise
@@ -374,6 +403,66 @@ class RealArmBackend(EmbodiedBackend):
         except Exception as e:  # driver fault: halt for a human
             self._halt(f"hardware fault: {type(e).__name__}: {e}", "hardware_fault")
             raise SafetyStop(str(self.halted), "hardware_fault") from e
+
+    def _watched(self, cmd) -> bool:
+        """A watched step: the command, the target or the skill's goal puts the tool point within the contact watch's
+        height of the table (robots with a kinematic chain; others have no table to watch)."""
+        ch = self.guard.env.chain
+        if ch is None:
+            return False
+        poses = [cmd] + [p for p in (self.target, self.move_goal) if p is not None]
+        low = min(float(ch.tool(p)[2]) for p in poses)
+        return low - self.guard.e.table_z < self.watch.s.watch_height
+
+    def _watch_contact(self, cmd) -> None:
+        """A contact in a watched move stops the move and holds; the agent is told in the step result. A contact
+        anywhere else, or one contact too many, stops the episode."""
+        c = self.watch.update(cmd, self.q, self.extra, self._watched(cmd))
+        if c is None:
+            return
+        s = self.watch.s
+        rec = {**c.record(), "what": c.describe(), "pose": self.q.round(2).tolist()}
+        if self.guard.env.chain is not None:
+            rec["tool_pos"] = self._tool().round(4).tolist()
+        if not c.watched:
+            self._event("contact", **rec, action="safety stop: a contact outside a watched move")
+            raise SafetyStop(f"contact outside a watched move: {c.describe()}", "contact")
+        self.n_contacts += 1
+        if self.n_contacts >= s.max_contacts:
+            self._event("contact", **rec, count=self.n_contacts, action=f"safety stop: contact {self.n_contacts}")
+            raise SafetyStop(
+                f"repeated contacts ({self.n_contacts} in this episode, limit {s.max_contacts}): {c.describe()}",
+                "contact",
+            )
+        # stop the move: the arm holds where it is (the gripper keeps its command, so a grasp holds)
+        hold = np.asarray(self.guard.last_cmd, dtype=float).copy()
+        hold[self.prof.arm_idx] = self.q[self.prof.arm_idx]
+        self._event(
+            "contact",
+            **rec,
+            count=self.n_contacts,
+            action="move stopped; the arm holds at the measured pose",
+            hold=hold.round(2).tolist(),
+        )
+        self.driver.send(hold)
+        self.guard.last_cmd = hold
+        self.target = hold
+        self._motion_event = {
+            "contact": {
+                "what": c.describe(),
+                "kind": c.kind,
+                "change": c.change,
+                "count": self.n_contacts,
+                "limit": s.max_contacts,
+                "done": "the move was stopped and the arm holds where it is; move away or send a new target "
+                + f"(contact {s.max_contacts} in this episode, or a contact away from the table, ends it as safety_stop)",
+            }
+        }
+
+    def pop_motion_event(self) -> dict | None:
+        """The episode server's hook: what the safety layer did to the last step's motion (a contact), once."""
+        ev, self._motion_event = self._motion_event, None
+        return ev
 
     def hold_action(self) -> list[float]:
         return [float(x) for x in (self.guard.last_cmd if self.guard.last_cmd is not None else self.q)]
@@ -442,14 +531,18 @@ class RealArmBackend(EmbodiedBackend):
         start = np.asarray(self.guard.last_cmd, dtype=float)
         per_step = self.guard.max_step * max(0.05, min(1.0, float(speed)))
         n = int(max(1, np.ceil(np.max(np.abs(q_target - start) / per_step))))
-        for k in range(1, n + 1):
-            yield list(start + (q_target - start) * k / n)
-        for _ in range(30):  # settle: keep commanding the target until the measured pose arrives
-            err = np.abs(self.q - q_target)
-            err[self.prof.gidx] = 0.0
-            if float(err.max()) < 1.0:
-                break
-            yield list(q_target)
+        self.move_goal = q_target  # the contact watch watches a move by where it ends
+        try:
+            for k in range(1, n + 1):
+                yield list(start + (q_target - start) * k / n)
+            for _ in range(30):  # settle: keep commanding the target until the measured pose arrives
+                err = np.abs(self.q - q_target)
+                err[self.prof.gidx] = 0.0
+                if float(err.max()) < 1.0:
+                    break
+                yield list(q_target)
+        finally:
+            self.move_goal = None
         err = self.q - q_target
         return {
             "arrived": bool(np.max(np.abs(err[self.prof.arm_idx])) < 2.0),
@@ -677,6 +770,7 @@ class RealArmBackend(EmbodiedBackend):
             "vetoes": sum(1 for e in ev if e["event"] == "veto"),
             "clamps": sum(1 for e in ev if e["event"] == "clamp"),
             "warnings": sum(1 for e in ev if e["event"] == "warn"),
+            "contacts": sum(1 for e in ev if e["event"] == "contact"),
             "safety_stop": self.halted,
             "stop_kind": self.stop_kind,
             "physical_estop": self.estop_confirmed,

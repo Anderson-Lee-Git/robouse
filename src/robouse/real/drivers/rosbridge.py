@@ -29,7 +29,7 @@ import time
 
 import numpy as np
 
-from ..robots import EnvelopeDefaults, Profile
+from ..robots import ContactSettings, EnvelopeDefaults, Profile
 from .base import ArmDriver, Reading
 
 
@@ -63,6 +63,8 @@ def ros_profile(cfg: dict) -> Profile:
             windup_gripper=float(cfg.get("windup", 10.0 if units == "deg" else 0.2)),
             gripper_speed=float(cfg.get("gripper_speed", speed)),
         ),
+        # contact thresholds on the JointState effort, from the rig file ({dtorque: {joint: limit}, ...}); none: no torque watch
+        contact=ContactSettings(**(cfg.get("contact") or {})),
         notes=cfg.get("notes", "Joint names and limits come from the rig file; positions in " + units + "."),
         tested_on_hardware=False,
     )
@@ -77,6 +79,7 @@ class RosbridgeDriver(ArmDriver):
         self.to_rad = math.pi / 180 if prof.units[0] == "deg" else 1.0
         self.ws = None
         self._state: dict[str, float] = {}
+        self._effort: dict[str, float] = {}
         self._state_t = 0.0  # time.monotonic() of the last joint state message
         self._images: dict[str, np.ndarray] = {}
         self._lock = threading.Lock()
@@ -136,8 +139,11 @@ class RosbridgeDriver(ArmDriver):
             msg = m.get("msg") or {}
             if m.get("topic") == state_topic:
                 with self._lock:
-                    for name, pos in zip(msg.get("name", []), msg.get("position", []), strict=False):
+                    effort = msg.get("effort") or []
+                    for i, (name, pos) in enumerate(zip(msg.get("name", []), msg.get("position", []), strict=False)):
                         self._state[name] = float(pos)
+                        if i < len(effort):
+                            self._effort[name] = float(effort[i])
                     self._state_t = time.monotonic()
             elif m.get("topic") in cams:
                 try:
@@ -158,8 +164,11 @@ class RosbridgeDriver(ArmDriver):
                 raise RuntimeError(f"joint states are {age:.1f} s old (the robot stopped publishing)")
             q = np.asarray([self._state[j] / self.to_rad for j in self.profile.joints], dtype=float)
             imgs = dict(self._images)
+            extra = {}
+            if all(j in self._effort for j in self.profile.joints):  # JointState effort (N m on revolute joints)
+                extra["joint_torque_nm"] = [self._effort[j] for j in self.profile.joints]
             stamp = self._state_t
-        return Reading(q=q, extra={}, images=imgs, stamp=stamp)
+        return Reading(q=q, extra=extra, images=imgs, stamp=stamp)
 
     def send(self, q) -> None:
         pos = [float(v) * self.to_rad for v in np.asarray(q, dtype=float)]
