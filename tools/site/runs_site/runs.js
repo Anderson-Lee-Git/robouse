@@ -750,7 +750,7 @@
           var segs = ts.slice(0, -1).map(function (s, k) {
             var dt = Math.max(0, ts[k + 1].ts - s.ts);
             var tipT = dur(dt) + " before step " + sn(d, ts[k + 1].i) + "\n" + actionOf(ts[k + 1]).text.slice(0, 120);
-            return '<i role="button" tabindex="' + (k ? -1 : 0) + '" style="flex:' + Math.max(dt, T / 2000).toFixed(3) + ' 0 0" data-go="' + ts[k + 1].i + '" data-tip="' + h(tipT) + '" aria-label="' + h(tipT.replace("\n", ": ")) + '"></i>';
+            return '<i role="button" tabindex="' + (k ? -1 : 0) + '" style="flex:' + Math.max(dt, T / 2000).toFixed(3) + ' 0 0" data-go="' + ts[k + 1].i + '" data-i="' + ts[k + 1].i + '" data-tip="' + h(tipT) + '" aria-label="' + h(tipT.replace("\n", ": ")) + '"></i>';  /* data-i: the selected step's segment is marked .cur, like its row in the lists */
           });
           html += '<section class="chart"><h2>Wall clock between steps<span>' + dur(T) + " from the first step to the last; each segment is the time before a step (" + (vla ? "the previous actions running, then the policy’s next inference" : "the previous command running, then the model thinking") + "). Select one for the step.</span></h2>" +
             '<div class="tl" role="group" aria-label="Time before each step">' + segs.join("") + '</div><div class="axis num"><span>0 s</span><span>' + dur(T / 2) + "</span><span>" + dur(T) + "</span></div></section>";
@@ -772,7 +772,9 @@
       }
       function bindRun() {
         function go(el) {
-          var i = el.getAttribute("data-go"); history.replaceState(null, "", "#trajectory"); show("trajectory");
+          var i = el.getAttribute("data-go"), st = d.steps.find(function (s) { return s.i === +i; });
+          if (v && sync && st && st.v) { v.pause(); sync.pin(+i); seekTo(v, st.v[0]); }  /* the step is selected: the player shows it too */
+          history.replaceState(null, "", "#trajectory"); show("trajectory");
           var li = document.getElementById("s" + i); if (li) { li.scrollIntoView({block: "center", behavior: reduce ? "auto" : "smooth"}); li.classList.add("flash"); setTimeout(function () { li.classList.remove("flash"); }, 1600); }
         }
         $$("[data-go]", panel).forEach(function (el) {

@@ -387,9 +387,11 @@ details.res{margin:var(--sp-2) 0 var(--sp-6)}
 .chart h2{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-4) var(--sp-16);margin:0 0 var(--sp-10);font:500 var(--fs-meta)/1.4 var(--sans);color:var(--ink2)}
 .chart h2 span{font-weight:400;color:var(--muted)}
 .tl{display:flex;gap:1px;height:var(--sp-24)}
-.tl i{display:block;height:100%;min-width:1px;background:var(--accent);cursor:pointer;transition:background var(--t-fast)}
+.tl i{display:block;height:100%;min-width:1px;background:var(--ink2);cursor:pointer;transition:background var(--t-fast)}  /* ink, as the leaderboard's bars; 1 px gaps of paper between */
 .tl i:first-child{border-radius:var(--r-xs) 0 0 var(--r-xs)}.tl i:last-child{border-radius:0 var(--r-xs) var(--r-xs) 0}
 .tl i:hover,.tl i:focus-visible,.bars i:hover,.bars i:focus-visible{background:var(--ink)}
+.tl i.cur{background:var(--accent)}  /* the selected step (the player's) is the only accent */
+.tl i.cur:hover,.tl i.cur:focus-visible{background:color-mix(in srgb,var(--accent) 75%,var(--ink))}
 .tl i:focus-visible,.bars i:focus-visible{outline:2px solid var(--focus);outline-offset:1px;border-radius:var(--r-2xs)}
 .axis{display:flex;justify-content:space-between;margin-top:var(--sp-6);font:400 var(--fs-caption)/1 var(--sans);font-variant-numeric:tabular-nums;color:var(--muted)}
 .bars{display:flex;align-items:flex-end;gap:1px;height:var(--sp-88);border-bottom:var(--border)}
