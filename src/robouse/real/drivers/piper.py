@@ -69,13 +69,12 @@ class PiperDriver(ArmDriver):
             time.sleep(0.05)
         if not self.mock:
             self._cams = open_cameras(self.cam_specs)
-        q = self.read().q
         while self._pairs is not None and (silent := [p for p, t in self._pairs.items() if t is None]):
             if time.time() > deadline:  # the SDK's joint state would still hold zeros for these joints
                 raise RuntimeError(f"no joint feedback from {', '.join(silent)} after the Piper was enabled")
             time.sleep(0.01)
-            q = self.read().q
-        self.send(q)  # hold where it is
+            self.read()  # (the mock SDK delivers its frames on a read)
+        self.send(self.read().q)  # hold where it is: read after every pair has arrived
 
     def _stamp_pairs(self) -> None:
         """Record when each joint pair's feedback frame last arrived, by wrapping the SDK's joint-state update (see the

@@ -1428,3 +1428,44 @@ def test_a_held_arm_is_watched_after_a_stop(tmp_path, alarm):
     assert any(e["event"] == "operator_notice" and e["text"].startswith("WARNING") for e in ev)
     assert len(robot.sent) == k  # watching sends nothing
     ep.close()
+
+
+def test_piper_first_hold_waits_for_every_joint_pair():
+    """N6: joints 5-6's first frame arrives late, right after a reading's joints were copied out. connect() reads only
+    after every pair has arrived, so its hold carries their real values, not the zeros the SDK holds until then."""
+    from robouse.real.drivers.piper import PiperDriver
+    from robouse.real.replay import Fixture, ReplayPiperSDK, _Obj
+    from robouse.real.robots import PIPER
+
+    class LateSDK(ReplayPiperSDK):
+        reads = 0
+
+        def _receive(self):
+            self.reads += 1
+            if self.reads == 1:  # the first frames lack joints 5-6 ...
+                self.fault = {"kind": "silent_pair", "pair": "56", "at_step": 0}
+                super()._receive()
+                self.fault = {}
+                return
+            super()._receive()
+
+        def GetArmGripperMsgs(self):  # ... whose first frame lands during this read, after the joints were copied
+            if self.reads == 1 and not getattr(self, "late", False):
+                self.late = True
+                joints = {f"joint_{i + 1}": int(round(v * 1000)) for i, v in enumerate(self.robot.q[:6])}
+                frame = _Obj(
+                    type_=_Obj(name="PiperMsgJointFeedBack_56"),
+                    time_stamp=time.time(),
+                    arm_joint_feedback=_Obj(**joints),
+                )
+                self._C_PiperInterface_V2__UpdateArmJointState(frame)
+            return super().GetArmGripperMsgs()
+
+    sdk = LateSDK(Fixture("piper-synthetic"), PIPER)
+    sdk.robot.q[4], sdk.robot.q[5] = 30.0, 20.0
+    sent: list = []
+    drv = PiperDriver(PIPER, {}, sdk_factory=lambda cfg: sdk, mock=True)
+    send = drv.send
+    drv.send = lambda q: (sent.append([round(float(x), 2) for x in q]), send(q))[1]
+    drv.connect()
+    assert sent[0][4:6] == [30.0, 20.0]
