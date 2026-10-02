@@ -60,9 +60,16 @@ PENDING_PROVIDERS: dict[str, dict] = {
         },
         "models": [
             {"id": "zai-org/GLM-5.3", "name": "GLM-5.3", "reasoning": True, "input": ["text", "image"], "maxImages": 8},
-            # probed 2026-10-01: it named the blocks in a rendered tabletop frame (chat completions), and counted 9
-            # attached images on both chat completions and Anthropic Messages (no 8-image limit seen)
-            {"id": "zai-org/GLM-5.3-Flash", "name": "GLM-5.3 Flash", "reasoning": True, "input": ["text", "image"]},
+            # probed 2026-10-01 and 10-02: it named the blocks in a rendered tabletop frame; on both chat completions and
+            # Anthropic Messages it took up to 64 images per request (80: "Too many images: 80 (max 64)") but miscounted
+            # beyond 16 (32 read as 29 or 31, 50 as 55 or 60). Capped at 8 per request, like GLM-5.3 and Kimi K3.
+            {
+                "id": "zai-org/GLM-5.3-Flash",
+                "name": "GLM-5.3 Flash",
+                "reasoning": True,
+                "input": ["text", "image"],
+                "maxImages": 8,
+            },
             {
                 "id": "moonshotai/Kimi-K3",
                 "name": "Kimi K3",

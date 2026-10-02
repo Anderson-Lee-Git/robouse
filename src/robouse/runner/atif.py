@@ -621,9 +621,13 @@ def _sh_head(ev: dict) -> str:
     unit, src, res = ev.get("unit"), ev.get("source") or "model", ev.get("result") or {}
     bits = [str(src)]
     if res.get("kind") == "move":
+        step = res.get("step_m")
+        if step is None and isinstance(res.get("commanded"), list):  # trials recorded before moves carried step_m
+            step = sum(float(c) ** 2 for c in res["commanded"]) ** 0.5
         bits.append(
-            f"{float(res.get('step_m') or 0) * 100:g} cm step, {res.get('control_steps')} control steps, "
+            f"{round(float(step or 0) * 100, 2):g} cm step, {res.get('control_steps')} control steps, "
             f"moved {float(res.get('moved_m') or 0) * 100:.1f} cm"
+            + (", stopped: the hand was blocked" if res.get("stalled") else "")
         )
     elif res.get("kind") == "gripper" and res.get("width_m") is not None:
         bits.append(
@@ -709,6 +713,10 @@ def _parse_show_harness(
             }
         elif typ in ("end", "error"):
             text = ev.get("reason") if typ == "end" else ev.get("error")
+            if ev.get("claimed_done") is True:
+                text = f"{text} (robo done: the model chose DONE)"
+            elif ev.get("claimed_done") is False and not ev.get("episode"):
+                text = f"{text} (no robo done: the runner closes the episode)"
             st = _step("agent", _clip(f"show-harness {typ}: {text}", MSG_LIMIT), epoch=ev.get("t"))
             st["llm_call_count"] = 0
         else:
