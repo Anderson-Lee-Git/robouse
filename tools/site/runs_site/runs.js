@@ -51,6 +51,12 @@
     if (el) showTip(e, el.getAttribute("data-tip")); else hideTip();
   });
   window.addEventListener("scroll", hideTip, {passive: true});
+  /* a focused chart mark shows its tip by its own box (keyboard and touch have no pointer position) */
+  document.addEventListener("focusin", function (e) {
+    var el = e.target.closest && e.target.closest("[data-tip]"); if (!el) { hideTip(); return; }
+    var r = el.getBoundingClientRect(); showTip({clientX: r.left + r.width / 2, clientY: r.bottom}, el.getAttribute("data-tip"));
+  });
+  document.addEventListener("focusout", hideTip);
 
   /* ---------------------------------------------------------------- wide tables: a sticky header when the table fits,
      its own horizontal scroll (with a sticky first column) when it does not */
@@ -281,6 +287,30 @@
     return t.replace(/-?\d+\.\d{4,}(e-?\d+)?/g, function (x) { return String(Math.round(parseFloat(x) * 1000) / 1000); })
       .replace(/\*\*|__|`/g, "").replace(/^#+\s*/, "");
   }
+  // a command as typed, with each command after "&&" on its own line and every flag or hyphenated word whole, so a
+  // narrow column wraps between words, never inside "--grip" (the text copies as the same command)
+  function cmdHtml(a) {
+    /* a command as lines: each "&&" ends its line and the next command starts indented; a line wider than the box wraps
+       under itself with a hanging indent (runs.css .cl); a short flag or signed number stays whole ("--grip", "-0.12") */
+    var tok = function (l) { return l.split(/( +)/).map(function (w) { return /-/.test(w) && w.trim() && w.length <= 32 ? '<span class="nw">' + h(w) + "</span>" : h(w); }).join(""); };
+    return String(a || "").split("\n").map(function (line, n) {
+      var parts = line.split(/ && (?=\S)/);
+      return parts.map(function (c, k) {
+        return '<span class="cl' + (k ? " ch" : "") + (n || k ? "" : " c0") + '">' + (tok(c) || " ") + (k < parts.length - 1 ? " &amp;&amp;" : "") + "</span>";
+      }).join("");
+    }).join("");
+  }
+  // a VLA runner's step note in words ("vla: 10 motion request(s)" -> "10 motion requests")
+  function vlaText(t) { return String(t || "").replace(/^vla: (\d+) motion request\(s\)/, function (m, n) { return n + (n === "1" ? " motion request" : " motion requests"); }); }
+  // a camera image's camera, from its file name, in words ("obs_003_topview.png" -> "Top camera")
+  var CAMS = {topview: "Top camera", top: "Top camera", front: "Front camera", frontview: "Front camera", side: "Side camera", sideview: "Side camera",
+    wrist: "Wrist camera", eye_in_hand: "Wrist camera", robot0_eye_in_hand: "Wrist camera", agentview: "Third-person camera", overview: "Overview camera",
+    head: "Head camera", fpv: "Drone camera", birdview: "Bird's-eye camera", overhead: "Overhead camera"};
+  function camName(f) {
+    var c = String(f).replace(/\.png$/, "").replace(/^obs_\d+_?/, "");
+    if (!c || /^\d+$/.test(c)) return "";
+    return CAMS[c] || CAMS[c.replace(/^robot\d_/, "")] || c.replace(/^robot\d_/, "").replace(/_/g, " ").replace(/^./, function (x) { return x.toUpperCase(); }) + " camera";
+  }
   function actionOf(s) {
     var r = actionRaw(s); r.text = tidy(r.text); return r;
   }
@@ -299,8 +329,8 @@
       var a = cmdLabel(s.c[0].a);
       return {text: a + (s.c.length > 1 ? "  (+" + (s.c.length - 1) + (s.c.length > 2 ? " commands)" : " command)") : ""), cls: ""};
     }
-    if (s.src === "system") return {text: (s.m || "").split("\n")[0], cls: "sys"};
-    return {text: (s.m || s.r || "").replace(/\s+/g, " "), cls: "msg"};
+    if (s.src === "system") return {text: vlaText((s.m || "").split("\n")[0]), cls: "sys"};
+    return {text: vlaText(s.m || s.r || "").replace(/\s+/g, " "), cls: "msg"};
   }
   function exitOf(s) { return (s.c || []).some(function (c) { return c.x != null; }); }
   function sprStyle(sp, i, size) {
@@ -385,7 +415,7 @@
   var DIFFICULTY = {easy: "Easy", medium: "Medium", hard: "Hard"};
   // readable episode outcomes (the runner's codes stay in the raw JSON)
   var OUTCOMES = {success_reached: "Goal reached", done: "Agent said done", gave_up: "Agent gave up", budget_exhausted: "Step budget used up",
-    agent_timeout: "Agent timed out", wall_time_exhausted: "Time limit reached", agent_exited: "Agent exited", "no result": "No result",
+    agent_timeout: "Harness timeout", wall_time_exhausted: "Trial time limit", agent_exited: "Agent exited", "no result": "No result",
     budget_stop: "Stopped at the model budget"};
   function oc(x) { return x ? (OUTCOMES[x] || String(x).replace(/_/g, " ").replace(/^./, function (c) { return c.toUpperCase(); })) : ""; }
   // "Stopped at the $5 budget": a trial the model gateway stopped at its spend cap (build_runs_site.budget_text)
@@ -398,6 +428,8 @@
   function initTrial(id) {
     if (!$("#stage")) return;  /* a trial that never ran: the header says why, there is nothing to load */
     var stage = $("#stage"), panel = $("#panel"), player = $("#player"), v = $("#vid"), pctl = $(".pctl", player);
+    /* the stage's top (set as the page loads) moves when the header rewraps in a resized window; runs.css sizes the player from it */
+    if (stage && v) window.addEventListener("resize", function () { stage.style.setProperty("--top", Math.round(stage.getBoundingClientRect().top + scrollY) + "px"); });
     if (v) v.removeAttribute("controls");  /* native controls are the no-script fallback; the page has its own */
     var below = document.createElement("div"); below.id = "below"; stage.parentNode.insertBefore(below, stage.nextSibling);
     var tabs = $$("nav.tabs [role=tab]");
@@ -430,31 +462,65 @@
         }).join("");
         $$("button", pctl).forEach(function (b) { b.disabled = false; });
         if (!d.steps.some(function (s) { return s.v; })) $$('[data-k="prev"], [data-k="next"]', pctl).forEach(function (b) { b.disabled = true; });
-        $$("[data-speed]", pctl).forEach(function (x) { x.setAttribute("aria-pressed", +x.getAttribute("data-speed") === speed ? "true" : "false"); });
+        /* the speed: three buttons, or on touch screens one that cycles 0.25×, 0.5×, 1× (the control row fits a phone) */
+        var setSpeed = function () {
+          $$("[data-speed]", pctl).forEach(function (x) { x.setAttribute("aria-pressed", +x.getAttribute("data-speed") === speed ? "true" : "false"); });
+          var cyc = $('[data-k="speed"]', pctl); if (cyc) { cyc.textContent = speed + "×"; cyc.setAttribute("aria-label", "Playback speed " + speed + "×, change"); }
+        };
+        setSpeed();
         v.addEventListener("timeupdate", function () { var p = pct(v.currentTime); knob.style.left = p + "%"; laneEl.setAttribute("aria-valuenow", Math.round(p)); laneEl.setAttribute("aria-valuetext", t2(v.currentTime)); });
         var setPlay = function () { var on = !v.paused; playB.classList.toggle("on", on); playB.setAttribute("aria-label", on ? "Pause" : "Play"); };
         v.addEventListener("play", setPlay); v.addEventListener("pause", setPlay); v.addEventListener("ended", setPlay);
-        laneEl.addEventListener("click", function (e) { var r = laneEl.getBoundingClientRect(); seekTo(v, (e.clientX - r.left) / r.width * dur0()); });
+        /* drag along the lane to scrub (the recording follows the pointer), tap or click to jump. A finger moves the
+           recording only once it moves sideways: a vertical swipe that starts on the lane scrolls the page (runs.css
+           touch-action:pan-y) and leaves the recording where it was */
+        var scrub = function (e) { var r = laneEl.getBoundingClientRect(); seekTo(v, Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur0()); };
+        laneEl.addEventListener("pointerdown", function (e) {
+          if (e.button) return;
+          laneEl.setPointerCapture(e.pointerId); laneEl._x = e.clientX;
+          laneEl._drag = e.pointerType === "mouse" || e.pointerType === "pen" ? 2 : 1;
+          if (laneEl._drag === 2) { v.pause(); scrub(e); }
+        });
+        laneEl.addEventListener("pointermove", function (e) {
+          if (laneEl._drag === 1 && Math.abs(e.clientX - laneEl._x) > 4) { laneEl._drag = 2; v.pause(); }
+          if (laneEl._drag === 2) scrub(e);
+        });
+        var endDrag = function (e) {
+          if (!laneEl._drag) return;
+          if (laneEl._drag === 1 && e.type === "pointerup") { v.pause(); scrub(e); }  /* a tap: jump there */
+          laneEl._drag = 0; try { laneEl.releasePointerCapture(e.pointerId); } catch (err) {}
+        };
+        laneEl.addEventListener("pointerup", endDrag); laneEl.addEventListener("pointercancel", endDrag);
         laneEl.addEventListener("keydown", function (e) {
-          if (e.key === "Home") { seekTo(v, 0); e.preventDefault(); }
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") { step(e.key === "ArrowUp" ? 1 : -1); e.preventDefault(); }
+          else if (e.key === "Home") { seekTo(v, 0); e.preventDefault(); }
           else if (e.key === "End") { seekTo(v, dur0()); e.preventDefault(); }
           else if (e.key === "PageUp" || e.key === "PageDown") { seekTo(v, v.currentTime + (e.key === "PageUp" ? -5 : 5)); e.preventDefault(); }
         });
         pctl.addEventListener("click", function (e) {
           var b = e.target.closest("button"); if (!b || b.disabled) return;
-          if (b.hasAttribute("data-speed")) {
-            speed = +b.getAttribute("data-speed"); v.playbackRate = speed; try { localStorage.setItem("runs-speed", speed); } catch (err) {}
-            $$("[data-speed]", pctl).forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+          if (b.hasAttribute("data-speed") || b.getAttribute("data-k") === "speed") {
+            speed = b.hasAttribute("data-speed") ? +b.getAttribute("data-speed") : SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+            v.playbackRate = speed; try { localStorage.setItem("runs-speed", speed); } catch (err) {}
+            setSpeed();
           } else if (b.getAttribute("data-k") === "play") { if (v.paused) play(v); else v.pause(); }
           else if (b.getAttribute("data-k") === "full") fullscreen();
           else step(b.getAttribute("data-k") === "next" ? 1 : -1);
         });
+        var prevB = $('[data-k="prev"]', pctl), nextB = $('[data-k="next"]', pctl), seekable = d.steps.filter(function (s) { return s.v; });
+        var ends = function (i) {  /* Previous and Next stop at the first and the last step (before the first, there is no previous) */
+          if (!seekable.length) return;
+          var k = seekable.findIndex(function (s) { return s.i === i; });
+          prevB.disabled = k <= 0; nextB.disabled = k >= seekable.length - 1;
+        };
+        ends(null);
         sync = syncVideo(v, d, function (i) {
+          ends(i);
           $$(".cur[data-i]").forEach(function (el) { el.classList.remove("cur"); });
-          if (i == null) { now.textContent = ""; return; }
+          if (i == null) { now.innerHTML = ""; return; }
           $$('[data-i="' + i + '"]').forEach(function (el) { el.classList.add("cur"); });
           var s = d.steps.find(function (x) { return x.i === i; });
-          now.textContent = "Step " + sn(d, i) + (s ? " · " + actionOf(s).text.slice(0, 80) : "");
+          now.innerHTML = '<span class="ns">Step ' + h(sn(d, i)) + "</span>" + (s ? '<span class="na">\u00a0· ' + h(actionOf(s).text.slice(0, 80)) + "</span>" : "");
           scrollInto($('.slist li[data-i="' + i + '"]'));
           markTiles(i);
         });
@@ -517,6 +583,15 @@
         if (tab === "run") bindRun();
         if (tab === "files") mountFiles();
         if (sync) { var i = sync.now(); if (i != null) { $$('[data-i="' + i + '"]').forEach(function (el) { el.classList.add("cur"); }); markTiles(i); } }
+        /* a phone's tab bar scrolls: the selected tab is always in view */
+        var on = tabs.filter(function (a) { return a.getAttribute("aria-selected") === "true"; })[0], bar = on && on.parentNode;
+        if (on && bar && bar.scrollWidth > bar.clientWidth) {
+          var br = bar.getBoundingClientRect(), tr = on.getBoundingClientRect();
+          if (tr.left < br.left) bar.scrollLeft -= br.left - tr.left + 24; else if (tr.right > br.right) bar.scrollLeft += tr.right - br.right + 24;
+        }
+        if (tab === "trajectory" && /\/prompt$/.test(location.hash)) {  /* "Task prompt" in the Recording list: the prompt, open */
+          var pr = $("details.prompt", panel); if (pr) { pr.open = true; pr.scrollIntoView({block: "start"}); }
+        }
       }
       tabs.forEach(function (a) {
         a.addEventListener("click", function (e) { e.preventDefault(); history.replaceState(null, "", "#" + a.getAttribute("data-tab")); show(a.getAttribute("data-tab")); });
@@ -538,7 +613,7 @@
         if (d.withheld) return withheldNote();
         if (!d.steps.length) return quiet("No trajectory was recorded for this trial.");
         var n = d.steps.length;  /* the same count as the Trajectory tab: every step listed */
-        var first = d.steps[0] && d.prompt ? '<li class="nov"><span class="i"></span><span class="t"></span><span class="a msg"><a href="#trajectory">Task prompt</a></span><span class="x"></span></li>' : "";
+        var first = d.steps[0] && d.prompt ? '<li class="nov"><span class="i"></span><span class="t"></span><span class="a msg"><a href="#trajectory/prompt">Task prompt</a></span><span class="x"></span></li>' : "";
         return '<div class="recbox"><div class="rechead"><span title="Click a step to seek; ← → to step">Steps</span></div><ol class="slist">' + first + stepListHTML(d) + "</ol>" +
           (d.hidden ? '<p class="muted small slnote">' + d.hidden + " one-action steps in the middle are not listed.</p>" : "") + tailNote() + "</div>";
       }
@@ -555,9 +630,10 @@
         return '<section class="strip" id="filmstrip" aria-label="Camera images"><div class="rechead"><span>' + (d.image_input === false ? "Camera images saved during the episode; the model received no images" : "Camera images the agent looked at") + '</span><span class="num">' +
           (sp.total > sp.n ? sp.n + " of " + sp.total + " shown" : sp.total) + '</span></div><div class="tiles" data-fade>' +
           d.obs.map(function (o) {
-            var cam = o[0].replace(/\.png$/, "").replace(/^obs_\d+_?/, "").replace(/^robot\d_/, "").replace(/_/g, " ");  // the camera, from the file name
-            var lab = o[1] != null ? "step " + sn(d, o[1]) + (cam && !/^\d+$/.test(cam) ? " · " + cam : "") : o[0].replace(/\.png$/, "");
-            return '<button type="button" class="tile"' + (o[1] != null ? ' data-s="' + o[1] + '"' : "") + (o[3] != null ? ' data-seek="' + o[3] + '"' : "") + ' title="' + h(o[0]) + '" aria-label="Camera image ' + h(lab) + (o[3] != null ? ", seek the recording here" : "") + '"><i style="' + sprStyle(sp, o[2]) + '"></i><span>' + h(lab) + "</span></button>";
+            var cam = camName(o[0]);  // the camera, from the file name, in words
+            var lab = o[1] != null ? "Step " + sn(d, o[1]) + (cam ? ", " + cam : "") : o[0].replace(/\.png$/, "");
+            var two = o[1] != null ? "<b>Step " + h(sn(d, o[1])) + "</b>" + (cam ? "<small>" + h(cam) + "</small>" : "") : h(lab);
+            return '<button type="button" class="tile"' + (o[1] != null ? ' data-s="' + o[1] + '"' : "") + (o[3] != null ? ' data-seek="' + o[3] + '"' : "") + ' title="' + h(o[0]) + '" aria-label="Camera image, ' + h(lab) + (o[3] != null ? ", seek the recording here" : "") + '"><i style="' + sprStyle(sp, o[2]) + '"></i><span>' + two + "</span></button>";
           }).join("") + "</div></section>";
       }
       function trajectory() {
@@ -570,20 +646,21 @@
         d.steps.forEach(function (s) {
           if (d.hidden && prev != null && s.i - prev > 1) out.push('<li class="gap">… ' + d.hidden + " one-action steps not shown …</li>");
           prev = s.i;
-          var head = '<div class="sh"><span class="num">' + sn(d, s.i) + '</span><span class="src">' + ({agent: vla ? "Policy" : "Agent", system: "System", user: "Prompt"}[s.src] || h(s.src)) + "</span>" +
+          var moved = !!(s.v && s.env && s.env[1] > s.env[0]);
+          var head = '<div class="sh"><span class="num">' + sn(d, s.i) + "</span>" + (s.src !== "agent" ? '<span class="src">' + ({system: "System", user: "Prompt"}[s.src] || h(s.src)) + "</span>" : "") +
             (s.ts != null ? '<span class="num">+' + dur(s.ts) + "</span>" : "") +
             (s.tk ? (outOk ? '<span class="num" title="input and output tokens of this step">' + kfmt(s.tk[0]) + " in" + "\u00a0" + "·" + "\u00a0" + kfmt(s.tk[1]) + " out</span>"
               : '<span class="num" title="input tokens of this step">' + kfmt(s.tk[0]) + " in</span>") : "") +
-            (s.v ? '<button type="button" class="seek" data-seek="' + s.v[0] + '" title="Seek the recording here">' + t2(s.v[0]) + "</button>" : "") + "</div>";
+            (moved ? '<button type="button" class="seek" data-seek="' + s.v[0] + '" title="Seek the recording here">' + t2(s.v[0]) + "</button>" : "") + "</div>";
           var body = "", ep = s.src === "system" && /^episode: /.test(s.m || "");
           if (ep) {  /* the runner's closing line ("episode: outcome=done success=True steps_used=677/1400") as the Verdict says it */
             var vl = verdictLine(), em = s.m.match(/steps_used=(\d+)\/(\d+)/), rw = s.m.match(/verifier reward: ([\d.]+)/);
             body += '<p class="vline ' + vl[1] + '">' + h(vl[0]) + "</p>" +
               (em || rw ? '<p class="muted small">' + [em ? num(+em[1]) + " of " + num(+em[2]) + " steps" : "", rw ? "verifier reward " + rew(+rw[1]) : ""].filter(Boolean).join(", ") + ".</p>" : "");
-          } else if (s.m) body += '<div class="txt' + (s.src === "agent" ? " md" : "") + '">' + (s.src === "agent" ? mdLite(s.m) : h(s.m)) + "</div>";
+          } else if (s.m) body += '<div class="txt' + (s.src === "agent" ? " md" : "") + '">' + (s.src === "agent" ? mdLite(vlaText(s.m)) : h(vlaText(s.m))) + "</div>";
           if (s.r) body += '<details class="disc rsn"><summary>Reasoning</summary><div class="txt md">' + mdLite(s.r) + "</div></details>";
           (s.c || []).forEach(function (c) {
-            body += '<pre class="cmd"><code>' + h(c.a) + "</code></pre>";
+            body += '<pre class="cmd"><code>' + cmdHtml(c.a) + "</code></pre>";
             if (c.b) body += '<pre class="out"><code>' + h(c.b) + "</code></pre>";
             if (c.img && d.sprite) body += '<div class="imgs">' + c.img.map(function (k) { return '<i style="' + sprStyle(d.sprite, k) + '"></i>'; }).join("") + "</div>";
             var imgOnly = c.o != null && /^(\s*\[image\]\s*)+$/.test(c.o), nImg = imgOnly ? c.o.match(/\[image\]/g).length : 0;
@@ -609,7 +686,7 @@
         var out = "";
         if (X.metrics) out += grp("Episode metrics", X.metrics.map(function (m) { return [m[0], m[1], m[2], m[3] ? "Better: " + m[3] : ""]; }));
         if (X.placement) { var p = X.placement; out += grp("Placement", [["Split", p.split], ["Objects moved", p.objects != null ? String(p.objects) : null], ["Largest offset", p.max_cm != null ? p.max_cm.toFixed(1) : null, "cm"], ["Placement seed", p.seed != null ? String(p.seed) : null]]); }
-        if (X.mode) out += grp("Embodiment", [["Mode", {sim: "Simulation", real: "Real robot", "hil-mock": "Hardware in the loop (mock)"}[X.mode] || X.mode]]);
+        if (X.mode && X.mode !== "sim") out += grp("Embodiment", [["Mode", {real: "Real robot", "hil-mock": "Hardware in the loop (mock)"}[X.mode] || X.mode]]);  /* every published trial is simulated: no card for that */
         if (X.operator) { var o = X.operator; out += grp(o.rubric ? "Operator rubric" : "Operator verdict", [[o.rubric ? "Highest stage" : "Verdict", o.verdict], ["Channel", o.channel]], o.note ? '<p class="xn">' + h(o.note) + "</p>" : ""); }
         if (X.safety) {
           var sf = X.safety, c = sf.counts || {};
@@ -622,7 +699,7 @@
       function runExtras() {
         var out = "";
         if (X.cost && !vla && X.cost.source !== "no model") { var c = X.cost; out += grp("Cost", [["Prompt tokens", c.prompt != null ? num(c.prompt) : null], ["Cached", c.cached ? num(c.cached) : null], ["Completion tokens", c.completion != null ? num(c.completion) : null], ["Cost", c.usd != null ? "$" + (+c.usd).toFixed(c.usd < 1 ? 4 : 2) : null, "USD"], ["Source", c.source || null]]); }
-        if (X.vla) { var v = X.vla; out += grp("Policy inference", [["Inferences", num(v.inferences)], ["Chunk size", v.chunk != null ? String(v.chunk) : null, "actions"], ["Round trip", v.roundtrip ? v.roundtrip[0].toFixed(2) + " · " + v.roundtrip[1].toFixed(2) : null, "s median · p90"], ["Server", v.server ? v.server[0].toFixed(2) + " · " + v.server[1].toFixed(2) : null, "s median · p90"]]); }
+        if (X.vla) { var v = X.vla; out += grp("Policy inference", [["Inferences", num(v.inferences)], ["Chunk size", v.chunk != null ? String(v.chunk) : null, "actions"], ["Round trip", v.roundtrip ? v.roundtrip[0].toFixed(2) + " s median, " + v.roundtrip[1].toFixed(2) + " s p90" : null], ["Server", v.server ? v.server[0].toFixed(2) + " s median, " + v.server[1].toFixed(2) + " s p90" : null]]); }
         return out ? '<div class="xgs">' + out + "</div>" : "";
       }
       /* the runner's own note ("[runner] agent exited without robo done") as a sentence, without the log tag */
@@ -644,10 +721,7 @@
       }
       function verdict() {
         var vd = d.verdict, vl = verdictLine(), line = vl[0], cls = vl[1];
-        var rows = [];
-        if (d.steps_used != null) rows.push(["Steps", num(d.steps_used) + (d.max_steps ? " of " + num(d.max_steps) : "")]);
-        if (d.requests != null) rows.push(["Robot requests", num(d.requests) + (d.motion != null && d.motion !== d.requests ? " (" + num(d.motion) + " moved the robot)" : "")]);
-        if (d.wall != null) rows.push(["Time", dur(d.wall)]);
+        var rows = [];  /* steps and time are in the header, robot requests on Timing: the Verdict is the sentence and what is not said elsewhere */
         var log = vd.infra && vd.infra.length ? '<details class="disc errlog"><summary>Error log</summary><pre class="out wrap"><code>' + h(vd.infra.join("\n\n")) + "</code></pre></details>" : "";
         return '<div class="vd1"><p class="vline ' + cls + '">' + h(line) + "</p>" +
           (rows.length ? '<table class="vt"><tbody>' + rows.map(function (x) { return '<tr><th scope="row">' + h(x[0]) + "</th><td>" + h(x[1]) + "</td></tr>"; }).join("") + "</tbody></table>" : "") +
@@ -675,18 +749,19 @@
           var T = ts[ts.length - 1].ts - ts[0].ts || 1;
           var segs = ts.slice(0, -1).map(function (s, k) {
             var dt = Math.max(0, ts[k + 1].ts - s.ts);
-            return '<i style="flex:' + Math.max(dt, T / 2000).toFixed(3) + ' 0 0" data-go="' + ts[k + 1].i + '" data-tip="' + dur(dt) + " before step " + sn(d, ts[k + 1].i) + "\n" + h(actionOf(ts[k + 1]).text.slice(0, 120)) + '"></i>';
+            var tipT = dur(dt) + " before step " + sn(d, ts[k + 1].i) + "\n" + actionOf(ts[k + 1]).text.slice(0, 120);
+            return '<i role="button" tabindex="' + (k ? -1 : 0) + '" style="flex:' + Math.max(dt, T / 2000).toFixed(3) + ' 0 0" data-go="' + ts[k + 1].i + '" data-tip="' + h(tipT) + '" aria-label="' + h(tipT.replace("\n", ": ")) + '"></i>';
           });
-          html += '<section class="chart"><h2>Wall clock between steps<span>' + dur(T) + " from the first step to the last; each segment is the time before a step (" + (vla ? "the previous actions running, then the policy’s next inference" : "the previous command running, then the model thinking") + "). Click one for the step.</span></h2>" +
-            '<div class="tl">' + segs.join("") + '</div><div class="axis num"><span>0</span><span>' + dur(T / 2) + "</span><span>" + dur(T) + "</span></div></section>";
+          html += '<section class="chart"><h2>Wall clock between steps<span>' + dur(T) + " from the first step to the last; each segment is the time before a step (" + (vla ? "the previous actions running, then the policy’s next inference" : "the previous command running, then the model thinking") + "). Select one for the step.</span></h2>" +
+            '<div class="tl" role="group" aria-label="Time before each step">' + segs.join("") + '</div><div class="axis num"><span>0 s</span><span>' + dur(T / 2) + "</span><span>" + dur(T) + "</span></div></section>";
         }
         var tks = d.steps.filter(function (s) { return s.tk; }), outOk = tokOk();
         if (tks.length > 1) {
           var maxIn = Math.max.apply(null, tks.map(function (s) { return s.tk[0]; })) || 1, maxOut = Math.max.apply(null, tks.map(function (s) { return s.tk[1]; })) || 1;
           html += '<section class="chart"><h2>Input tokens per step<span>the context the model read, up to ' + kfmt(maxIn) + '</span></h2><div class="bars">' +
-            tks.map(function (s) { return '<i style="height:' + (100 * s.tk[0] / maxIn).toFixed(1) + '%" data-go="' + s.i + '" data-tip="step ' + sn(d, s.i) + " · " + num(s.tk[0]) + " input (" + num(s.tk[2]) + ' cached)"></i>'; }).join("") + "</div></section>" +
+            tks.map(function (s, k) { var t = "Step " + sn(d, s.i) + ": " + num(s.tk[0]) + " input tokens (" + num(s.tk[2]) + " cached)"; return '<i role="button" tabindex="' + (k ? -1 : 0) + '" style="height:' + (100 * s.tk[0] / maxIn).toFixed(1) + '%" data-go="' + s.i + '" data-tip="' + h(t) + '" aria-label="' + h(t) + '"></i>'; }).join("") + "</div></section>" +
             (outOk ? '<section class="chart"><h2>Output tokens per step<span>up to ' + kfmt(maxOut) + '</span></h2><div class="bars out">' +
-            tks.map(function (s) { return '<i style="height:' + (100 * s.tk[1] / maxOut).toFixed(1) + '%" data-go="' + s.i + '" data-tip="step ' + sn(d, s.i) + " · " + num(s.tk[1]) + ' output"></i>'; }).join("") + "</div></section>"
+            tks.map(function (s, k) { var t = "Step " + sn(d, s.i) + ": " + num(s.tk[1]) + " output tokens"; return '<i role="button" tabindex="' + (k ? -1 : 0) + '" style="height:' + (100 * s.tk[1] / maxOut).toFixed(1) + '%" data-go="' + s.i + '" data-tip="' + h(t) + '" aria-label="' + h(t) + '"></i>'; }).join("") + "</div></section>"
             : '<p class="muted small">Output tokens per step are not shown: this harness’s per-message counts do not add up to its run total.</p>');
         } else if (tk) {
           html += '<p class="muted small">This harness reports tokens for the whole run only, not per step.</p>';
@@ -696,10 +771,19 @@
         return html;
       }
       function bindRun() {
+        function go(el) {
+          var i = el.getAttribute("data-go"); history.replaceState(null, "", "#trajectory"); show("trajectory");
+          var li = document.getElementById("s" + i); if (li) { li.scrollIntoView({block: "center", behavior: reduce ? "auto" : "smooth"}); li.classList.add("flash"); setTimeout(function () { li.classList.remove("flash"); }, 1600); }
+        }
         $$("[data-go]", panel).forEach(function (el) {
-          el.addEventListener("click", function () {
-            var i = el.getAttribute("data-go"); history.replaceState(null, "", "#trajectory"); show("trajectory");
-            var li = document.getElementById("s" + i); if (li) { li.scrollIntoView({block: "center", behavior: reduce ? "auto" : "smooth"}); li.classList.add("flash"); setTimeout(function () { li.classList.remove("flash"); }, 1600); }
+          el.addEventListener("click", function () { go(el); });
+          /* a chart is one tab stop: ← → (and Home, End) move between its marks, Enter or Space opens the step */
+          el.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(el); return; }
+            var all = $$("[data-go]", el.parentNode), k = all.indexOf(el);
+            var j = e.key === "ArrowRight" || e.key === "ArrowDown" ? k + 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? k - 1 : e.key === "Home" ? 0 : e.key === "End" ? all.length - 1 : -2;
+            if (j === -2 || !all[j]) return;
+            e.preventDefault(); el.tabIndex = -1; all[j].tabIndex = 0; all[j].focus();
           });
         });
       }
@@ -710,27 +794,23 @@
         var who = d.model_label ? d.model_label + " with " + d.harness_label : (c.harness || (r.agent_info || {}).name || "") + (c.model ? " with " + c.model : "");
         var steps = ep.steps_used != null ? num(ep.steps_used) + (ep.max_steps ? " of " + num(ep.max_steps) : "") + " simulator steps" : "";
         var parts = [], scored = d.status !== "infra" && d.status !== "partial";
-        if (reward != null && scored) parts.push("Reward " + rew(reward) + (ep.outcome ? ", " + h(ocT(ep.outcome).toLowerCase()) : ""));
-        else if (d.status === "infra") parts.push("Not scored: infrastructure failure");
-        else if (d.status === "partial") parts.push("Not scored: the run was stopped");
-        if (steps) parts.push(steps + (ep.requests != null ? " in " + num(ep.requests) + " robot requests" : ""));
+        /* the reward, outcome, steps and time are in the header and the Verdict: this card says only what the folder adds */
         var wall = r.wall_time_s != null ? dur(r.wall_time_s) : "";
         var agent = [];
-        if (r.agent_return_code != null) agent.push("exit code " + h(r.agent_return_code));
+        if (r.agent_return_code != null && +r.agent_return_code !== 0) agent.push("exit code " + h(r.agent_return_code));  /* a clean exit is not news */
         if (r.agent_timed_out) agent.push("timed out");
         if (r.exception_info) agent.push("stopped by an exception");
         /* the runner's note ("agent timed out") when the lines above already say it */
         function said(t) { var x = unrunner(t).toLowerCase().replace(/[.\s]+$/, ""); return x === ocT(ep.outcome).toLowerCase() || (r.agent_timed_out && /timed out$/.test(x)) || (vla && /step budget reached$/.test(x)); }
-        var result = '<section class="card sum"><h2>Result</h2><p>' + (parts[0] || "Not scored") + ".</p>" +
-          (parts[1] ? "<p>" + parts[1] + (wall ? ", " + wall + " in all" : "") + ".</p>" : "") +
-          (agent.length ? '<p class="muted">' + (vla ? "Policy" : "Agent") + ": " + agent.join(", ") + ".</p>" : "") +
-          (ep.agent_text && !said(ep.agent_text) ? "<blockquote>" + h(unrunner(ep.agent_text)) + "</blockquote>" : "") + "</section>";
+        var rbody = (agent.length ? "<p>" + (vla ? "Policy" : "Agent") + " process: " + agent.join(", ") + ".</p>" : "") +
+          (ep.agent_text && !said(ep.agent_text) ? "<blockquote>" + h(unrunner(ep.agent_text)) + "</blockquote>" : "");
+        var result = rbody ? '<section class="card sum"><h2>Result</h2>' + rbody + "</section>" : "";
         var chips = [meta.source_benchmark, meta.category && meta.category.replace(/-/g, " "), DIFFICULTY[meta.difficulty] || meta.difficulty].filter(Boolean)
           .map(function (x) { return '<span class="chip">' + h(x) + "</span>"; }).join("") +
           (meta.tags || []).map(function (x) { return '<span class="chip tag">' + h(x) + "</span>"; }).join("");
         var setup = '<section class="card sum"><h2>Setup</h2><p>' + h(vla && d.model_label ? d.model_label + ", a VLA policy" : who || "Agent") +
           (c.agent_timeout_s ? ", " + dur(c.agent_timeout_s) + (vla ? " time limit" : " agent time limit") : "") + (c.seed != null ? ", seed " + h(c.seed) : "") + ".</p>" +
-          (d.hub ? '<p class="muted">Task <a class="ln" href="' + h(d.hub) + '">' + h(d.title || c.task) + "</a></p>" : "") +
+          (d.hub ? '<p>Task: <a class="ln" href="' + h(d.hub) + '">' + h(d.title || c.task) + "</a></p>" : "") +
           (chips ? '<p class="chips">' + chips + "</p>" : "") + "</section>";
         return '<div class="sums">' + result + setup + "</div>";
       }
@@ -771,8 +851,9 @@
           } else e.w = why(p);
           return e;
         });
-        return {title: "Trial folder", root: d.id + "/", open: "result.json", files: files,
-          note: "Raw agent logs, the robot request trace and server logs are not published; the Trajectory tab is built from them. Workspace paths read <code>&lt;workspace&gt;</code>."};
+        /* the root by its task and trial, not the folder name (which carries the harness's internal id); Copy path keeps the folder */
+        return {title: "Trial folder", root: d.id + "/", rootLabel: d.task + " · " + String(d.id).split("__").pop(), open: "result.json", files: files,
+          note: "Workspace paths read <code>&lt;workspace&gt;</code>."};
       }
       function files() {
         return summary() + '<h2 class="lab">Trial folder</h2>' + ((d.files || []).length ? '<div id="ftree" class="ftree"></div>' :
