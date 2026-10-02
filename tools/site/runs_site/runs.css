@@ -607,3 +607,6 @@ table.list.runs tbody tr:hover a.rl,table.list.rt tbody tr:hover a.rtk{color:var
 }
 table.list.rt td.oc{white-space:nowrap}  /* an outcome never orphans its last word ("Agent gave / up") */
 @media (max-width:360px){.frow .lb{flex-basis:100%}}  /* the narrowest phones: one select per row, each value whole */
+/* a run page's title and its facts break only between their parts ("pi0-FAST-LIBERO (LeRobot) · VLA · libero"): each
+   part moves to the next line whole, and wraps at its own spaces only when it is wider than the line */
+.rh1 .tpart,.page-head .meta .tpart{display:inline-block;max-width:100%;overflow-wrap:normal}

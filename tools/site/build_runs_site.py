@@ -1020,11 +1020,17 @@ def pair_html(i: int) -> str:
 
 def run_title_html(r: dict, parts: bool = False) -> str:
     """A run's title with the model's and the harness's marks: "mark GLM-5.3 · mark Codex · robouse-menagerie". parts (the
-    run page's h1): each part one unit (.seg, runs.css), so a line breaks only between the parts, never inside a name."""
+    run page's h1): each part one unit (.tpart, runs.css), so a line breaks only between the parts, never inside a name."""
     p = HM[r["hm"]]
     bits = [named(model_mark(p) if p.get("icon") else "", p.get("model_label") or p["label"]),
             named(harness_mark(p), p.get("harness_label") or p["harness"]), nb(r["ds"].split("/")[-1])] + (["zero-shot probe"] if r["probe"] else [])
-    return " · ".join(f'<span class="seg">{b}</span>' for b in bits) if parts else " · ".join(bits)
+    return tparts(bits) if parts else " · ".join(bits)
+
+
+def tparts(bits: list[str]) -> str:
+    """Parts as units that break only between them, each keeping the dot after it ("A · B · C"), so no line starts with
+    a dot (an inline-block part leaves a break before a dot outside it)."""
+    return " ".join(f'<span class="tpart">{b}{chr(160) + "·" if k < len(bits) - 1 else ""}</span>' for k, b in enumerate(bits))
 
 
 def run_meta(r: dict) -> list[str]:
@@ -1402,7 +1408,7 @@ def build_run(r: dict) -> str:
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a></nav>
 <section class="page-head head">
   <h1 class="rh1">{run_title_html(r, parts=True)}</h1>
-  <p class="meta">{" · ".join(f'<span class="seg">{x}</span>' for x in run_meta(r))}{noimg_tag() if r["noimg"] else ""}</p>
+  <p class="meta">{tparts(run_meta(r))}{noimg_tag() if r["noimg"] else ""}</p>
   {f'<p class="prov">{esc(HM[r["hm"]]["provenance"])}</p>' if HM[r["hm"]].get("provenance") else ""}
 </section>
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
