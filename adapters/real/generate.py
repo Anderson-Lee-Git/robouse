@@ -65,24 +65,28 @@ def safety(p, releases: bool = True) -> str:
         )
         contact = (
             f"A contact during a move that ends within 3 cm of the table, {how}, stops that move: the arm holds where "
-            "it is and the step result reports it under `contact`; a second contact, or one anywhere else, stops the "
-            "episode. "
+            "it is and the step result reports it under `contact`; a second contact, one anywhere else, or one while "
+            "the arm holds still for the 10 steps after the episode ends stops the episode. "
         )
     else:
         contact = "Nothing detects this arm touching something: it has no contact thresholds and no kinematic model. "
+    held = " or is holding something" if p.gidx else ""  # an arm without a gripper holds nothing
+    keep = " and the gripper keeps its command, so a grasped object is not let go" if p.gidx else ""
     rest = (
-        "the arm then moves slowly to its rest pose and is released there, or keeps holding if it cannot get there"
+        "the arm then moves slowly to its rest pose and is released there, or keeps holding if it cannot get "
+        f"there{held}"
         if releases
         else "the arm then moves slowly to its rest pose and holds there (the ROS bridge cannot release torque), or "
-        "keeps holding where it is if it cannot get there"
+        f"keeps holding where it is if it cannot get there{held}"
     )
     return (
         "**Safety layer.** Every command passes the episode server's safety guard before it reaches the motors: joint "
         f"targets are clamped to the joint limits; {workspace}; a joint command never leads the measured position by "
         f"more than a few degrees. {contact}Over-temperature (also at the start), an operator e-stop, a stalled "
         "control loop, joint readings that stop arriving or a hardware fault stop the episode at once (outcome "
-        "`safety_stop`, score 0). After a stop and when the episode ends, every joint is held at its measured "
-        f"position; {rest}. `robo info` lists the limits under `embodiment.safety`."
+        "`safety_stop`, score 0); the e-stop, the joint readings and the temperatures are also checked between your "
+        f"requests. After a stop and when the episode ends, every arm joint is held at its measured position{keep}; "
+        f"{rest}. `robo info` lists the limits under `embodiment.safety`."
     )
 
 
