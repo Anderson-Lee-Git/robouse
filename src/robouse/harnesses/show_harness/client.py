@@ -245,6 +245,10 @@ TOL_M = 0.001  # AtomicExec: a move stops within 1 mm of its target ...
 MAX_CTRL_STEPS = 24  # ... or after 24 control steps (the LIBERO runner's value)
 QUIESCE_TOL_M = 0.0003  # "stopped": under 0.3 mm per control step
 QUIESCE_MAX_STEPS = 40
+# A unit whose motion is blocked (the hand on the table or pressing on an object) ends once the hand has stopped for
+# this many control steps, instead of running out the executor's 24: Robo Use charges every control step to the
+# episode's budget, and Show-Harness's real-arm interpreter spends a fixed 4 re-commands per unit, blocked or not
+STALL_STEPS = 3
 EMPTY_WIDTH_M = 0.005  # the simulator configs' empty-grasp width
 OPEN_WIDTH_M = 0.07
 CLOSED_BELOW_M = 0.07  # gripper "CLOSED" in the prompt when the measured width is below this
@@ -974,7 +978,7 @@ class Arm:
         for i in range(3):
             if self.p["pos"][i] is None:
                 target[i] = start[i]
-        n = 0
+        n, still, prev = 0, 0, start
         for n in range(1, MAX_CTRL_STEPS + 1):
             err = [target[i] - self.hand()[i] for i in range(3)]
             if math.sqrt(sum(e * e for e in err)) < TOL_M:
@@ -982,8 +986,13 @@ class Arm:
                 break
             cap = self.p["max_cmd_m"]
             self.step([_clamp(e, -cap, cap) for e in err])
+            cur = self.hand()
+            still = still + 1 if math.sqrt(sum((cur[i] - prev[i]) ** 2 for i in range(3))) < QUIESCE_TOL_M else 0
+            prev = cur
+            if still >= STALL_STEPS:
+                break
         post = self.hand()
-        return {
+        out = {
             "kind": "move",
             "commanded": [round(d[i] * step_m, 4) for i in range(3)],
             "moved_m": round(math.sqrt(sum((post[i] - start[i]) ** 2 for i in range(3))), 4),
@@ -991,6 +1000,9 @@ class Arm:
             "post": [round(x, 4) for x in post],
             "control_steps": n,
         }
+        if still >= STALL_STEPS:
+            out["stalled"] = True
+        return out
 
     def quiesce(self) -> int:
         prev = self.hand()
@@ -1640,6 +1652,8 @@ class FineTuned:
                     result = self.arm.gripper(False)
                 elif token != DONE:
                     result = {"kind": "none", "note": f"{token} does nothing on this robot"}
+                    if token in MOVE_ATOMS:  # it moved the hand 0 mm: the stuck guard counts it like a blocked move
+                        no_move[token] = no_move.get(token, 0) + 1
             except (EpisodeOver, SpendCap, RuntimeError) as e:
                 emit(
                     type="decision",

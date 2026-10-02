@@ -624,3 +624,7 @@ def test_a_fine_tuned_trial_on_a_served_model_with_the_stuck_guard(tmp_path, mon
     dec = [e for e in ev if e["type"] == "decision"]
     assert [e["unit"] for e in dec] == ["MV_LEFT", "MV_LEFT", "MV_LEFT", "MV_UP", "DONE"]
     assert dec[3]["blocked"] == ["MV_LEFT"] and dec[3]["result"]["kind"] == "none"
+    # a blocked unit ends once the hand has stopped for 3 control steps (not the executor's 24), and a unit this robot
+    # cannot carry out (MV_UP on the plane) counts toward the guard as a move of 0 mm
+    assert dec[1]["result"]["stalled"] is True and dec[1]["result"]["control_steps"] == 3
+    assert dec[3]["steps_used"] == 1 + 3 + 3 and dec[4]["blocked"] == ["MV_LEFT"]
