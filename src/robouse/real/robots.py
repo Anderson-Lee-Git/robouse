@@ -202,7 +202,9 @@ SO101 = Profile(
     gripper_closed=2.0,
     control_hz=10.0,
     home=[0.0, -60.0, 60.0, 60.0, 0.0, 2.0],
-    park=[0.0, -98.0, 94.0, 70.0, 0.0, 2.0],
+    # folded, the fingertips 23 mm above the table by the URDF's kinematics (elbow_flex 94 put them 5 mm below it,
+    # outside the workspace, so every park there was refused)
+    park=[0.0, -98.0, 86.0, 70.0, 0.0, 2.0],
     chain_file="so101_chain.json",
     joint_map={
         0: ("shoulder_pan", D2R, 0.0),

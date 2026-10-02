@@ -1592,3 +1592,24 @@ def test_parks_keep_to_the_calibrated_speed(tmp_path):
     cmds = np.asarray([s["cmd"][:6] for s in _steps(tmp_path / "ep") if s.get("label") == "park"])
     assert len(cmds) > 10 and np.abs(np.diff(cmds, axis=0)).max() <= 0.6 + 2e-3
     assert any(e["event"] == "torque_released" for e in ev)
+
+
+# ---- final check, 2026-10-02 (P1-P4): rest poses, parks without a calibrated watch, normal ends that cannot park ------
+
+
+def test_every_rest_pose_passes_its_own_workspace_check():
+    """P3: every robot profile's rest pose, and the ROS task rig's, is inside its joint limits and its workspace, and
+    the way to it from the home pose passes the workspace check, so a park is never refused for the rest pose itself.
+    (The SO-101's rest pose put its fingertips 5 mm below the table, 9 mm outside its workspace.)"""
+    from robouse.backends.real.backend import real_config
+    from robouse.real.drivers.rosbridge import ros_profile
+    from robouse.real.robots import PROFILES
+    from robouse.real.safety import Envelope
+    from robouse.tasks import load_task
+
+    rig = ros_profile(real_config(load_task(ROOT / "tasks" / "real" / "real-ros-joint-pose").spec))
+    for p in [*PROFILES.values(), rig]:
+        env = Envelope(p)
+        assert p.park and all(lo <= v <= hi for lo, v, hi in zip(p.low, p.park, p.high, strict=True)), p.name
+        assert not any(v > 0 for v in env.violation(p.park).values()), (p.name, env.describe(p.park))
+        env.check_path(p.home, p.park)  # raises Veto when the way leaves the workspace
