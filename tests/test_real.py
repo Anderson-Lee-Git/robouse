@@ -37,13 +37,14 @@ def _operator_dir(tmp_path, monkeypatch):
     yield
 
 
-def _episode(task_id: str, tmp_path, **real_overrides):
+def _episode(task_id: str, tmp_path, secrets: dict | None = None, **real_overrides):
     from robouse.session import Episode
     from robouse.tasks import load_task
 
-    spec = load_task(ROOT / "tasks" / "real" / task_id).spec
+    suite = "stationerybench" if task_id.startswith("stationerybench") else "real"
+    spec = load_task(ROOT / "tasks" / suite / task_id).spec
     spec["real"] = {**spec["real"], **real_overrides}
-    return Episode(spec, tmp_path / "ep")
+    return Episode(spec, tmp_path / "ep", secrets=secrets)
 
 
 def test_metal_fk_matches_recorded_hardware_poses():
@@ -762,15 +763,17 @@ def test_ros_rig_without_a_rest_pose_holds(tmp_path):
 
 
 def test_ros_arm_parks_and_keeps_holding(tmp_path):
-    """The ROS bridge cannot turn the motors off: at the end the arm parks at the rig's rest pose and holds there, and
-    the session log and the operator are told so."""
+    """The ROS bridge cannot turn the motors off: on the operator's yes (the rig gives no calibrated park watch, so the
+    arm does not park on its own) the arm parks at the rig's rest pose and holds there, and the session log and the
+    operator are told so."""
     ep = _episode("real-ros-joint-pose", tmp_path)
     assert ep.handle({"op": "skill", "name": "move_joints", "args": ["30", "-70", "60", "-80", "-90", "20"]})["ok"]
     ep.finish("done", "")
     ep.close()
     ev = _events(tmp_path / "ep")
     names = [e["event"] for e in ev]
-    assert names.index("retarget") < names.index("park") < names.index("parked") < names.index("close")
+    assert names.index("retarget") < names.index("holding") < names.index("park") < names.index("parked")
+    assert names.index("parked") < names.index("close") and ev[names.index("park")]["calibrated"] is False
     assert "torque_released" not in names and ev[names.index("close")]["release_torque"] is False
     assert ep.backend.secured == "parked at the rest pose, holding there (the driver cannot release torque)"
     assert any("holding there with torque on" in e["text"] for e in ev if e["event"] == "operator_notice")
@@ -1613,3 +1616,152 @@ def test_every_rest_pose_passes_its_own_workspace_check():
         assert p.park and all(lo <= v <= hi for lo, v, hi in zip(p.low, p.park, p.high, strict=True)), p.name
         assert not any(v > 0 for v in env.violation(p.park).values()), (p.name, env.describe(p.park))
         env.check_path(p.home, p.park)  # raises Veto when the way leaves the workspace
+
+
+def _hold_back(robot, j: int) -> None:
+    """Something holds the mock arm's joint j: from now on it stays where it is, whatever is commanded."""
+    send = robot.send_action
+
+    def held(action):
+        before = float(robot.q[j])
+        out = send(action)
+        robot.q[j] = before
+        return out
+
+    robot.send_action = held
+
+
+def _questions(b) -> list[tuple[str, str]]:
+    """Every yes/no question put to the operator from now on, as (gate, prompt)."""
+    asked: list = []
+    confirm = b.operator.confirm
+
+    def tap(key, prompt, tick=None):
+        asked.append((key, prompt))
+        return confirm(key, prompt, tick)
+
+    b.operator.confirm = tap
+    return asked
+
+
+@pytest.mark.parametrize("task", ["real-piper-joint-pose", "stationerybench-eraser-from-box"])
+def test_a_held_back_joint_on_a_robot_without_a_calibrated_park_watch(tmp_path, task):
+    """P1, the reviewer's scenario: joint 2 is moved 15 deg away, the episode ends, and from then on joint 2 is held
+    back. The Piper and the bimanual SO-101 have no calibrated park watch, so nothing parks on its own: the arm holds,
+    and the operator is asked whether to park it, told that the park is not calibrated and to watch it. The park they
+    approve stops at the coarse lag limit (90% of the wind-up limit) on the first step past it (before this, the arm
+    pushed at the full wind-up lead for 136 and 342 steps). The arm holds where it stopped, the stop after the end is
+    recorded, and nothing is tried again."""
+    ep = _episode(task, tmp_path)
+    b = ep.backend
+    robot = b.driver.sdk.robot if task.startswith("real-piper") else b.driver.robot
+    asked = _questions(b)
+    for dv in (15.0, -15.0):  # away from where it started, so the park has to bring joint 2 back
+        q = list(b.q)
+        q[1] += dv
+        if ep.handle({"op": "act", "action": q, "repeat": 40})["ok"]:
+            break
+    assert abs(b.q[1] - b.prof.park[1]) > 10.0
+    ep.handle({"op": "done", "text": ""})
+    _hold_back(robot, 1)
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    names = [e["event"] for e in ev]
+    hold = next(e for e in ev if e["event"] == "holding")
+    assert hold["cause"] == "end of episode" and "no calibrated watch" in hold["reason"]
+    gate, prompt = asked[-1]
+    assert gate == "park" and "park is not calibrated" in prompt and "watch it all the way" in prompt
+    assert names.index("holding") < names.index("park") and names.count("park") == 1  # once, on the operator's yes
+    windup = b.guard.e.windup_deg
+    park = ev[names.index("park")]
+    assert park["cause"] == "parking approved by the operator" and park["calibrated"] is False
+    assert park["lag_limit_deg"] == pytest.approx(0.9 * windup)
+    contact = next(e for e in ev if e["event"] == "contact")
+    assert contact["kind"] == "lag" and 0.9 * windup < contact["change"][b.prof.joints[1]] <= windup + 1e-6
+    lead = [abs(s["cmd"][1] - s["pos"][1]) for s in _steps(tmp_path / "ep") if s.get("label") == "park"]
+    assert lead[-1] > 0.9 * windup and all(x <= 0.9 * windup for x in lead[:-1]) and len(lead) <= 30
+    after = ep.result["session"]["stop_after_end"]
+    assert after["kind"] == "contact" and after["reason"].startswith("approved parking stopped")
+    assert "contact while parking" in after["reason"]
+    assert [e for e in ev if e["event"] == "holding"][-1]["reason"].endswith("it holds where it stopped")
+    assert not any(e["event"] == "torque_released" for e in ev)
+
+
+@pytest.mark.parametrize("answer", ["yes", "no", "unattended"])
+def test_the_so101_parks_only_on_the_operators_yes(tmp_path, monkeypatch, answer):
+    """P1 and P3 on the single SO-101, whose parks have no calibrated watch either (only the stall check near the
+    table): at a normal end it holds where it is. Approved by the operator, it parks at its rest pose (now inside its
+    workspace) and is released there; declined, or with no operator attending, nothing moves and nothing is recorded
+    as a stop."""
+    from robouse.real.robots import SO101
+
+    if answer != "unattended":
+        monkeypatch.setenv("ROBOUSE_OPERATOR_SCRIPT", f"park={answer}")
+    ep = _episode("real-so101-reach", tmp_path, attended=answer != "unattended")
+    b, robot = ep.backend, ep.backend.driver.robot
+    q = list(b.q)
+    q[1] -= 15.0  # lift (the mock starts with the fingertips 6 mm above the table)
+    assert ep.handle({"op": "act", "action": q, "repeat": 20})["ok"]
+    ep.handle({"op": "done", "text": ""})
+    ep.close()
+    ev = _events(tmp_path / "ep")
+    hold = next(e for e in ev if e["event"] == "holding")
+    assert hold["cause"] == "end of episode" and "no calibrated watch" in hold["reason"]
+    assert ep.result["session"]["stop_after_end"] is None
+    assert [e["gate"] for e in ev if e.get("gate") == "park"] == ([] if answer == "unattended" else ["park"])
+    if answer == "yes":
+        assert ep.backend.secured == "parked at the rest pose, torque released"
+        last = [s for s in _steps(tmp_path / "ep") if s.get("label") == "park"][-1]
+        assert np.allclose(last["pos"][:5], SO101.park[:5], atol=2.0)
+    else:
+        assert not any(e["event"] in ("park", "torque_released") for e in ev)
+        retarget = next(e for e in ev if e["event"] == "retarget" and e["cause"] == "end of episode")
+        assert np.allclose(robot.sent[-1], retarget["pose"], atol=6e-3)  # held where the end found it
+        assert ep.backend.secured.startswith("holding at the present position")
+
+
+@pytest.mark.parametrize("why", ["object_in_gripper", "telemetry_lost"])
+def test_a_normal_end_that_cannot_park_holds_the_batch(tmp_path, why):
+    """P4: the episode ends normally, but the arm cannot be parked: its gripper still holds something, or its link
+    went quiet after the last check. The arm holds, and that is a stop after the end, with the reason: result.json is
+    rewritten and signed again when the server closes, and run-many holds the batch for it."""
+    from robouse.core.protocol import verify_result
+    from robouse.real import batch
+
+    key = "test-key-" + "0" * 24
+    real = {"envelope": {"telemetry_timeout_s": 0.3}} if why == "telemetry_lost" else {}
+    ep = _episode("real-metal-reach", tmp_path, secrets={"result_key": key}, **real)
+    b, robot = ep.backend, ep.backend.driver.robot
+    pose = list(b.q)
+    if why == "object_in_gripper":
+        send = robot.send_action
+
+        def blocked(action):  # an object between the jaws: they stop at 20 however far the command closes them
+            out = send(action)
+            robot.q[6] = max(robot.q[6], 20.0)
+            return out
+
+        robot.send_action = blocked
+        assert ep.handle({"op": "act", "action": pose[:6] + [40.0], "repeat": 6})["ok"]  # open
+        assert ep.handle({"op": "act", "action": pose[:6] + [4.0], "repeat": 10})["ok"]  # close on the object
+    else:
+        assert ep.handle({"op": "act", "action": pose, "repeat": 2})["ok"]
+    ep.handle({"op": "done", "text": ""})
+    assert ep.result["session"]["stop_after_end"] is None and verify_result(ep.result, key)
+    if why == "telemetry_lost":
+        robot.fault = {"kind": "stale", "at_step": 0}  # from now on the bus answers nothing, and the cache stays
+        time.sleep(0.4)
+    ep.close()
+    res = json.loads((tmp_path / "ep" / "result.json").read_text())
+    after = res["session"]["stop_after_end"]
+    assert res["outcome"] == "done" and after["kind"] == why
+    assert after["reason"].startswith("the arm could not be parked after the end: ")
+    assert verify_result(res, key) and not verify_result(res, "x" * 32)
+    ev = _events(tmp_path / "ep")
+    assert not any(e["event"] in ("park", "torque_released") for e in ev)
+    assert next(e for e in ev if e.get("gate") == "hold_ack")["answer"] == "yes"  # inspected, not offered a park
+    trial = tmp_path / "trial"
+    trial.mkdir()
+    (trial / "result.json").write_text(json.dumps({"task_name": "real-metal-reach", "episode": res}))
+    stop = batch.stop_of(trial)
+    assert stop is not None and stop["kind"] == why and stop["reason"] == after["reason"]

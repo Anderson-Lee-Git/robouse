@@ -14,7 +14,8 @@ setting skips it), `arm` (before torque is enabled) and `reset` (the scene is se
 refused or times out stops the episode (`safety_stop`) before anything moves, and the arm then holds where it is. After
 a safety stop the arm holds and nothing moves on its own: when the episode server closes, `park` asks the operator to
 inspect the robot and whether to park the arm at its rest pose (only a yes moves it), or, when it cannot be parked,
-`hold_ack` asks them to acknowledge the held arm. Between trials of a batch, `inspect` asks the operator to look at the
+`hold_ack` asks them to acknowledge the held arm. `park` is also asked at a normal end on a robot without a calibrated
+park watch, which does not park on its own; the question then says the park is not calibrated. Between trials of a batch, `inspect` asks the operator to look at the
 robot after a safety stop before the next trial (runner/jobs.py). Verdicts: yes / no / partial / skip, plus a note;
 skip and timeouts score 0 and are recorded as unjudged. Every question times out after the task's
 `operator_timeout_s` (600 s by default) as no answer; while one is open, the episode server keeps watching the arm

@@ -66,9 +66,10 @@ class ContactSettings:
     stall_mm: float = 4.0  # watched descent: the tool point this far above where the commanded descent puts it
     max_contacts: int = 2  # contacts in watched moves before the episode stops (a contact elsewhere stops it at once)
     torque_key: str = "joint_torque_nm"  # telemetry field with one torque per joint
-    # parks (contact.ParkWatch): an arm joint lagging its command by more than park_lag_deg stops the park (0: no lag
-    # watch: the profile has no calibration); parks move at most park_speed_deg_s (0: the slow joint speed), the speed
-    # the lag was calibrated at; the torque rules run at park_torque_factor times the thresholds
+    # parks (contact.ParkWatch): an arm joint lagging its command by more than park_lag_deg stops the park (0: not
+    # calibrated: the robot does not park on its own, and a park the operator approves stops at a lag of 0.9 of the
+    # wind-up limit); parks move at most park_speed_deg_s (0: the slow joint speed), the speed the lag was calibrated
+    # at; the torque rules run at park_torque_factor times the thresholds
     park_lag_deg: float = 0.0
     park_speed_deg_s: float = 0.0
     park_torque_factor: float = 4.0

@@ -50,6 +50,7 @@ class Contact:
     watched: bool  # in a watched move (near the table)
     change: dict[str, float]  # torque change per joint, {"tool_shortfall_mm": mm} for a stall, {joint: deg} for a lag
     step: int  # the watch's control step count when it was seen
+    unit: str = "deg"  # of a lag
 
     def describe(self) -> str:
         if self.kind == "stall":
@@ -59,7 +60,7 @@ class Contact:
             )
         if self.kind == "lag":
             ((j, v),) = self.change.items()
-            return f"{j} lags its command by {v:.2f} deg (something holds the arm back)"
+            return f"{j} lags its command by {v:.2f} {self.unit} (something holds the arm back)"
         what = {
             "moving": "a torque jump during the move",
             "settled": "a torque shift after the move",
@@ -252,20 +253,36 @@ class ContactWatch:
 
 
 class ParkWatch:
-    """The watch on a park, the unattended move to the rest pose, where the contact watch's torque rules alone would
-    stop most parks (`unwatched_factor` exists because gravity loads change far more on moves away from the table than a
-    touch does). Three detectors, any of which stops the park:
+    """The watch on a park, the move to the rest pose, where the contact watch's torque rules alone would stop most
+    parks (`unwatched_factor` exists because gravity loads change far more on moves away from the table than a touch
+    does). Three detectors, any of which stops the park:
 
-      lag     an arm joint's measured position lags its command by more than `park_lag_deg`. A blocked joint's lag
-              climbs to the wind-up limit; the threshold is calibrated per profile from recorded motion at the park speed
-              (robots.py), which is why parks are held to `park_speed_deg_s`
+      lag     an arm joint's measured position lags its command by more than the lag limit. A blocked joint's lag climbs
+              to the wind-up limit. A calibrated limit (`park_lag_deg`) comes from the robot's recorded motion at the
+              park speed (robots.py), which is why parks are held to `park_speed_deg_s`; without one, the limit is
+              `COARSE_LAG` of the wind-up limit, which a fully blocked joint reaches only once its command leads it by
+              nearly the whole wind-up limit, so it pushes for several steps first
       stall   near the table, the tool point stops short of a commanded descent (the contact watch's stall check)
       torque  the contact watch's torque rules at `park_torque_factor` times the contact thresholds: the backstop
+
+    Only a robot with a calibrated lag limit (`calibrated`) parks on its own; any other parks only on the operator's
+    yes, with the coarse limit (backends/real/backend.py).
     """
 
-    def __init__(self, prof: Profile, settings: ContactSettings, tool: Callable | None = None, table_z: float = 0.0):
-        self.s, self.arm, self.names = settings, list(prof.arm_idx), list(prof.joints)
+    COARSE_LAG = 0.9  # without a calibration, the lag limit is this part of the wind-up limit
+
+    def __init__(
+        self,
+        prof: Profile,
+        settings: ContactSettings,
+        tool: Callable | None = None,
+        table_z: float = 0.0,
+        windup: float = 0.0,
+    ):
+        self.s, self.arm, self.names, self.units = settings, list(prof.arm_idx), list(prof.joints), list(prof.units)
         self.tool, self.table_z = tool, table_z
+        self.calibrated = settings.park_lag_deg > 0
+        self.lag_limit = settings.park_lag_deg if self.calibrated else self.COARSE_LAG * windup  # 0: no lag watch
         self.watch = ContactWatch(prof, settings, tool=tool)
 
     def reset(self) -> None:
@@ -273,12 +290,13 @@ class ParkWatch:
 
     def update(self, cmd, q, extra: dict) -> Contact | None:
         cmd, q = np.asarray(cmd, dtype=float), np.asarray(q, dtype=float)
-        if self.s.park_lag_deg > 0:
+        if self.lag_limit > 0:
             lag = np.abs(cmd[self.arm] - q[self.arm])
             j = int(np.argmax(lag))
-            if lag[j] > self.s.park_lag_deg:
+            if lag[j] > self.lag_limit:
                 self.watch.n += 1
-                return Contact("lag", False, {self.names[self.arm[j]]: round(float(lag[j]), 2)}, self.watch.n)
+                i = self.arm[j]
+                return Contact("lag", False, {self.names[i]: round(float(lag[j]), 2)}, self.watch.n, self.units[i])
         near = False
         if self.tool is not None:
             near = float(np.asarray(self.tool(cmd), dtype=float)[2]) - self.table_z < self.s.watch_height

@@ -72,12 +72,18 @@ def safety(p, releases: bool = True) -> str:
         contact = "Nothing detects this arm touching something: it has no contact thresholds and no kinematic model. "
     held = " or is holding something" if p.gidx else ""  # an arm without a gripper holds nothing
     keep = " and the gripper keeps its command, so a grasped object is not let go" if p.gidx else ""
-    rest = (
-        "the arm moves slowly to its rest pose and is released there, or keeps holding if it cannot get there"
-        if releases
-        else "the arm moves slowly to its rest pose and holds there (the ROS bridge cannot release torque), or keeps "
-        "holding where it is if it cannot get there"
-    )
+    if p.contact.park_lag_deg <= 0:  # parks without a calibrated watch: only on the operator's yes
+        rest = "the arm holds where it is: its parks are not calibrated, so it parks only when the operator approves"
+    elif releases:
+        rest = (
+            "the arm moves slowly to its rest pose and is released there, or keeps holding if it cannot get there"
+            + held
+        )
+    else:
+        rest = (
+            "the arm moves slowly to its rest pose and holds there (the ROS bridge cannot release torque), or keeps "
+            "holding where it is if it cannot get there" + held
+        )
     return (
         "**Safety layer.** Every command passes the episode server's safety guard before it reaches the motors: joint "
         f"targets are clamped to the joint limits; {workspace}; a joint command never leads the measured position by "
@@ -85,7 +91,7 @@ def safety(p, releases: bool = True) -> str:
         "control loop, joint readings that stop arriving or a hardware fault stop the episode at once (outcome "
         "`safety_stop`, score 0); the e-stop, the joint readings and the temperatures are also checked between your "
         f"requests. After a stop, every arm joint holds at its measured position{keep}, and nothing moves until the "
-        f"operator has inspected the robot. When the episode ends otherwise, {rest}{held}. `robo info` lists the "
+        f"operator has inspected the robot. When the episode ends otherwise, {rest}. `robo info` lists the "
         "limits under `embodiment.safety`."
     )
 

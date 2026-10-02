@@ -91,9 +91,14 @@ class RealArmBackend(EmbodiedBackend):
         chain = self.guard.env.chain
         settings = ContactSettings(**{**self.prof.contact.__dict__, **(self.cfg.get("contact") or {})})
         self.watch = ContactWatch(self.prof, settings, tool=chain.tool if chain is not None else None)
-        # parks: tracking lag, the stall check near the table, torque at the park factor (contact.ParkWatch)
+        # parks: tracking lag, the stall check near the table, torque at the park factor (contact.ParkWatch); without a
+        # calibrated lag limit, a coarse one just under the wind-up limit, and no park without the operator's yes
         self.park_watch = ParkWatch(
-            self.prof, settings, tool=chain.tool if chain is not None else None, table_z=self.guard.e.table_z
+            self.prof,
+            settings,
+            tool=chain.tool if chain is not None else None,
+            table_z=self.guard.e.table_z,
+            windup=self.guard.e.windup_deg,
         )
         self.n_contacts = 0
         self.move_goal: np.ndarray | None = None  # the running skill's final joint target
@@ -109,7 +114,7 @@ class RealArmBackend(EmbodiedBackend):
         self._park_delta: np.ndarray | None = None
         self._park_moved = False  # the last parking attempt moved the arm
         self._park_stop_kind = "park"  # what stopped it
-        self.stop_after_end: dict | None = None  # a park after a normal end that was stopped (holds a run-many batch)
+        self.stop_after_end: dict | None = None  # a stop after a normal end (`_stop_after_end`: holds a run-many batch)
         self._hold_alarms: set[str] = set()  # warnings given while the arm holds after a stop (`_watch_hold`)
         self.ending = False  # the settle steps after the episode ended (`begin_settle`): any contact is a stop
         self._last_check = 0.0  # time.monotonic() of the last control step or idle check (`idle_check`)
@@ -381,47 +386,85 @@ class RealArmBackend(EmbodiedBackend):
 
     def _leave_arm(self) -> None:
         """How the arm is left when the episode server closes:
-        - after a normal end, it parks slowly at its rest pose, watched by the park watch (contact.ParkWatch), and torque
-          is released there (`_end_park`); a park that is stopped holds where it stopped, is recorded as a stop after the
-          end (which holds a run-many batch) and is never retried on its own;
-        - after a safety stop, or such a park stop, the arm holds, and an attended operator is asked to inspect it and
-          may approve parking (`_ask_to_park`); the thermal guard and the telemetry checks run until they answer;
+        - after a normal end (`_end_of_episode`), the arm joints' command first goes to where they are. An arm whose
+          gripper still holds something, or that gives no fresh reading, holds there, and that is recorded as a stop
+          after the end (which holds a run-many batch). Otherwise a robot whose parks have a calibrated watch
+          (contact.ParkWatch.calibrated: a lag limit measured on the robot, so far the Metal) parks slowly at its rest
+          pose and is released there (`_end_park`); a park that is stopped holds where it stopped, is recorded as a stop
+          after the end and is never retried on its own. Any other robot holds, and an attended operator is asked
+          whether to park it, told that the park is not calibrated and to watch it (`_ask_to_park`);
+        - after a safety stop, or a stop after the end, the arm holds, and an attended operator is asked to inspect it
+          and may approve parking (`_ask_to_park`); the thermal guard and the telemetry checks run until they answer;
         - after a refused gate or an interruption, the arm holds and nothing is asked."""
         if self.close_cause == "interruption":
             if not self.halted:
                 self._hold_here("interruption")
             return
-        if not self.halted:
-            self._end_park()
+        ended = not self.halted
+        if ended:
+            self._end_of_episode()
         stopped = (self.halted and self.stop_kind not in self.REFUSALS) or self.stop_after_end
-        if stopped and self.attended and self.connected:
+        uncalibrated = ended and bool(self.prof.park) and not self.park_watch.calibrated  # parks on a yes only
+        if (stopped or uncalibrated) and self.attended and self.connected:
             self._ask_to_park()
 
-    def _end_park(self) -> None:
+    def _end_of_episode(self) -> None:
+        """A normal end: hold where the arm is, and check it can be left for the next trial; then park on its own only
+        with a calibrated park watch (`_leave_arm`)."""
         cause = "end of episode"
-        why = self._retarget(cause) or self._grasp()
-        if why is None:
-            why = self._park(cause)
-            if why is None:
-                self._release(cause)
-                return
-            if self._park_moved:  # stopped part-way: a stop after the end
-                stop = {"kind": self._park_stop_kind, "reason": f"parking after the end stopped: {why}"}
-                self.stop_after_end = stop
-                self._event("stop", kind="safety_stop", cause=stop["kind"], reason=stop["reason"])
-                why = f"{why}; {self._retarget(cause) or 'it holds where it stopped'}"
+        if (why := self._retarget(cause)) is not None:  # no fresh reading, or the hold could not be sent
+            self._stop_after_end(self._link_kind(why), f"the arm could not be parked after the end: {why}")
+        elif (why := self._grasp()) is not None:
+            self._stop_after_end("object_in_gripper", f"the arm could not be parked after the end: {why}")
+        elif not self.prof.park:
+            why = "the robot profile has no rest pose"
+        elif not self.park_watch.calibrated:
+            why = "its parks have no calibrated watch, so it does not park on its own" + (
+                "" if self.attended else " (no operator attends to approve a park)"
+            )
+        else:
+            self._end_park(cause)
+            return
         self._hold(cause, why)
 
+    def _end_park(self, cause: str) -> None:
+        """Park after a normal end (a calibrated park watch), and release torque at rest. A park stopped part-way holds
+        where it stopped and is a stop after the end."""
+        why = self._park(cause)
+        if why is None:
+            self._release(cause)
+            return
+        if self._park_moved:
+            self._stop_after_end(self._park_stop_kind, f"parking after the end stopped: {why}")
+            why = f"{why}; {self._retarget(cause) or 'it holds where it stopped'}"
+        self._hold(cause, why)
+
+    def _stop_after_end(self, kind: str, reason: str) -> None:
+        """A stop after a normal end: logged, and the first one is recorded in the result (`session.stop_after_end`,
+        rewritten and signed again when the server closes), which holds a run-many batch (batch.stop_of)."""
+        self._event("stop", kind="safety_stop", cause=kind, reason=reason)
+        if self.stop_after_end is None:
+            self.stop_after_end = {"kind": kind, "reason": reason}
+
+    @staticmethod
+    def _link_kind(why: str) -> str:
+        """The stop kind for a hold that `_retarget` could not make: a stale reading, or a send that failed."""
+        return "telemetry_lost" if why.startswith("no fresh") else "hardware_fault"
+
     def _ask_to_park(self) -> None:
-        """After a stop, with an attended operator: the arm holds while they inspect it; parking happens only on their
-        yes, once (a park they approve that is stopped holds where it stopped). Until they answer, `_tick` keeps the
-        thermal guard and the telemetry checks running (`_watch_hold`)."""
-        stop = self.stop_after_end or {"kind": self.stop_kind, "reason": self.halted}
-        what = (
-            f"{self.prof.display}: safety stop ({stop['kind']}: {stop['reason']}). The arm is holding at its present "
-            "position with torque on."
-        )
-        cause = "after the stop"
+        """With an attended operator, after a stop, after a stop after the end, or at a normal end on a robot without a
+        calibrated park watch: the arm holds while they inspect it; parking happens only on their yes, once (a park
+        they approve that is stopped holds where it stopped). Without a calibrated park watch the question says the
+        park is not calibrated and asks them to watch it. Until they answer, `_tick` keeps the checks running (after a
+        stop: the thermal guard and the telemetry checks, `_watch_hold`)."""
+        if self.halted or self.stop_after_end:
+            stop = self.stop_after_end or {"kind": self.stop_kind, "reason": self.halted}
+            when = "safety stop" if self.halted else "stop after the end of the episode"
+            what = f"{self.prof.display}: {when} ({stop['kind']}: {stop['reason']})."
+            cause = "after the stop"
+        else:
+            what, cause = f"{self.prof.display}: the episode has ended.", "end of episode"
+        what += " The arm is holding at its present position with torque on."
         if blocker := self._park_blocker():
             ok, _, _ = self.operator.confirm(
                 "hold_ack",
@@ -433,24 +476,58 @@ class RealArmBackend(EmbodiedBackend):
             return
         latch = " Clear the e-stop latch first (`robouse estop --clear`)." if estop_engaged() else ""
         ok, ans, _ = self.operator.confirm(
-            "park",
-            f"{what} Inspect the robot and its workspace.{latch} Park the arm at its rest pose now? yes: it moves "
-            "slowly there, stopping if anything holds it back, and is released; no: it keeps holding.",
-            tick=self._tick,
+            "park", f"{what} Inspect the robot and its workspace.{latch} {self._park_question()}", tick=self._tick
         )
         if not ok:
             self._hold(cause, "the operator did not approve parking" if ans == "no" else "no answer: it was not parked")
             return
         cause = "parking approved by the operator"
-        why = self._park(cause)
+        why = self._park_blocker()  # anything that changed while the question was open
         if why is None:
-            self._release(cause)
-            return
-        if self._park_moved:
-            reason = f"approved parking stopped: {why}"
-            self._event("stop", kind="safety_stop", cause=self._park_stop_kind, reason=reason)
-            why = f"{why}; {self._retarget(cause) or 'it holds where it stopped'}"
+            why = self._park(cause)
+            if why is None:
+                self._release(cause)
+                return
+            if self._park_moved:
+                reason = f"approved parking stopped: {why}"
+                if self.halted or self.stop_after_end:
+                    self._event("stop", kind="safety_stop", cause=self._park_stop_kind, reason=reason)
+                else:  # after a normal end, this is the stop after the end
+                    self._stop_after_end(self._park_stop_kind, reason)
+                why = f"{why}; {self._retarget(cause) or 'it holds where it stopped'}"
         self._hold(cause, why)
+
+    def _park_question(self) -> str:
+        """The park question: how the park is watched, and how the arm is left at the rest pose."""
+        rest = (
+            "is released"
+            if getattr(self.driver, "releases_torque", True)
+            else "holds there (the driver cannot release torque)"
+        )
+        w = self.park_watch
+        if w.calibrated:
+            return (
+                "Park the arm at its rest pose now? yes: it moves slowly there, stopping if anything holds it back, and "
+                f"{rest}; no: it keeps holding."
+            )
+        unit = self.prof.units[self.prof.arm_idx[0]]
+        checks = [
+            f"a joint lagging its command by more than {w.lag_limit:g} {unit} (just under its "
+            f"{self.guard.e.windup_deg:g} {unit} wind-up limit)"
+        ]
+        if w.tool is not None:
+            checks.append("near the table, the fingertips stopping short of a descent")
+        if w.watch.torque_watch:
+            checks.append(f"joint torque changing by more than {w.s.park_torque_factor:g}x the contact thresholds")
+        one = len(checks) == 1
+        return (
+            "This robot's park is not calibrated. "
+            + ("Only a coarse check watches it: " if one else "Only coarse checks watch it: ")
+            + "; ".join(checks)
+            + f". It can push against something for a while before {'that stops' if one else 'they stop'} it. Park the "
+            "arm at its rest pose now? If yes, watch it all the way, with a hand on the physical e-stop. yes: it moves "
+            f"slowly there and {rest}; no: it keeps holding."
+        )
 
     def _park_blocker(self) -> str | None:
         """Why the arm cannot be parked now (the e-stop latch aside, which the operator may clear), or None."""
@@ -612,8 +689,8 @@ class RealArmBackend(EmbodiedBackend):
     def _park(self, cause: str) -> str | None:
         """Move slowly (the slow joint speed, at most the park speed the lag watch was calibrated at) to the rest pose
         with every check on and the park watch (`_park_step`); None once the arm is at rest there, else why not
-        (`_park_moved`: it had started moving; `_park_stop_kind`: what stopped it). Called at a normal end, or once per
-        operator approval: never retried."""
+        (`_park_moved`: it had started moving; `_park_stop_kind`: what stopped it). Called at a normal end with a
+        calibrated park watch, or once per operator approval: never retried."""
         p = self.prof
         self._park_moved, self._park_stop_kind = False, "park"
         if not p.park:
@@ -631,8 +708,15 @@ class RealArmBackend(EmbodiedBackend):
         if s.park_speed_deg_s > 0:
             step[p.arm_idx] = np.minimum(step[p.arm_idx], s.park_speed_deg_s / self.hz)
         speed = round(float(np.max(step[p.arm_idx])) * self.hz, 2)
-        lag = s.park_lag_deg or None
-        self._event("park", cause=cause, goal=goal.round(2).tolist(), speed_deg_s=speed, lag_limit_deg=lag)
+        lag = round(self.park_watch.lag_limit, 3) or None
+        self._event(
+            "park",
+            cause=cause,
+            goal=goal.round(2).tolist(),
+            speed_deg_s=speed,
+            lag_limit_deg=lag,
+            calibrated=self.park_watch.calibrated,
+        )
         self._park_moved = True
         start = np.asarray(self.guard.last_cmd, dtype=float).copy()
         n = int(max(1, np.ceil(np.max(np.abs(goal - start) / step))))
@@ -804,9 +888,8 @@ class RealArmBackend(EmbodiedBackend):
             action="move stopped; the arm holds at the measured pose",
             hold=hold.round(2).tolist(),
         )
-        if why := self._retarget("contact"):
-            kind = "telemetry_lost" if why.startswith("no fresh") else "hardware_fault"  # a stale or a dead link
-            raise SafetyStop(f"the arm could not be held after a contact: {why}", kind)
+        if why := self._retarget("contact"):  # a stale or a dead link
+            raise SafetyStop(f"the arm could not be held after a contact: {why}", self._link_kind(why))
         self._motion_event = {
             "contact": {
                 "what": c.describe(),

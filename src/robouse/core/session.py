@@ -555,8 +555,8 @@ class Episode:
             self.finish("agent_exited", "")
         self._trace.close()
         self.backend.close()
-        # real robots: close() decides how the arm is left (parked at the end, or holding after a stop); the result
-        # records it, and a stop met then (a park that was stopped) holds a run-many batch (real/batch.py)
+        # real robots: close() decides how the arm is left (parked, or holding); the result records it, and a stop after
+        # a normal end (a park that was stopped, an arm that could not be parked) holds a run-many batch (real/batch.py)
         if self.result and (summary := _hook(self.backend, "session_summary")):
             self.result["session"] = summary()
             if self._result_key:
