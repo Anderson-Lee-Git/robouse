@@ -55,7 +55,9 @@ def code_html(text: str) -> str:
 
     Code up to LONG_WORD characters is plain <code>, which docs.css keeps on one line. Longer code is .brk: it wraps
     between its words, each word a .w span that stays whole, and a word longer than LONG_WORD may also break after each
-    slash; a long word without a slash may break anywhere rather than run past a phone's column.
+    slash; a long word without a slash, or a part between slashes longer than LONG_WORD, breaks after its "--"
+    separators (an id such as put-in-container--franka-panda--tabletop--s0), or else where the line needs it, rather
+    than run past a phone's column.
     """
     def esc(s: str) -> str:
         return html.escape(s, quote=False)
@@ -69,14 +71,22 @@ def code_html(text: str) -> str:
         else:
             words.append(w)
 
+    def long(w: str) -> str:
+        """A part longer than LONG_WORD: whole between its "--" separators if it has them, else free to break."""
+        chunks = [c for c in re.split(r"(?<=--)", w) if c]
+        if len(chunks) > 1 and all(len(c) <= LONG_WORD for c in chunks):
+            return "<wbr>".join(f'<span class="w">{esc(c)}</span>' for c in chunks)
+        return esc(w)
+
     def word(w: str) -> str:
         if not w:
             return ""
         if len(w) <= LONG_WORD:
             return f'<span class="w">{esc(w)}</span>'
         if "/" in w:
-            return "<wbr>".join(f'<span class="w">{esc(p)}</span>' for p in re.split(r"(?<=/)", w) if p)
-        return esc(w)
+            return "<wbr>".join(f'<span class="w">{esc(p)}</span>' if len(p) <= LONG_WORD else long(p)
+                                for p in re.split(r"(?<=/)", w) if p)
+        return long(w)
 
     return '<code class="brk">' + " ".join(word(w) for w in words) + "</code>"
 
@@ -379,7 +389,8 @@ class Converter:
                 if level == 1:
                     out.append(f"<h1 id=\"{hid}\">{inner}</h1>")
                 else:  # the section link sits beside the heading, not in it, so the heading's name is just its text
-                    out.append(f'<div class="hd hd{level}"><h{level} id="{hid}">{inner}</h{level}>'
+                    cmd = ' class="cmd"' if re.fullmatch(r"`[^`]+`", text) else ""  # a heading that is one command
+                    out.append(f'<div class="hd hd{level}"><h{level} id="{hid}"{cmd}>{inner}</h{level}>'
                                f'<a class="hash" href="#{hid}" aria-label="Link to {html.escape(plain(text))}"></a></div>')
                 i += 1
                 continue
@@ -640,7 +651,7 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
 
         conv = Converter(link, {page_url(base, q.slug): q.label for q in pages}, svg, size)
         p.body = conv.blocks(md.splitlines())
-        p.toc = [(hid, plain(text)) for lvl, hid, text in conv.headings if lvl == 2]
+        p.toc = [(lvl, hid, plain(text)) for lvl, hid, text in conv.headings if lvl in (2, 3)]
         p.ids = {hid for _, hid, _ in conv.headings}
         h1 = next((t for lvl, _, t in conv.headings if lvl == 1), p.label)
         p.title = plain(h1)
@@ -698,6 +709,23 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
     return written
 
 
+def toc_items(toc: list[tuple[int, str, str]]) -> str:
+    """A page's sections as <li> items: each h2, with its h3s in a list under it. An h3 named after its h2 ("robouse
+    tasks list" under "robouse tasks") is listed by the rest of its name ("list"); its link keeps the full name."""
+    e = html.escape
+    groups: list[tuple[str, str, list[str]]] = []
+    for lvl, hid, text in toc:
+        if lvl == 3 and groups:
+            parent = groups[-1][1]
+            short = text[len(parent) + 1:] if text.startswith(parent + " ") else text
+            name = f' aria-label="{e(text)}"' if short != text else ""
+            groups[-1][2].append(f'<li><a href="#{e(hid)}"{name}>{e(short)}</a></li>')
+        else:
+            groups.append((hid, text, []))
+    return "".join(f'<li><a href="#{e(hid)}">{e(text)}</a>' + (f'<ul>{"".join(subs)}</ul>' if subs else "") + "</li>"
+                   for hid, text, subs in groups)
+
+
 def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: Page | None, chrome) -> str:
     e = html.escape
     nav, group = [], None
@@ -711,12 +739,12 @@ def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: P
         # the current page's sections, under it: shown where there is no room for the on-this-page column (docs.css)
         secs = ""
         if q is p and len(p.toc) >= 2:
-            secs = '<ul class="secs">' + "".join(f'<li><a href="#{e(hid)}">{e(text)}</a></li>' for hid, text in p.toc) + "</ul>"
+            secs = f'<ul class="secs">{toc_items(p.toc)}</ul>'
         nav.append(f'<li><a href="{page_url(base, q.slug)}"{cur}>{e(q.label)}</a>{secs}</li>')
     nav.append("</ul>")
     toc = ""
     if len(p.toc) >= 2:
-        items = "".join(f'<li><a href="#{e(hid)}">{e(text)}</a></li>' for hid, text in p.toc)
+        items = toc_items(p.toc)
         # plain containers: the navs inside are the landmarks (two unnamed asides were two identical complementary ones)
         toc = f'<div class="toc"><nav aria-label="On this page"><p class="grp">On this page</p><ul>{items}</ul></nav></div>'
     pager = []
@@ -829,6 +857,9 @@ html { scroll-padding-top: var(--sp-20); }
 .toc li a:hover { color: var(--ink); border-left-color: var(--line-strong); }
 .toc li a.on { color: var(--ink); border-left-color: var(--ink); }
 .toc li a:focus-visible { outline-offset: -2px; }
+/* a section's subsections under it (the CLIs page's subcommands), indented on the same rule */
+.toc li li a { padding-left: var(--sp-24); }
+.side .secs li li a { padding-left: calc(var(--sp-20) + var(--sp-12)); }
 .navbtn { display: none; }
 .doc { min-width: 0; max-width: var(--measure); padding-bottom: var(--sp-24); }
 
@@ -846,10 +877,13 @@ html { scroll-padding-top: var(--sp-20); }
 .prose a.hash:hover { color: var(--accent); }
 .prose a.hash.done::after { content: "Copied"; margin-left: var(--sp-6); font: 400 var(--fs-caption)/1 var(--sans); color: var(--ok); }
 @media (hover: none) { .prose a.hash { opacity: 1; } }
+/* a heading that is one command (the CLIs page): the command in the mono face at the heading's weight, not a chip */
+.prose h2.cmd > code, .prose h3.cmd > code { font: 500 .875em/1.3 var(--mono); color: var(--ink); background: none; border: 0; padding: 0; }
+.prose h3.cmd > code { font-size: 1em; }  /* 17 px, a step under the h2's 21 px and well over the help text's 13 px */
 article img { display: block; max-width: 100%; height: auto; margin: var(--sp-8) 0; border-radius: var(--r-sm); border: var(--hairline); }
 
 /* inline code breaks only between words (build_docs.py code_html): a one-word chip stays whole; a .brk chip breaks at its
-   spaces with each word whole, and a long word only after a slash */
+   spaces with each word whole, a long word after a slash, and a part between slashes too long for a phone where it must */
 .prose :not(pre) > code { white-space: nowrap; overflow-wrap: normal; }
 .prose :not(pre) > code.brk { white-space: normal; overflow-wrap: anywhere; }
 .prose code .w { white-space: nowrap; }
@@ -967,7 +1001,11 @@ article img { display: block; max-width: 100%; height: auto; margin: var(--sp-8)
   .code > .copy { position: static; align-self: flex-end; opacity: 1; min-height: var(--touch); margin: calc(-1 * var(--sp-8)) calc(-1 * var(--sp-10)) calc(-1 * var(--sp-16)); padding: 0 var(--sp-10);
     border: 0; background: none; font-size: var(--fs-caption); color: var(--muted); }
   .code.more::after { bottom: calc(var(--touch) - var(--sp-8) - var(--sp-16) + 1px); }
+  .code > .copy::before { display: none; }
 }
+/* over a long first line the copy button's left edge fades the line out, instead of cutting through a letter */
+.code > .copy::before { content: ""; position: absolute; top: -1px; bottom: -1px; right: calc(100% + 1px); width: var(--sp-24);
+  background: linear-gradient(to right, transparent, var(--panel)); pointer-events: none; }
 .copy.done { color: var(--ok); }
 @media print { .side, .toc, .navbtn, .pager, .copy { display: none !important; } .shell { display: block; } }
 """
@@ -994,7 +1032,7 @@ document.querySelectorAll(".code").forEach(function (box) {
   var copyText = console ? cmd.join("\n") : text;
   var b = document.createElement("button");
   b.type = "button"; b.className = "copy"; b.textContent = "Copy"; b.setAttribute("aria-live", "polite");
-  b.setAttribute("data-hold", "Copied");  // /ui.js keeps the button as wide as "Copied", so the label flips in place
+  b.setAttribute("data-hold", "Copied|Selected");  // /ui.js keeps the button as wide as its widest label, so it flips in place
   b.addEventListener("click", function () {
     (navigator.clipboard ? navigator.clipboard.writeText(copyText) : Promise.reject()).then(function () {
       b.textContent = "Copied"; b.classList.add("done");
@@ -1061,8 +1099,11 @@ document.querySelectorAll(".code").forEach(function (box) {
   function sync() {
     els.forEach(function (el) {
       var over = el.scrollWidth > el.clientWidth;  // any overflow, as assistive tools count it
-      if (over && !el.hasAttribute("tabindex")) { el.tabIndex = 0; el.setAttribute("role", "region"); el.setAttribute("aria-label", el._name); }
-      else if (!over && el.hasAttribute("tabindex")) { el.removeAttribute("tabindex"); el.removeAttribute("role"); el.removeAttribute("aria-label"); }
+      // /ui.js may have made it a region first, under a shared name ("Code"): the block's own name replaces that one,
+      // so no two regions on a page have the same name
+      if (over) { if (!el.hasAttribute("tabindex")) el.tabIndex = 0; el.setAttribute("role", "region"); el.setAttribute("aria-label", el._name); }
+      else if (el.hasAttribute("tabindex")) { el.removeAttribute("tabindex"); el.removeAttribute("role"); el.removeAttribute("aria-label"); }
+      else if (!el.hasAttribute("role")) el.removeAttribute("aria-label");  // ui.js took its stop away first
     });
   }
   sync();

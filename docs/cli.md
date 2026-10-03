@@ -30,7 +30,7 @@ commands:
                 and the VLA server
 ```
 
-## robouse run
+## `robouse run`
 
 ```console
 $ robouse run --help
@@ -74,7 +74,7 @@ options:
 
 Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`. A non-null `exception` means the trial did not run to a result (an infrastructure failure: a missing credential, a harness error before the episode ended, or Ctrl-C); it is not scored and the command exits 1.
 
-## robouse run-many
+## `robouse run-many`
 
 ```console
 $ robouse run-many --help
@@ -146,7 +146,7 @@ options:
 
 Prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved; exits 1 if any trial failed on infrastructure. Examples: [Run a suite or dataset](run-a-suite.md).
 
-## robouse tasks
+## `robouse tasks`
 
 ```console
 $ robouse tasks --help
@@ -168,7 +168,7 @@ options:
 
 `robouse tasks` alone lists the tasks: id, backend and simulator env id. `tasks init` composes a task from components and keeps it only if the reference solution scores 1 and the no-op control 0; with only `DIR` it scaffolds a blank task folder. `tasks check` re-runs those checks on any task folder ([Write or compose a task](write-a-task.md)).
 
-### robouse tasks list
+### `robouse tasks list`
 
 ```console
 $ robouse tasks list --help
@@ -182,7 +182,7 @@ options:
   --path      print the bundled task directory and exit
 ```
 
-### robouse tasks init
+### `robouse tasks init`
 
 ```console
 $ robouse tasks init --help
@@ -226,7 +226,7 @@ options:
                         keep the validation trials in this folder
 ```
 
-### robouse tasks check
+### `robouse tasks check`
 
 ```console
 $ robouse tasks check --help
@@ -244,7 +244,7 @@ options:
                         keep the trials in this folder
 ```
 
-## robouse components
+## `robouse components`
 
 ```console
 $ robouse components --help
@@ -264,7 +264,7 @@ options:
   -h, --help         show this help message and exit
 ```
 
-### robouse components list
+### `robouse components list`
 
 ```console
 $ robouse components list --help
@@ -281,7 +281,7 @@ options:
                         robots and scenes)
 ```
 
-### robouse components show
+### `robouse components show`
 
 ```console
 $ robouse components show --help
@@ -295,7 +295,7 @@ options:
   --compatible  also list the combinations it composes into
 ```
 
-### robouse components check
+### `robouse components check`
 
 ```console
 $ robouse components check --help
@@ -320,7 +320,7 @@ options:
   --json           print the report as JSON
 ```
 
-## robouse fetch-assets
+## `robouse fetch-assets`
 
 ```console
 $ robouse fetch-assets --help
@@ -335,7 +335,7 @@ options:
   --all          every robot the bundled suites use (about 390 MB)
 ```
 
-## robouse report
+## `robouse report`
 
 ```console
 $ robouse report --help
@@ -360,7 +360,7 @@ options:
   --svg SVG             write a cost-versus-success scatter (SVG)
 ```
 
-## robouse summarize
+## `robouse summarize`
 
 ```console
 $ robouse summarize --help
@@ -374,7 +374,7 @@ options:
   -o OUT, --out OUT  output file (default: <trial>/learnings.md; - for stdout)
 ```
 
-## robouse doctor
+## `robouse doctor`
 
 ```console
 $ robouse doctor --help
@@ -384,7 +384,7 @@ options:
   -h, --help  show this help message and exit
 ```
 
-## robo
+## `robo`
 
 ```console
 $ robo help

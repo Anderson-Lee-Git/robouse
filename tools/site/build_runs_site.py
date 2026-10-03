@@ -1335,6 +1335,21 @@ def stage_style(t: dict) -> str:
     return f' style="--pw:{min(500, round(wh[0] * 1.25))}px;--ar:{wh[0]}/{wh[1]}"'
 
 
+def trial_desc(t: dict, st: str, label: str) -> str:
+    """The page's description: who, what happened, on which task, and the fact that says how ("Kimi K3 · Claude Code solved
+    “Rule inference: falling” in 677 of 1,400 steps (43 s)."), not the title again with a status."""
+    title = f"“{t['title']}”"
+    steps = (f"{t['steps_used']:,} of {t['max_steps']:,} steps" if t.get("steps_used") is not None and t.get("max_steps")
+             else f"{t['steps_used']:,} steps" if t.get("steps_used") is not None else "")
+    took = " (" + fmt_s(t["wall"]) + ")" if t.get("wall") is not None else ""
+    if st == "ok":
+        return f"{label} solved {title}" + (f" in {steps}{took}." if steps else f"{took}.")
+    if st == "no":
+        why = budget_text(t) if t.get("budget") else outcome_text(t["outcome"], HM[t["hm"]].get("kind") or "agent") if t.get("outcome") else ""
+        return f"{label} did not solve {title}" + (f": {why.lower()}" if why else "") + (f", after {steps}{took}." if steps else ".")
+    return f"{label} on {title}: {STATUS_LONG[st].lower()}."
+
+
 def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     st = status(t)
     label = plab(t["hm"])
@@ -1360,7 +1375,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} controls muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls(noimg)}' if video
            else "")  # no recording: no player box at all (the stage gives the tabs the full width)
     tabs = [("recording", "Recording", ""), ("trajectory", "Trajectory", f" <span class=\"num\">{n_steps}</span>" if n_steps else ""), ("verdict", "Verdict", ""),
-            ("run", "Timing" if HM[t["hm"]].get("kind") == "vla" else "Timing &amp; tokens", ""), ("files", "Files", "")]  # a policy has no tokens
+            ("timing", "Timing" if HM[t["hm"]].get("kind") == "vla" else "Timing &amp; tokens", ""), ("files", "Files", "")]  # a policy has no tokens
     never_ran = st == "infra" and not video and not n_steps and not t["steps_used"]
     why = (t.get("infra_cause") or {}).get("text", "") if never_ran else ""
     # nothing was recorded: the header and one sentence why; no facts, tabs or empty boxes
@@ -1374,7 +1389,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 """
     if never_ran:
         head += other_trials(t)
-        return page(f"{t['title']} · {label} · Runs · Robo Use", head, desc=f"{t['title']}: {label}, {STATUS_LONG[st].lower()}.",
+        return page(f"{t['title']} · {label} · Runs · Robo Use", head, desc=trial_desc(t, st, label),
                     cls="trialpage compact", data=f' data-trial="{esc(t["trial"])}"', canonical=f"https://robouse.ai/runs/t/{t['trial']}/")
     body = head + f"""<nav class="tabs" role="tablist" aria-label="Trial views" data-fade>
   {"".join(f'<a href="#{k}" role="tab" data-tab="{k}" aria-selected="false" aria-controls="panel">{x}{extra}</a>' for k, x, extra in tabs)}
@@ -1385,7 +1400,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 </div>
 <noscript><style>.pctl,nav.tabs,#panel{{display:none}}</style><p class="muted">The trajectory, verdict and files need JavaScript; the recording plays above.</p></noscript>
 """
-    return page(f"{t['title']} · {label} · Runs · Robo Use", body, desc=f"{t['title']}: {label}, {long_status(t, st).lower()}.",
+    return page(f"{t['title']} · {label} · Runs · Robo Use", body, desc=trial_desc(t, st, label),
                 cls="trialpage", data=f' data-trial="{esc(t["trial"])}"', canonical=f"https://robouse.ai/runs/t/{t['trial']}/",
                 image=f"/runs/p/{t['trial']}.jpg" if (POSTERS / f"{t['trial']}.jpg").is_file() else "")
 

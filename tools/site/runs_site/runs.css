@@ -216,8 +216,8 @@ table.mdt td,table.mdt th{white-space:normal}
 nav.tabs[role=tablist]{margin:var(--sp-24) 0 var(--sp-20)}
 .stage{display:grid;grid-template-columns:minmax(0,var(--pw,500px)) minmax(0,1fr);gap:var(--sp-28);align-items:start}  /* --pw: near the recording's own width (build_runs_site.player_width) */
 .stage.t-trajectory,.stage.t-verdict{grid-template-columns:340px minmax(0,1fr)}
-.stage.t-run .player,.stage.t-files .player{display:none}
-.stage.t-run,.stage.t-files{display:block}
+.stage.t-timing .player,.stage.t-files .player{display:none}
+.stage.t-timing,.stage.t-files{display:block}
 .panel{min-width:0;min-height:560px}
 .skl{display:flex;flex-direction:column;gap:var(--sp-14);padding:var(--sp-4) 0}
 .player{position:sticky;top:var(--sp-16);min-width:0}
