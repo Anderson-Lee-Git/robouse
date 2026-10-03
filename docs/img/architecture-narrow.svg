@@ -1,37 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 270 764" class="fig">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 270 792" class="fig">
   <defs><marker id="ah-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" class="fill"/></marker></defs>
-  <rect x="1" y="1" width="242" height="202" rx="8" class="box"/>
+  <rect x="1" y="1" width="242" height="216" rx="8" class="box"/>
   <text x="16" y="30" class="t">Agent harness</text>
-  <text x="16" y="52" class="s">Claude Code, Codex, ...</text>
+  <text x="16" y="52" class="s">such as Claude Code or Codex</text>
   <text x="16" y="78" class="k">prompt: the task.md body</text>
   <text x="16" y="98" class="k">in a fresh workspace:</text>
   <text x="16" y="116" class="m">observations/</text>
   <rect x="16" y="130" width="190" height="40" rx="6" class="box2"/>
   <text x="28" y="155" class="m">$ robo act 0 1 0 -1</text>
-  <text x="16" y="183" class="k">sandboxed: Seatbelt on macOS,</text>
-  <text x="16" y="197" class="k">bubblewrap on Linux</text>
-  <line x1="111" y1="205" x2="111" y2="293" class="ln" marker-start="url(#ah-a)" marker-end="url(#ah-a)"/>
-  <text x="123" y="244" class="k">JSON request</text>
-  <text x="123" y="262" class="k">Unix socket</text>
-  <rect x="1" y="295" width="242" height="202" rx="8" class="box trusted"/>
-  <text x="16" y="324" class="t">Episode server</text>
-  <text x="16" y="346" class="m">robouse serve</text>
-  <text x="16" y="374" class="s">simulator (MuJoCo)</text>
-  <text x="16" y="396" class="s">step and time budgets</text>
-  <text x="16" y="418" class="s">video and trace</text>
-  <text x="16" y="440" class="s">judges success</text>
-  <text x="16" y="486" class="k">trusted: the agent can't reach it</text>
-  <path d="M243,60 H256 V614 H246" class="ln dash" marker-end="url(#ah-a)"/>
-  <line x1="40" y1="497" x2="40" y2="588" class="ln dash" marker-end="url(#ah-a)"/>
-  <text x="50" y="528" class="k">records the episode</text>
-  <text x="250" y="572" class="k end">the runner saves its output</text>
-  <rect x="1" y="590" width="242" height="172" rx="8" class="box"/>
-  <text x="16" y="615" class="t">Trial folder</text>
-  <text x="16" y="635" class="m o">OUT/&lt;task&gt;__&lt;harness&gt;__&lt;id&gt;/</text>
-  <text x="16" y="659" class="m">agent/trajectory.json</text>
-  <text x="16" y="677" class="m">agent/stdout.jsonl</text>
-  <text x="16" y="695" class="m">episode/result.json</text>
-  <text x="16" y="713" class="m">episode/trace.jsonl</text>
-  <text x="16" y="731" class="m">artifacts/recording.mp4</text>
-  <text x="16" y="749" class="m">verifier/reward.txt</text>
+  <text x="16" y="191" class="k">sandboxed: Seatbelt on macOS,</text>
+  <text x="16" y="205" class="k">bubblewrap on Linux</text>
+  <line x1="111" y1="219" x2="111" y2="307" class="ln" marker-start="url(#ah-a)" marker-end="url(#ah-a)"/>
+  <text x="123" y="258" class="k">JSON request</text>
+  <text x="123" y="276" class="k">Unix socket</text>
+  <rect x="1" y="309" width="242" height="216" rx="8" class="box trusted"/>
+  <text x="16" y="338" class="t">Episode server</text>
+  <text x="16" y="360" class="s">the runner starts one per trial</text>
+  <text x="16" y="388" class="s">simulator (MuJoCo)</text>
+  <text x="16" y="410" class="s">step and time budgets</text>
+  <text x="16" y="432" class="s">video and trace</text>
+  <text x="16" y="454" class="s">judges success</text>
+  <text x="16" y="513" class="k">trusted: the agent can't reach it</text>
+  <path d="M243,60 H256 V642 H246" class="ln dash" marker-end="url(#ah-a)"/>
+  <line x1="40" y1="525" x2="40" y2="616" class="ln dash" marker-end="url(#ah-a)"/>
+  <text x="50" y="556" class="k">records the episode</text>
+  <text x="250" y="600" class="k end">the runner saves its output</text>
+  <rect x="1" y="618" width="242" height="172" rx="8" class="box"/>
+  <text x="16" y="643" class="t">Trial folder</text>
+  <text x="16" y="663" class="m o">OUT/&lt;task&gt;__&lt;harness&gt;__&lt;id&gt;/</text>
+  <text x="16" y="687" class="m">agent/trajectory.json</text>
+  <text x="16" y="705" class="m">agent/stdout.jsonl</text>
+  <text x="16" y="723" class="m">episode/result.json</text>
+  <text x="16" y="741" class="m">episode/trace.jsonl</text>
+  <text x="16" y="759" class="m">artifacts/recording.mp4</text>
+  <text x="16" y="777" class="m">verifier/reward.txt</text>
 </svg>
