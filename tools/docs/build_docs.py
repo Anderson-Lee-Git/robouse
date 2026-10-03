@@ -52,8 +52,9 @@ def code_html(text: str) -> str:
 
     Code up to LONG_WORD characters is plain <code>, which docs.css keeps on one line. Longer code is .brk: it wraps
     between its words, each word a .w span that stays whole, and a word longer than LONG_WORD may also break after each
-    slash; a long word without a slash, or a part between slashes longer than LONG_WORD, may break where the line needs
-    it (after a hyphen first) rather than run past a phone's column.
+    slash; a long word without a slash, or a part between slashes longer than LONG_WORD, breaks after its "--"
+    separators (an id such as put-in-container--franka-panda--tabletop--s0), or else where the line needs it, rather
+    than run past a phone's column.
     """
     def esc(s: str) -> str:
         return html.escape(s, quote=False)
@@ -67,15 +68,22 @@ def code_html(text: str) -> str:
         else:
             words.append(w)
 
+    def long(w: str) -> str:
+        """A part longer than LONG_WORD: whole between its "--" separators if it has them, else free to break."""
+        chunks = [c for c in re.split(r"(?<=--)", w) if c]
+        if len(chunks) > 1 and all(len(c) <= LONG_WORD for c in chunks):
+            return "<wbr>".join(f'<span class="w">{esc(c)}</span>' for c in chunks)
+        return esc(w)
+
     def word(w: str) -> str:
         if not w:
             return ""
         if len(w) <= LONG_WORD:
             return f'<span class="w">{esc(w)}</span>'
         if "/" in w:
-            return "<wbr>".join(f'<span class="w">{esc(p)}</span>' if len(p) <= LONG_WORD else esc(p)
+            return "<wbr>".join(f'<span class="w">{esc(p)}</span>' if len(p) <= LONG_WORD else long(p)
                                 for p in re.split(r"(?<=/)", w) if p)
-        return esc(w)
+        return long(w)
 
     return '<code class="brk">' + " ".join(word(w) for w in words) + "</code>"
 
