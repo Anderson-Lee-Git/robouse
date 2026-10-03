@@ -877,8 +877,10 @@ html { scroll-padding-top: var(--sp-20); }
 .prose a.hash:hover { color: var(--accent); }
 .prose a.hash.done::after { content: "Copied"; margin-left: var(--sp-6); font: 400 var(--fs-caption)/1 var(--sans); color: var(--ok); }
 @media (hover: none) { .prose a.hash { opacity: 1; } }
-/* a heading that is one command (the CLIs page): the command in the mono face at the heading's weight, not a chip */
-.prose h2.cmd > code, .prose h3.cmd > code { font: 500 .875em/1.3 var(--mono); color: var(--ink); background: none; border: 0; padding: 0; }
+/* a heading that is one command (the CLIs page): the command in the mono face, not a chip. Weight 400, the mono face
+   every page preloads: the 500 face is font-display: optional and not preloaded, so on a first visit it arrives too
+   late and the heading would show at 400 anyway, then at 500 on the next visit */
+.prose h2.cmd > code, .prose h3.cmd > code { font: 400 .875em/1.3 var(--mono); color: var(--ink); background: none; border: 0; padding: 0; }
 .prose h3.cmd > code { font-size: 1em; }  /* 17 px, a step under the h2's 21 px and well over the help text's 13 px */
 article img { display: block; max-width: 100%; height: auto; margin: var(--sp-8) 0; border-radius: var(--r-sm); border: var(--hairline); }
 
