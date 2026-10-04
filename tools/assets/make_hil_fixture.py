@@ -7,9 +7,13 @@
   python tools/assets/make_hil_fixture.py so101 ~/benchflow/robot/sessions/so101-sort --side left --name so101-sort-left
   # synthetic fixture (no recording: start pose only, default tracking), e.g. for the Piper driver
   python tools/assets/make_hil_fixture.py piper --synthetic --name piper-synthetic
+  # contact traces for the tests (no camera frames, step labels kept), from the recorder's logs alone
+  python tools/assets/make_hil_fixture.py metal ~/benchflow/robot/recordings/2026-09-05-metal-arm-hanoi/sessions/20260905-131602-hanoi-pegs \
+      --name metal-hanoi-131602 --keyframes 0 --labels --out tests/fixtures/hil/metal-hanoi-131602 --note "..."
 
 Keyframes are chosen by farthest-point sampling in joint space among the logged steps; each keeps the video frame of
-every camera nearest in time, downscaled to --width and saved as JPEG. See src/robouse/real/replay.py.
+every camera nearest in time, downscaled to --width and saved as JPEG. With --keyframes 0 no video is read. See
+src/robouse/real/replay.py.
 """
 from __future__ import annotations
 
@@ -33,13 +37,19 @@ def _save(img: np.ndarray, path: Path, width: int) -> None:
     im.resize((width, h), Image.BILINEAR).save(path, quality=80)
 
 
-def from_recorder_session(sess: Path, out: Path, n_key: int, width: int) -> dict:
-    import imageio.v2 as imageio
-
+def from_recorder_session(sess: Path, out: Path, n_key: int, width: int, labels: bool = False) -> dict:
     steps = [json.loads(l) for l in (sess / "log.jsonl").read_text().splitlines() if l.strip()]
     cmd = np.asarray([s["cmd"] for s in steps], dtype=float)
     pos = np.asarray([s["pos"] for s in steps], dtype=float)
     gain, bias = fit_tracking(cmd, pos)
+    keys = ("t", "label", "cmd", "pos", "link6", "joint_torque_nm", "temp_mos_c", "temp_rotor_c")
+    compact = [{k: s[k] for k in keys if k in s and (labels or k != "label")} for s in steps]
+    body = {"steps": compact, "model": {"gain": gain.round(4).tolist(), "bias": bias.round(4).tolist()},
+            "start": pos[0].round(3).tolist(), "keyframes": [], "cameras": [], "bus": "damiao"}
+    if n_key <= 0:  # telemetry and joints only: no video needed
+        return body
+    import imageio.v2 as imageio
+
     vidx = [json.loads(l) for l in (sess / "video_index.jsonl").read_text().splitlines() if l.strip()]
     cams = sorted({v["cam"] for v in vidx if (sess / f"{v['cam']}.mp4").exists()})
     # farthest-point sampling over measured poses
@@ -70,9 +80,7 @@ def from_recorder_session(sess: Path, out: Path, n_key: int, width: int) -> dict
             _save(img, out / "keyframes" / name, width)
             files[c] = name
         keyframes.append({"q": pos[i].round(3).tolist(), "t": t, "step": i, "files": files})
-    compact = [{k: s[k] for k in ("t", "cmd", "pos", "link6", "joint_torque_nm", "temp_mos_c", "temp_rotor_c") if k in s} for s in steps]
-    return {"steps": compact, "model": {"gain": gain.round(4).tolist(), "bias": bias.round(4).tolist()},
-            "start": pos[0].round(3).tolist(), "keyframes": keyframes, "cameras": cams, "bus": "damiao"}
+    return {**body, "keyframes": keyframes, "cameras": cams}
 
 
 def from_snapshots(sess: Path, out: Path, side: str, prof, width: int) -> dict:
@@ -110,9 +118,13 @@ def main() -> int:
     ap.add_argument("--width", type=int, default=320)
     ap.add_argument("--synthetic", action="store_true")
     ap.add_argument("--session-envelope", default="", help='JSON guard overrides the session ran with, e.g. {"joint_speed_deg_s": 15, "windup_deg": 3}')
+    ap.add_argument("--labels", action="store_true", help="keep each step's label from the recorder log")
+    ap.add_argument("--out", help="fixture folder (default: src/robouse/real/fixtures/NAME)")
+    ap.add_argument("--source", help="the recording's path as stored in the fixture (default: SESSION)")
+    ap.add_argument("--note", default="", help="stored as the fixture's note (what the recording shows)")
     a = ap.parse_args()
     prof = profile(a.robot)
-    out = HIL_DIR / a.name
+    out = Path(a.out) if a.out else HIL_DIR / a.name
     out.mkdir(parents=True, exist_ok=True)
     if a.synthetic:
         n = len(prof.joints)
@@ -120,12 +132,12 @@ def main() -> int:
                 "cameras": [], "bus": "none", "note": "synthetic: no recording; start at the park pose, default tracking"}
         src = "synthetic"
     elif (Path(a.session) / "log.jsonl").exists():
-        body = from_recorder_session(Path(a.session), out, a.keyframes, a.width)
-        src = str(Path(a.session).resolve()).replace(str(Path.home()), "~")
+        body = from_recorder_session(Path(a.session), out, a.keyframes, a.width, a.labels)
+        src = a.source or str(Path(a.session).resolve()).replace(str(Path.home()), "~")
     else:
         body = from_snapshots(Path(a.session), out, a.side, prof, a.width)
         src = str(Path(a.session).resolve()).replace(str(Path.home()), "~") + f" ({a.side} arm)"
-    fx = {"name": a.name, "robot": prof.name, "source": src, **body}
+    fx = {"name": a.name, "robot": prof.name, "source": src, **body, **({"note": a.note} if a.note else {})}
     if a.session_envelope:  # the guard settings the session ran with (hil-check replays with the same ones)
         fx["session_envelope"] = json.loads(a.session_envelope)
     (out / "fixture.json").write_text(json.dumps(fx, separators=(",", ":")) + "\n")

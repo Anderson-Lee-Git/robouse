@@ -6,7 +6,7 @@
 pip install 'robouse[sim]'
 ```
 
-The package contains 692 tasks in 31 suites, from rule puzzles on a table to Meta-World, LIBERO, RoboCasa, quadrupeds, humanoids and drones, and harnesses for Claude Code, Codex, mini-swe-agent and served VLA policies. It needs Python 3.11 to 3.13.
+The package contains 692 tasks in 31 suites, from rule puzzles on a table to Meta-World, LIBERO, RoboCasa, quadrupeds, humanoids and drones, and harnesses for Claude Code, Codex, mini-swe-agent, dimcode, Show-Harness and served VLA policies. It needs Python 3.11 to 3.13.
 
 - First run: [robouse.ai/docs/quickstart](https://robouse.ai/docs/quickstart/)
 - Documentation: [robouse.ai/docs](https://robouse.ai/docs/)

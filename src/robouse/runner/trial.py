@@ -164,7 +164,9 @@ def _verify(task: Task, episode: dict, tdir: Path) -> float:
 
 
 # harnesses that drive a language model (the others run scripted code or a VLA policy)
-LLM_HARNESSES = ("claude-code", "codex", "mini-swe-agent", "dimcode")
+LLM_HARNESSES = ("claude-code", "codex", "mini-swe-agent", "dimcode", "show-harness")
+# harnesses that may also drive a self-hosted model named without a provider prefix (no gateway; images always sent)
+SELF_HOSTED_HARNESSES = ("show-harness",)
 
 
 def image_input_plan(harness: str, model: str) -> dict:
@@ -183,6 +185,14 @@ def image_input_plan(harness: str, model: str) -> dict:
     if canon not in LLM_HARNESSES:
         return {"harness": canon, "model": mid, "image_input": None, "image_input_reason": "no language model"}
     mid = mid or models.DEFAULT_MODELS.get(canon, "")
+    if canon in SELF_HOSTED_HARNESSES and models.split(mid)[0] is None:
+        # a model served by the user (e.g. a fine-tuned VLM on vLLM): no gateway, so nothing removes images
+        return {
+            "harness": canon,
+            "model": mid,
+            "image_input": True,
+            "image_input_reason": "a self-hosted model: images are always sent",
+        }
     ref = models.resolve(canon, mid)
     accepts = models.accepts_images(ref)
     plan = {"harness": canon, "model": ref.id if models.split(mid)[0] else mid, "accepts_images": accepts}
@@ -501,8 +511,15 @@ def run_trial(
                 )
             except OSError:  # the server went away (e.g. it got the same Ctrl-C)
                 pass
+        # a real arm's server leaves the arm before it exits (parks it slowly after a normal end; after a stop it holds
+        # and may ask the operator first): give it the operator's time and the park's
+        wait_s = 5.0 if interrupted or INTERRUPTED.is_set() else 60.0
+        if task.spec.get("backend") == "real":
+            from ..backends.real.backend import real_config
+
+            wait_s = float(real_config(task.spec).get("operator_timeout_s", 600)) + 180.0
         try:
-            server.wait(timeout=5 if interrupted or INTERRUPTED.is_set() else 60)
+            server.wait(timeout=wait_s)
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait()

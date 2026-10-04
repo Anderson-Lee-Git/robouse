@@ -113,6 +113,12 @@ ENV: dict[str, str] = {
     "ROBOUSE_MOLMOACT2_TOKEN": "bearer token for the MolmoAct2 server",
     "ROBOUSE_DIMCODE": "the dimcode executable for the `dimcode` harness (default: `dimcode` on PATH)",
     "ROBOUSE_DIMCODE_NODE": "Node 24 or 26 that runs dimcode (default: `node` on PATH)",
+    "ROBOUSE_SHOW_HARNESS_URL": "OpenAI-compatible server (base URL ending in /v1) of a self-hosted model for the "
+    "`show-harness` harness, e.g. vLLM serving a Show-Harness adapter",
+    "ROBOUSE_SHOW_HARNESS_TOKEN": "token for that server: a bearer token, or sent under the overrides' `token_header`",
+    "ROBOUSE_SHOW_HARNESS_CONFIG": "JSON file of `show-harness` overrides (mode zs or ft, step sizes, plugins)",
+    "ROBOUSE_SHOW_HARNESS_MODEL": "the model name the `show-harness` client sends (set by the runner)",
+    "ROBOUSE_SHOW_HARNESS_SETTINGS": "the `show-harness` client's mode, task sentence and overrides (set by the runner)",
     "ROBOUSE_TASK_LANGUAGE": "the language instruction a VLA client sends (set by the runner)",
     "ROBOUSE_GRADER_URL": "OpenAI-compatible endpoint for `robouse grade` (default: Baseten)",
     "ROBOUSE_GRADER_API_KEY": "API key for `robouse grade` (default: BASETEN_API_KEY)",
@@ -156,6 +162,9 @@ PUBLIC = frozenset(
         "ROBOUSE_MOLMOACT2_TOKEN",
         "ROBOUSE_DIMCODE",
         "ROBOUSE_DIMCODE_NODE",
+        "ROBOUSE_SHOW_HARNESS_URL",
+        "ROBOUSE_SHOW_HARNESS_TOKEN",
+        "ROBOUSE_SHOW_HARNESS_CONFIG",
     }
 )
 

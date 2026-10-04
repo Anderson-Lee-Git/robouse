@@ -12,8 +12,8 @@ stop the agent. No Responses-to-chat-completions bridge: it dropped Codex's reas
 reasoning item, and Codex on GLM-5.3 reasoned about a quarter as much and solved fewer tasks.
 
 Files, in the trial folder (outside the agent's sandbox): gateway/config.yaml, gateway/requests.jsonl (image counts
-per request, no content), gateway/proxy.log. The provider key is referenced as os.environ/<VAR> in the config and
-lives only in the proxy's environment.
+per request, no content), gateway/proxy.log. No key is written to any of them: the provider key and the per-trial
+master key are referenced in the config as os.environ/<VAR> and live only in the proxy's environment.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from . import models
 
 HOOK = Path(__file__).parent / "providers" / "gateway_hook.py"
 STOP_FILE = "budget_stop.json"  # the hook's name for it too (gateway_hook.py imports nothing from robouse)
+MASTER_KEY_ENV = "LITELLM_MASTER_KEY"  # LiteLLM's own variable; config.yaml names it, the key stays out of the file
 
 
 @dataclass
@@ -158,7 +159,9 @@ def start(
         raise RuntimeError(f"model {ref.id} needs {cfg.auth_env} in the environment")
     route = _same_protocol_route(resolve_litellm_route(ref.id, env), cfg, protocol, env)
     key = "sk-robouse-" + secrets.token_hex(16)
-    conf = litellm_proxy_config(route, master_key=key, callback_module="gateway_hook")
+    # the trial folder keeps config.yaml: it names the master key's variable, and the key itself goes only into the
+    # proxy's environment (penv), as the provider key does
+    conf = litellm_proxy_config(route, master_key=f"os.environ/{MASTER_KEY_ENV}", callback_module="gateway_hook")
     # a provider's rate limit (HTTP 429) is shared by everyone on the account: the gateway waits and retries (LiteLLM's
     # backoff, honouring Retry-After) instead of passing it to the harness, whose own few retries end the trial
     conf.setdefault("router_settings", {})["retry_policy"] = {
@@ -181,6 +184,7 @@ def start(
         )
     penv = {
         **env,
+        MASTER_KEY_ENV: key,
         "ROBOUSE_GATEWAY_MAX_IMAGES": str(image_cap(ref, images)),
         "ROBOUSE_GATEWAY_LOG": str(d / "requests.jsonl"),
         "ROBOUSE_GATEWAY_SPEND_CAP": str(spend_cap_usd),

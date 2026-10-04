@@ -46,15 +46,55 @@ def prof_of(t: dict):
     return ros_profile(ROS_ARM) if t["robot"] == "ros" else PROFILES[t["robot"]]
 
 
-SAFETY = (
-    "**Safety layer.** Every command passes the episode server's safety guard before it reaches the motors: joint "
-    "targets are clamped to the joint limits; a move whose straight joint-space path would take the elbow, wrist, "
-    "flange or fingertips below the table, outside the workspace box or low behind the base is vetoed before anything "
-    "moves (`robo` prints the reason and no step is used); speed is limited per control step (slower within 7.6 cm of "
-    "the table); a joint command never leads the measured position by more than a few degrees; over-temperature, an "
-    "operator e-stop or a hardware fault stops the episode at once (outcome `safety_stop`, score 0). `robo info` lists "
-    "the limits under `embodiment.safety`."
-)
+def safety(p, releases: bool = True) -> str:
+    """The task text's safety paragraph for this robot: what its safety layer checks and what stops an episode.
+    `releases`: the driver can turn the motors off once the arm is at rest (the ROS bridge cannot)."""
+    chain, torque = bool(p.chain_file), bool(p.contact.dtorque)
+    workspace = (
+        "a move whose straight joint-space path would take the elbow, wrist, flange or fingertips below the table, "
+        "outside the workspace box or low behind the base is vetoed before anything moves (`robo` prints the reason "
+        "and no step is used); speed is limited per control step (slower within 7.6 cm of the table)"
+        if chain
+        else "speed is limited per control step (this arm has no kinematic model, so there is no workspace check)"
+    )
+    if chain:
+        how = (
+            "seen as a jump in joint torque or as the fingertips stopping short of a commanded descent"
+            if torque
+            else "seen as the fingertips stopping short of a commanded descent, since this arm reports no joint torque"
+        )
+        contact = (
+            f"A contact during a move that ends within 3 cm of the table, {how}, stops that move: the arm holds where "
+            "it is and the step result reports it under `contact`; a second contact, one anywhere else, or one while "
+            "the arm holds still for the 10 steps after the episode ends stops the episode. "
+        )
+    else:
+        contact = "Nothing detects this arm touching something: it has no contact thresholds and no kinematic model. "
+    held = " or is holding something" if p.gidx else ""  # an arm without a gripper holds nothing
+    keep = " and the gripper keeps its command, so a grasped object is not let go" if p.gidx else ""
+    if p.contact.park_lag_deg <= 0:  # parks without a calibrated watch: only on the operator's yes
+        rest = "the arm holds where it is: its parks are not calibrated, so it parks only when the operator approves"
+    elif releases:
+        rest = (
+            "the arm moves slowly to its rest pose and is released there, or keeps holding if it cannot get there"
+            + held
+        )
+    else:
+        rest = (
+            "the arm moves slowly to its rest pose and holds there (the ROS bridge cannot release torque), or keeps "
+            "holding where it is if it cannot get there" + held
+        )
+    return (
+        "**Safety layer.** Every command passes the episode server's safety guard before it reaches the motors: joint "
+        f"targets are clamped to the joint limits; {workspace}; a joint command never leads the measured position by "
+        f"more than a few degrees. {contact}Over-temperature (also at the start), an operator e-stop, a stalled "
+        "control loop, joint readings that stop arriving or a hardware fault stop the episode at once (outcome "
+        "`safety_stop`, score 0); the e-stop, the joint readings and the temperatures are also checked between your "
+        f"requests. After a stop, every arm joint holds at its measured position{keep}, and nothing moves until the "
+        f"operator has inspected the robot. When the episode ends otherwise, {rest}. `robo info` lists the "
+        "limits under `embodiment.safety`."
+    )
+
 
 TASKS = [
     {
@@ -194,6 +234,7 @@ TASKS = [
 
 def instruction(t: dict) -> str:
     p = prof_of(t)
+    safe = safety(p, releases=t["robot"] != "ros")  # the ROS bridge cannot release torque
     joints = ", ".join(
         f"{n} [{lo:g}, {hi:g}] {u}" for n, lo, hi, u in zip(p.joints, p.low, p.high, p.units, strict=False)
     )
@@ -219,8 +260,12 @@ def instruction(t: dict) -> str:
             if p.chain_file
             else ""
         )
-        + "`grip VALUE`, `home` (reach-ready pose) and `park` (rest pose). Every skill checks its whole path first "
-        "and is refused with the reason if the path leaves the workspace."
+        + "`grip VALUE`, `home` (reach-ready pose) and `park` (rest pose)."
+        + (
+            " Every skill checks its whole path first and is refused with the reason if the path leaves the workspace."
+            if p.chain_file
+            else ""
+        )
     )
     return (
         f"# {t['title']}\n\nYou control a {p.display}, a real robot arm. {p.notes} {cams}\n\n## Task\n\n{t['task']}\n\n"
@@ -228,7 +273,7 @@ def instruction(t: dict) -> str:
         f"for 10 control steps.\n\n**Controls.** `robo act` takes one absolute target per joint, in this order: {joints}. "
         f"The gripper is the last value ({p.gripper_closed:g} = closed, {p.gripper_open:g} = open). The target is approached at "
         f"the safety speed limit over the following control steps ({p.control_hz:g} Hz); `--repeat N` keeps commanding it for "
-        f"N steps. Skills (`robo info` lists them with their arguments): {skills}\n\n{SAFETY}\n\n**Observation.** "
+        f"N steps. Skills (`robo info` lists them with their arguments): {skills}\n\n{safe}\n\n**Observation.** "
         f"`robo observe` reports `joint_pos` (measured, by joint name), `gripper`, {fk}`target` (the current joint target), "
         f"`telemetry` (maximum motor temperature, veto count, e-stop and stop state) and `mode` (`real` on hardware, "
         f"`hil-mock` on the hardware-in-the-loop mock, which replays a session recorded on this arm: it follows commands "
