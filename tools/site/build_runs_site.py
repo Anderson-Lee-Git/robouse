@@ -153,6 +153,9 @@ WITHHELD_NOTE = ("Trajectory not published: during this trial the agent looked a
                  "listing the home folder or searching the whole disk), so its commands and their outputs may show unrelated "
                  "local files. The recording, the camera images, the reward and the outcome are shown.")
 HOME_REPO = "/Users/maintainer/benchflow/robouse/"
+# Trials run in Daytona sandboxes record their task folder under /work/tasks/<batch>/, where a batch name can carry an
+# account label: published as robouse/tasks/ (sanitized_json, the trajectory's clean)
+WORK_TASKS = re.compile(r"/work/tasks/[^/\"\s]+/")
 # The machine the trials ran on, in agents' outputs: the account name (`ls -l` columns, `whoami`), the per-user temp
 # folder (/var/folders/<2>/<id>, where workspaces live) and the host name. Replaced, not withheld: `ls -l` keeps its
 # columns (the name becomes "user" padded to the same width), a temp path keeps its tail after "<tmp>".
@@ -647,7 +650,7 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
     def clean(s: str) -> str:
         if ws:
             s = s.replace("/private" + ws, "<workspace>").replace(ws, "<workspace>")
-        return s.replace(HOME_REPO, "robouse/")
+        return WORK_TASKS.sub("robouse/tasks/", s.replace(HOME_REPO, "robouse/"))
 
     fm = (traj or {}).get("final_metrics") or {}
     tokens = None
@@ -872,7 +875,7 @@ def sanitized_json(obj, ws: str) -> str:
     s = json.dumps(obj, indent=2, ensure_ascii=False)
     if ws:
         s = s.replace("/private" + ws, "<workspace>").replace(ws, "<workspace>")
-    return redact(s.replace(HOME_REPO, "robouse/"))
+    return redact(WORK_TASKS.sub("robouse/tasks/", s.replace(HOME_REPO, "robouse/")))
 
 
 # ---------------------------------------------------------------- html
@@ -1077,6 +1080,17 @@ def tparts(bits: list[str]) -> str:
     return " ".join(f'<span class="tpart">{b}{chr(160) + "·" if k < len(bits) - 1 else ""}</span>' for k, b in enumerate(bits))
 
 
+def run_note(r: dict) -> str:
+    """A pair's note for its run pages (tools/models.json "run_note": {"since": ISO date, "text": ..., "datasets": {dataset:
+    text}}): shown on a run whose counted trials include one started on or after "since", e.g. a later rerun on another
+    machine; a dataset's own text replaces the default."""
+    n = HM[r["hm"]].get("run_note") or {}
+    since = str(n.get("since") or "")
+    if not n or not any(t.get("counted") and (t["started"] or "")[:10] >= since for t in r["trials"]):
+        return ""
+    return str((n.get("datasets") or {}).get(r["ds"]) or n.get("text") or "")
+
+
 def run_meta(r: dict) -> list[str]:
     """The run page's facts under its title: dataset, date, solved of scored, and how many other trials it holds
     (earlier, stopped, failed or pilot trials: listed, not scored), so the counts on the page add up."""
@@ -1269,6 +1283,9 @@ def group_runs(trials: list[dict], jobs: dict) -> dict[str, dict]:
         t["run"] = slug
     for r in out.values():
         ts = r["trials"]
+        # a run is dated by the trials that count (a rerun months later moves the date), else by all of them
+        starts = [t["started"] for t in ts if t.get("counted") and t["started"]] or [t["started"] for t in ts if t["started"]]
+        r["start"] = min(starts) if starts else ""
         # the dataset's own tasks only, so a run and its dataset's Results agree; a pilot task the hub does not list is shown, not scored
         inds = [t for t in ts if t["counted"] and not t["infra"] and not t["partial"] and (not HUB or t["task"] in HUB)]
         r["scored"] = len(inds)
@@ -1507,7 +1524,7 @@ def build_run(r: dict) -> str:
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a></nav>
 <section class="page-head head">
   <h1 class="rh1">{run_title_html(r, parts=True)}</h1>
-  <p class="meta">{tparts(run_meta(r))}{noimg_tag(hm=r["hm"]) if r["noimg"] else ""}</p>{f'{chr(10)}  <p class="rnote">{esc(REJECTED[r["hm"]])}</p>' if r["noimg"] and r["hm"] in REJECTED else ""}
+  <p class="meta">{tparts(run_meta(r))}{noimg_tag(hm=r["hm"]) if r["noimg"] else ""}</p>{f'{chr(10)}  <p class="rnote">{esc(REJECTED[r["hm"]])}</p>' if r["noimg"] and r["hm"] in REJECTED else ""}{f'{chr(10)}  <p class="rnote">{esc(run_note(r))}</p>' if run_note(r) else ""}
   {f'<p class="prov">{esc(HM[r["hm"]]["provenance"])}</p>' if HM[r["hm"]].get("provenance") else ""}
 </section>
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
@@ -1858,7 +1875,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"wrote {out}: {len(trials)} trial pages ({counted} counted), {len(tinfo)} tasks, {len(suites)} suites, {len(jobs)} jobs, "
           f"{withheld} trajectories withheld; {nfiles} files, total {size / 1e6:.1f} MB "
           f"(videos {part['v']:.1f}, filmstrips {part['f']:.1f}, data {part['d']:.1f}, pages {part['t']:.1f})")
-    running = sorted(n for n, j in jobs.items() if j["state"] == "running")
+    # every published recording needs its poster (size, poster attribute, og:image); posters come from the encodes, so
+    # a first build of new trials is followed by tools/site/make_posters.sh and a second build
+    no_poster = sorted(n[:-4] for n in keep_v if not (POSTERS / f"{n[:-4]}.jpg").is_file())
+    if no_poster and not SYNTH:
+        print(f"WARNING: {len(no_poster)} recordings without a poster (e.g. {no_poster[0]}): run tools/site/make_posters.sh "
+              f"{out / 'v'} {out / 'p'} for them, then build again", file=sys.stderr)
+    running =sorted(n for n, j in jobs.items() if j["state"] == "running")
     if running:
         print("still running (rebuild later for more trials): " + ", ".join(running))
     ok = True
