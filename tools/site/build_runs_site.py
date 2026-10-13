@@ -1394,6 +1394,8 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     tabs = [("recording", "Recording", ""), ("trajectory", "Trajectory", f" <span class=\"num\">{n_steps}</span>" if n_steps else ""), ("verdict", "Verdict", ""),
             ("timing", "Timing" if HM[t["hm"]].get("kind") == "vla" else "Timing &amp; tokens", ""), ("files", "Files", "")]  # a policy has no tokens
     never_ran = st == "infra" and not video and not n_steps and not t["steps_used"]
+    # the Why of an infrastructure failure can be a sentence: on phones it spans the facts row (runs.css .fwhy)
+    facts_html = "".join(f'<div class="fwhy"><dt>{k}</dt><dd>{v}</dd></div>' if k == "Why" else f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)
     why = (t.get("infra_cause") or {}).get("text", "") if never_ran else ""
     # nothing was recorded: the header and one sentence why; no facts, tabs or empty boxes
     head = f"""
@@ -1401,7 +1403,7 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
 <section class="page-head head trial">
   <h1>{esc(t['title'])}</h1>
   <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag(spaced=False, hm=t["hm"]) if noimg else ""}{counted}{task_link(t)}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
-  {f'<p class="why">{esc(why or "The harness or the model API ended the trial before the agent acted.")}</p>' if never_ran else f'<dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>'}
+  {f'<p class="why">{esc(why or "The harness or the model API ended the trial before the agent acted.")}</p>' if never_ran else f'<dl class="facts">{facts_html}</dl>'}
 </section>
 """
     if never_ran:

@@ -457,6 +457,7 @@ details.res{margin:var(--sp-2) 0 var(--sp-6)}
   .ctl .seg{margin-left:auto}
   dl.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-12) var(--sp-16)}
   dl.facts dd,dl.facts dd .mono{overflow-wrap:break-word;white-space:normal;min-width:0}
+  dl.facts .fwhy{grid-column:1/-1}
   .player{max-width:none}
   .tiles{margin-right:calc(-1 * var(--gutter))}
 }

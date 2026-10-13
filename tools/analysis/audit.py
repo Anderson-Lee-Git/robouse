@@ -267,11 +267,8 @@ def _is_refusal_task(cfg: dict) -> bool:
 
 # why an infrastructure failure happened, in words: (key, sentence), first match wins; the evidence stays in rec["infra"]
 INFRA_CAUSES = [
-    (
-        "model_swap",
-        r"model_fallback|model_mismatch|safeguard_refusal",
-        "The model's safeguards flagged the session, so Claude Code answered with another model or stopped: the trial does not measure this model.",
-    ),
+    ("model_swap", r"model_fallback|model_mismatch", "Claude Code's safeguard fallback answered with another model."),
+    ("safeguard", r"safeguard_refusal", "The model's safeguards refused the session before the agent acted."),
     (
         "server_start",
         r"episode server (exited early|did not start)|MUJOCO_GL",
