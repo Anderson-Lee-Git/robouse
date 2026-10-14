@@ -9,7 +9,8 @@ In both, an agent cannot read or write:
   - robouse's cache (simulator virtualenvs and sources, downloaded demonstrations, other trials' harness homes), except
     the agent's own harness home (`own`: its CLAUDE_CONFIG_DIR or CODEX_HOME);
   - the run folder (trial records, including the episode's result.json) and the task folder (its reference solution);
-  - any robouse source or install (a `robouse` package directory);
+  - any robouse source or install (a `robouse` package directory) and, in a source checkout, its task folders, run
+    folders and task generators (`CHECKOUT_DENIED`);
   - other trials' workspaces and episode sockets;
   - sockets that act for the user or control the machine (`control_sockets`: container engines, the SSH agent), and
     any Unix socket inside a denied folder.
@@ -78,6 +79,9 @@ HOME_DENIED = (
 HOME_PROGRAMS = (".codex/packages", ".claude/local")
 # The variables naming a harness's own config home (the runner's values are denied, the agent's allowed)
 HOME_VARS = ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
+# When robouse runs from a source checkout: its task folders (every task's reference solution and verifier), run
+# folders (other trials' records) and task generators
+CHECKOUT_DENIED = ("tasks", "runs", "adapters")
 # Sockets that act for the user or control this machine: container engines (root on the host for a member of their
 # group) and, from the environment, the SSH agent
 SOCKETS = (
@@ -109,6 +113,15 @@ def home_denied() -> list[str]:
     return [*out, str(config.cache_dir())]
 
 
+def checkout_denied() -> list[str]:
+    """CHECKOUT_DENIED in the source checkout robouse runs from (a src/robouse layout with its pyproject.toml), else
+    nothing (an installed package is denied whole)."""
+    root = PKG.parent.parent
+    if PKG.parent.name != "src" or not (root / "pyproject.toml").is_file():
+        return []
+    return [str(root / d) for d in CHECKOUT_DENIED]
+
+
 def control_sockets() -> list[str]:
     """SOCKETS, the user's rootless Docker and Podman sockets, and the SSH agent's socket ($SSH_AUTH_SOCK)."""
     run = config.env("XDG_RUNTIME_DIR")
@@ -135,7 +148,8 @@ def own_homes(env: dict) -> list[str]:
 
 
 def _denied(extra: list[Path]) -> list[str]:
-    return _real([*config.sandbox_denied_paths(), *home_denied(), *control_sockets(), *map(str, extra), str(PKG)])
+    paths = [*config.sandbox_denied_paths(), *home_denied(), *control_sockets(), *checkout_denied(), *map(str, extra)]
+    return _real([*paths, str(PKG)])
 
 
 def _programs() -> list[str]:

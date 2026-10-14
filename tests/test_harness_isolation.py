@@ -17,6 +17,8 @@ from robouse import _maintainer, harnesses
 from robouse.harnesses import interface as iface
 from robouse.runner import sandbox
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def _flags(cmd: list[str]) -> list[str]:
     """The `-c` overrides of a Codex command."""
@@ -152,6 +154,21 @@ def test_the_profile_and_bwrap_deny_credential_and_task_copy_locations(outside_t
     assert ("--bind", real["own"]) in pairs and args.index(real["own"]) > args.index(f"{home}/.cache/robouse")
 
 
+def test_a_source_checkout_s_tasks_runs_and_generators_are_denied(tmp_path, monkeypatch) -> None:
+    """Run from a checkout, the agent could read every other task's reference solution in tasks/ (the Oct 13 Linux
+    sandbox exposed 1,943 oracle files in /opt/robouse; deep audit, security item 3), other trials in runs/ and the
+    generators in adapters/. An installed package is denied whole."""
+    repo = tmp_path / "repo"
+    (repo / "src" / "robouse").mkdir(parents=True)
+    (repo / "pyproject.toml").write_text("")
+    monkeypatch.setattr(sandbox, "PKG", repo / "src" / "robouse")
+    assert sandbox.checkout_denied() == [str(repo / d) for d in ("tasks", "runs", "adapters")]
+    for d in ("tasks", "runs", "adapters"):
+        assert os.path.realpath(repo / d) in sandbox._denied([])
+    monkeypatch.setattr(sandbox, "PKG", tmp_path / "venv" / "lib" / "site-packages" / "robouse")
+    assert sandbox.checkout_denied() == []
+
+
 def test_the_runner_s_python_is_read_only_to_agents(tmp_path) -> None:
     """The episode server and the verifier run on the runner's Python, so an agent must not change it (deep audit,
     security item 10). bubblewrap binds it read-only before the denied folders, so a robouse install inside it stays
@@ -207,6 +224,7 @@ touch "$CODEX_HOME/new" && echo own-writable
 {tool}
 touch {tool_dir}/x 2>/dev/null && echo program-writable
 touch {prefix}/.robouse-write-probe 2>/dev/null && echo prefix-writable
+cat {other_oracle} >/dev/null 2>&1 && echo other-oracle-readable
 echo "runner-home=${{CLAUDE_CONFIG_DIR:-unset}} ssh-agent=${{SSH_AUTH_SOCK:-unset}}"
 for s in {sockets}; do
   python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1]); print("CONNECTED", sys.argv[1])' "$s" 2>/dev/null
@@ -260,6 +278,7 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
             tool_dir=p["tool"].parent,
             sockets=" ".join(str(s) for s in sockets.values()),
             prefix=sys.prefix,
+            other_oracle=ROOT / "tasks" / "arc-style" / "arc-mirror" / "oracle" / "solve.sh",
         )
 
         def peek(model, prompt, workspace, task, env) -> harnesses.Launch:
@@ -268,8 +287,7 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
             return harnesses.Launch(["bash", str(workspace / ".robouse" / "peek.sh")], env, notes={"model": "none"})
 
         monkeypatch.setitem(harnesses.HARNESSES, "peek", peek)
-        root = Path(__file__).resolve().parents[1]
-        res = run_trial(load_task(root / "tasks" / "arc-style" / "arc-gravity"), "peek", "", tmp_path / "job")
+        res = run_trial(load_task(ROOT / "tasks" / "arc-style" / "arc-gravity"), "peek", "", tmp_path / "job")
         out = (tmp_path / "job" / res["trial"] / "agent" / "stdout.jsonl").read_text()
         cfg = (tmp_path / "job" / res["trial"] / "config.json").read_text()
         assert '"sandbox": "none"' not in cfg
@@ -277,6 +295,8 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
         assert "own-readable" in out and "own-writable" in out, out
         assert "program-ok" in out and "program-writable" not in out, out
         assert "prefix-writable" not in out, out  # the runner's Python, which the next episode server runs on
+        if sandbox.checkout_denied():  # robouse runs from this checkout: the other tasks' oracles are out of reach
+            assert "other-oracle-readable" not in out, out
         assert "runner-home=unset ssh-agent=unset" in out, out
         assert [line.split()[1] for line in out.splitlines() if line.startswith("CONNECTED")] == [
             str(sockets["control"])
