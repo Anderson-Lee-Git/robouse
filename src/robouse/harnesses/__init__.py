@@ -209,6 +209,8 @@ def _mini_swe_agent(model, prompt, workspace, task, env) -> Launch:
             "OPENAI_API_BASE": f"{gw.url}/v1",
             "MSWEA_CONFIGURED": "true",
             "MSWEA_COST_TRACKING": "ignore_errors",
+            # its global .env (which may hold provider keys) is per trial: the user's is never loaded
+            "MSWEA_GLOBAL_CONFIG_DIR": str(workspace / ".robouse" / "mini-config"),
         }
     )
     cmd = [

@@ -11,7 +11,7 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 | `ROBOUSE_RECORD_SIZE` | episode video size WIDTHxHEIGHT (default: the backend's native size) |
 | `ROBOUSE_AGENT_IMAGES` | 0: the model gets no image input in this run, whatever it takes (its gateway replaces every image part; recorded as image_input: false). Default: from the model registry |
 | `ROBOUSE_SPEND_CAP_USD` | the model spend at which the model gateway stops a trial, in USD (default 5; 0: no cap; recorded as a budget stop) |
-| `ROBOUSE_SANDBOX` | 0 disables the macOS Seatbelt sandbox around agent processes (default 1) |
+| `ROBOUSE_SANDBOX` | 0 disables the sandbox around agent processes (macOS Seatbelt, Linux bubblewrap; default 1) |
 | `ROBOUSE_SANDBOX_DENY` | extra colon-separated paths agents may neither read nor write |
 | `ROBOUSE_DEXJOCO_PYTHON` | Python of the DexJoCo virtualenv (default <cache>/dexjoco-venv/bin/python) |
 | `ROBOUSE_DMCONTROL_PYTHON` | Python of the dm_control virtualenv (default <cache>/dmcontrol-venv/bin/python) |

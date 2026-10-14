@@ -3,56 +3,148 @@
 In both, an agent cannot read or write:
   - private settings, the real-robot operator channel, the maintainers' folders and $ROBOUSE_SANDBOX_DENY
     (`config.sandbox_denied_paths`);
+  - credential and task-copy locations in the home folder (`HOME_DENIED`): other programs' logins, the user's own
+    Claude Code, Codex and mini-swe-agent settings, and package caches holding copies of the tasks with their reference
+    solutions or simulator sources; also the runner's own $CLAUDE_CONFIG_DIR and $CODEX_HOME;
+  - robouse's cache (simulator virtualenvs and sources, downloaded demonstrations, other trials' harness homes), except
+    the agent's own harness home (`own`: its CLAUDE_CONFIG_DIR or CODEX_HOME);
   - the run folder (trial records, including the episode's result.json) and the task folder (its reference solution);
   - any robouse source or install (a `robouse` package directory);
   - other trials' workspaces.
-It keeps its own workspace, the episode socket and the network (model APIs). On macOS, TCP connections to this machine
-are refused except to `local_ports` (a harness's own local proxy); on Linux the agent runs in its own PID namespace,
-so it cannot see the episode server's process. Set ROBOUSE_SANDBOX=0 to run without a sandbox (unsafe: the agent can
-then read the reference solution).
+Program folders inside a denied folder that a harness runs from (`HOME_PROGRAMS`, e.g. Codex's standalone install in
+~/.codex/packages) stay readable, never writable. The agent keeps its own workspace, the episode socket and the network
+(model APIs). On macOS, TCP connections to this machine are refused except to `local_ports` (a harness's own local
+proxy); on Linux the agent runs in its own PID namespace, so it cannot see the episode server's process. Set
+ROBOUSE_SANDBOX=0 to run without a sandbox (unsafe: the agent can then read the reference solution).
 """
 
 from __future__ import annotations
 
 import functools
+import glob
 import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 from .. import config
 
 PKG = Path(__file__).resolve().parents[1]  # the robouse package
 
+# Credential and task-copy locations under the home folder that no agent may read or write (globs allowed)
+HOME_DENIED = (
+    ".cache/uv",  # uv's cache: unpacked wheels, among them robouse's bundled tasks with their oracles, and simulators
+    ".cache/pip",  # pip's wheel cache (Linux)
+    "Library/Caches/pip",  # pip's wheel cache (macOS)
+    ".cache/benchflow",  # BenchFlow's task cache: materialized robouse tasks with their oracles
+    ".config/benchflow",  # BenchFlow's settings and provider key files
+    ".cache/libero",  # LIBERO's assets and datasets
+    ".libero",  # LIBERO's config
+    ".claude",  # Claude Code's settings, login (Linux) and transcripts; the agent gets a per-trial home
+    ".claude.json",
+    ".claude-*",  # further Claude Code config folders
+    ".codex",  # Codex's login (auth.json), sessions and memories
+    ".config/mini-swe-agent",  # mini-swe-agent's global .env, which may hold provider keys (Linux)
+    "Library/Application Support/mini-swe-agent",  # (macOS)
+    ".gemini",  # Gemini CLI's login
+    ".config/gh",  # GitHub CLI's token
+    ".git-credentials",
+    ".config/git/credentials",
+    ".netrc",
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".azure",
+    ".config/gcloud",
+    ".kube",
+    ".docker",  # registry logins
+    ".pypirc",
+    ".npmrc",
+    ".huggingface",
+    ".cache/huggingface/token",
+    ".cache/huggingface/stored_tokens",
+)
+# Program folders inside those that a harness may run from: readable, never writable
+HOME_PROGRAMS = (".codex/packages", ".claude/local")
+# The variables naming a harness's own config home (the runner's values are denied, the agent's allowed)
+HOME_VARS = ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
+
 
 class SandboxUnavailable(RuntimeError):
     """No sandbox for agent processes on this machine."""
 
 
+def _real(paths: Iterable[str | Path]) -> list[str]:
+    """Resolved paths (Seatbelt and bind mounts match /private/tmp, not /tmp); order kept, duplicates dropped."""
+    return list(dict.fromkeys(os.path.realpath(os.path.expanduser(str(p))) for p in paths))
+
+
+def home_denied() -> list[str]:
+    """HOME_DENIED under this user's home folder (globs expanded), the runner's own Claude Code and Codex homes, and
+    robouse's cache."""
+    home = Path.home()
+    out: list[str] = []
+    for rel in HOME_DENIED:
+        out += sorted(glob.glob(str(home / rel))) if any(c in rel for c in "*?[") else [str(home / rel)]
+    out += [v for k in HOME_VARS if (v := config.env(k))]
+    return [*out, str(config.cache_dir())]
+
+
+def own_homes(env: dict) -> list[str]:
+    """The agent's own config homes (its CLAUDE_CONFIG_DIR and CODEX_HOME), which it may read and write wherever they
+    are."""
+    return _real(v for k in HOME_VARS if (v := env.get(k)))
+
+
 def _denied(extra: list[Path]) -> list[str]:
-    paths = [*config.sandbox_denied_paths(), *map(str, extra), str(PKG)]
-    # resolved paths (Seatbelt and bind mounts match /private/tmp, not /tmp); order kept, duplicates dropped
-    return list(dict.fromkeys(os.path.realpath(os.path.expanduser(p)) for p in paths))
+    return _real([*config.sandbox_denied_paths(), *home_denied(), *map(str, extra), str(PKG)])
+
+
+def _programs() -> list[str]:
+    return [p for p in _real(Path.home() / rel for rel in HOME_PROGRAMS) if os.path.isdir(p)]
+
+
+def _inside(path: str, roots: list[str]) -> bool:
+    return any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots)
+
+
+def reachable_path(path: str, deny: list[Path], own: list[str] | None = None) -> str:
+    """A PATH value without its entries inside a denied folder that the sandbox does not give back (program folders,
+    the agent's own homes): a command found there could not run. `uvx`, for one, puts its environment, in the uv
+    cache, first on PATH."""
+    denied, back = _denied(deny), [*_programs(), *_real(own or [])]
+    keep = []
+    for entry in path.split(os.pathsep):
+        real = os.path.realpath(os.path.expanduser(entry)) if entry else ""
+        if not (real and _inside(real, denied) and not _inside(real, back)):
+            keep.append(entry)
+    return os.pathsep.join(keep)
 
 
 def sandbox_profile(
-    workspace: str | Path | None = None, local_ports: tuple[int, ...] = (), deny: list[Path] | None = None
+    workspace: str | Path | None = None,
+    local_ports: tuple[int, ...] = (),
+    deny: list[Path] | None = None,
+    own: list[str] | None = None,
 ) -> str:
-    """The macOS Seatbelt profile: everything is allowed except the module docstring's list."""
+    """The macOS Seatbelt profile: everything is allowed except the module docstring's list. Later rules win."""
     rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in _denied(deny or []))
     rules += '(deny file-read* (regex #"/site-packages/robouse(/|$)") (regex #"/src/robouse(/|$)"))'
     rules += '(deny file-read* file-write* (regex #"/robouse-ws-[^/]*(/|$)"))'
-    if workspace:
-        rules += f'(allow file-read* file-write* (subpath "{os.path.realpath(workspace)}"))'
+    rules += "".join(f'(allow file-read* (subpath "{p}"))' for p in _programs())
+    for d in [*_real([workspace] if workspace else []), *_real(own or [])]:
+        rules += f'(allow file-read* file-write* (subpath "{d}"))'
     rules += '(deny network-outbound (remote ip "localhost:*"))'
     rules += "".join(f'(allow network-outbound (remote ip "localhost:{p}"))' for p in local_ports)
     return "(version 1)(allow default)" + rules
 
 
-def bwrap_args(workspace: Path, socket: str, deny: list[Path]) -> list[str]:
+def bwrap_args(workspace: Path, socket: str, deny: list[Path], own: list[str] | None = None) -> list[str]:
     """The bubblewrap command prefix on Linux: the host file system as it is, a fresh /tmp holding only this trial's
-    workspace and socket, empty folders over every denied path, and a PID namespace of its own."""
+    workspace and socket, an empty folder over every denied folder and /dev/null over every denied file, the agent's
+    own homes and the program folders bound back in, and a PID namespace of its own."""
     args = [
         "bwrap",
         "--die-with-parent",
@@ -68,10 +160,19 @@ def bwrap_args(workspace: Path, socket: str, deny: list[Path]) -> list[str]:
         "/tmp",
     ]
     for d in _denied(deny):
-        if Path(d).is_dir() and not str(workspace).startswith(d):
+        if str(workspace).startswith(d):
+            continue  # a folder holding the workspace stays
+        if os.path.isdir(d):
             args += ["--tmpfs", d]
-    args += ["--bind", str(workspace), str(workspace), "--bind", socket, socket, "--chdir", str(workspace)]
-    return args
+        elif os.path.exists(d):
+            args += ["--ro-bind", "/dev/null", d]
+    args += ["--bind", str(workspace), str(workspace), "--bind", socket, socket]
+    for p in _programs():
+        args += ["--ro-bind", p, p]
+    for h in _real(own or []):
+        if os.path.isdir(h) and not h.startswith(str(workspace)):
+            args += ["--bind", h, h]
+    return [*args, "--chdir", str(workspace)]
 
 
 @functools.cache
@@ -85,16 +186,21 @@ def bwrap_works() -> bool:
 
 
 def wrap(
-    cmd: list[str], workspace: Path, socket: str, deny: list[Path], local_ports: tuple[int, ...] = ()
+    cmd: list[str],
+    workspace: Path,
+    socket: str,
+    deny: list[Path],
+    local_ports: tuple[int, ...] = (),
+    own: list[str] | None = None,
 ) -> tuple[list[str], str]:
-    """The agent command inside this platform's sandbox, and the sandbox's name. Raises SandboxUnavailable when there
-    is none (Linux without bubblewrap) unless ROBOUSE_SANDBOX=0."""
+    """The agent command inside this platform's sandbox, and the sandbox's name. `own`: the agent's own config homes
+    (`own_homes`). Raises SandboxUnavailable when there is none (Linux without bubblewrap) unless ROBOUSE_SANDBOX=0."""
     if not config.flag("ROBOUSE_SANDBOX", default=True):
         return cmd, "none"
     if sys.platform == "darwin":
-        return ["sandbox-exec", "-p", sandbox_profile(workspace, local_ports, deny), *cmd], "macos-seatbelt"
+        return ["sandbox-exec", "-p", sandbox_profile(workspace, local_ports, deny, own), *cmd], "macos-seatbelt"
     if sys.platform.startswith("linux") and bwrap_works():
-        return [*bwrap_args(workspace, socket, deny), *cmd], "linux-bubblewrap"
+        return [*bwrap_args(workspace, socket, deny, own), *cmd], "linux-bubblewrap"
     raise SandboxUnavailable(
         "no sandbox for the agent on this machine: install bubblewrap (`bwrap`; on Ubuntu 24.04 also an AppArmor "
         "profile that allows it user namespaces), or set ROBOUSE_SANDBOX=0 to run without one (the agent can then "

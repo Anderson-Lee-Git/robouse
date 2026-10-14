@@ -433,6 +433,8 @@ def run_trial(
             else f"{ws / '.robouse' / 'bin'}:{base_env.get('PATH', '')}"
         )
         base_env["ROBOUSE_SOCKET"] = sock
+        for k in sandbox.HOME_VARS:  # the runner's own Claude Code and Codex homes: a harness sets the agent's
+            base_env.pop(k, None)
         base_env["_ROBOUSE_TRIAL_DIR"] = str(tdir)  # read and removed by the harness builder (model gateway)
         base_env["_ROBOUSE_IMAGE_INPUT"] = "0" if plan["image_input"] is False else "1"
         base_env["_ROBOUSE_SPEND_CAP_USD"] = str(cap)
@@ -451,7 +453,11 @@ def run_trial(
             ports = tuple(
                 int(m) for v in launch.env.values() for m in re.findall(r"//(?:127\.0\.0\.1|localhost):(\d+)", str(v))
             )
-            launch.cmd, cfg["sandbox"] = sandbox.wrap(launch.cmd, ws, sock, [job_dir, task.path], ports)
+            deny = [job_dir, task.path]
+            own = sandbox.own_homes(launch.env)
+            launch.cmd, cfg["sandbox"] = sandbox.wrap(launch.cmd, ws, sock, deny, ports, own)
+            if cfg["sandbox"] != "none":  # PATH entries the agent cannot read (e.g. `uvx`'s, in the uv cache)
+                launch.env["PATH"] = sandbox.reachable_path(launch.env.get("PATH", ""), deny, own)
         # what the agent was given besides its prompt (the task.md body): the files in its workspace
         cfg["workspace_files"] = _workspace_files(ws)
         (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
