@@ -3,7 +3,7 @@
 #   tools/ops/final_run.sh                     all suites below
 #   tools/ops/final_run.sh metaworld libero    only these
 # Jobs: runs/final-<suite>-<pair>/. Uses --resume, so rerunning continues where a stream stopped.
-# Opus 5.5 is paused by the owner (2026-09-27); add "claude-code:claude-opus-5-5:3:opus" back to PAIRS to include it.
+# Claude Opus 5.5 is not in PAIRS (paused since 2026-09-27); add "claude-code:claude-opus-5-5:3:opus" to include it.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 export MUJOCO_GL=cgl

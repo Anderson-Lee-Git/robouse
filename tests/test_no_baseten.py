@@ -91,13 +91,14 @@ def _watch_reads(monkeypatch, agents: Path) -> list[str]:
 
 
 def test_doctor_the_model_plan_and_run_use_no_baseten_key(tmp_path, monkeypatch, capsys, no_provider_env) -> None:
-    """A maintainer's ~/.config/bf-agents/baseten.env is there, and BASETEN_API_KEY is in the environment: doctor, the
-    model plan and the run command's checks open no Baseten file, and the run still stops for want of the default
-    model's own settings (with a Baseten default, the key in the environment would have let it start)."""
+    """A baseten.env is in the configured credential pool folder (where 0.4.0 read ~/.config/bf-agents/baseten.env),
+    and BASETEN_API_KEY is in the environment: doctor, the model plan and the run command's checks open no Baseten
+    file, and the run still stops for want of the default model's own settings (with a Baseten default, the key in the
+    environment would have let it start)."""
     agents = tmp_path / "bf-agents"
     agents.mkdir()
     (agents / "baseten.env").write_text("BASETEN_API_KEY=from-a-key-file\n")
-    monkeypatch.setattr(_maintainer, "AGENTS_DIR", agents)
+    monkeypatch.setenv("ROBOUSE_CODEX_AUTH_DIR", str(agents))
     from robouse.core import gl
 
     monkeypatch.setattr(gl, "auto_select", lambda: None)
@@ -147,7 +148,7 @@ def test_the_grader_never_uses_the_baseten_key_or_key_file(tmp_path, monkeypatch
     agents = tmp_path / "bf-agents"
     agents.mkdir()
     (agents / "baseten.env").write_text("BASETEN_API_KEY=from-a-key-file\n")
-    monkeypatch.setattr(_maintainer, "AGENTS_DIR", agents)
+    monkeypatch.setenv("ROBOUSE_CODEX_AUTH_DIR", str(agents))
     monkeypatch.setattr(_maintainer, "BASETEN_ENV", agents / "baseten.env", raising=False)  # where 0.4.0 read it
     monkeypatch.setenv("ROBOUSE_GRADER_URL", f"http://127.0.0.1:{srv.server_address[1]}/v1")
     frames = [np.zeros((4, 4, 3), np.uint8)]
@@ -406,16 +407,15 @@ def test_no_published_docs_page_names_baseten() -> None:
 
 def test_agents_cannot_read_the_maintainers_provider_keys(tmp_path, monkeypatch) -> None:
     """The maintainers keep provider keys in env files under ~/.config/benchflow (the Z.ai Coding Plan's among them):
-    the agent sandbox hides the folder, as it hides ~/.config/bf-agents."""
-    from robouse import config
+    the agent sandbox hides the folder (sandbox.HOME_DENIED), as it hides a configured credential pool."""
     from robouse.runner.sandbox import bwrap_args, sandbox_profile
 
-    keys = tmp_path / "config-benchflow"
-    keys.mkdir()
+    home = tmp_path / "home"
+    keys = home / ".config" / "benchflow"
+    keys.mkdir(parents=True)
     (keys / "glm-coding.env").write_text("GLM_CODING_API_KEY=not-a-real-key\n")
-    monkeypatch.setattr(_maintainer, "PROVIDER_KEYS", keys)
+    monkeypatch.setenv("HOME", str(home))
     real = os.path.realpath(keys)
-    assert str(keys) in config.sandbox_denied_paths()
     assert f'(deny file-read* file-write* (subpath "{real}"))' in sandbox_profile(tmp_path / "ws")
     args = bwrap_args(tmp_path / "ws", str(tmp_path / "sock"), [])
     assert any(a == "--tmpfs" and b == real for a, b in zip(args, args[1:], strict=False))

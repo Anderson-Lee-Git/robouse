@@ -21,10 +21,11 @@ Each task runs in RoboDojo's own evaluation environment in NVIDIA Isaac Sim 5.1 
 
 ## Source and licences
 
-- RoboDojo code: the `LICENSE` file in the repository is MIT (copyright 2025 Yue Chen); the README and badge say "RoboDojo Non-Commercial Research License" (non-commercial research, education and evaluation only; commercial use needs the maintainers' written permission). Until the two agree, treat the code as non-commercial.
+- RoboDojo code: MIT. At the commit this suite is pinned to (726e9aa) the `LICENSE` file says MIT (copyright 2025 Yue Chen) while the README and badge said "RoboDojo Non-Commercial Research License". Upstream made the terms consistent on 2026-10-08 (commit cb2a37d, "Adopt consistent MIT licensing", copyright 2026 RoboDojo Contributors). The three commits from 726e9aa to cb2a37d change only the license, the README, project metadata, a checkpoint download script and the XPolicyLab pin, not the tasks, so the instructions in this suite read the same at cb2a37d.
 - Assets and data: the Hugging Face dataset card says Apache-2.0. The assets include third-party object meshes and HDRI backgrounds whose own terms are not listed per file.
 - XPolicyLab: Apache-2.0. Isaac Sim 5.1: NVIDIA's Omniverse licence (accepted with `OMNI_KIT_ACCEPT_EULA=YES`). cuRobo (RoboDojo's fork): NVIDIA's cuRobo licence (non-commercial research). Isaac Lab: BSD-3-Clause.
-- Nothing from RoboDojo is redistributed in Robo Use: the worker runs against a RoboDojo checkout and its assets on the GPU machine, and the task folders hold only instructions and references to RoboDojo's task names and layouts.
+- RoboDojo's code and assets are not redistributed: the worker runs against a RoboDojo checkout and its assets on the GPU machine. The task folders (`tasks/robodojo/`, in the source distribution, not in the wheel) hold the task instructions as RoboDojo gives them (MIT; see NOTICE) and references to RoboDojo's task names and layouts.
+- Running the suite needs cuRobo (non-commercial research license) and Isaac Sim (NVIDIA EULA), so it cannot be run for commercial purposes.
 
 ## Setup (GPU worker)
 
@@ -47,7 +48,7 @@ Isaac Sim needs an NVIDIA RTX GPU (one with RT cores) and a driver from the 580 
    ```
 
    A worker loads its task in 30-45 s alone (up to 4 minutes when three start at once) and uses about 8.7 GB of GPU memory and 7-15 GB of RAM, so a 32 GB card holds three workers. A worker serves one episode at a time and starts a fresh process for every episode after its first (see Limitations); the backend waits for it.
-4. Endpoints: write `runs/_robodojo/remote.json` (or point `$ROBOUSE_ROBODOJO_REMOTE` at another file) with `{"secret": ..., "headers": {"x-daytona-preview-token": ...}, "workers": {"stack_bowls": "https://8801-<sandbox>...", ...}}`. The file lives under `~/benchflow`, which the macOS sandbox profile denies to model harnesses, and the worker rejects requests without the secret.
+4. Endpoints: write `~/.config/robouse/remote/robodojo.json` (or point `$ROBOUSE_ROBODOJO_REMOTE` at a file in another folder the sandbox denies) with `{"secret": ..., "headers": {"x-daytona-preview-token": ...}, "workers": {"stack_bowls": "https://8801-<sandbox>...", ...}}`. The sandbox denies `~/.config/robouse` to model harnesses (a file in the checkout would be readable), and the worker rejects requests without the secret.
 5. Run as usual: `robouse run --task tasks/robodojo/robodojo-stack-bowls --harness oracle --out runs/robodojo-oracle`.
 
 ## How the port works

@@ -1,8 +1,8 @@
 """robo-use Menagerie scenes (dual Franka Panda, ALOHA 2) -> robouse tasks (suite "menagerie").
 
 The scenes, action interface and physical success checks live in src/robouse/backends/menagerie.py and
-src/robouse/backends/menagerie_sim/ (scenes ported from the robo-use workspace, benchflow-ai/robo-use-workspace, and from the
-robotics-tasks-20260917 batch built on it). Reference solutions (menagerie_sim/oracles.py) drive the robot only through
+src/robouse/backends/menagerie_sim/ (scenes ported from BenchFlow's internal robo-use workspace, not published, and from a
+batch of robotics tasks built on it). Reference solutions (menagerie_sim/oracles.py) drive the robot only through
 the robo socket. This script writes tasks/menagerie/<id>/ (task.md + oracle/ + verifier/).
 
 Usage: python adapters/menagerie/generate.py [--out tasks/menagerie]

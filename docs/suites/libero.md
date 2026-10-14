@@ -9,7 +9,7 @@ Backend: `src/robouse/backends/libero.py`. Generator: `python adapters/libero/ge
 
 ![A study scene from LIBERO-90: the white mug placed to the right of the desk caddy](../img/suites/libero-90.webp)
 
-The suite exists so that learned VLA policies and LLM agent harnesses can be compared on the same Robo Use tasks: the same scene, initial state, step budget, success check, episode server and video pipeline. MolmoAct2 runs on it through the `molmoact2` harness ([molmoact2.md](../molmoact2.md)); every LLM harness in [harnesses.md](../harnesses.md) runs on it through `robo`.
+The suite exists so that learned VLA policies and LLM agent harnesses can be compared on the same Robo Use tasks: the same scene, initial state, step budget, success check, episode server and video pipeline. MolmoAct2 runs on it through the `molmoact2` harness ([molmoact2.md](../molmoact2.md)); every LLM harness in [Run agents and VLAs](../run-agents.md) runs on it through `robo`.
 
 ## Source and licences
 

@@ -38,10 +38,9 @@ def select_tasks(root: Path, filt: str = "", ids: list[str] | None = None, limit
 
 
 def _agent_env(agent: str) -> dict[str, str]:
-    """Credentials for BenchFlow agents from the maintainers' pools (never printed or written to the trial).
-
-    Claude agents: the OAuth token pool. Codex agents: the maintainers' Codex account pool (robouse._maintainer), passed
-    as CODEX_AUTH_JSON from that account's robo-use home, so the user's own ~/.codex login is never used."""
+    """Credentials for BenchFlow agents from the optional pools in robouse._maintainer (never printed or written to the
+    trial). Claude agents: a token from ROBOUSE_CLAUDE_TOKEN_FILE. Codex agents: an account from ROBOUSE_CODEX_AUTH_DIR,
+    passed as CODEX_AUTH_JSON from that account's robouse home, so the user's own ~/.codex login is not uploaded."""
     if agent in ("claude", "claude-agent-acp"):
         if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
             return {}

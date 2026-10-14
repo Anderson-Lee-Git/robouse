@@ -110,6 +110,13 @@ Vision tasks set `obs_mode: vision` with `visible_fields: [robot, object_names]`
 
 Scoring: `success_mode: final`. After `robo done` the server holds still for 10 steps, then the worker evaluates the task's compiled BDDL goal (`PredicateGoal`). Give-up, budget exhaustion and agent exit score 0.
 
+## Source and licences
+
+- BEHAVIOR-1K code, including OmniGibson and BDDL: MIT (copyright 2023 Stanford Vision and Learning Group). The task instructions in `adapters/behavior/challenge_tasks.json` and `tasks/behavior/` come from BEHAVIOR-1K's `docs/challenge/task_data.json` and the goals from its BDDL activity definitions; NOTICE credits them.
+- The BEHAVIOR Data Bundle (scenes, objects and their textures, which the worker downloads on the GPU machine) is for non-commercial academic research only, and may not be redistributed in whole or in part. Robo Use redistributes none of it: the task folders hold instructions, scene and activity names and instance numbers, and they are not in the package or the source distribution.
+- NVIDIA Isaac Sim, which OmniGibson runs on: NVIDIA's EULA.
+- So this suite cannot be run for commercial purposes. Screenshots and videos of its scenes show Data Bundle artwork, which the no-redistribution term covers; ask Stanford SVL before publishing any.
+
 ## Setup
 
 1. GPU machine. Isaac Sim needs an NVIDIA RTX GPU with RT cores and, as of this writing, host driver 580. We used Daytona sandboxes through the `daytona` Python SDK: image `nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04`, `Resources(cpu=16, memory=128, disk=250, gpu=1, gpu_type=[RTX_5090])`, `ephemeral=True`, `auto_stop_interval=20`, `ttl_minutes=170`. Daytona's RTX PRO 6000 hosts now run driver 595, where Isaac Sim 5.1 crashes at start-up (a segfault in `librtx.scenedb.plugin.so`, also with a bare `SimulationApp`); the RTX 5090 hosts ran driver 580 and worked. H100s have no RT cores.
@@ -134,14 +141,14 @@ Scoring: `success_mode: final`. After `robo done` the server holds still for 10 
    ```
 
    Scene, rooms and instance are in each task's `robouse:` block. For an instance k > 0 the worker loads the cached instance-0 scene and applies the challenge's `*_0_k_template-tro_state.json` (object states and robot start pose) as the challenge evaluator does, then makes that the state `reset` restores. A load takes 2.5-8 minutes and about 7 GB of VRAM; three workers at a time fit on a 32 GB RTX 5090 (four ran out of GPU memory during a load). `reset` takes about 5-20 s.
-4. Endpoints. Write `runs/_behavior/remote.json` in the checkout (or point `$ROBOUSE_BEHAVIOR_REMOTE` elsewhere):
+4. Endpoints. Write `~/.config/robouse/remote/behavior.json` (or point `$ROBOUSE_BEHAVIOR_REMOTE` at a file in another folder the sandbox denies):
 
    ```json
    {"secret": "<secret>", "workers": {"picking_up_trash": {"url": "https://8800-<sandbox>.<proxy>", "headers": {"x-daytona-preview-token": "<token>"}},
                                       "picking_up_trash@1": {"url": "...", "headers": {}}}}
    ```
 
-   The key is the activity for instance 0 and `<activity>@<k>` otherwise. We used Daytona preview URLs (`sandbox.get_preview_link(port)`). The file lives under `~/benchflow`, which the macOS sandbox profile denies to model harnesses; the worker rejects requests without the secret. Delete the file after the runs.
+   The key is the activity for instance 0 and `<activity>@<k>` otherwise. We used Daytona preview URLs (`sandbox.get_preview_link(port)`). The sandbox denies `~/.config/robouse` to model harnesses (a file in the checkout would be readable), and the worker rejects requests without the secret. Delete the file after the runs.
 5. Run from the checkout, at most one trial per worker at a time:
 
    ```
@@ -175,7 +182,7 @@ All runs on 2026-09-29, one trial per task, workers on Daytona RTX 5090s. Job fo
 
 - The oracle row counts each task's final trial. The worker was fixed during the day (placement on floors, stacking on movable objects, the room of a moved object, placement retries after a failed draw); workers loaded before a fix ran the earlier revision. `moving_boxes_to_storage`, `tidying_living_room`, `bringing_in_wood` and `cleaning_up_plates_and_food` were rerun on the final revision; superseded trials are kept in `runs/behavior-*/_superseded/`. `cleaning_up_plates_and_food` failed 1 of 2 direct runs before placement retries existed (the first plate found no spot in the refrigerator).
 - Kimi K3 solved every probe, including all vision-only ones, usually with the reference plan's skill count. The probed tasks are not hard for a strong model even without state: the object names say what to move, and a skill's failure message says why it failed. Vision-only mostly costs the model more observations and wall time.
-- Not run: Codex and Claude harnesses (quota), Claude Opus (owner's instruction).
+- Not run: Codex and Claude harnesses (quota), Claude Opus (paused at the time).
 
 ## GPU time
 

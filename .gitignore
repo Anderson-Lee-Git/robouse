@@ -16,3 +16,13 @@ tasks-local/
 .coverage
 dist/
 build/
+# credentials and tools' local state: never commit them
+*.pem
+*.key
+auth.json
+*oauth*.env
+*.secret
+remote.json
+.vercel/
+.codex/
+.claude/

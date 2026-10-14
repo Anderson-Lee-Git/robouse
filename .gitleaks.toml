@@ -1,0 +1,13 @@
+# gitleaks settings for CI (.github/workflows/ci.yml) and the pre-commit hook: gitleaks' default rules, minus the
+# placeholders and identifiers in this repository that look like keys. Never allowlist a real value here; remove it
+# from the commit instead.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "documentation placeholders such as <secret> and <token>, and robot model names"
+regexTarget = "line"
+regexes = [
+  '''[=:]\s*["']?<[a-z][a-z0-9 _-]*>''',
+  '''trossen-widowx-250s''',
+]

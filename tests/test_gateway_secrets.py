@@ -89,6 +89,8 @@ def test_a_finished_gateway_trial_holds_no_key(tmp_path, monkeypatch) -> None:
     assert statuses.get("right") == "200" and statuses.get("wrong") in ("400", "401", "403"), episode
 
 
+@pytest.mark.maintainer
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="tools/site/build_runs_site.py needs Python 3.12")
 def test_the_runs_viewer_never_publishes_a_gateway_key(tmp_path) -> None:
     spec = importlib.util.spec_from_file_location("build_runs_site", ROOT / "tools" / "site" / "build_runs_site.py")
     site = importlib.util.module_from_spec(spec)

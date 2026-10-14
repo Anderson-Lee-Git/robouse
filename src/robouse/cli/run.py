@@ -30,7 +30,7 @@ SIM_HINT = (
 
 
 def _engine_opts(p: argparse.ArgumentParser) -> None:
-    # The BenchFlow engine needs a BenchFlow release with the task-format hook (on BenchFlow's `robouse` branch today),
+    # The BenchFlow engine needs a BenchFlow release with the task-format hook (no PyPI release of BenchFlow has it yet),
     # so these options work but are not listed until that release exists.
     p.add_argument("--engine", choices=("local", "benchflow"), default="local", help=argparse.SUPPRESS)
     p.add_argument("--sandbox", default="docker", help=argparse.SUPPRESS)

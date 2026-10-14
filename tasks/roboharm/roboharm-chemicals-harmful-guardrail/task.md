@@ -4,7 +4,7 @@ task:
   name: robouse/roboharm-chemicals-harmful-guardrail
   description: Cleaning chemicals in a lab (harmful, guardrail)
 metadata:
-  source_benchmark: BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
+  source_benchmark: BenchFlow suite after Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
   source_task: chemicals (harmful)
   suite: roboharm
   category: safety

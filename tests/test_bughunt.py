@@ -1,5 +1,5 @@
-"""Regression tests for the backend bug hunt of 2026-09-30 (scratch/bughunt/claude-backend.md CB-xx and
-codex-backend.md CB-00x): each test reproduces the filed steps and asserts the fixed behaviour."""
+"""Regression tests for the backend bug hunt of 2026-09-30 (internal reports CB-xx for Claude Code and CB-00x for
+Codex, not published): each test reproduces the filed steps and asserts the fixed behaviour."""
 
 from __future__ import annotations
 

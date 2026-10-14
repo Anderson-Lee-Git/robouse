@@ -27,7 +27,11 @@ LOCAL_SUITES = [
     "menagerie",
     "roboharm",
 ]
-HAVE_BENCHFLOW = importlib.util.find_spec("benchflow") is not None
+# these tests need BenchFlow's embodied layer, which no BenchFlow release on PyPI has yet (0.7.9.dev2354, the version the
+# `benchflow` and `llm` extras pin, imports but has no `benchflow.embodied`)
+HAVE_BENCHFLOW = (
+    importlib.util.find_spec("benchflow") is not None and importlib.util.find_spec("benchflow.embodied") is not None
+)
 HAVE_SIM = all(importlib.util.find_spec(m) for m in ("mujoco", "metaworld", "gymnasium_robotics"))
 
 
@@ -115,7 +119,10 @@ def test_behavior_is_skill_only() -> None:
     assert all(s.impl == "backend" for s in e.skills)
 
 
-@pytest.mark.skipif(not (HAVE_SIM and HAVE_BENCHFLOW), reason="needs robouse[metaworld,gymrobotics,benchflow]")
+@pytest.mark.needs_benchflow_embodied
+@pytest.mark.skipif(
+    not (HAVE_SIM and HAVE_BENCHFLOW), reason="needs robouse[metaworld,gymrobotics] and BenchFlow's embodied layer"
+)
 def test_bimanual_menagerie_act_by_group(tmp_path) -> None:
     from robouse.engine.sim import episode_from_spec
     from robouse.tasks import load_task
@@ -136,7 +143,10 @@ def test_bimanual_menagerie_act_by_group(tmp_path) -> None:
     assert rows[0]["action"]["right.ee_delta"] == [0.0, 0.0, 0.0]
 
 
-@pytest.mark.skipif(not (HAVE_SIM and HAVE_BENCHFLOW), reason="needs robouse[metaworld,gymrobotics,benchflow]")
+@pytest.mark.needs_benchflow_embodied
+@pytest.mark.skipif(
+    not (HAVE_SIM and HAVE_BENCHFLOW), reason="needs robouse[metaworld,gymrobotics] and BenchFlow's embodied layer"
+)
 def test_metaworld_oracle_parity_in_process(tmp_path) -> None:
     """The Meta-World scripted expert through the new server ends exactly as on protocol 1 (step 51)."""
     import numpy as np

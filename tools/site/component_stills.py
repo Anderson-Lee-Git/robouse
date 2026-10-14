@@ -132,7 +132,9 @@ def main() -> int:
         c = first_ok(reg, task=t, emb="franka-panda") or first_ok(reg, task=t, emb="aloha-2") or first_ok(reg, task=t)
         jobs.append((f"task-{t}", *c, TASK_CAM.get(t) or CLOSE_CAM[c[1]]))
     for name, e, s, t, cam in jobs:
-        Image.fromarray(render(e, s, t, cam, w, h, robot=not name.startswith("scene-"))).save(out / f"{name}.webp", quality=82)
+        Image.fromarray(render(e, s, t, cam, w, h, robot=not name.startswith("scene-"))).save(
+            out / f"{name}.webp", quality=82
+        )
         print(name, e, s, t, cam)
     return 0
 

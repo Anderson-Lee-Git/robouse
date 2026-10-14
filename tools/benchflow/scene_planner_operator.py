@@ -9,8 +9,9 @@ a container, so a role could unset its own ROBO_ROLE.
     python tools/benchflow/scene_planner_operator.py --task tasks/arc-style/arc-gravity --agent codex --model gpt-6-astra \
         --jobs runs/scene
 
-The task is copied with a `roles:` block added (the published task folder is not changed). Codex credentials come
-from the maintainers' account pool (CODEX_AUTH_JSON), as for `robouse run`; they are never printed.
+The task is copied with a `roles:` block added (the published task folder is not changed). Credentials come from
+the environment or the optional pools (ROBOUSE_CLAUDE_TOKEN_FILE, ROBOUSE_CODEX_AUTH_DIR), as for `robouse run`; they
+are never printed.
 """
 
 from __future__ import annotations
@@ -65,7 +66,7 @@ def main() -> int:
     try:
         task = with_roles(Path(a.task).resolve(), tmp)
         # provider-routed models (e.g. vllm/<model> with BENCHFLOW_PROVIDER_BASE_URL) take their key from the
-        # environment; otherwise use the maintainers' pools like `robouse run`
+        # environment; otherwise the optional pools, as for `robouse run`
         creds = {} if "/" in a.model else _agent_env(a.agent)
         roles = [
             Role(name=n, agent=a.agent, model=a.model, env={**creds, "ROBO_ROLE": n}) for n in ("planner", "operator")

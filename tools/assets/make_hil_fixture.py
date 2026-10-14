@@ -1,14 +1,14 @@
 """Build a hardware-in-the-loop fixture (src/robouse/real/fixtures/<name>/) from a session recorded on the real bench.
 
   # Metal arm session (recorder.py layout: log.jsonl, video_index.jsonl, <camera>.mp4)
-  python tools/assets/make_hil_fixture.py metal ~/benchflow/robot/recordings/2026-09-05-metal-arm-bowl/sessions/20260905-121853-bowl-pick \
+  python tools/assets/make_hil_fixture.py metal <recordings>/2026-09-05-metal-arm-bowl/sessions/20260905-121853-bowl-pick \
       --name metal-bowl-121853
   # SO-101 snapshots (so101_sort_control.py layout: <side>_state.json + <stamp>_<camera>.jpg stills)
-  python tools/assets/make_hil_fixture.py so101 ~/benchflow/robot/sessions/so101-sort --side left --name so101-sort-left
+  python tools/assets/make_hil_fixture.py so101 <sessions>/so101-sort --side left --name so101-sort-left
   # synthetic fixture (no recording: start pose only, default tracking), e.g. for the Piper driver
   python tools/assets/make_hil_fixture.py piper --synthetic --name piper-synthetic
   # contact traces for the tests (no camera frames, step labels kept), from the recorder's logs alone
-  python tools/assets/make_hil_fixture.py metal ~/benchflow/robot/recordings/2026-09-05-metal-arm-hanoi/sessions/20260905-131602-hanoi-pegs \
+  python tools/assets/make_hil_fixture.py metal <recordings>/2026-09-05-metal-arm-hanoi/sessions/20260905-131602-hanoi-pegs \
       --name metal-hanoi-131602 --keyframes 0 --labels --out tests/fixtures/hil/metal-hanoi-131602 --note "..."
 
 Keyframes are chosen by farthest-point sampling in joint space among the logged steps; each keeps the video frame of
@@ -120,7 +120,7 @@ def main() -> int:
     ap.add_argument("--session-envelope", default="", help='JSON guard overrides the session ran with, e.g. {"joint_speed_deg_s": 15, "windup_deg": 3}')
     ap.add_argument("--labels", action="store_true", help="keep each step's label from the recorder log")
     ap.add_argument("--out", help="fixture folder (default: src/robouse/real/fixtures/NAME)")
-    ap.add_argument("--source", help="the recording's path as stored in the fixture (default: SESSION)")
+    ap.add_argument("--source", help="the recording as named in the fixture (default: the session folder's name, never a local path)")
     ap.add_argument("--note", default="", help="stored as the fixture's note (what the recording shows)")
     a = ap.parse_args()
     prof = profile(a.robot)
@@ -133,10 +133,10 @@ def main() -> int:
         src = "synthetic"
     elif (Path(a.session) / "log.jsonl").exists():
         body = from_recorder_session(Path(a.session), out, a.keyframes, a.width, a.labels)
-        src = a.source or str(Path(a.session).resolve()).replace(str(Path.home()), "~")
+        src = a.source or Path(a.session).resolve().name  # the session id, never a local path
     else:
         body = from_snapshots(Path(a.session), out, a.side, prof, a.width)
-        src = str(Path(a.session).resolve()).replace(str(Path.home()), "~") + f" ({a.side} arm)"
+        src = Path(a.session).resolve().name + f" ({a.side} arm)"
     fx = {"name": a.name, "robot": prof.name, "source": src, **body, **({"note": a.note} if a.note else {})}
     if a.session_envelope:  # the guard settings the session ran with (hil-check replays with the same ones)
         fx["session_envelope"] = json.loads(a.session_envelope)

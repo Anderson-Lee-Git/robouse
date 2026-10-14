@@ -91,7 +91,7 @@ Oracle episodes use 628 to 2885 steps and 3 to 25 s of episode wall time on an u
 
 ## Model probe
 
-One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28. Codex with GPT-6 Astra was not probed: every account in the maintainers' Codex pool had hit its usage limit (until 2026-10-03). These are probes, not rates. Runs: `runs/emb-probe-mobile-manip-kimi/, runs/emb-probe-mobile-manip-kimi-r2/`.
+One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28. Codex with GPT-6 Astra was not probed: every Codex account available for the run had hit its usage limit (until 2026-10-03). These are probes, not rates. Runs: `runs/emb-probe-mobile-manip-kimi/, runs/emb-probe-mobile-manip-kimi-r2/`.
 
 | Task | Kimi K3 |
 |---|---|

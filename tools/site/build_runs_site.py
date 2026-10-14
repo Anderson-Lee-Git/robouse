@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Static, public experiment viewer for the final runs (robouse.ai/runs/). See docs/viewer.md.
 
-  .venv/bin/python tools/site/build_runs_site.py --out ~/benchflow/roboharm/site/runs
+  .venv/bin/python tools/site/build_runs_site.py --out <site checkout>/site/runs
 
 Rebuild at any time: finished trials of jobs that are still running are included, unfinished ones are left out,
 and videos and filmstrips that are already up to date are not encoded again (a rebuild takes about a minute).
@@ -59,12 +59,15 @@ Standard library, Pillow (filmstrips) and ffmpeg (videos); src/robouse/runner/at
 from __future__ import annotations
 
 import argparse
+import getpass
 import html
 import importlib.util
 import json
 import math
+import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from collections import Counter, defaultdict
@@ -95,7 +98,9 @@ HM: list[dict] = []
 HM_KEY: dict[tuple[str, str], int] = {}
 N_REGISTERED = 0  # how many of HM come from tools/models.json (load_models)
 SYNTH = False  # --synthetic: a labelled scale fixture built outside the site (see synthesize)
-REAL_SITE = Path.home() / "benchflow" / "roboharm" / "site"
+# --synthetic borrows the shared foundation and published videos from the deployed site: $RUNS_SITE_ROOT, the folder
+# that holds runs/ in the site repository (whose tools/ holds chrome.py and models.json)
+REAL_SITE = Path(os.environ.get("RUNS_SITE_ROOT") or "/nonexistent/runs-site-root").expanduser()
 
 
 def canon(harness: str, model: str) -> tuple[str, str]:
@@ -227,36 +232,47 @@ SECRET_RES = [
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9_\-\.=]{20,}"),
     re.compile(r"(?i)\b(BF_REVIEW_TOKEN|BASETEN_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY|API_KEY|ACCESS_TOKEN|SECRET|PASSWORD|PASSWD|TOKEN)\s*[=:]\s*['\"]?[A-Za-z0-9_\-\./+]{8,}"),
 ]
-BANNED = re.compile("(?i)" + "har" + "bor" + r"|bf-agents|~/benchflow|/Users/maintainer|seatbelt")
+# The machine the trials ran on: its account name, home folder and host name, and the checkout the trials ran from.
+# They default to this machine and ~/benchflow/robouse. When the trials ran on another machine or from another checkout,
+# set RUNS_SITE_USER, RUNS_SITE_HOME, RUNS_SITE_HOST (a regular expression) and RUNS_SITE_TRIALS_REPO. RUNS_SITE_PRIVATE
+# (a regular expression, optional) adds names that mark an output as a listing of private local files, such as folders
+# in that home or in /tmp.
+OWNER = os.environ.get("RUNS_SITE_USER") or getpass.getuser()
+HOME = (os.environ.get("RUNS_SITE_HOME") or str(Path.home())).rstrip("/")
+HOST_RE = os.environ.get("RUNS_SITE_HOST") or re.escape(re.sub(r"-\d+$", "", socket.gethostname().split(".")[0]))
+HOME_REPO = (os.environ.get("RUNS_SITE_TRIALS_REPO") or f"{HOME}/benchflow/robouse").rstrip("/") + "/"
+REPO_IN_HOME = re.escape(HOME_REPO.removeprefix(HOME + "/"))
+PRIVATE_RE = os.environ.get("RUNS_SITE_PRIVATE", "")
+BANNED = re.compile("(?i)" + "har" + "bor" + r"|bf-agents|~/benchflow|" + re.escape(HOME) + r"|seatbelt")
 # Agent commands that look outside the workspace, and outputs that show files outside it.
 OUTSIDE_CMD = re.compile(
     r"\bls\s+(?:-\w+\s+)*(?:/|~|\$HOME|/Users[\w/.-]*|/private/tmp/?|/tmp/?|/opt|/usr/local)(?=[\s;&|)\"']|$)"
     r"|\bfind\s+(?:/|~|\$HOME|/Users)(?=[\s\"'])|\bgrep\s+-\w*r\w*\s+.*?(?:~|/Users|\$HOME)"
-    r"|/Users/maintainer(?!/benchflow/robouse/(?:src|tasks)/)|~/(?!robowork)|\$HOME|expanduser\(|\.ssh|printenv|(?:^|[;&|(]\s*)env\s*(?:$|\|)|mdfind")
-OUTSIDE_OUT = re.compile(r"/Users/maintainer/(?!benchflow/robouse/(?:src|tasks)/|\.cache/libero/)|/tmp/private-runs|\.private-site|handoff-", re.I)
+    + "|" + re.escape(HOME) + "(?!/" + REPO_IN_HOME + r"(?:src|tasks)/)"
+    + r"|~/(?!robowork)|\$HOME|expanduser\(|\.ssh|printenv|(?:^|[;&|(]\s*)env\s*(?:$|\|)|mdfind")
+OUTSIDE_OUT = re.compile(re.escape(HOME + "/") + "(?!" + REPO_IN_HOME + r"(?:src|tasks)/|\.cache/libero/)"
+                         + (f"|{PRIVATE_RE}" if PRIVATE_RE else ""), re.I)
 # a listing of the shared temp folder (other projects' names) rather than the agent's own scratch files
 TMP_ENTRY = re.compile(r"/private/tmp/([\w.-]+)")
 WITHHELD_NOTE = ("Trajectory not published: during this trial the agent looked at files outside its workspace (for example "
                  "listing the home folder or searching the whole disk), so its commands and their outputs may show unrelated "
                  "local files. The recording, the camera images, the reward and the outcome are shown.")
-HOME_REPO = "/Users/maintainer/benchflow/robouse/"
 # Trials run in Daytona sandboxes record their task folder under /work/tasks/<batch>/, where a batch name can carry an
 # account label: published as robouse/tasks/ (sanitized_json, the trajectory's clean)
 WORK_TASKS = re.compile(r"/work/tasks/[^/\"\s]+/")
 # The machine the trials ran on, in agents' outputs: the account name (`ls -l` columns, `whoami`), the per-user temp
 # folder (/var/folders/<2>/<id>, where workspaces live) and the host name. Replaced, not withheld: `ls -l` keeps its
 # columns (the name becomes "user" padded to the same width), a temp path keeps its tail after "<tmp>".
-OWNER = "lixiangyi"
 PERSONAL_SUBS = [
     (re.compile(r"(?:/private)?/var/folders/[A-Za-z0-9_]{2}/[A-Za-z0-9_+-]+(?:/T(?=/|\b))?"), "<tmp>"),
     (re.compile(r"(?:/private)?/var/folders/[A-Za-z0-9_]{2}/"), "<tmp>/"),
-    (re.compile(r"(?i)xiangyis?-macbook-pro(?:-\d+)?(?:\.local)?"), "host"),
-    (re.compile(OWNER + r"(?= )"), "user" + " " * (len(OWNER) - len("user"))),
-    (re.compile(OWNER), "user"),
+    (re.compile(r"(?i)" + HOST_RE + r"(?:-\d+)?(?:\.local)?"), "host"),
+    (re.compile(re.escape(OWNER) + r"(?= )"), "user" + " " * (len(OWNER) - len("user"))),
+    (re.compile(re.escape(OWNER)), "user"),
 ]
 # what must never be in the output (checked by scan(), which fails the build): the account name, the home folder, the
 # per-user temp folder, the host name
-PERSONAL = re.compile(r"(?i)" + OWNER + r"|/Users/[A-Za-z0-9_.-]+/|/var/folders/[A-Za-z0-9_]{2}/|xiangyis?-macbook")
+PERSONAL = re.compile(r"(?i)" + re.escape(OWNER) + r"|/Users/[A-Za-z0-9_.-]+/|/var/folders/[A-Za-z0-9_]{2}/|" + HOST_RE)
 
 
 def redact(s: str) -> str:
@@ -1840,6 +1856,9 @@ def main(argv: list[str] | None = None) -> int:
     VER = datetime.now(UTC).strftime("%Y%m%d%H%M")
     SYNTH = a.synthetic > 0
     if SYNTH:
+        if not REAL_SITE.is_dir():
+            print("--synthetic needs RUNS_SITE_ROOT: the deployed site's folder that holds runs/", file=sys.stderr)
+            return 2
         if out.is_relative_to(REAL_SITE.resolve()) or out.is_relative_to(REAL_SITE.parent.resolve()):
             print("--synthetic never writes into the site repo; pass a scratch --out (for example /tmp/pwrun/synth/site/runs)", file=sys.stderr)
             return 2

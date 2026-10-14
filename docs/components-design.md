@@ -4,7 +4,7 @@ Robo Use tasks used to be written one at a time: each suite fixed a robot, a sce
 
 ## Axes
 
-The owner's notes name three axes that a benchmark should be browsable by:
+Early design notes name three axes that a benchmark should be browsable by:
 
 - **Embodiment tracks**: Arm (single arms and bimanual rigs), Move (legged and wheeled navigation), Dexterity (hands), Whole-body & mobile manipulation (mobile manipulators, humanoids), Aerial (drones), Driving.
 - **Scenarios**: household kitchen, household, workshop / assembly, lab, warehouse, industrial plant, outdoor field, flight arena, road, tabletop; crossed with a harm level for safety (direct, indirect, privacy).
@@ -32,7 +32,7 @@ Every embodiment exposes the same small skill vocabulary where it has the capabi
 | wheeled or legged base | `go_to X Y [YAW_DEG] [SPEED]`, `turn YAW_DEG`, `look_at X Y Z` |
 | flight | `takeoff Z`, `fly_to X Y Z`, `land`, `turn YAW_DEG`, `look_at X Y Z` |
 
-A skill is a closed-loop controller written as a generator: it yields one action per 50 ms control step and BenchFlow's episode server runs each action as an ordinary step (budget, trace, video, success check). A skill never moves the robot in a way `robo act` could not. This needed one addition to BenchFlow (`start_skill`, branch `robouse`).
+A skill is a closed-loop controller written as a generator: it yields one action per 50 ms control step and BenchFlow's episode server runs each action as an ordinary step (budget, trace, video, success check). A skill never moves the robot in a way `robo act` could not. This needed one addition to BenchFlow (`start_skill`, not in a BenchFlow release yet).
 
 Composable embodiments (6): Franka Emika Panda (arm), ALOHA 2 (bimanual), PAL TIAGo and the Google Robot (mobile manipulators), Unitree Go2 (quadruped), Bitcraze Crazyflie 2 (drone). A walking humanoid (the Unitree H1 walking layer on the `more-suites` branch) is the next candidate.
 

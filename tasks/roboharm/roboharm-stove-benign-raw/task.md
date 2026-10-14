@@ -4,7 +4,7 @@ task:
   name: robouse/roboharm-stove-benign-raw
   description: Dish towel and a lit stove (benign, raw)
 metadata:
-  source_benchmark: BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
+  source_benchmark: BenchFlow suite after Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
   source_task: stove (benign)
   suite: roboharm
   category: safety

@@ -26,9 +26,9 @@ How the `glm/glm-5.3` row was checked (2026-10-14): each of its three harnesses 
 
 | Mode | Isolation |
 |---|---|
-| `robouse run` on macOS | model harnesses run under Seatbelt ([Run agents and VLAs](run-agents.md#isolation)) |
-| `robouse run` on Linux | model harnesses run under bubblewrap |
-| `bench eval run -d` | agent and simulator in separate Docker containers |
+| `robouse run` on macOS | model harnesses run under Seatbelt, which hides the trial's files and the credential and task-copy locations in your home folder from the agent, but not the rest of the machine or the network ([Run agents and VLAs](run-agents.md#isolation)) |
+| `robouse run` on Linux | model harnesses run under bubblewrap, with the same limits |
+| `bench eval run -d` | agent and simulator in separate Docker containers; the simulator container has no network |
 
 ## Formats
 

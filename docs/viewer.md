@@ -1,32 +1,13 @@
 # Viewing trials
 
-There are two ways to look at trials: the full BenchFlow viewer (one trial at a time, video synced to the agent's steps) and a static overview page (every trial on one page).
-
-## Full viewer: `tools/ops/view.sh`
-
-```
-tools/ops/view.sh               # http://127.0.0.1:8768
-tools/ops/view.sh --port 8770
-```
-
-It runs the BenchFlow viewer from the `robouse` branch of the private repo `benchflow-ai/trial-viewer` (https://github.com/benchflow-ai/trial-viewer/tree/robouse), checked out at `~/benchflow/trial-viewer`, with `--root robouse=<repo>/runs --tasks robotics=<repo>/tasks/*`. One-time setup: `gh repo clone benchflow-ai/trial-viewer ~/benchflow/trial-viewer && git -C ~/benchflow/trial-viewer checkout robouse`; the first start installs the Python environment and builds the frontend (about a minute; needs `uv` and Node.js 20+). That branch adds what Robo Use needs on top of the viewer at `~/benchflow/data/viewer`: robot trials, `task.md` task folders and a column per harness and model. The default port is 8768 because 8765 and 8766 usually serve the 3D/CUA runs on this Mac; set `VIEWER=/path/to/viewer` to use another checkout. The viewer is read-only and binds to 127.0.0.1.
-
-What you get:
-
-- **Jobs**: one job per folder under `runs/` (for example `mw-claude-opus`), with reward, cost and tokens per task. Folders starting with `_` (`_gallery`, `_audit`) are skipped.
-- **Trial page** (`/jobs/<job>/tasks/_/<harness>/<provider>/<model>/<task>/trials/<trial>`). A trial counts as a robot trial when it has `episode/result.json` (or an `episode` object in `result.json`) or its `config.json` `task_path` names a task with a `robouse:` block. It opens on Recording; the header adds the outcome and steps used against the budget.
-  - **Trajectory**: the ATIF trajectory: the prompt, then every agent step with its message, reasoning (Codex reasoning summaries and Claude thinking when recorded), tool calls and their results. When the agent looked at a camera image (`robo observe --image`, then Claude's Read tool), the image is shown from `artifacts/observations/`.
-  - **Recording**: the episode video with the step list beside it. Clicking a step seeks the video to the moment its robo requests ran; the playing video highlights the current step. The caption reads "Simulation recording of the episode (MuJoCo), synced to the agent's steps" (the simulator is taken from `recording_index.json`'s `source`, the benchmark or the backend; the index's `time_axis` is shown on hover), with no click markers. Below the video is a strip of the camera images the agent looked at (`artifacts/observations/*.png`), each labelled with the step that took it.
-  - **Verdict**: the episode's outcome (reward, outcome, steps used / budget, success mode, observation mode), the episode facts (robot requests, episode wall time, backend and env, simulator, camera, skills, seed, source), `verifier/test-stdout.txt`, the agent's `robo done` message (or its last message), the camera images and the task prompt.
-  - **Files**: the trial folder. Under **More**: **Run details** (Outcome, Tokens, and Timing, which shows the whole run from `wall_time_s` when there is no per-phase timing), **Config** (`config.json`), **Agent** and **Log** (raw `agent/stdout.jsonl` and `stderr.txt`).
-- **Tasks** (home page): every task under `tasks/<suite>/` (`task.md` + `oracle/` + `verifier/`), labelled `Robotics · <suite>` with its category, description, difficulty, source benchmark and item, a **Robot · env** column (backend, env, observation mode, success mode, step budget), the oracle result and one column per harness and model with a trial (Opus 5.5 / claude-code, GPT-6 Astra / codex, noop, claude-code-glm · GLM-5.3, codex-glm · GLM-5.3, mini-swe-agent-glm · GLM-5.3, lerobot-eval · MolmoAct2-LIBERO-LeRobot, ...). A task page shows the `task.md` body as the instruction and the whole `task.md` under Reviews.
+Maintainers' notes on the trial viewers. Every trial folder has `agent/trajectory.json` (an ATIF trajectory) and `artifacts/recording_index.json` (video time per step), which the BenchFlow trial viewer (not public yet) reads; this page describes those two formats, the static overview page (every trial on one page) and the builder of the public viewer at [robouse.ai/runs](https://robouse.ai/runs/).
 
 ## Formats Robo Use writes for the viewer
 
-`src/robouse/atif.py` runs at the end of every trial (`runner.py`) and writes two files. To rebuild them for existing trials:
+`src/robouse/runner/atif.py` runs at the end of every trial (`runner/trial.py`) and writes two files. To rebuild them for existing trials:
 
 ```
-.venv/bin/python -m robouse.atif runs/<job>/<trial> [...]
+.venv/bin/python -m robouse.runner.atif runs/<job>/<trial> [...]
 ```
 
 ### `agent/trajectory.json`: ATIF-v1.7
@@ -78,12 +59,12 @@ How tool calls are matched to the trace. Claude Code and Codex do not timestamp 
 open runs/_gallery/index.html
 ```
 
-A single self-contained HTML file (white background, system font, no network). The top shows totals (trials, tasks, harness·model pairs, solve rate, suspicious, infra failures) for the current filter. Below them is a sortable table of every trial (task, job, suite, source benchmark, harness, model, reward, outcome, env steps, wall time, audit flags, viewer link), filterable by harness, model, suite, source benchmark, job, solved or failed, audit status and free text. Under the table there is one card per trial, 48 at a time, each with the video, the agent's last message, the `robo done` message and links to the full viewer, the video and the trial folder. Videos are linked relatively (`../<job>/<trial>/artifacts/recording.mp4`), so the page works from disk or when `runs/` is served. The viewer links need `tools/ops/view.sh` running (change the base with `--viewer URL`).
+A single self-contained HTML file (white background, system font, no network). The top shows totals (trials, tasks, harness·model pairs, solve rate, suspicious, infra failures) for the current filter. Below them is a sortable table of every trial (task, job, suite, source benchmark, harness, model, reward, outcome, env steps, wall time, audit flags, viewer link), filterable by harness, model, suite, source benchmark, job, solved or failed, audit status and free text. Under the table there is one card per trial, 48 at a time, each with the video, the agent's last message, the `robo done` message and links to the full viewer, the video and the trial folder. Videos are linked relatively (`../<job>/<trial>/artifacts/recording.mp4`), so the page works from disk or when `runs/` is served. The viewer links need a BenchFlow trial viewer serving `runs/` (its base URL is `--viewer URL`, default http://127.0.0.1:8768).
 
 ## Public viewer: `tools/site/build_runs_site.py`
 
 ```
-.venv/bin/python tools/site/build_runs_site.py --out ~/benchflow/roboharm/site/runs   # then deploy the site
+.venv/bin/python tools/site/build_runs_site.py --out <site checkout>/site/runs   # then deploy the site
 ```
 
 This builds https://robouse.ai/runs/, a static viewer for the final runs: every `runs/final-*` job, including jobs that are still running (their finished trials are in; rerun the command to add more). Unfinished trials are left out, except in jobs listed in `PARTIAL_JOBS`, where they are shown as partial. A job counts as running while a `robouse` process writes into it (checked with `ps` on the build machine); suites with a running job get a dot in the matrix. A rebuild takes about four minutes; videos and filmstrips that are already up to date are not encoded again.
@@ -103,9 +84,7 @@ Publishing safety: the build replaces secret-shaped strings with `[redacted]`, w
 
 ## Open issues
 
-- Fixed on the viewer's `robouse` branch (2026-09-27): the CUA wording on the Recording tab and the `3D ·` area label, `task.md` folders missing from the Tasks page, the fixed Opus/Astra/Fable model columns, and "No timing data". The copy at `~/benchflow/data/viewer` (what 8765 and 8766 serve) does not have these changes until the branch is merged there.
 - Timing is one span: Robo Use records no per-phase timing, so the whole run (`wall_time_s`) is shown as Agent Execution. Writing phase timings to `result.json` (`timing: {environment_setup, agent_setup, agent_execution, verifier}` in seconds) would split it.
 - The Recording's simulator name is inferred from text (`source`, benchmark, backend). Adding `"simulator": "MuJoCo"` to `recording_index.json` would make it explicit; the viewer reads that field first.
-- The /review queue's model filter still offers only Opus, Astra and Fable (other models are "other").
 - Videos are small and short (320×320, frames every 2 env steps at 30 fps: a 150-step episode is about 2.5 s). Slow playback may be preferable for review.
-- A runner process imports `robouse.atif` once at start, so jobs started before a change to `atif.py` keep the old converter. Rebuild with `python -m robouse.atif` (the audit and the gallery build a missing trajectory in memory).
+- A runner process imports `robouse.runner.atif` once at start, so jobs started before a change to `atif.py` keep the old converter. Rebuild with `python -m robouse.runner.atif` (the audit and the gallery build a missing trajectory in memory).

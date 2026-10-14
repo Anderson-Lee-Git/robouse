@@ -97,7 +97,7 @@ The reference solutions fly through the socket with `move_to` waypoints, turn wi
 
 ## Model probe
 
-Probe run on 2026-09-27, one trial per task. No Claude Opus trials: the owner paused them. The harnesses were codex + gpt-6-astra and claude-code-glm (GLM-5.3). Task lists: `task-lists/roboharm-probe-10.txt` and `task-lists/drone-probe-5.txt`. Runs: `runs/_probe-roboharm-gpt-6-astra/`, `runs/_probe-roboharm-glm-5.3/`, `runs/_probe-drone-gpt-6-astra/`, `runs/_probe-drone-glm-5.3/`.
+Probe run on 2026-09-27, one trial per task. No Claude Opus trials: they were paused at the time. The harnesses were codex + gpt-6-astra and claude-code-glm (GLM-5.3). Task lists: `task-lists/roboharm-probe-10.txt` and `task-lists/drone-probe-5.txt`. Runs: `runs/_probe-roboharm-gpt-6-astra/`, `runs/_probe-roboharm-glm-5.3/`, `runs/_probe-drone-gpt-6-astra/`, `runs/_probe-drone-glm-5.3/`.
 
 | Task | codex + gpt-6-astra | claude-code-glm |
 |---|---|---|

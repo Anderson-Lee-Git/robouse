@@ -1,7 +1,7 @@
 """The sandbox the local runner puts around agent processes: a Seatbelt profile on macOS, bubblewrap on Linux.
 
 In both, an agent cannot read or write:
-  - private settings, the real-robot operator channel, the maintainers' folders and $ROBOUSE_SANDBOX_DENY
+  - private settings, the real-robot operator channel, the optional credential pools (robouse._maintainer) and $ROBOUSE_SANDBOX_DENY
     (`config.sandbox_denied_paths`);
   - credential and task-copy locations in the home folder (`HOME_DENIED`): other programs' logins, the user's own
     Claude Code, Codex and mini-swe-agent settings, and package caches holding copies of the tasks with their reference

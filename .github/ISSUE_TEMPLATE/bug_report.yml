@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in robouse or robo does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please do not paste API keys, tokens or the output of `env`. Security problems go to SECURITY.md, not here.
+  - type: input
+    id: version
+    attributes:
+      label: Robo Use version
+      description: The output of `robouse --version`.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system and architecture, Python version, and how you installed robouse (for example `pip install 'robouse[sim]'` in a venv, or an editable checkout).
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command you ran.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The output or error. For a failed trial, attach or paste `result.json` and the end of `episode/server.log` from the trial folder.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: robouse doctor
+      description: The output of `robouse doctor`, if the problem is about rendering, a simulator or a harness.
+      render: text

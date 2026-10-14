@@ -15,9 +15,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-pytest.importorskip("benchflow.embodied.sidecar")
+pytest.importorskip("benchflow.embodied.sidecar", reason="needs BenchFlow's embodied layer (not released yet)")
 
 from robouse.engine.format import TOKEN_REF, materialize
+
+pytestmark = pytest.mark.needs_benchflow_embodied
 
 ROOT = Path(__file__).resolve().parents[1]
 HEX32 = re.compile(r"\b[0-9a-f]{32}\b")
