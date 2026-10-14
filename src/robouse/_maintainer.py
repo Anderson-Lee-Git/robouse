@@ -7,8 +7,8 @@ read unless its variable is set.
   turn instead of ~/.codex/auth.json when OPENAI_API_KEY is not set.
 
 No model provider's key is read from a file: the model gateway takes it from the environment only. Both locations go
-on the local runner's sandbox deny list (`config.sandbox_denied_paths`), so agents can read neither. Other private
-folders go in ROBOUSE_SANDBOX_DENY. Use a pool only as far as your providers' terms allow.
+on the local runner's sandbox deny list (`config.sandbox_denied_paths`), so agents can read neither; for the token file
+that is the file alone, not its folder. Other private folders go in ROBOUSE_SANDBOX_DENY. Use a pool only as far as your providers' terms allow.
 """
 
 from __future__ import annotations

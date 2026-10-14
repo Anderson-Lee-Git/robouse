@@ -30,9 +30,9 @@ Only the latest release on [PyPI](https://pypi.org/project/robouse/) gets securi
 ### What it does
 
 - It denies reads and writes to the trial's run folder, the trial's task folder, any `robouse` source or install (a `robouse` package folder) and, when Robo Use runs from a source checkout, that checkout's `tasks/`, `runs/` and `adapters/` folders.
-- It denies `~/.config/robouse`, `~/.config/robouse-operator`, the optional credential pools (`ROBOUSE_CLAUDE_TOKEN_FILE`, `ROBOUSE_CODEX_AUTH_DIR`) and every path in `ROBOUSE_SANDBOX_DENY`.
+- It denies `~/.config/robouse`, `~/.config/robouse-operator`, the optional credential pools (`ROBOUSE_CLAUDE_TOKEN_FILE`, `ROBOUSE_CODEX_AUTH_DIR`) and every path in `ROBOUSE_SANDBOX_DENY`. For `ROBOUSE_CLAUDE_TOKEN_FILE` it denies that file only, not the folder it is in; list that folder in `ROBOUSE_SANDBOX_DENY` if it holds other secrets.
 - It denies credential and task-copy locations in your home folder (`HOME_DENIED` in [`src/robouse/runner/sandbox.py`](src/robouse/runner/sandbox.py)): other programs' logins (such as `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.config/gh`, `~/.netrc` and `~/.docker`), your own Claude Code, Codex and mini-swe-agent settings, BenchFlow's settings and task cache, package caches that hold copies of the tasks (`~/.cache/uv`, pip's cache) and Robo Use's own cache, except the agent's own per-trial harness folder. A denied file is hidden as well as a denied folder.
-- Each trial's Claude Code and Codex get a config folder of their own, which is removed when the trial ends.
+- Each trial's Claude Code and Codex get a config folder of their own, which is removed when the trial ends. The exception is a Codex account pool (`ROBOUSE_CODEX_AUTH_DIR`): Codex then keeps one folder per account, which the trials on that account share.
 - The agent can read but not change the Python that Robo Use runs on, because the episode server and the verifier run on it.
 - It keeps other trials' workspaces and episode sockets from the agent, and refuses connections to the Docker, Podman and LXD sockets and to your SSH agent.
 - On Linux the agent gets its own process namespace, so it cannot see other processes, and its own `/tmp`.

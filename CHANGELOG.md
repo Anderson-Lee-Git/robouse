@@ -38,7 +38,7 @@ Agent isolation fixes, and changes for the open-source release of the repository
 
 ### Changed
 
-- The default model for gateway harnesses (`mini-swe-agent`, `dimcode`, and `claude-code` or `codex` with a provider-prefixed model) is `glm/glm-5.3`: GLM-5.3 on the Z.ai Coding Plan through BenchFlow's `glm` provider, set up with `GLM_API_KEY` and `GLM_BASE_URL`. No provider key is loaded unless you set it.
+- The default model of `mini-swe-agent` and `dimcode` is `glm/glm-5.3`: GLM-5.3 on the Z.ai Coding Plan through BenchFlow's `glm` provider, set up with `GLM_API_KEY` and `GLM_BASE_URL`. No provider key is loaded unless you set it.
 - `ROBOUSE_PRICING` replaces the packaged price table for the spend cap. A model with no price runs only with `ROBOUSE_SPEND_CAP_USD=0` or a price you give.
 - The legacy `claude-code-glm`, `codex-glm` and `mini-swe-agent-glm` harness names still read old trial folders, but a new run refuses them, and so does an explicit `baseten/` model id.
 - `show-harness` and `robouse grade` have no default model: give `--model`. `show-harness` through the gateway needs a model the registry lists as reading images. The VLM grader needs its own endpoint and key (`ROBOUSE_GRADER_URL`, `ROBOUSE_GRADER_API_KEY`).
