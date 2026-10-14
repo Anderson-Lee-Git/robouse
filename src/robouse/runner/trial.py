@@ -345,10 +345,12 @@ def _provider_error(stats: object, episode: dict) -> str | None:
         return None
     limit = ""
     if stats.get("rate_limited"):
-        limit = f", {stats['rate_limited']} with HTTP 429, the provider's rate or usage limit"
+        some = "all" if stats["rate_limited"] == stats["failures"] else "some"
+        limit = f", {some} answered with HTTP 429: the provider's rate or usage limit"
+    n, calls = int(stats.get("requests") or 0), int(stats.get("upstream_calls") or 0)
     return (
-        f"ProviderError: none of the agent's model requests succeeded ({stats['failures']} failed{limit}; "
-        "gateway/requests.jsonl has the errors)"
+        f"ProviderError: every model request of the agent failed ({n} request{'s' * (n != 1)}, {calls} "
+        f"call{'s' * (calls != 1)} to the provider{limit}); gateway/requests.jsonl has the errors"
     )
 
 

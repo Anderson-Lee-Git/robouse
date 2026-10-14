@@ -77,8 +77,10 @@ def summarize(log: Path) -> dict:
         "upstream_calls": 0,
         "upstream_image_parts": 0,
         "upstream_data_uris": 0,
+        # LiteLLM's failure events: one per failed request over chat completions (after the retries), two per failed
+        # call when it translates Anthropic Messages, so a count of failures, not of requests
         "failures": 0,
-        "rate_limited": 0,  # failed requests (after the gateway's retries) whose error was HTTP 429
+        "rate_limited": 0,  # failures whose error was HTTP 429: the provider's rate or usage limit
         "successes": 0,  # requests the provider answered without an error
         "refused_over_cap": 0,
         "spent_usd": 0.0,

@@ -260,9 +260,10 @@ def test_a_provider_that_answers_no_request_is_an_infrastructure_failure(
     assert len(Stub.bodies) == 2  # the request and the gateway's one retry
     stats = result["proxy_stats"]
     assert stats["successes"] == 0 and stats["failures"] >= 1 and stats["rate_limited"] == stats["failures"]
+    assert (stats["requests"], stats["upstream_calls"]) == (1, 2)
     assert res["exception"] == (
-        f"ProviderError: none of the agent's model requests succeeded ({stats['failures']} failed, "
-        f"{stats['failures']} with HTTP 429, the provider's rate or usage limit; gateway/requests.jsonl has the errors)"
+        "ProviderError: every model request of the agent failed (1 request, 2 calls to the provider, all answered "
+        "with HTTP 429: the provider's rate or usage limit); gateway/requests.jsonl has the errors"
     )
     assert result["status"] == "error" and result["agent_timed_out"] is bool(hold_s)
     assert result["episode"]["outcome"] == ("agent_timeout" if hold_s else "gave_up")
