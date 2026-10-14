@@ -49,8 +49,7 @@ options:
                         harness: oracle, noop, claude-code, codex, mini-swe-
                         agent, dimcode, show-harness, molmoact2 or vla;
                         --model takes a provider-prefixed id such as
-                        baseten/zai-org/GLM-5.3
-                        (https://robouse.ai/docs/harnesses/)
+                        glm/glm-5.3 (https://robouse.ai/docs/harnesses/)
   --model MODEL         model for the harness (default: the harness's)
   --interface {cli,mcp,both}
                         what the agent drives the robot with: the robo CLI,
@@ -121,8 +120,7 @@ options:
                         harness: oracle, noop, claude-code, codex, mini-swe-
                         agent, dimcode, show-harness, molmoact2 or vla;
                         --model takes a provider-prefixed id such as
-                        baseten/zai-org/GLM-5.3
-                        (https://robouse.ai/docs/harnesses/)
+                        glm/glm-5.3 (https://robouse.ai/docs/harnesses/)
   --model MODEL         model for the harness (default: the harness's)
   --interface {cli,mcp,both}
                         what the agent drives the robot with: the robo CLI,
