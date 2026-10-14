@@ -152,6 +152,19 @@ def test_the_profile_and_bwrap_deny_credential_and_task_copy_locations(outside_t
     assert ("--bind", real["own"]) in pairs and args.index(real["own"]) > args.index(f"{home}/.cache/robouse")
 
 
+def test_the_runner_s_python_is_read_only_to_agents(tmp_path) -> None:
+    """The episode server and the verifier run on the runner's Python, so an agent must not change it (deep audit,
+    security item 10). bubblewrap binds it read-only before the denied folders, so a robouse install inside it stays
+    hidden."""
+    prefix = os.path.realpath(sys.prefix)
+    assert prefix in sandbox.interpreters()
+    assert f'(deny file-write* (subpath "{prefix}"))' in sandbox.sandbox_profile(tmp_path / "ws")
+    args = sandbox.bwrap_args(tmp_path / "ws", str(tmp_path / "sock"), [])
+    if not prefix.startswith("/tmp/"):
+        i = args.index(prefix)
+        assert args[i - 1 : i + 2] == ["--ro-bind", prefix, prefix] and i < args.index(os.path.realpath(sandbox.PKG))
+
+
 def test_the_profile_refuses_sockets_of_denied_folders_other_trials_and_the_machine(tmp_path, monkeypatch) -> None:
     """Seatbelt's file rules do not stop a connection to a Unix socket (checked on macOS 26 with nc -U): every denied
     path also gets a network rule. Other trials' episode sockets are refused, the agent's own is not, and the SSH agent
@@ -193,6 +206,7 @@ grep -q OWN "$CODEX_HOME/auth.json" && echo own-readable
 touch "$CODEX_HOME/new" && echo own-writable
 {tool}
 touch {tool_dir}/x 2>/dev/null && echo program-writable
+touch {prefix}/.robouse-write-probe 2>/dev/null && echo prefix-writable
 echo "runner-home=${{CLAUDE_CONFIG_DIR:-unset}} ssh-agent=${{SSH_AUTH_SOCK:-unset}}"
 for s in {sockets}; do
   python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1]); print("CONNECTED", sys.argv[1])' "$s" 2>/dev/null
@@ -245,6 +259,7 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
             tool=p["tool"],
             tool_dir=p["tool"].parent,
             sockets=" ".join(str(s) for s in sockets.values()),
+            prefix=sys.prefix,
         )
 
         def peek(model, prompt, workspace, task, env) -> harnesses.Launch:
@@ -261,6 +276,7 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
         assert "LEAK" not in out, out
         assert "own-readable" in out and "own-writable" in out, out
         assert "program-ok" in out and "program-writable" not in out, out
+        assert "prefix-writable" not in out, out  # the runner's Python, which the next episode server runs on
         assert "runner-home=unset ssh-agent=unset" in out, out
         assert [line.split()[1] for line in out.splitlines() if line.startswith("CONNECTED")] == [
             str(sockets["control"])
@@ -270,6 +286,7 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
         for s in listening:
             s.close()
         other.unlink(missing_ok=True)
+        Path(sys.prefix, ".robouse-write-probe").unlink(missing_ok=True)
 
 
 def test_mini_swe_agent_loads_no_global_env_of_the_user(tmp_path, monkeypatch) -> None:

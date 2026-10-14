@@ -14,7 +14,8 @@ In both, an agent cannot read or write:
   - sockets that act for the user or control the machine (`control_sockets`: container engines, the SSH agent), and
     any Unix socket inside a denied folder.
 Program folders inside a denied folder that a harness runs from (`HOME_PROGRAMS`, e.g. Codex's standalone install in
-~/.codex/packages) stay readable, never writable. The agent keeps its own workspace, the episode socket and the network
+~/.codex/packages) stay readable, never writable, and so does the runner's Python (`interpreters`), which the episode
+server and the verifier run on. The agent keeps its own workspace, the episode socket and the network
 (model APIs). On macOS, TCP connections to this machine are refused except to `local_ports` (a harness's own local
 proxy); on Linux the agent runs in its own PID namespace, so it cannot see the episode server's process. Set
 ROBOUSE_SANDBOX=0 to run without a sandbox (unsafe: the agent can then read the reference solution).
@@ -115,6 +116,18 @@ def control_sockets() -> list[str]:
     return [*out, *([sock] if (sock := config.env("SSH_AUTH_SOCK")) else [])]
 
 
+def interpreters() -> list[str]:
+    """The runner's Python: its environment, the base install and the user site-packages it loads. The episode server
+    and the verifier run on it, so a file an agent put there (a .pth file, a changed module) would run in a later
+    trial's server. Agents may read it (their `python3` is often the same one), never write to it."""
+    import site
+
+    paths = [sys.prefix, sys.exec_prefix, sys.base_prefix, sys.base_exec_prefix]
+    if site.ENABLE_USER_SITE:
+        paths.append(site.getusersitepackages())
+    return [p for p in _real(paths) if os.path.isdir(p)]
+
+
 def own_homes(env: dict) -> list[str]:
     """The agent's own config homes (its CLAUDE_CONFIG_DIR and CODEX_HOME), which it may read and write wherever they
     are."""
@@ -158,6 +171,7 @@ def sandbox_profile(
     episode sockets (robouse-*.sock next to `socket`, the agent's own) are refused the same way."""
     denied = _denied(deny or [])
     rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in denied)
+    rules += "".join(f'(deny file-write* (subpath "{p}"))' for p in interpreters())
     rules += "".join(f'(deny network-outbound (remote unix-socket (subpath "{d}")))' for d in denied)
     if socket:
         own_socket = os.path.realpath(socket)
@@ -194,6 +208,9 @@ def bwrap_args(workspace: Path, socket: str, deny: list[Path], own: list[str] | 
         "--tmpfs",
         "/tmp",
     ]
+    for p in interpreters():  # read-only, under the denied folders' mounts (a robouse install inside stays hidden)
+        if not _inside(p, ["/tmp"]):
+            args += ["--ro-bind", p, p]
     for d in _denied(deny):
         if str(workspace).startswith(d):
             continue  # a folder holding the workspace stays
