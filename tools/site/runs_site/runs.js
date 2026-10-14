@@ -422,7 +422,7 @@
   function ocOf(d) { return d.outcome === "budget_stop" && d.budget_stop && d.budget_stop.cap_usd != null ? "Stopped at the $" + d.budget_stop.cap_usd + " budget" : oc(d.outcome); }
   var WITHHELD = "Trajectory not published: during this trial the agent looked at files outside its workspace (for example listing the home folder or searching the whole disk), so its commands and their outputs may show unrelated local files. The recording, the camera images, the reward and the outcome are shown.";
   // a trial whose model received no camera images (its recorded image_input; build_runs_site.noimg_tag on the server-built pages)
-  var NOIMG = '<span class="noimg" title="The model received no camera images in these runs; vision tasks were attempted from text observations only.">no image input</span>';
+  var NOIMG = '<span class="noimg" title="The model never received camera images as input. On vision tasks it read the saved camera frames with Python it wrote, using the camera matrices from robo info where the task provides them.">no image input</span>';
 
   /* ---------------------------------------------------------------- trial page */
   function initTrial(id) {
@@ -893,8 +893,10 @@
       IDX = idx;
       root.setAttribute("aria-busy", "false");
       var T = idx.trials, byTask = {};
+      /* a trial taken off the leaderboard after an audit (tools/removed.json, d/trials.json "removed") says so, and why */
+      var GONE = idx.removed || {}, RERUN = idx.reruns || {};
       Object.keys(T).forEach(function (id) { (byTask[T[id][0]] = byTask[T[id][0]] || []).push(id); });
-      function label(id) { var t = T[id]; return mfirst(idx.hm[t[1]][0]) + " · " + (STATUS[t[2]] || t[2]) + (t[3] ? "" : " (not counted)"); }
+      function label(id) { var t = T[id]; return mfirst(idx.hm[t[1]][0]) + " · " + (STATUS[t[2]] || t[2]) + (GONE[id] ? " (removed from the leaderboard)" : t[3] ? "" : " (not counted)"); }
       function sorted(ids) { return ids.slice().sort(function (x, y) { return (T[y][3] - T[x][3]) || (T[x][1] - T[y][1]) || (x < y ? -1 : 1); }); }
       var notes = [], a0 = a, b0 = b;
       if (a && !T[a]) { notes.push("No trial " + a + "."); a = null; }
@@ -943,7 +945,8 @@
           var vs = d.size && d.size[0] ? ' style="--ar:' + d.size[0] + "/" + d.size[1] + ";max-width:" + Math.min(560, Math.round(d.size[0] * 1.25)) + 'px"' : "";
           body.innerHTML = (d.video ? '<div class="vbox"' + vs + '><video src="' + h(d.video) + '" poster="' + h(d.video.replace("/runs/v/", "/runs/p/").replace(/\.mp4$/, ".jpg")) + '" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture muted playsinline preload="metadata"></video></div>' : "") +
             /* the trial picker above names the trial; here its result, and a link to its page */
-            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span><a class="ln" href="/runs/t/' + h(id) + '/">Trial page</a>' + (d.image_input === false ? (d.noimg_note ? NOIMG.replace(/title="[^"]*"/, 'title="' + h(d.noimg_note) + '"') : NOIMG) : "") + "</p>" +
+            '<p class="who"><span class="badge ' + st + '">' + STATUS[st] + '</span>' + (GONE[id] ? '<span class="tag">not counted</span>' : "") + '<a class="ln" href="/runs/t/' + h(id) + '/">Trial page</a>' + (d.image_input === false ? (d.noimg_note ? NOIMG.replace(/title="[^"]*"/, 'title="' + h(d.noimg_note) + '"') : NOIMG) : "") + "</p>" +
+            (GONE[id] ? '<p class="said">' + h(GONE[id]) + "</p>" : RERUN[id] ? '<p class="said">' + h(RERUN[id].note) + "</p>" : "") +
             (facts.length ? '<dl class="facts">' + facts.map(function (f) { return "<div><dt>" + f[0] + "</dt><dd>" + h(f[1]) + "</dd></div>"; }).join("") + "</dl>" : "") +
             (d.withheld ? '<div class="withheld" role="note"><b>Trajectory withheld</b><p>The agent looked at files outside its workspace.</p></div>' : (said ? '<p class="said"><span class="muted">' + (vd.claim === "done" || vd.claim === "give_up" ? "The agent: " : "Its last message: ") + "</span>" + h(said.slice(0, 400)) + "</p>" : "") +
               (d.steps.length ? '<ol class="slist">' + stepListHTML(d) + "</ol>" : quiet(d.video ? "No trajectory was recorded." : "No recording or trajectory: the trial ended before the agent acted.")));

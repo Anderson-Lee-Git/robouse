@@ -166,6 +166,15 @@ STDERR_IGNORE = re.compile(
 # error signals that can end the agent's session (the rest of INFRA_RULES are also seen in warnings and retried requests)
 API_IDS = {"rate_limit", "overloaded", "proxy_error", "auth_error", "api_error"}
 
+# A trial measures the model it names. Claude Code 2.1.280 has a refusal fallback: when a model's safeguards flag a session, it
+# logs a `model_refusal_fallback` system event and answers the rest of the session with another model (claude-opus-5-5 ->
+# claude-opus-4-8; 13 Opus trials of 2026-10-13). Such a trial, a trial with an assistant message from a model other than
+# the configured Claude model, and a session the safeguard itself ended (an `api_refusal_category` in the stream, when the
+# fallback is off: CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK=1) are infrastructure failures: shown, not scored, rerun.
+# One switch, so the scoring rule can be changed in one place.
+MODEL_SWAP_IS_INFRA = True
+MODEL_SWAP_IDS = {"model_fallback", "model_mismatch", "safeguard_refusal"}
+
 
 def rj(p: Path):
     try:
@@ -258,6 +267,8 @@ def _is_refusal_task(cfg: dict) -> bool:
 
 # why an infrastructure failure happened, in words: (key, sentence), first match wins; the evidence stays in rec["infra"]
 INFRA_CAUSES = [
+    ("model_swap", r"model_fallback|model_mismatch", "Claude Code's safeguard fallback answered with another model."),
+    ("safeguard", r"safeguard_refusal", "The model's safeguards refused the session before the agent acted."),
     (
         "server_start",
         r"episode server (exited early|did not start)|MUJOCO_GL",
@@ -544,6 +555,16 @@ def audit_trial(d: Path) -> dict:
             and "Under-development" not in str(e["item"].get("message", ""))
         ):
             ev_err.append(f"codex error item: {_clip(e['item'].get('message'), 200)}")
+    if harness == "claude-code" and str(model or "").startswith("claude-"):
+        swaps = [e for e in events if e.get("type") == "system" and e.get("subtype") == "model_refusal_fallback"]
+        if swaps:
+            s = swaps[0]
+            rec["infra"].append({"id": "model_fallback", "evidence": f"model_refusal_fallback {s.get('original_model')} -> {s.get('fallback_model')} ({s.get('api_refusal_category')})"})
+        others = sorted({str((e.get("message") or {}).get("model")) for e in events if e.get("type") == "assistant"} - {str(model), "<synthetic>", "None"})
+        if others:
+            rec["infra"].append({"id": "model_mismatch", "evidence": f"assistant messages from {', '.join(others)}, not {model}"})
+        if not swaps and any("api_refusal_category" in e for e in events):
+            rec["infra"].append({"id": "safeguard_refusal", "evidence": "the model's safeguards refused the session (no fallback)"})
     scan = stderr_lines + "\n" + "\n".join(ev_err)
     for iid, rx in INFRA_RES:
         m = rx.search(scan)
@@ -575,7 +596,7 @@ def audit_trial(d: Path) -> dict:
     # session ended on an API error (a failed Codex turn, an error result from Claude Code, mini-swe-agent stopping on an
     # API error) or the agent never moved the robot while errors were logged. A warning in a session that went on to
     # end the episode itself is not a failure.
-    hard = {"exception", "empty_output", "episode_not_finished", "episode_server_error"}
+    hard = {"exception", "empty_output", "episode_not_finished", "episode_server_error"} | (MODEL_SWAP_IDS if MODEL_SWAP_IS_INFRA else set())
     ids = {i["id"] for i in rec["infra"]}
     agent_closed = any(o in ("done", "give_up") for o, _ in agent_ops)
     task_ended = outcome in ("success_reached", "budget_exhausted")

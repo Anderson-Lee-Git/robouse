@@ -30,6 +30,12 @@ was not an infrastructure failure (tools/analysis/audit.py decides); a task with
 Runs without a seed are one seed. Several counted seeds show as "3/5 seeds" and pass@k. The other attempts are
 published too and labelled as not counted.
 
+Audit decisions override that rule: <site repo>/tools/removed.json lists trials taken off the leaderboard (load_removed).
+A listed trial stays published, never counts, and its page says why; its task then counts nothing for its pair, unless
+the entry names a re-run (a trial folder in any runs/final-* job, of the same task), which counts for the listed trial's
+pair in its place, whatever model id it recorded, and says so on its page. Taking an entry out of the file restores the
+latest-trial rule; nothing is moved or deleted. d/trials.json carries the applied entries ("removed", "reruns") for the hub.
+
 The harness + model pairs come from <site repo>/tools/models.json (labels, family, status, cost_ok), in its order; a
 pair the registry does not know is appended with derived labels. Result surfaces show only the pairs in the reader's
 comparison set (/modelset.js, fed by site/models.json from tools/build_hub.py). The trial Files tab is the shared file
@@ -87,6 +93,7 @@ SUITE_NOTE = {"roboharm": "Reward 1 means safe: the agent refused the harmful re
 # exactly; a pair found in the runs that the registry does not know yet is appended with derived labels (and a warning).
 HM: list[dict] = []
 HM_KEY: dict[tuple[str, str], int] = {}
+N_REGISTERED = 0  # how many of HM come from tools/models.json (load_models)
 SYNTH = False  # --synthetic: a labelled scale fixture built outside the site (see synthesize)
 REAL_SITE = Path.home() / "benchflow" / "roboharm" / "site"
 
@@ -100,7 +107,9 @@ def canon(harness: str, model: str) -> tuple[str, str]:
 
 
 def load_models(path: Path) -> None:
+    global N_REGISTERED
     HM[:] = [dict(p) for p in json.loads(path.read_text())["pairs"]]
+    N_REGISTERED = len(HM)  # the registry's own pairs; pair_of appends derived ones after them
     HM_KEY.clear()
     HM_KEY.update({canon(p["harness"], p["model"]): i for i, p in enumerate(HM)})
     icons = path.parent.parent / "site" / "icons"
@@ -109,6 +118,84 @@ def load_models(path: Path) -> None:
         a, b = icons / "harnesses" / f"{hi}.svg", icons / "models" / f"{mi}.svg"
         if hi and mi and a.is_file() and b.is_file() and a.read_bytes() == b.read_bytes():
             p.pop("harness_icon")
+
+
+REMOVED: dict[str, dict] = {}  # trial -> its tools/removed.json entry (load_removed)
+RERUN: dict[str, dict] = {}  # re-run trial -> the entry of the trial it replaces
+
+
+def load_removed(path: Path) -> list[str]:
+    """The applied entries of <site repo>/tools/removed.json ("trials"; "pending" is ignored) into REMOVED and RERUN.
+    Each entry: trial (folder name), pair (a tools/models.json key), why (the clause after "Removed from the leaderboard: ");
+    optional rerun (a re-run's folder name) with rerun_note (its page's sentence). Returns problems; none when the file
+    is absent."""
+    REMOVED.clear()
+    RERUN.clear()
+    if not path.is_file():
+        return []
+    keys = {p["key"] for p in HM}
+    bad = []
+    for e in json.loads(path.read_text()).get("trials") or []:
+        t, pair, why, rr = e.get("trial"), e.get("pair"), e.get("why"), e.get("rerun")
+        if not t or not why or pair not in keys:
+            bad.append(f"{path.name}: entry {t or e!r} needs trial, why and a pair from tools/models.json (got {pair!r})")
+            continue
+        if t in REMOVED or t in RERUN or (rr and (rr in REMOVED or rr in RERUN)):
+            bad.append(f"{path.name}: {t} or its re-run is listed twice")
+            continue
+        if rr and not e.get("rerun_note"):
+            bad.append(f"{path.name}: {t} names a re-run but no rerun_note")
+            continue
+        REMOVED[t] = e
+        if rr:
+            RERUN[rr] = e
+    return bad
+
+
+def removed_text(e: dict) -> str:
+    """A listed trial's sentence: "Removed from the leaderboard: <why>", or "Replaced on the leaderboard by a re-run: <why>"."""
+    return ("Replaced on the leaderboard by a re-run: " if e.get("rerun") else "Removed from the leaderboard: ") + e["why"]
+
+
+def check_removed(trials: list[dict]) -> list[str]:
+    """Every applied entry must match a published trial of its pair, and every re-run must be a finished trial that was
+    not an infrastructure failure, of the same task, run by the same harness, with the same image input, and not a trial
+    of another registered pair (collect moves a re-run into the entry's pair, so naming another pair's trial would
+    silently move that pair's result)."""
+    by = {t["trial"]: t for t in trials}
+    bad = []
+    for name, e in REMOVED.items():
+        t = by.get(name)
+        if t is None:
+            bad.append(f"removed.json: {name} is not a finished trial in runs/final-*")
+        elif HM[t["hm"]]["key"] != e["pair"]:
+            bad.append(f"removed.json: {name} belongs to {HM[t['hm']]['key']}, not {e['pair']}")
+        elif e.get("task") and e["task"] != t["task"]:
+            bad.append(f"removed.json: {name} is a trial of {t['task']}, not {e['task']}")
+        rr = e.get("rerun")
+        if not rr:
+            continue
+        r = by.get(rr)
+        if r is None:
+            bad.append(f"removed.json: the re-run {rr} of {name} is not a finished trial in runs/final-*")
+            continue
+        if r.get("infra") or r.get("partial"):  # it would count as an unscored task while the notes say it counts
+            bad.append(f"removed.json: the re-run {rr} of {name} "
+                       f"{'ended as an infrastructure failure' if r.get('infra') else 'did not finish'}, so it cannot count "
+                       "in its place; run the task again and name that trial")
+        if t is not None and r["task"] != t["task"]:
+            bad.append(f"removed.json: the re-run {rr} is a trial of {r['task']}, not {t['task']}")
+        pi = next(i for i, p in enumerate(HM) if p["key"] == e["pair"])
+        own = canon(r["harness"], r["model"])
+        if own[0] != canon(HM[pi]["harness"], HM[pi]["model"])[0]:
+            bad.append(f"removed.json: the re-run {rr} was run by {r['harness']}, not by {e['pair']}'s harness {HM[pi]['harness']}")
+        if HM_KEY.get(own) is not None and HM_KEY[own] < N_REGISTERED and HM_KEY[own] != pi:
+            bad.append(f"removed.json: the re-run {rr} is a trial of {HM[HM_KEY[own]]['key']} ({r['harness']} + {r['model']}), "
+                       f"which counts on its own; a re-run for {e['pair']} has to be another trial")
+        if t is not None and r.get("image_input") != t.get("image_input"):
+            bad.append(f"removed.json: the re-run {rr} recorded image_input {r.get('image_input')!r}, the trial it replaces "
+                       f"{t.get('image_input')!r} (the pair's \"no image input\" tag depends on it)")
+    return bad
 
 
 def pair_of(harness: str, model: str) -> int:
@@ -153,6 +240,9 @@ WITHHELD_NOTE = ("Trajectory not published: during this trial the agent looked a
                  "listing the home folder or searching the whole disk), so its commands and their outputs may show unrelated "
                  "local files. The recording, the camera images, the reward and the outcome are shown.")
 HOME_REPO = "/Users/maintainer/benchflow/robouse/"
+# Trials run in Daytona sandboxes record their task folder under /work/tasks/<batch>/, where a batch name can carry an
+# account label: published as robouse/tasks/ (sanitized_json, the trajectory's clean)
+WORK_TASKS = re.compile(r"/work/tasks/[^/\"\s]+/")
 # The machine the trials ran on, in agents' outputs: the account name (`ls -l` columns, `whoami`), the per-user temp
 # folder (/var/folders/<2>/<id>, where workspaces live) and the host name. Replaced, not withheld: `ls -l` keeps its
 # columns (the name becomes "user" padded to the same width), a temp path keeps its tail after "<tmp>".
@@ -334,10 +424,14 @@ def collect(audit_mod, prefixes: tuple[str, ...]) -> tuple[list[dict], dict]:
                 print(f"skip {d.name}: no harness/model recorded", file=sys.stderr)
                 continue
             meta = cfg.get("metadata") or {}
+            # a re-run named in tools/removed.json counts for the pair of the trial it replaces (its provider's model id
+            # may be spelled differently); every other trial belongs to its own harness + model
+            hm = next(i for i, p in enumerate(HM) if p["key"] == RERUN[d.name]["pair"]) if d.name in RERUN else pair_of(harness, model)
             t = {
                 "dir": d, "job": job.name, "trial": d.name, "task": a.get("task") or cfg.get("task"), "suite": a.get("suite") or meta.get("suite") or "",
                 "source": a.get("source_benchmark") or meta.get("source_benchmark") or "", "difficulty": meta.get("difficulty") or "",
-                "category": meta.get("category") or "", "harness": harness, "model": model, "hm": pair_of(harness, model), "cfg": cfg, "res": res, "seed": cfg.get("seed"),
+                "category": meta.get("category") or "", "harness": harness, "model": model, "hm": hm, "cfg": cfg, "res": res, "seed": cfg.get("seed"),
+                "removed": REMOVED.get(d.name), "rerun_of": (RERUN.get(d.name) or {}).get("trial"),
                 "reward": a.get("reward"), "solved": bool(a.get("solved")), "infra": bool(a.get("infra_failure")),
                 "partial": not res, "outcome": a.get("outcome") or ("no result" if not res else ""),
                 "steps_used": a.get("steps_used"), "max_steps": a.get("max_steps"), "wall": a.get("wall_time_s"),
@@ -366,7 +460,7 @@ def collect(audit_mod, prefixes: tuple[str, ...]) -> tuple[list[dict], dict]:
 def pick(trials: list[dict]) -> dict:
     """(harness, model, task) -> the trials that count, one per seed (results.py's rule per seed: the latest trial that
     was not an infrastructure failure, else the latest); runs without a seed are one seed. Every trial gets 'counted'
-    and 'others'."""
+    and 'others'. A seed with a trial listed in tools/removed.json counts only that trial's named re-run, else nothing."""
     groups = defaultdict(list)
     for t in trials:
         groups[(t["hm"], t["task"])].append(t)  # the pair's index: old and new trial folders of a pair together
@@ -379,7 +473,11 @@ def pick(trials: list[dict]) -> dict:
             by_seed[t.get("seed")].append(t)
         chosen = []
         for seed in sorted(by_seed, key=lambda s: (s is None, str(s))):
-            sts = [t for t in by_seed[seed] if not t["earlier_condition"]]
+            gone = {t["trial"] for t in by_seed[seed] if t.get("removed")}
+            if gone:  # an audit decision: the listed trials never count, their re-runs (whatever their seed) do
+                chosen += [t for t in ts if t.get("rerun_of") in gone]
+                continue
+            sts = [t for t in by_seed[seed] if not t["earlier_condition"] and not t.get("rerun_of")]
             if not sts:  # only trials of the pair's earlier condition: shown, none counted
                 continue
             good = [t for t in sts if not t["infra"] and not t["partial"]]
@@ -466,13 +564,14 @@ STATUS_LONG = {"partial": "Stopped before it finished, not scored", "infra": "In
 # a column, run or trial whose model received no camera images (each trial's recorded image_input) carries this quiet
 # label in quiet text (.noimg in runs.css: no box, so a column of them reads cleanly); its tooltip is the hub leaderboard
 # footnote's sentence
-NOIMG_WHY = "The model received no camera images in these runs; vision tasks were attempted from text observations only."
+NOIMG_WHY = ("The model never received camera images as input. On vision tasks it read the saved camera frames with Python it "
+             "wrote, using the camera matrices from robo info where the task provides them.")
 
 
 def noimg_tag(title: str = NOIMG_WHY, spaced: bool = True, hm: int | None = None) -> str:
     """The quiet "no image input" tag. spaced: a space before it, widened (.nis in runs.css), that collapses where the
     tag starts a line, so a wrapped tag shares the left edge of the lines around it (a margin would indent it). A pair
-    whose camera images were sent and rejected (hm in REJECTED) says that instead of "attempted from text"."""
+    whose camera images were sent and rejected (hm in REJECTED) says that instead of NOIMG_WHY."""
     if hm is not None and hm in REJECTED:
         title = REJECTED[hm]
     return ('<span class="nis"> </span>' if spaced else "") + f'<span class="noimg" title="{esc(title)}">no image input</span>'
@@ -647,7 +746,7 @@ def trial_data(t: dict, traj: dict | None, spec: dict, video: str | None, sprite
     def clean(s: str) -> str:
         if ws:
             s = s.replace("/private" + ws, "<workspace>").replace(ws, "<workspace>")
-        return s.replace(HOME_REPO, "robouse/")
+        return WORK_TASKS.sub("robouse/tasks/", s.replace(HOME_REPO, "robouse/"))
 
     fm = (traj or {}).get("final_metrics") or {}
     tokens = None
@@ -872,7 +971,7 @@ def sanitized_json(obj, ws: str) -> str:
     s = json.dumps(obj, indent=2, ensure_ascii=False)
     if ws:
         s = s.replace("/private" + ws, "<workspace>").replace(ws, "<workspace>")
-    return redact(s.replace(HOME_REPO, "robouse/"))
+    return redact(WORK_TASKS.sub("robouse/tasks/", s.replace(HOME_REPO, "robouse/")))
 
 
 # ---------------------------------------------------------------- html
@@ -1077,11 +1176,27 @@ def tparts(bits: list[str]) -> str:
     return " ".join(f'<span class="tpart">{b}{chr(160) + "·" if k < len(bits) - 1 else ""}</span>' for k, b in enumerate(bits))
 
 
+def run_note(r: dict) -> str:
+    """A pair's note for its run pages (tools/models.json "run_note": {"since": ISO date, "text": ..., "datasets": {dataset:
+    text}}): shown on a run whose counted trials include one started on or after "since", e.g. a later rerun on another
+    machine; a dataset's own text replaces the default."""
+    n = HM[r["hm"]].get("run_note") or {}
+    since = str(n.get("since") or "")
+    if not n or not any(t.get("counted") and (t["started"] or "")[:10] >= since for t in r["trials"]):
+        return ""
+    return str((n.get("datasets") or {}).get(r["ds"]) or n.get("text") or "")
+
+
 def run_meta(r: dict) -> list[str]:
     """The run page's facts under its title: dataset, date, solved of scored, and how many other trials it holds
-    (earlier, stopped, failed or pilot trials: listed, not scored), so the counts on the page add up."""
-    other = len(r["trials"]) - r["scored"]
+    (earlier, stopped, failed or pilot trials: listed, not scored), so the counts on the page add up; trials taken off
+    the leaderboard (tools/removed.json) are counted apart."""
+    gone = sum(1 for t in r["trials"] if t.get("removed") and not t["removed"].get("rerun"))
+    swapped = sum(1 for t in r["trials"] if t.get("removed") and t["removed"].get("rerun"))
+    other = len(r["trials"]) - r["scored"] - gone - swapped
     return ([esc(r["ds"]), esc(fmt_date(r["start"])), f'{r["solved"]} of {r["scored"]} solved' if r["scored"] else "no scored trial"]
+            + ([f'{gone} {"trial" if gone == 1 else "trials"} removed from the leaderboard'] if gone else [])
+            + ([f'{swapped} {"trial" if swapped == 1 else "trials"} replaced by a re-run'] if swapped else [])
             + ([f'{other} other {"trial" if other == 1 else "trials"} not scored'] if other else [])
             + (['<span class="state running">running</span>'] if r["state"] == "running" else []))
 
@@ -1269,6 +1384,9 @@ def group_runs(trials: list[dict], jobs: dict) -> dict[str, dict]:
         t["run"] = slug
     for r in out.values():
         ts = r["trials"]
+        # a run is dated by the trials that count (a rerun months later moves the date), else by all of them
+        starts = [t["started"] for t in ts if t.get("counted") and t["started"]] or [t["started"] for t in ts if t["started"]]
+        r["start"] = min(starts) if starts else ""
         # the dataset's own tasks only, so a run and its dataset's Results agree; a pilot task the hub does not list is shown, not scored
         inds = [t for t in ts if t["counted"] and not t["infra"] and not t["partial"] and (not HUB or t["task"] in HUB)]
         r["scored"] = len(inds)
@@ -1343,11 +1461,15 @@ def trial_desc(t: dict, st: str, label: str) -> str:
              else f"{t['steps_used']:,} steps" if t.get("steps_used") is not None else "")
     took = " (" + fmt_s(t["wall"]) + ")" if t.get("wall") is not None else ""
     if st == "ok":
-        return f"{label} solved {title}" + (f" in {steps}{took}." if steps else f"{took}.")
-    if st == "no":
+        d = f"{label} solved {title}" + (f" in {steps}{took}." if steps else f"{took}.")
+    elif st == "no":
         why = budget_text(t) if t.get("budget") else outcome_text(t["outcome"], HM[t["hm"]].get("kind") or "agent") if t.get("outcome") else ""
-        return f"{label} did not solve {title}" + (f": {why.lower()}" if why else "") + (f", after {steps}{took}." if steps else ".")
-    return f"{label} on {title}: {STATUS_LONG[st].lower()}."
+        d = f"{label} did not solve {title}" + (f": {why.lower()}" if why else "") + (f", after {steps}{took}." if steps else ".")
+    else:
+        d = f"{label} on {title}: {STATUS_LONG[st].lower()}."
+    if t.get("removed"):  # tools/removed.json: search results and link previews say it too, not only the page
+        d += " Replaced on the leaderboard by a re-run after an audit." if t["removed"].get("rerun") else " Removed from the leaderboard after an audit."
+    return d
 
 
 def build_trial(t: dict, n_steps: int, video: str | None) -> str:
@@ -1368,23 +1490,36 @@ def build_trial(t: dict, n_steps: int, video: str | None) -> str:
     facts += ([("Steps", steps_html(t))] if t["steps_used"] is not None else []) + ([("Time", esc(fmt_s(t["wall"])))] if t["wall"] is not None else [])
     if t.get("seed") is not None:
         facts.append(("Seed", esc(t["seed"])))
-    # the infrastructure badge already says "not scored"; another trial that does not count says why
+    # the infrastructure badge already says "not scored"; another trial that does not count says why (a trial taken off
+    # the leaderboard says it in a sentence under the header, with a link to its re-run; a re-run links the trial it replaces)
     nc_why = earlier_reason(t) if t.get("earlier_condition") else "a later trial counts"
-    counted = "" if t["counted"] or st == "infra" else f'<span class="tag">not counted: {nc_why}</span>'
+    counted = ("" if t["counted"] or st == "infra" else '<span class="tag">not counted</span>' if t.get("removed")
+               else f'<span class="tag">not counted: {nc_why}</span>')
+    if t.get("removed"):
+        rr = t["removed"].get("rerun")
+        audit = (f'\n  <p class="rnote">{esc(removed_text(t["removed"]))}'
+                 + (f' <a class="ln" href="/runs/t/{esc(rr)}/">The re-run</a>' if rr else "") + "</p>")
+    elif t.get("rerun_of"):
+        audit = (f'\n  <p class="rnote">{esc(RERUN[t["trial"]]["rerun_note"])} '
+                 f'<a class="ln" href="/runs/t/{esc(t["rerun_of"])}/">The original trial</a></p>')
+    else:
+        audit = ""
     noimg = t.get("image_input") is False  # the who line's tag says so; the filmstrip and lane say the model saw no image
     vid = (f'<div class="vbox"{box_style(t)}><video id="vid" src="{video}"{poster_attr(t)} controls muted playsinline preload="metadata" disablepictureinpicture aria-label="Simulation recording"></video></div>{player_controls(noimg)}' if video
            else "")  # no recording: no player box at all (the stage gives the tabs the full width)
     tabs = [("recording", "Recording", ""), ("trajectory", "Trajectory", f" <span class=\"num\">{n_steps}</span>" if n_steps else ""), ("verdict", "Verdict", ""),
             ("timing", "Timing" if HM[t["hm"]].get("kind") == "vla" else "Timing &amp; tokens", ""), ("files", "Files", "")]  # a policy has no tokens
     never_ran = st == "infra" and not video and not n_steps and not t["steps_used"]
+    # the Why of an infrastructure failure can be a sentence: on phones it spans the facts row (runs.css .fwhy)
+    facts_html = "".join(f'<div class="fwhy"><dt>{k}</dt><dd>{v}</dd></div>' if k == "Why" else f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)
     why = (t.get("infra_cause") or {}).get("text", "") if never_ran else ""
     # nothing was recorded: the header and one sentence why; no facts, tabs or empty boxes
     head = f"""
 {trial_crumbs(t)}
 <section class="page-head head trial">
   <h1>{esc(t['title'])}</h1>
-  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag(spaced=False, hm=t["hm"]) if noimg else ""}{counted}{task_link(t)}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>
-  {f'<p class="why">{esc(why or "The harness or the model API ended the trial before the agent acted.")}</p>' if never_ran else f'<dl class="facts">{"".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)}</dl>'}
+  <p class="who"><span class="badge {st}">{long_status(t, st)}</span>{f'<span class="mode" title="Embodiment mode">{esc(t.get("mode"))}</span>' if t.get("mode", "sim") != "sim" else ""}<span class="wl"{f' title="{esc(HM[t["hm"]]["provenance"])}"' if HM[t["hm"]].get("provenance") else ""}>{pair_html(t["hm"])}</span>{noimg_tag(spaced=False, hm=t["hm"]) if noimg else ""}{counted}{task_link(t)}{"" if never_ran else f'<a class="btn quiet sm cmp" href="/runs/compare/?a={esc(t["trial"])}">Compare</a>'}</p>{audit}
+  {f'<p class="why">{esc(why or "The harness or the model API ended the trial before the agent acted.")}</p>' if never_ran else f'<dl class="facts">{facts_html}</dl>'}
 </section>
 """
     if never_ran:
@@ -1487,8 +1622,12 @@ def build_run(r: dict) -> str:
     for t in sorted(r["trials"], key=lambda t: (t["title"], t["task"], not t["counted"], str(t.get("seed")), t["started"] or "")):
         st = status(t)
         seed = f'<span class="muted tmeta"><span class="tsep"> · </span>seed {esc(t["seed"])}</span>' if t.get("seed") is not None else ""
-        if not t["counted"]:
+        if t.get("removed"):  # taken off the leaderboard (tools/removed.json); its page says why
+            seed += f'<span class="muted tmeta"><span class="tsep"> · </span>{"replaced by a re-run" if t["removed"].get("rerun") else "removed from the leaderboard"}</span>'
+        elif not t["counted"]:
             seed += f'<span class="muted tmeta"><span class="tsep"> · </span>earlier trial, {esc(fmt_day(t["started"]))}</span>'
+        elif t.get("rerun_of"):
+            seed += f'<span class="muted tmeta"><span class="tsep"> · </span>re-run, {esc(fmt_day(t["started"]))}</span>'
         elif HUB and t["task"] not in HUB:
             seed += '<span class="muted tmeta"><span class="tsep"> · </span>pilot task, not in the dataset or its score</span>'
         rows.append(f'<tr class="{"" if t["counted"] else "dim"}" data-outcome="{st}" data-counted="{int(t["counted"])}" data-q="{esc((t["task"] + " " + t["title"]).lower())}">'
@@ -1507,7 +1646,7 @@ def build_run(r: dict) -> str:
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/">Runs</a></nav>
 <section class="page-head head">
   <h1 class="rh1">{run_title_html(r, parts=True)}</h1>
-  <p class="meta">{tparts(run_meta(r))}{noimg_tag(hm=r["hm"]) if r["noimg"] else ""}</p>{f'{chr(10)}  <p class="rnote">{esc(REJECTED[r["hm"]])}</p>' if r["noimg"] and r["hm"] in REJECTED else ""}
+  <p class="meta">{tparts(run_meta(r))}{noimg_tag(hm=r["hm"]) if r["noimg"] else ""}</p>{f'{chr(10)}  <p class="rnote">{esc(REJECTED[r["hm"]])}</p>' if r["noimg"] and r["hm"] in REJECTED else ""}{f'{chr(10)}  <p class="rnote">{esc(run_note(r))}</p>' if run_note(r) else ""}
   {f'<p class="prov">{esc(HM[r["hm"]]["provenance"])}</p>' if HM[r["hm"]].get("provenance") else ""}
 </section>
 <div class="lst" data-list="job" data-limit="100" data-noun="trials">
@@ -1711,9 +1850,14 @@ def main(argv: list[str] | None = None) -> int:
         load_models(REAL_SITE.parent / "tools" / "models.json")
     else:
         load_models(site.parent / "tools" / "models.json")
+    bad = [] if SYNTH else load_removed(site.parent / "tools" / "removed.json")
     load_chrome(site)
     audit_mod = load_audit()
     trials, jobs = collect(audit_mod, tuple(p for p in a.jobs.split(",") if p))
+    bad += [] if SYNTH or a.jobs else check_removed(trials)
+    if bad:
+        print("REMOVED LIST FAILED:\n  " + "\n  ".join(bad), file=sys.stderr)
+        return 2
     chosen = pick(trials)
     if SYNTH:
         HM[:] = synth_registry()
@@ -1832,6 +1976,9 @@ def main(argv: list[str] | None = None) -> int:
              "titles": {k: v["title"] for k, v in tinfo.items()}, "urls": {k: HUB[k][0] for k in tinfo if k in HUB},
              # a pair's note where its camera images were rejected (rejected_notes): the leaderboard's footnote says the same
              "notes": {HM[i]["key"]: n for i, n in sorted(REJECTED.items())},
+             # tools/removed.json as applied: each listed trial's sentence, and each re-run with the trial it replaces
+             "removed": {name: removed_text(e) for name, e in sorted(REMOVED.items())},
+             "reruns": {name: {"of": e["trial"], "note": e["rerun_note"]} for name, e in sorted(RERUN.items())},
              # each run as [pair key, dataset, slug, zero-shot probe]: the leaderboard's heatmap cell opens the run page
              "runs": sorted([[HM[r["hm"]]["key"], r["ds"], r["slug"], bool(r["probe"])] for r in RUN_OF.values()])}
     (out / "d" / "trials.json").write_text(json.dumps(redact_all(index), ensure_ascii=False, separators=(",", ":")))
@@ -1858,7 +2005,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"wrote {out}: {len(trials)} trial pages ({counted} counted), {len(tinfo)} tasks, {len(suites)} suites, {len(jobs)} jobs, "
           f"{withheld} trajectories withheld; {nfiles} files, total {size / 1e6:.1f} MB "
           f"(videos {part['v']:.1f}, filmstrips {part['f']:.1f}, data {part['d']:.1f}, pages {part['t']:.1f})")
-    running = sorted(n for n, j in jobs.items() if j["state"] == "running")
+    if REMOVED:
+        print(f"tools/removed.json: {len(REMOVED)} trials off the leaderboard, {len(RERUN)} of them replaced by a re-run: "
+              + ", ".join(f"{n}{' -> ' + e['rerun'] if e.get('rerun') else ''}" for n, e in sorted(REMOVED.items())))
+    # every published recording needs its poster (size, poster attribute, og:image); posters come from the encodes, so
+    # a first build of new trials is followed by tools/site/make_posters.sh and a second build
+    no_poster = sorted(n[:-4] for n in keep_v if not (POSTERS / f"{n[:-4]}.jpg").is_file())
+    if no_poster and not SYNTH:
+        print(f"WARNING: {len(no_poster)} recordings without a poster (e.g. {no_poster[0]}): run tools/site/make_posters.sh "
+              f"{out / 'v'} {out / 'p'} for them, then build again", file=sys.stderr)
+    running =sorted(n for n, j in jobs.items() if j["state"] == "running")
     if running:
         print("still running (rebuild later for more trials): " + ", ".join(running))
     ok = True

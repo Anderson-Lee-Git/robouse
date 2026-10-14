@@ -259,6 +259,10 @@ nav.tabs[role=tablist]{margin:var(--sp-24) 0 var(--sp-20)}
 .recbox{position:absolute;inset:0;display:flex;flex-direction:column;min-height:0}
 .recbox .slist{flex:1 1 0;min-height:0;max-height:none}
 .recbox .slnote{flex:none;margin:var(--sp-8) 0 0}
+/* no recording (an agent that refused before moving): nothing sets the panel's height, so the step list flows as on phones */
+.stage[data-novid].t-recording .panel{position:static}
+.stage[data-novid] .recbox{position:static}
+.stage[data-novid] .recbox .slist{flex:none;max-height:min(60vh,480px)}
 .rechead{display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-12);margin:0 0 var(--sp-8);font:400 var(--fs-meta)/1.4 var(--sans);color:var(--muted)}
 .strip .rechead{justify-content:flex-start}
 .strip .rechead .num{color:var(--faint)}
@@ -453,6 +457,7 @@ details.res{margin:var(--sp-2) 0 var(--sp-6)}
   .ctl .seg{margin-left:auto}
   dl.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-12) var(--sp-16)}
   dl.facts dd,dl.facts dd .mono{overflow-wrap:break-word;white-space:normal;min-width:0}
+  dl.facts .fwhy{grid-column:1/-1}
   .player{max-width:none}
   .tiles{margin-right:calc(-1 * var(--gutter))}
 }
