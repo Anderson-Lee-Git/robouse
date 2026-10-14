@@ -127,3 +127,35 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, model, t
         assert not copies, copies
     finally:
         shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_mini_swe_agent_is_found_where_pip_puts_it_or_named_for_install(tmp_path, monkeypatch) -> None:
+    """mini-swe-agent is not a dependency of robouse. `pip install mini-swe-agent` into Robo Use's environment puts
+    `mini` next to its Python, which is on PATH only when the environment is activated: the harness finds it there too.
+    Without it anywhere, the harness names the package to install, before any model gateway starts."""
+    import sys
+    from types import SimpleNamespace
+
+    from robouse import harnesses
+    from robouse.harnesses import models
+
+    started: list = []
+    gw = SimpleNamespace(url="http://127.0.0.1:9", key="gw", model="m", stats=None, stop=None, stop_file=None)
+    monkeypatch.setattr(harnesses, "_gateway", lambda ref, env, protocol: started.append(ref) or gw)
+    monkeypatch.setattr(models, "provider_registry", gateway_registry)
+    venv = tmp_path / "venv" / "bin"
+    venv.mkdir(parents=True)
+    monkeypatch.setattr(sys, "executable", str(venv / "python"))
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "ws" / ".robouse").mkdir(parents=True)
+
+    def build():
+        return harnesses.build("mini-swe-agent", "glm/glm-5.3", "move", tmp_path / "ws", None, {"PATH": "/usr/bin"})
+
+    with pytest.raises(RuntimeError, match=r"no `mini` on PATH, .*\(pip install mini-swe-agent\)"):
+        build()
+    assert started == []
+    (venv / "mini").write_text("#!/bin/sh\nexit 0\n")
+    (venv / "mini").chmod(0o755)
+    assert build().cmd[0] == str(venv / "mini") and len(started) == 1

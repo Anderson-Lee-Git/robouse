@@ -201,11 +201,27 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
     return Launch(_codex_cmd(prompt, m, workspace), env, notes={"model": m})
 
 
+def mini_exe() -> str | None:
+    """mini-swe-agent's `mini`: on PATH, else next to this Python (`pip install mini-swe-agent` into Robo Use's own
+    environment, not activated), else in ~/.local/bin (a `uv tool` or `pipx` install). None when it is not installed:
+    mini-swe-agent is not a dependency of robouse."""
+    import os
+    import sys
+
+    here = os.pathsep.join([str(Path(sys.executable).parent), str(Path.home() / ".local" / "bin")])
+    return shutil.which("mini") or shutil.which("mini", path=here)
+
+
 def _mini_swe_agent(model, prompt, workspace, task, env) -> Launch:
     from . import models
 
     ref = models.resolve("mini-swe-agent", model or models.DEFAULT_MODELS["mini-swe-agent"])
-    exe = shutil.which("mini") or str(Path.home() / ".local" / "bin" / "mini")
+    exe = mini_exe()
+    if exe is None:  # before the gateway starts: nothing to stop
+        raise RuntimeError(
+            "mini-swe-agent is not installed: no `mini` on PATH, next to this Python or in ~/.local/bin "
+            "(pip install mini-swe-agent)"
+        )
     gw = _gateway(ref, env, GATEWAY_PROTOCOLS["mini-swe-agent"])
     env.update(
         {

@@ -99,10 +99,13 @@ def run() -> int:
     for h, exe in (
         ("claude-code", "claude"),
         ("codex", "codex"),
-        ("mini-swe-agent", "mini"),
         ("model gateway (provider-prefixed models)", "litellm"),
     ):
         print(f"  {_ok(shutil.which(exe) is not None)}{h} (`{exe}` on PATH)")
+    from ..harnesses import mini_exe
+
+    mini = mini_exe()  # where the harness finds it: on PATH or next to this Python (not a dependency of robouse)
+    print(f"  {_ok(bool(mini))}mini-swe-agent (" + (mini if mini else "`mini`: pip install mini-swe-agent") + ")")
     dim = config.env("ROBOUSE_DIMCODE") or shutil.which("dimcode")
     print(f"  {_ok(bool(dim))}dimcode (" + (dim if dim else "`dimcode` on PATH, or ROBOUSE_DIMCODE") + ")")
     print(
