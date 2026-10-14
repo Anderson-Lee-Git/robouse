@@ -39,6 +39,8 @@ from .. import config
 from . import credentials
 
 DISALLOWED_CLAUDE_TOOLS = "WebFetch,WebSearch,Task"
+# Codex offers its model a web search tool unless told not to (0.155 and later: on by default)
+CODEX_WEB_SEARCH = 'web_search="disabled"'
 
 PROMPT_PREFIX = (
     "You are controlling a simulated robot. Read the task below, then solve it by running the `robo` command "
@@ -85,6 +87,8 @@ def _codex_cmd(prompt: str, model: str, workspace: Path, extra: tuple[str, ...] 
         "--json",
         "--skip-git-repo-check",
         "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        CODEX_WEB_SEARCH,
         *extra,
         "-m",
         model,
