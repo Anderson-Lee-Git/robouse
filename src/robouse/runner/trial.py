@@ -425,14 +425,11 @@ def run_trial(
             ready, server, timeout=float(task.spec.get("ready_timeout_s", 300)), log=tdir / "episode" / "server.log"
         )
         (ws / ".robouse" / "socket").write_text(sock)
-        # no provider key reaches an agent: a harness adds its own vendor's login back; others use the gateway
+        # no provider key reaches an agent: a harness adds its own vendor's login back; others use the gateway (GLM_ and
+        # ZAI_ also cover a Z.ai Coding Plan key kept under another name, such as GLM_CODING_API_KEY)
         secret_names = _secret_env_names()
-        base_env = {
-            k: v
-            for k, v in os.environ.items()
-            if not k.startswith(("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN", "OPENROUTER"))
-            and k not in secret_names
-        }
+        prefixes = ("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN", "OPENROUTER", "GLM_", "ZAI_")
+        base_env = {k: v for k, v in os.environ.items() if not k.startswith(prefixes) and k not in secret_names}
         base_env["PATH"] = (
             f"{ws / '.robouse' / 'bin'}:{Path(py).parent}:{base_env.get('PATH', '')}"
             if harness == "oracle"
