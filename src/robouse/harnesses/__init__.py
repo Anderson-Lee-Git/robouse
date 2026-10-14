@@ -40,7 +40,11 @@ from typing import Any
 from .. import config
 from . import credentials
 
-DISALLOWED_CLAUDE_TOOLS = "WebFetch,WebSearch,Task"
+# the only built-in tools Claude Code offers its model (`--tools`); the robo MCP tools come on top with --interface
+# mcp or both. Without an allowlist it also offered web, scheduling, messaging, worktree and workflow tools
+CLAUDE_TOOLS = "Bash,Read,Write,Edit,Glob,Grep"
+# Codex offers its model a web search tool unless told not to (0.155 and later: on by default)
+CODEX_WEB_SEARCH = 'web_search="disabled"'
 
 PROMPT_PREFIX = (
     "You are controlling a simulated robot. Read the task below, then solve it by running the `robo` command "
@@ -75,8 +79,8 @@ def _claude_cmd(prompt: str, model: str) -> list[str]:
         "--dangerously-skip-permissions",
         "--max-turns",
         "400",
-        "--disallowedTools",
-        DISALLOWED_CLAUDE_TOOLS,
+        "--tools",
+        CLAUDE_TOOLS,
     ]
 
 
@@ -87,6 +91,8 @@ def _codex_cmd(prompt: str, model: str, workspace: Path, extra: tuple[str, ...] 
         "--json",
         "--skip-git-repo-check",
         "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        CODEX_WEB_SEARCH,
         *extra,
         "-m",
         model,
@@ -147,7 +153,7 @@ def _via_gateway(harness: str, model: str) -> object | None:
 
 def _claude_code(model, prompt, workspace, task, env) -> Launch:
     if model and (ref := _via_gateway("claude-code", model)) is not None:
-        home = credentials.clean_claude_home()
+        home = credentials.clean_claude_home(workspace)
         gw = _gateway(ref, env, GATEWAY_PROTOCOLS["claude-code"])
         env.update(
             {
@@ -165,7 +171,7 @@ def _claude_code(model, prompt, workspace, task, env) -> Launch:
         return _gateway_launch(gw, ref, _claude_cmd(prompt, gw.model), env)
     m = (model or "claude-sonnet-5").removeprefix("anthropic/")
     env.update(credentials.claude_auth())
-    env["CLAUDE_CONFIG_DIR"] = credentials.clean_claude_home()
+    env["CLAUDE_CONFIG_DIR"] = credentials.clean_claude_home(workspace)
     return Launch(_claude_cmd(prompt, m), env, notes={"model": m})
 
 
@@ -174,7 +180,11 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
 
     if model and (ref := _via_gateway("codex", model)) is not None:
         home = credentials.clean_codex_home("# model provider: the trial's gateway, set on the command line\n")
-        gw = _gateway(ref, env, GATEWAY_PROTOCOLS["codex"])
+        try:
+            gw = _gateway(ref, env, GATEWAY_PROTOCOLS["codex"])
+        except BaseException:
+            credentials.remove_trial_home(home)
+            raise
         env["ROBOUSE_GATEWAY_KEY"] = gw.key
         env["ROBOUSE_GATEWAY_URL"] = gw.url  # also lets the macOS sandbox allow this local port
         env["CODEX_HOME"] = home
@@ -192,13 +202,28 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
         ]
         # the provider's own Responses endpoint, the request passed through unchanged (reasoning effort and earlier
         # reasoning kept); the gateway moves any image out of a tool result into the next user message
-        return _gateway_launch(gw, ref, _codex_cmd(prompt, gw.model, workspace, cfg), env)
+        launch = _gateway_launch(gw, ref, _codex_cmd(prompt, gw.model, workspace, cfg), env)
+        launch.stop = _removing(home, launch.stop)
+        return launch
     m = (model or "gpt-6-astra").removeprefix("openai/")
     key = os.environ.get("OPENAI_API_KEY", "")
-    env["CODEX_HOME"] = credentials.clean_codex_home(api_key=key)
+    env["CODEX_HOME"] = home = credentials.clean_codex_home(api_key=key)
     if key:
         env["CODEX_API_KEY"] = key
-    return Launch(_codex_cmd(prompt, m, workspace), env, notes={"model": m})
+    return Launch(_codex_cmd(prompt, m, workspace), env, stop=_removing(home), notes={"model": m})
+
+
+def _removing(home: str, stop: Callable[[], None] | None = None) -> Callable[[], None]:
+    """`stop`, then the removal of the trial's own Codex home (`remove_trial_home` leaves a pool home alone)."""
+
+    def run() -> None:
+        try:
+            if stop is not None:
+                stop()
+        finally:
+            credentials.remove_trial_home(home)
+
+    return run
 
 
 def mini_exe() -> str | None:
@@ -229,6 +254,8 @@ def _mini_swe_agent(model, prompt, workspace, task, env) -> Launch:
             "OPENAI_API_BASE": f"{gw.url}/v1",
             "MSWEA_CONFIGURED": "true",
             "MSWEA_COST_TRACKING": "ignore_errors",
+            # its global .env (which may hold provider keys) is per trial: the user's is never loaded
+            "MSWEA_GLOBAL_CONFIG_DIR": str(workspace / ".robouse" / "mini-config"),
         }
     )
     cmd = [
@@ -263,6 +290,8 @@ def _molmoact2(model, prompt, workspace, task, env) -> Launch:
         raise RuntimeError("molmoact2 needs ROBOUSE_MOLMOACT2_URL (the URL of a MolmoAct2 policy server)")
     client = workspace / ".robouse" / "molmoact2_client.py"
     client.write_text((Path(__file__).parent / "molmoact2" / "client.py").read_text())
+    if config.env("ROBOUSE_MOLMOACT2_TOKEN"):  # the runner passes no credential on its own
+        env["ROBOUSE_MOLMOACT2_TOKEN"] = config.env("ROBOUSE_MOLMOACT2_TOKEN")
     env["ROBOUSE_TASK_LANGUAGE"] = _task_language(task)
     m = model or "allenai/MolmoAct2-LIBERO-LeRobot"
     return Launch(["python3", str(client)], env, notes={"model": m, "server": url})

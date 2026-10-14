@@ -54,7 +54,7 @@ ENV: dict[str, str] = {
     "the runner for oracle and noop with --interface mcp)",
     "ROBOUSE_MCP_URL": "the `robo` MCP endpoint of a harness that speaks MCP over HTTP (set by the runner)",
     # local runner sandbox
-    "ROBOUSE_SANDBOX": "0 disables the macOS Seatbelt sandbox around agent processes (default 1)",
+    "ROBOUSE_SANDBOX": "0 disables the sandbox around agent processes (macOS Seatbelt, Linux bubblewrap; default 1)",
     "ROBOUSE_SANDBOX_DENY": "extra colon-separated paths agents may neither read nor write",
     # simulator worker interpreters (one virtualenv per simulator that conflicts with the main environment)
     "ROBOUSE_DEXJOCO_PYTHON": "Python of the DexJoCo virtualenv (default <cache>/dexjoco-venv/bin/python)",

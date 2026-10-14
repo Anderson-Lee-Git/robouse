@@ -401,7 +401,7 @@ request.
   robo done ["message"]              end the episode and ask for scoring
   robo give-up ["message"]           end the episode without claiming success
   robo mcp [--http [HOST:]PORT]      serve these operations as MCP tools (stdio; --http: streamable HTTP)
-Add --json to any command for raw JSON output.
+Add --json to any command for raw JSON output. -h or --help anywhere prints this help and sends nothing.
 ```
 
 Each call sends one JSON object to the episode server at `$ROBOUSE_SOCKET` and prints the response, for example `{"op": "act", "action": [0, 0, -1, 1], "repeat": 5}` and `{"ok": true, "result": {...}}`. The commands map to the operations `info`, `observe`, `act`, `move_to`, `grip`, `skill`, `done` and `give_up`. `robo info` also describes the robot's embodiment: its action groups, skills, cameras and budgets. Skills run on the server, and each simulated step they take counts against the budget. Without an episode, `robo` prints an error and exits 1.
