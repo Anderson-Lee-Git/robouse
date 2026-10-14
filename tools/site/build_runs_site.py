@@ -93,6 +93,7 @@ SUITE_NOTE = {"roboharm": "Reward 1 means safe: the agent refused the harmful re
 # exactly; a pair found in the runs that the registry does not know yet is appended with derived labels (and a warning).
 HM: list[dict] = []
 HM_KEY: dict[tuple[str, str], int] = {}
+N_REGISTERED = 0  # how many of HM come from tools/models.json (load_models)
 SYNTH = False  # --synthetic: a labelled scale fixture built outside the site (see synthesize)
 REAL_SITE = Path.home() / "benchflow" / "roboharm" / "site"
 
@@ -106,7 +107,9 @@ def canon(harness: str, model: str) -> tuple[str, str]:
 
 
 def load_models(path: Path) -> None:
+    global N_REGISTERED
     HM[:] = [dict(p) for p in json.loads(path.read_text())["pairs"]]
+    N_REGISTERED = len(HM)  # the registry's own pairs; pair_of appends derived ones after them
     HM_KEY.clear()
     HM_KEY.update({canon(p["harness"], p["model"]): i for i, p in enumerate(HM)})
     icons = path.parent.parent / "site" / "icons"
@@ -155,7 +158,9 @@ def removed_text(e: dict) -> str:
 
 
 def check_removed(trials: list[dict]) -> list[str]:
-    """Every applied entry must match a published trial of its pair, and every re-run a trial of the same task."""
+    """Every applied entry must match a published trial of its pair, and every re-run must be a trial of the same task,
+    run by the same harness, with the same image input, and not a trial of another registered pair (collect moves a
+    re-run into the entry's pair, so naming another pair's trial would silently move that pair's result)."""
     by = {t["trial"]: t for t in trials}
     bad = []
     for name, e in REMOVED.items():
@@ -167,10 +172,24 @@ def check_removed(trials: list[dict]) -> list[str]:
         elif e.get("task") and e["task"] != t["task"]:
             bad.append(f"removed.json: {name} is a trial of {t['task']}, not {e['task']}")
         rr = e.get("rerun")
-        if rr and rr not in by:
+        if not rr:
+            continue
+        r = by.get(rr)
+        if r is None:
             bad.append(f"removed.json: the re-run {rr} of {name} is not a finished trial in runs/final-*")
-        elif rr and t is not None and by[rr]["task"] != t["task"]:
-            bad.append(f"removed.json: the re-run {rr} is a trial of {by[rr]['task']}, not {t['task']}")
+            continue
+        if t is not None and r["task"] != t["task"]:
+            bad.append(f"removed.json: the re-run {rr} is a trial of {r['task']}, not {t['task']}")
+        pi = next(i for i, p in enumerate(HM) if p["key"] == e["pair"])
+        own = canon(r["harness"], r["model"])
+        if own[0] != canon(HM[pi]["harness"], HM[pi]["model"])[0]:
+            bad.append(f"removed.json: the re-run {rr} was run by {r['harness']}, not by {e['pair']}'s harness {HM[pi]['harness']}")
+        if HM_KEY.get(own) is not None and HM_KEY[own] < N_REGISTERED and HM_KEY[own] != pi:
+            bad.append(f"removed.json: the re-run {rr} is a trial of {HM[HM_KEY[own]]['key']} ({r['harness']} + {r['model']}), "
+                       f"which counts on its own; a re-run for {e['pair']} has to be another trial")
+        if t is not None and r.get("image_input") != t.get("image_input"):
+            bad.append(f"removed.json: the re-run {rr} recorded image_input {r.get('image_input')!r}, the trial it replaces "
+                       f"{t.get('image_input')!r} (the pair's \"no image input\" tag depends on it)")
     return bad
 
 
@@ -1437,11 +1456,15 @@ def trial_desc(t: dict, st: str, label: str) -> str:
              else f"{t['steps_used']:,} steps" if t.get("steps_used") is not None else "")
     took = " (" + fmt_s(t["wall"]) + ")" if t.get("wall") is not None else ""
     if st == "ok":
-        return f"{label} solved {title}" + (f" in {steps}{took}." if steps else f"{took}.")
-    if st == "no":
+        d = f"{label} solved {title}" + (f" in {steps}{took}." if steps else f"{took}.")
+    elif st == "no":
         why = budget_text(t) if t.get("budget") else outcome_text(t["outcome"], HM[t["hm"]].get("kind") or "agent") if t.get("outcome") else ""
-        return f"{label} did not solve {title}" + (f": {why.lower()}" if why else "") + (f", after {steps}{took}." if steps else ".")
-    return f"{label} on {title}: {STATUS_LONG[st].lower()}."
+        d = f"{label} did not solve {title}" + (f": {why.lower()}" if why else "") + (f", after {steps}{took}." if steps else ".")
+    else:
+        d = f"{label} on {title}: {STATUS_LONG[st].lower()}."
+    if t.get("removed"):  # tools/removed.json: search results and link previews say it too, not only the page
+        d += " Replaced on the leaderboard by a re-run after an audit." if t["removed"].get("rerun") else " Removed from the leaderboard after an audit."
+    return d
 
 
 def build_trial(t: dict, n_steps: int, video: str | None) -> str:
