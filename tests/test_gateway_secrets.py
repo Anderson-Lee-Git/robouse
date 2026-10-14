@@ -62,10 +62,13 @@ def test_a_finished_gateway_trial_holds_no_key(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("PATH", f"{stubs}:{os.environ.get('PATH', '')}")
     monkeypatch.setenv("ROBOUSE_SANDBOX", "0")  # the stand-in and its helper live in tmp_path
     monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setenv("BASETEN_API_KEY", "not-a-real-key")  # nothing goes upstream: /v1/models is the gateway's own
+    # nothing goes upstream: /v1/models is the gateway's own (and the provider URL is a closed local port)
+    monkeypatch.setenv("GLM_API_KEY", "not-a-real-key")
+    monkeypatch.setenv("GLM_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setenv("ROBOUSE_SPEND_CAP_USD", "0")  # glm-5.3 has no per-token price
 
     job = tmp_path / "job"
-    res = run_trial(load_task(ARC), "claude-code", "baseten/zai-org/GLM-5.3", job)
+    res = run_trial(load_task(ARC), "claude-code", "glm/glm-5.3", job)
     assert len(keys) == 1, "the trial did not start the gateway"
     key = keys[0].encode()
     files = [p for p in sorted(job.rglob("*")) if p.is_file()]

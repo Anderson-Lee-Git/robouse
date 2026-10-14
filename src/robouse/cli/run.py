@@ -16,7 +16,7 @@ from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_tas
 
 HARNESS_HELP = (
     "harness: oracle, noop, claude-code, codex, mini-swe-agent, dimcode, show-harness, molmoact2 or vla; --model takes "
-    "a provider-prefixed id such as baseten/zai-org/GLM-5.3 (https://robouse.ai/docs/harnesses/)"
+    "a provider-prefixed id such as glm/glm-5.3 (https://robouse.ai/docs/harnesses/)"
 )
 RECORD_SIZE_HELP = (
     "render the episode video at this size, e.g. 1280x720; agent images are unchanged "
@@ -152,21 +152,42 @@ def _unknown_harness(name: str) -> int:
     from importlib.metadata import entry_points
 
     from ..harnesses import HARNESSES
-    from ..harnesses.models import LEGACY_HARNESSES
+    from ..harnesses.models import legacy_refusal
 
-    if (
-        name in HARNESSES
-        or name in LEGACY_HARNESSES
-        or any(ep.name == name for ep in entry_points(group="robouse.harnesses"))
-    ):
+    if why := legacy_refusal(name):  # claude-code-glm etc.: kept to read the September runs, not to run
+        print(f"robouse: {why}", file=sys.stderr)
+        return 2
+    if name in HARNESSES or any(ep.name == name for ep in entry_points(group="robouse.harnesses")):
         return 0
     print(f"robouse: unknown harness {name!r}; harnesses: {', '.join(HARNESSES)}", file=sys.stderr)
     return 2
 
 
+def _check_model(harness: str, model: str) -> int:
+    """0 when the harness can start with this model: the model resolves, and a model behind the model gateway has its
+    provider's settings (its key, a base URL without a default) and, with the spend cap on, a price. Else the message,
+    naming what to set, and 2. Sends no request."""
+    from ..harnesses import GATEWAY_PROTOCOLS, gateway, models
+    from ..runner.trial import image_input_plan, spend_cap_usd
+
+    try:
+        plan = image_input_plan(harness, model)
+        h, m = plan["harness"], plan["model"] or ""
+        if h in GATEWAY_PROTOCOLS and models.split(m)[0] is not None:
+            ref = models.resolve(h, m)
+            if models.NATIVE_VENDORS.get(h) != ref.provider:
+                gateway.check_settings(ref, GATEWAY_PROTOCOLS[h], spend_cap_usd(), dict(os.environ))
+    except (ValueError, RuntimeError) as e:
+        print(f"robouse: {e}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def _prepare_local(a: argparse.Namespace) -> int:
     """Settings the episode servers read from the environment, and the simulator check. 0 when ready."""
-    if getattr(a, "harness", None) and (rc := _unknown_harness(a.harness)):  # `serve` has no harness
+    if getattr(a, "harness", None) and (  # `serve` has no harness
+        (rc := _unknown_harness(a.harness)) or (rc := _check_model(a.harness, a.model))
+    ):
         return rc
     if getattr(a, "rig", None):
         os.environ["ROBOUSE_RIG"] = str(Path(a.rig).resolve())

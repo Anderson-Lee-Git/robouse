@@ -478,7 +478,7 @@ def test_dimcode_launch_is_isolated_and_holds_no_key(tmp_path, monkeypatch) -> N
         return gw
 
     monkeypatch.setattr(harnesses, "_gateway", fake_gateway)
-    monkeypatch.setenv("BASETEN_API_KEY", "sk-SECRET")  # the runner's environment; never the agent's
+    monkeypatch.setenv("GLM_API_KEY", "sk-SECRET")  # the runner's environment; never the agent's
     exe = tmp_path / "dimcode"
     exe.write_text("")
     monkeypatch.setenv("ROBOUSE_DIMCODE", str(exe))
@@ -493,8 +493,8 @@ def test_dimcode_launch_is_isolated_and_holds_no_key(tmp_path, monkeypatch) -> N
         "_ROBOUSE_TRIAL_DIR": str(tmp_path),
         "_ROBOUSE_SPEND_CAP_USD": "5",
     }
-    launch = build("dimcode", "baseten/moonshotai/Kimi-K3", "do it", ws, task, env)
-    assert seen["ref"].id == "baseten/moonshotai/Kimi-K3" and seen["protocol"] == "anthropic-messages"
+    launch = build("dimcode", "", "do it", ws, task, env)  # the default model, glm/glm-5.3
+    assert seen["ref"].id == "glm/glm-5.3" and seen["protocol"] == "anthropic-messages"
     root = ws / ".robouse" / "dimcode"
     cfg = json.loads((root / "config.json").read_text())
     assert cfg["mcp"][0]["name"] == "robo" and cfg["mcp"][0]["url"].startswith("http://127.0.0.1:")
@@ -513,7 +513,7 @@ def test_dimcode_launch_is_isolated_and_holds_no_key(tmp_path, monkeypatch) -> N
     i = launch.cmd.index("--http")
     assert launch.cmd[i - 1] == "mcp" and url.endswith(launch.cmd[i + 3]) and "--run" in launch.cmd
     assert launch.cmd[-1].startswith(iface_prompt("mcp"))
-    assert launch.notes["model_id"] == "baseten/moonshotai/Kimi-K3" and launch.notes["provider"] == "baseten"
+    assert launch.notes["model_id"] == "glm/glm-5.3" and launch.notes["provider"] == "glm"
 
 
 def iface_prompt(name: str) -> str:

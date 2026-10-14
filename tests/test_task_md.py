@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+from fakes import glm_registry
 
 from robouse.cli import main
 from robouse.tasks import TaskFormatError, find_tasks, load_task
@@ -71,9 +72,18 @@ def test_the_prompt_is_the_task_md_body_and_the_workspace_has_no_copy(tmp_path, 
 
 
 @pytest.mark.parametrize(
-    "harness", ["mini-swe-agent-glm", "codex-glm", "claude-code-glm", "codex", "claude-code", "dimcode", "show-harness"]
+    "harness,model",
+    [
+        ("mini-swe-agent", ""),
+        ("dimcode", ""),
+        ("codex", ""),
+        ("claude-code", ""),
+        ("codex", "glm/glm-5.3"),
+        ("claude-code", "glm/glm-5.3"),
+        ("show-harness", "glm/glm-5.3"),
+    ],
 )
-def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path, monkeypatch) -> None:
+def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, model, tmp_path, monkeypatch) -> None:
     """The workspace holds only robouse's internals (.robouse/) and observations/; the task reaches the agent only as
     its prompt (mini-swe-agent's harness used to write it to .robouse/task.txt as well)."""
     import os
@@ -87,9 +97,8 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path
     # a model gateway stand-in: the real one starts a LiteLLM proxy for the trial (harnesses/gateway.py)
     gw = SimpleNamespace(url="http://127.0.0.1:9", key="gw", model="m", stats=None, stop=None, stop_file=None)
     monkeypatch.setattr(harnesses, "_gateway", lambda ref, env, protocol: gw)
-    # and a provider registry stand-in with the Baseten entry, so the test runs without the llm extra (BenchFlow)
-    baseten = SimpleNamespace(**models.PENDING_PROVIDERS["baseten"])
-    monkeypatch.setattr(models, "provider_registry", lambda: {"baseten": baseten})
+    # and a provider registry stand-in with BenchFlow's glm entry, so the test runs without the llm extra (BenchFlow)
+    monkeypatch.setattr(models, "provider_registry", glm_registry)
     monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(tmp_path / "cache"))  # harness homes go to the cache
     stubs = tmp_path / "bin"  # the agent programs only need to exist: nothing is launched
     stubs.mkdir()
@@ -103,12 +112,12 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path
         (stubs / exe).chmod(0o755)
     monkeypatch.setenv("ROBOUSE_DIMCODE", str(stubs / "dimcode"))
     monkeypatch.setenv("PATH", f"{stubs}:{os.environ.get('PATH', '')}")
-    for var in ("BASETEN_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+    for var in ("GLM_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.setenv(var, "not-a-real-key")
     task = load_task(ARC)
     ws = _make_workspace(task)
     try:
-        launch = harnesses.build(harness, "", task.instruction, ws, task, {"PATH": os.environ.get("PATH", "")})
+        launch = harnesses.build(harness, model, task.instruction, ws, task, {"PATH": os.environ.get("PATH", "")})
         assert any(task.instruction.strip() in str(arg) for arg in launch.cmd)  # the prompt
         entries = sorted(p.relative_to(ws) for p in ws.rglob("*"))
         assert all(e.parts[0] in (".robouse", "observations") for e in entries), entries

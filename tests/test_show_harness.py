@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from fakes import FakeBackend
+from fakes import FakeBackend, glm_registry
 
 from robouse.backends.base import ActionSpec, StepInfo
 from robouse.core import session as S
@@ -731,16 +731,13 @@ def _fake_gateway(monkeypatch, seen: dict):
 
 
 def test_launch_through_the_gateway_and_for_a_served_model(tmp_path, monkeypatch) -> None:
-    from types import SimpleNamespace
-
     from robouse.harnesses import build, models
     from robouse.tasks import load_task
 
-    baseten = SimpleNamespace(**models.PENDING_PROVIDERS["baseten"])
-    monkeypatch.setattr(models, "provider_registry", lambda: {"baseten": baseten})
+    monkeypatch.setattr(models, "provider_registry", glm_registry)
     seen: dict = {}
     gw = _fake_gateway(monkeypatch, seen)
-    monkeypatch.setenv("BASETEN_API_KEY", "sk-SECRET")
+    monkeypatch.setenv("GLM_API_KEY", "sk-SECRET")
     monkeypatch.delenv("ROBOUSE_SHOW_HARNESS_URL", raising=False)
     monkeypatch.delenv("ROBOUSE_SHOW_HARNESS_CONFIG", raising=False)
     task = load_task(ROOT / "tasks" / "libero" / "libero-object-0")
@@ -752,8 +749,11 @@ def test_launch_through_the_gateway_and_for_a_served_model(tmp_path, monkeypatch
         "_ROBOUSE_IMAGE_INPUT": "1",
         "_ROBOUSE_SPEND_CAP_USD": "5",
     }
-    launch = build("show-harness", "", task.instruction, ws, task, dict(env))
-    assert seen["ref"].id == "baseten/zai-org/GLM-5.3" and seen["protocol"] == "openai-completions"
+    # no default model: the policy is the model's reading of the camera images
+    with pytest.raises(ValueError, match="show-harness needs --model"):
+        build("show-harness", "", task.instruction, ws, task, dict(env))
+    launch = build("show-harness", "glm/glm-5.3", task.instruction, ws, task, dict(env))
+    assert seen["ref"].id == "glm/glm-5.3" and seen["protocol"] == "openai-completions"
     client = ws / ".robouse" / "show_harness_client.py"
     assert launch.cmd == ["python3", str(client), task.instruction] and client.read_text() == CLIENT.read_text()
     assert launch.env["ROBOUSE_GATEWAY_KEY"] == gw.key and launch.env["ROBOUSE_SHOW_HARNESS_MODEL"] == "gw-alias"
@@ -764,7 +764,7 @@ def test_launch_through_the_gateway_and_for_a_served_model(tmp_path, monkeypatch
     }
     assert not any(k.startswith("_ROBOUSE") for k in launch.env)
     assert "sk-SECRET" not in json.dumps(launch.cmd) + json.dumps(launch.env)
-    assert launch.notes["model_id"] == "baseten/zai-org/GLM-5.3" and launch.notes["mode"] == "zs"
+    assert launch.notes["model_id"] == "glm/glm-5.3" and launch.notes["mode"] == "zs"
 
     # a model without a provider prefix is a self-hosted one: it needs the server's URL, and runs the fine-tuned mode
     with pytest.raises(RuntimeError, match="ROBOUSE_SHOW_HARNESS_URL"):

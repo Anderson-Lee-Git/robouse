@@ -14,7 +14,7 @@ from robouse.harnesses import models
 pytest.importorskip("benchflow")
 
 
-def test_legacy_harness_names_are_aliases_with_a_baseten_model() -> None:
+def test_legacy_harness_names_read_as_a_baseten_model_and_are_refused_for_a_new_run(capsys) -> None:
     assert models.legacy("codex-glm", "") == ("codex", "baseten/zai-org/GLM-5.3")
     assert models.legacy("claude-code-glm", "moonshotai/Kimi-K3") == ("claude-code", "baseten/moonshotai/Kimi-K3")
     assert models.legacy("mini-swe-agent-glm", "baseten/zai-org/GLM-5.3") == (
@@ -22,9 +22,24 @@ def test_legacy_harness_names_are_aliases_with_a_baseten_model() -> None:
         "baseten/zai-org/GLM-5.3",
     )
     assert models.legacy("codex", "gpt-6-astra") == ("codex", "gpt-6-astra")
+    from robouse import harnesses
     from robouse.cli.run import _unknown_harness
+    from robouse.runner.trial import image_input_plan
 
-    assert _unknown_harness("codex-glm") == 0 and _unknown_harness("mini-swe-agent") == 0  # hidden aliases still run
+    assert _unknown_harness("mini-swe-agent") == 0
+    for name, canon in (
+        ("codex-glm", "codex"),
+        ("claude-code-glm", "claude-code"),
+        ("mini-swe-agent-glm", "mini-swe-agent"),
+    ):
+        assert _unknown_harness(name) == 2  # recorded trials keep the name; a new run does not take it
+        err = capsys.readouterr().err
+        assert f"{name} is the name the September 2026 runs used for {canon} with a Baseten model" in err
+        assert f"--harness {canon}" in err and "glm/glm-5.3" in err
+        with pytest.raises(ValueError, match="kept only to read those trials"):
+            image_input_plan(name, "")
+        with pytest.raises(ValueError, match="kept only to read those trials"):
+            harnesses.build(name, "", "p", None, None, {})
 
 
 def test_old_and_new_trials_of_a_pair_have_one_canonical_pair() -> None:
@@ -42,6 +57,15 @@ def test_old_and_new_trials_of_a_pair_have_one_canonical_pair() -> None:
     )  # first party: bare, as published
     assert models.canonical("claude-code", "claude-opus-5-5") == ("claude-code", "claude-opus-5-5")
     assert models.canonical("oracle", "") == ("oracle", "")
+    # an empty model is read with the defaults the folder was recorded with, not today's: the earlier folders of
+    # mini-swe-agent, dimcode and show-harness keep their Baseten pair
+    for h in ("mini-swe-agent", "dimcode", "show-harness"):
+        assert models.canonical(h, "") == (h, "baseten/zai-org/GLM-5.3")
+    assert models.canonical("claude-code", "") == ("claude-code", "claude-sonnet-5")
+    assert models.canonical("codex", "") == ("codex", "gpt-6-astra")
+    # a new trial records its model, so a Z.ai run is its own pair, never merged with the Baseten one
+    assert models.canonical("mini-swe-agent", "glm/glm-5.3") == ("mini-swe-agent", "glm/glm-5.3")
+    assert models.canonical("claude-code", "glm/glm-5.3") == ("claude-code", "glm/glm-5.3")
 
 
 def test_model_ids_resolve_to_a_provider_in_benchflow_style() -> None:
@@ -50,6 +74,8 @@ def test_model_ids_resolve_to_a_provider_in_benchflow_style() -> None:
     assert models.resolve("claude-code", "claude-opus-5-5").id == "anthropic/claude-opus-5-5"
     assert models.resolve("codex", "gpt-6-astra").id == "openai/gpt-6-astra"
     assert models.resolve("codex", "openrouter/z-ai/glm-5.3").provider == "openrouter"
+    ref = models.resolve("mini-swe-agent", "glm/glm-5.3")  # GLM-5.3 on the Z.ai Coding Plan, BenchFlow's glm entry
+    assert (ref.provider, ref.bare, ref.id) == ("glm", "glm-5.3", "glm/glm-5.3")
     with pytest.raises(ValueError, match="provider prefix"):
         models.resolve("mini-swe-agent", "zai-org/GLM-5.3")
 
@@ -76,10 +102,13 @@ def test_every_model_gets_every_task_and_the_trial_records_its_image_input(monke
     p = image_input_plan("codex", "zai/glm-5.1")  # text-only in the registry
     assert (p["image_input"], p["accepts_images"]) == (False, False) and "text-only" in p["image_input_reason"]
     assert image_input_plan("codex", "openrouter/some/unknown")["image_input"] is False  # not described: none
-    p = image_input_plan("mini-swe-agent-glm", "")  # the harness never passes images, whatever the model takes
-    assert (p["harness"], p["model"], p["image_input"]) == ("mini-swe-agent", "baseten/zai-org/GLM-5.3", False)
+    p = image_input_plan("mini-swe-agent", "")  # the harness never passes images, whatever the model takes
+    assert (p["harness"], p["model"], p["image_input"]) == ("mini-swe-agent", "glm/glm-5.3", False)
     assert "passes no images" in p["image_input_reason"]
-    p = image_input_plan("codex-glm", "")  # GLM-5.3 on Baseten reads images
+    p = image_input_plan("dimcode", "")  # BenchFlow's glm entry does not describe glm-5.3: no images
+    assert (p["harness"], p["model"], p["image_input"], p["accepts_images"]) == ("dimcode", "glm/glm-5.3", False, None)
+    assert "lists no image input" in p["image_input_reason"]
+    p = image_input_plan("codex", "baseten/zai-org/GLM-5.3")  # an explicit id: its registry metadata says images
     assert (p["harness"], p["model"], p["image_input"]) == ("codex", "baseten/zai-org/GLM-5.3", True)
     assert image_input_plan("claude-code", "claude-opus-5-5")["image_input"] is True
     assert image_input_plan("oracle", "")["image_input"] is None

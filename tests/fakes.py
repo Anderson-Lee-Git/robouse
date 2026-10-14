@@ -65,3 +65,26 @@ class FakeBackend(Backend):
 
     def privileged_state(self) -> dict:
         return {"secret": 42}
+
+
+def glm_registry() -> dict:
+    """A provider registry stand-in with BenchFlow's `glm` entry, as BenchFlow 0.7.9.dev2354 has it (GLM-5.3 on the
+    Z.ai Coding Plan: key in GLM_API_KEY, endpoint in GLM_BASE_URL, chat completions only, no model metadata for
+    glm-5.3), so a test runs without the llm extra."""
+    from types import SimpleNamespace
+
+    url = "{base_url}"
+    glm = SimpleNamespace(
+        name="glm",
+        base_url=url,
+        api_protocol="openai-completions",
+        auth_type="api_key",
+        auth_env="GLM_API_KEY",
+        url_params={"base_url": "GLM_BASE_URL"},
+        url_param_defaults={},
+        models=[],
+        model_prefixes=["glm"],
+        endpoints={},
+        all_endpoints={"openai-completions": url},
+    )
+    return {"glm": glm}

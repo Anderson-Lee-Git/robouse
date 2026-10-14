@@ -5,11 +5,14 @@ into a LiteLLM route from BenchFlow's provider registry, and `litellm_proxy_conf
 harness reaches the provider over its own protocol: Claude Code over Anthropic Messages, Codex over the provider's own
 Responses API (the request passes through unchanged, reasoning effort and earlier reasoning included; images in tool
 results move into the next user message, which every Responses provider takes), mini-swe-agent over chat completions.
-The gateway holds the provider key (the agent gets only a per-trial master key), applies the trial's image input to
-every request, and enforces the trial's spend cap (`providers/gateway_hook.py`): once the model's cost reaches the
-cap, every further request is refused and the gateway writes gateway/budget_stop.json, which the runner watches to
-stop the agent. No Responses-to-chat-completions bridge: it dropped Codex's reasoning effort and every earlier
-reasoning item, and Codex on GLM-5.3 reasoned about a quarter as much and solved fewer tasks.
+A provider that serves only chat completions, such as BenchFlow's `glm` (GLM-5.3 on the Z.ai Coding Plan), is reached
+over chat completions by every harness but Codex (LiteLLM translates Claude Code's and dimcode's Messages requests);
+Codex needs a Responses endpoint. The gateway holds the provider key (the agent gets only a per-trial master key),
+applies the trial's image input to every request, and enforces the trial's spend cap (`providers/gateway_hook.py`):
+once the model's cost reaches the cap, every further request is refused and the gateway writes
+gateway/budget_stop.json, which the runner watches to stop the agent. No Responses-to-chat-completions bridge: it
+dropped Codex's reasoning effort and every earlier reasoning item, and Codex on GLM-5.3 reasoned about a quarter as
+much and solved fewer tasks.
 
 Files, in the trial folder (outside the agent's sandbox): gateway/config.yaml, gateway/requests.jsonl (image counts
 per request, no content), gateway/proxy.log. No key is written to any of them: the provider key and the per-trial
@@ -140,6 +143,26 @@ def prices(ref: models.ModelRef) -> dict | None:
     return price_of(ref.bare)
 
 
+def check_settings(ref: models.ModelRef, protocol: str | None, spend_cap_usd: float, env: dict) -> None:
+    """Raise one RuntimeError that names everything this model is missing before the gateway can serve it: the
+    provider's variables (its key and any base URL without a default), and a price when the spend cap is on. No
+    request is sent."""
+    cfg = models.provider_registry()[ref.provider]
+    if protocol == "openai-responses" and protocol not in cfg.all_endpoints:
+        raise RuntimeError(f"Codex needs a provider that serves the Responses API; {ref.provider} does not")
+    problems = []
+    if need := [v for v in models.required_env(cfg) if not env.get(v)]:
+        problems.append(f"model {ref.id} needs {' and '.join(need)} in the environment")
+    if spend_cap_usd > 0 and prices(ref) is None:
+        problems.append(
+            f"no price for {ref.bare} in pricing.json, so the ${spend_cap_usd:g} spend cap cannot be enforced; add its "
+            "price (ROBOUSE_PRICING) or set ROBOUSE_SPEND_CAP_USD=0"
+        )
+    if problems:
+        hint = models.SETUP_HINTS.get(ref.provider)
+        raise RuntimeError("; ".join(problems) + (f" ({hint})" if hint else ""))
+
+
 def start(
     ref: models.ModelRef,
     run_dir: Path,
@@ -153,10 +176,7 @@ def start(
 
     cfg = models.provider_registry()[ref.provider]
     env = dict(os.environ)
-    if protocol == "openai-responses" and protocol not in cfg.all_endpoints:
-        raise RuntimeError(f"Codex needs a provider that serves the Responses API; {ref.provider} does not")
-    if cfg.auth_env and not env.get(cfg.auth_env):
-        raise RuntimeError(f"model {ref.id} needs {cfg.auth_env} in the environment")
+    check_settings(ref, protocol, spend_cap_usd, env)
     route = _same_protocol_route(resolve_litellm_route(ref.id, env), cfg, protocol, env)
     key = "sk-robouse-" + secrets.token_hex(16)
     # the trial folder keeps config.yaml: it names the master key's variable, and the key itself goes only into the
@@ -177,11 +197,6 @@ def start(
     if not exe:
         raise RuntimeError("the model gateway needs LiteLLM: pip install 'robouse[llm]'")
     price = prices(ref)
-    if spend_cap_usd > 0 and price is None:
-        raise RuntimeError(
-            f"no price for {ref.bare} in pricing.json, so the ${spend_cap_usd:g} spend cap cannot be enforced; add its "
-            "price (ROBOUSE_PRICING) or set ROBOUSE_SPEND_CAP_USD=0"
-        )
     penv = {
         **env,
         MASTER_KEY_ENV: key,

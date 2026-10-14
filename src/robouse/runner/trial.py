@@ -181,10 +181,16 @@ def image_input_plan(harness: str, model: str) -> dict:
     from .. import config
     from ..harnesses import models
 
-    canon, mid = models.legacy(harness, model)
+    if why := models.legacy_refusal(harness):  # claude-code-glm etc.: names of recorded trials only
+        raise ValueError(why)
+    canon, mid = harness, model
     if canon not in LLM_HARNESSES:
         return {"harness": canon, "model": mid, "image_input": None, "image_input_reason": "no language model"}
     mid = mid or models.DEFAULT_MODELS.get(canon, "")
+    if not mid:  # show-harness: no default model
+        from ..harnesses.show_harness import NO_MODEL
+
+        raise ValueError(NO_MODEL)
     if canon in SELF_HOSTED_HARNESSES and models.split(mid)[0] is None:
         # a model served by the user (e.g. a fine-tuned VLM on vLLM): no gateway, so nothing removes images
         return {

@@ -8,17 +8,19 @@ Harnesses
   oracle                 the task's reference solution (oracle/solve.sh)
   noop                   calls `robo done` immediately (negative control)
   claude-code            Claude Code CLI; model: a bare Claude id (Anthropic, own credentials) or any provider-prefixed
-                         id, e.g. baseten/zai-org/GLM-5.3, reached through the trial's model gateway (gateway.py)
+                         id, e.g. glm/glm-5.3, reached through the trial's model gateway (gateway.py)
   codex                  Codex CLI; model: a bare OpenAI id (own credentials or the account pool) or a provider-prefixed
-                         id through the gateway
-  mini-swe-agent         mini-swe-agent; model: a provider-prefixed id, always through the gateway
-  (claude-code-glm, codex-glm and mini-swe-agent-glm: hidden aliases for the three above with a baseten/ model)
+                         id through the gateway (a provider with a Responses endpoint)
+  mini-swe-agent         mini-swe-agent; model: a provider-prefixed id, always through the gateway (default
+                         glm/glm-5.3: GLM-5.3 on the Z.ai Coding Plan)
   dimcode                Dimensional's dimcode (built on Pi); model: a provider-prefixed id, always through the
-                         gateway (default baseten/zai-org/GLM-5.3); see dimcode.py
+                         gateway (default glm/glm-5.3); see dimcode.py
   show-harness           NUS Show Lab's Show-Harness: a VLM picks one parameter-free action unit at a time
-                         (MV_FWD, GRASP, ...) and an interpreter grounds it; model: a provider-prefixed id through
-                         the gateway (zero-shot mode, default baseten/zai-org/GLM-5.3) or a self-hosted fine-tuned
-                         model at $ROBOUSE_SHOW_HARNESS_URL; see show_harness/
+                         (MV_FWD, GRASP, ...) and an interpreter grounds it; model (required): a provider-prefixed id
+                         through the gateway (zero-shot mode) or a self-hosted fine-tuned model at
+                         $ROBOUSE_SHOW_HARNESS_URL; see show_harness/
+  (claude-code-glm, codex-glm and mini-swe-agent-glm: the September 2026 runs' names for the first three with a
+  Baseten model; read in their trial folders, refused for a new run)
   molmoact2              MolmoAct2 VLA policy: molmoact2/client.py drives `robo` with action chunks from a policy
                          server at $ROBOUSE_MOLMOACT2_URL; model e.g. allenai/MolmoAct2-LIBERO-LeRobot
   vla                    any served VLA (vla/client.py): --model is a preset from vla/presets.json; server at
@@ -103,6 +105,14 @@ def _noop(model, prompt, workspace, task, env) -> Launch:
 
 
 PRIVATE_ENV = ("_ROBOUSE_TRIAL_DIR", "_ROBOUSE_IMAGE_INPUT", "_ROBOUSE_SPEND_CAP_USD")  # runner to builder only
+# the protocol each harness speaks to its model gateway (claude-code and codex only for a model not of their own vendor)
+GATEWAY_PROTOCOLS = {
+    "claude-code": "anthropic-messages",
+    "codex": "openai-responses",
+    "mini-swe-agent": "openai-completions",
+    "dimcode": "anthropic-messages",
+    "show-harness": "openai-completions",
+}
 
 
 def _gateway(ref, env: dict, protocol: str):
@@ -138,7 +148,7 @@ def _via_gateway(harness: str, model: str) -> object | None:
 def _claude_code(model, prompt, workspace, task, env) -> Launch:
     if model and (ref := _via_gateway("claude-code", model)) is not None:
         home = credentials.clean_claude_home()
-        gw = _gateway(ref, env, "anthropic-messages")
+        gw = _gateway(ref, env, GATEWAY_PROTOCOLS["claude-code"])
         env.update(
             {
                 "ANTHROPIC_BASE_URL": gw.url,
@@ -164,7 +174,7 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
 
     if model and (ref := _via_gateway("codex", model)) is not None:
         home = credentials.clean_codex_home("# model provider: the trial's gateway, set on the command line\n")
-        gw = _gateway(ref, env, "openai-responses")
+        gw = _gateway(ref, env, GATEWAY_PROTOCOLS["codex"])
         env["ROBOUSE_GATEWAY_KEY"] = gw.key
         env["ROBOUSE_GATEWAY_URL"] = gw.url  # also lets the macOS sandbox allow this local port
         env["CODEX_HOME"] = home
@@ -196,7 +206,7 @@ def _mini_swe_agent(model, prompt, workspace, task, env) -> Launch:
 
     ref = models.resolve("mini-swe-agent", model or models.DEFAULT_MODELS["mini-swe-agent"])
     exe = shutil.which("mini") or str(Path.home() / ".local" / "bin" / "mini")
-    gw = _gateway(ref, env, "openai-completions")
+    gw = _gateway(ref, env, GATEWAY_PROTOCOLS["mini-swe-agent"])
     env.update(
         {
             "OPENAI_API_KEY": gw.key,
@@ -290,11 +300,13 @@ HARNESSES: dict[str, Builder] = {
 
 
 def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env: dict) -> Launch:
-    """The launch for one trial. Raises KeyError for an unknown harness and RuntimeError for missing credentials."""
+    """The launch for one trial. Raises KeyError for an unknown harness, ValueError for a legacy name or a missing
+    model, and RuntimeError for missing credentials."""
     from . import models
 
+    if why := models.legacy_refusal(harness):  # claude-code-glm etc.: names of recorded trials only
+        raise ValueError(why)
     env = dict(base_env)
-    harness, model = models.legacy(harness, model)  # claude-code-glm etc.: hidden aliases
     fn = HARNESSES.get(harness)
     if fn is None:
         from importlib.metadata import entry_points

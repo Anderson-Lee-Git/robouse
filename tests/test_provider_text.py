@@ -1,5 +1,6 @@
-"""User-facing text names only the provider tested with Robo Use (Baseten), and `robouse doctor` checks the provider
-key where the model gateway reads it: the environment variable, not a key file."""
+"""User-facing text names only the model route tested with Robo Use (GLM-5.3 on the Z.ai Coding Plan, `glm/glm-5.3`
+through BenchFlow's glm provider), and `robouse doctor` checks the provider key where the model gateway reads it: the
+environment variable, not a key file."""
 
 from __future__ import annotations
 
@@ -8,19 +9,19 @@ import pytest
 from robouse.cli import main
 from robouse.harnesses import models
 
-EXAMPLE = "baseten/zai-org/GLM-5.3"
-UNTESTED = ("openrouter", "together", "fireworks", "groq", "deepinfra")
+EXAMPLE = "glm/glm-5.3"
+UNTESTED = ("openrouter", "together", "fireworks", "groq", "deepinfra", "baseten")
 
 
 @pytest.mark.parametrize("cmd", ["run", "run-many"])
-def test_harness_help_gives_the_baseten_example_only(cmd, capsys) -> None:
+def test_harness_help_gives_the_zai_example_only(cmd, capsys) -> None:
     with pytest.raises(SystemExit):
         main([cmd, "--help"])
     out = " ".join(capsys.readouterr().out.split())
     assert EXAMPLE in out and not any(p in out.lower() for p in UNTESTED)
 
 
-def test_missing_prefix_error_gives_the_baseten_example_only() -> None:
+def test_missing_prefix_error_gives_the_zai_example_only() -> None:
     with pytest.raises(ValueError) as e:
         models.resolve("mini-swe-agent", "GLM-5.3")  # a bare id, for a harness with no vendor of its own
     msg = str(e.value)
@@ -61,3 +62,8 @@ def test_without_benchflow_the_message_says_what_helps(version, needs, monkeypat
     with pytest.raises(RuntimeError) as e:
         models.provider_registry()
     assert needs in str(e.value)
+    # the default model's prefix is known only to BenchFlow's registry: the message says what to install, not that
+    # the id lacks a prefix
+    with pytest.raises(RuntimeError) as e:
+        models.resolve("mini-swe-agent", "glm/glm-5.3")
+    assert needs in str(e.value) and "provider prefix" not in str(e.value)
