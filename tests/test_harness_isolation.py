@@ -367,3 +367,66 @@ def test_each_claude_code_trial_gets_its_own_config_home(tmp_path, monkeypatch) 
     (ws / ".robouse").mkdir(parents=True)
     launch = harnesses.HARNESSES["claude-code"]("p/m", "TASK", ws, None, {"PATH": "/usr/bin"})
     assert launch.env["CLAUDE_CONFIG_DIR"] == str(ws / ".robouse" / "claude-home")
+
+
+def test_each_codex_trial_gets_its_own_home(tmp_path, monkeypatch) -> None:
+    """Codex trials shared one CODEX_HOME in robouse's cache (codex-home, or codex-home-gateway), with the sessions and
+    memories Codex keeps there, so a trial could read what an earlier one left (as with Claude Code; deep audit,
+    security item 11). Each trial now gets a new private home, on its own vendor and through the gateway, removed when
+    the trial ends. A failed login or gateway leaves nothing behind, and an account pool's home is never removed."""
+    from types import SimpleNamespace
+
+    from robouse.harnesses import credentials
+
+    home = tmp_path / "home"
+    (home / ".codex").mkdir(parents=True)
+    (home / ".codex" / "auth.json").write_text("LOGIN")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(_maintainer, "codex_accounts", lambda: [])
+    monkeypatch.setattr(harnesses, "_via_gateway", lambda h, m: None)
+    ws = tmp_path / "ws"
+    (ws / ".robouse").mkdir(parents=True)
+    launches = [harnesses.HARNESSES["codex"]("gpt-6-astra", "TASK", ws, None, {"PATH": "/usr/bin"}) for _ in "ab"]
+    homes = [Path(launch.env["CODEX_HOME"]) for launch in launches]
+    assert homes[0] != homes[1]
+    for h in homes:
+        assert h.parent == credentials.trial_homes() and h.stat().st_mode & 0o777 == 0o700
+        auth = h / "auth.json"
+        assert not auth.is_symlink() and auth.read_text() == "LOGIN" and auth.stat().st_mode & 0o777 == 0o600
+    (homes[0] / "sessions").mkdir()
+    (homes[0] / "sessions" / "rollout.jsonl").write_text("{}")
+    launches[0].stop()
+    assert not homes[0].exists() and homes[1].exists()
+    assert (home / ".codex" / "auth.json").read_text() == "LOGIN"  # the user's login is a source, never touched
+
+    # through the gateway: no login in the home, and the gateway stops before the home goes
+    stopped = []
+    gw = SimpleNamespace(
+        url="http://127.0.0.1:1", key="k", model="m", stats={}, stop=lambda: stopped.append(1), stop_file=None
+    )
+    monkeypatch.setattr(harnesses, "_via_gateway", lambda h, m: SimpleNamespace(bare="m", id="p/m", provider="p"))
+    monkeypatch.setattr(harnesses, "_gateway", lambda ref, env, protocol: gw)
+    launch = harnesses.HARNESSES["codex"]("p/m", "TASK", ws, None, {"PATH": "/usr/bin"})
+    via = Path(launch.env["CODEX_HOME"])
+    assert via.parent == credentials.trial_homes() and not (via / "auth.json").exists() and via != homes[1]
+    launch.stop()
+    assert stopped == [1] and not via.exists()
+
+    def no_gateway(ref, env, protocol):
+        raise RuntimeError("model p/m needs P_KEY in the environment")
+
+    monkeypatch.setattr(harnesses, "_gateway", no_gateway)
+    with pytest.raises(RuntimeError, match="P_KEY"):
+        harnesses.HARNESSES["codex"]("p/m", "TASK", ws, None, {"PATH": "/usr/bin"})
+    (home / ".codex" / "auth.json").unlink()
+    monkeypatch.setattr(harnesses, "_via_gateway", lambda h, m: None)
+    with pytest.raises(RuntimeError, match="no Codex credentials"):
+        harnesses.HARNESSES["codex"]("gpt-6-astra", "TASK", ws, None, {"PATH": "/usr/bin"})
+    assert list(credentials.trial_homes().iterdir()) == [homes[1]]
+
+    pool_home = tmp_path / "cache" / "codex-home-account"
+    pool_home.mkdir()
+    credentials.remove_trial_home(str(pool_home))
+    assert pool_home.is_dir()

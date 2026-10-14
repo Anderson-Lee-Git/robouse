@@ -170,7 +170,11 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
 
     if model and (ref := _via_gateway("codex", model)) is not None:
         home = credentials.clean_codex_home("# model provider: the trial's gateway, set on the command line\n")
-        gw = _gateway(ref, env, "openai-responses")
+        try:
+            gw = _gateway(ref, env, "openai-responses")
+        except BaseException:
+            credentials.remove_trial_home(home)
+            raise
         env["ROBOUSE_GATEWAY_KEY"] = gw.key
         env["ROBOUSE_GATEWAY_URL"] = gw.url  # also lets the macOS sandbox allow this local port
         env["CODEX_HOME"] = home
@@ -188,13 +192,28 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
         ]
         # the provider's own Responses endpoint, the request passed through unchanged (reasoning effort and earlier
         # reasoning kept); the gateway moves any image out of a tool result into the next user message
-        return _gateway_launch(gw, ref, _codex_cmd(prompt, gw.model, workspace, cfg), env)
+        launch = _gateway_launch(gw, ref, _codex_cmd(prompt, gw.model, workspace, cfg), env)
+        launch.stop = _removing(home, launch.stop)
+        return launch
     m = (model or "gpt-6-astra").removeprefix("openai/")
     key = os.environ.get("OPENAI_API_KEY", "")
-    env["CODEX_HOME"] = credentials.clean_codex_home(api_key=key)
+    env["CODEX_HOME"] = home = credentials.clean_codex_home(api_key=key)
     if key:
         env["CODEX_API_KEY"] = key
-    return Launch(_codex_cmd(prompt, m, workspace), env, notes={"model": m})
+    return Launch(_codex_cmd(prompt, m, workspace), env, stop=_removing(home), notes={"model": m})
+
+
+def _removing(home: str, stop: Callable[[], None] | None = None) -> Callable[[], None]:
+    """`stop`, then the removal of the trial's own Codex home (`remove_trial_home` leaves a pool home alone)."""
+
+    def run() -> None:
+        try:
+            if stop is not None:
+                stop()
+        finally:
+            credentials.remove_trial_home(home)
+
+    return run
 
 
 def _mini_swe_agent(model, prompt, workspace, task, env) -> Launch:
