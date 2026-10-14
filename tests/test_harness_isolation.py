@@ -169,6 +169,16 @@ def test_a_source_checkout_s_tasks_runs_and_generators_are_denied(tmp_path, monk
     assert sandbox.checkout_denied() == []
 
 
+def test_macos_agents_cannot_start_programs_that_act_outside_the_sandbox(tmp_path) -> None:
+    """`open` hands a file or URL to LaunchServices, outside Seatbelt (108 calls in the Mac runs; deep audit, security
+    item 8); `osascript` and `shortcuts` drive other applications. Checked on macOS 26 with sandbox-exec: both exit
+    126 (Operation not permitted), and a copy of `open` elsewhere is killed by code signing."""
+    prof = sandbox.sandbox_profile(tmp_path / "ws")
+    programs = '(literal "/usr/bin/open") (literal "/usr/bin/osascript") (literal "/usr/bin/shortcuts")'
+    assert f"(deny process-exec {programs})" in prof
+    assert "(deny appleevent-send)" in prof
+
+
 def test_the_runner_s_python_is_read_only_to_agents(tmp_path) -> None:
     """The episode server and the verifier run on the runner's Python, so an agent must not change it (deep audit,
     security item 10). bubblewrap binds it read-only before the denied folders, so a robouse install inside it stays
@@ -225,6 +235,10 @@ touch "$CODEX_HOME/new" && echo own-writable
 touch {tool_dir}/x 2>/dev/null && echo program-writable
 touch {prefix}/.robouse-write-probe 2>/dev/null && echo prefix-writable
 cat {other_oracle} >/dev/null 2>&1 && echo other-oracle-readable
+if [ "$(uname)" = Darwin ]; then
+  /usr/bin/osascript -e 'return "osascript-ran"' 2>/dev/null
+  /usr/bin/open -h >/dev/null 2>&1; echo "open-rc=$?"
+fi
 echo "runner-home=${{CLAUDE_CONFIG_DIR:-unset}} ssh-agent=${{SSH_AUTH_SOCK:-unset}}"
 for s in {sockets}; do
   python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1]); print("CONNECTED", sys.argv[1])' "$s" 2>/dev/null
@@ -295,6 +309,8 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
         assert "own-readable" in out and "own-writable" in out, out
         assert "program-ok" in out and "program-writable" not in out, out
         assert "prefix-writable" not in out, out  # the runner's Python, which the next episode server runs on
+        if sys.platform == "darwin":  # LaunchServices and Apple events act outside the sandbox
+            assert "osascript-ran" not in out and "open-rc=126" in out, out
         if sandbox.checkout_denied():  # robouse runs from this checkout: the other tasks' oracles are out of reach
             assert "other-oracle-readable" not in out, out
         assert "runner-home=unset ssh-agent=unset" in out, out
