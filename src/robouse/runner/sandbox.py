@@ -165,6 +165,15 @@ def _inside(path: str, roots: list[str]) -> bool:
     return any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots)
 
 
+def _ancestors(path: str) -> list[str]:
+    """The folders above `path`, up to and without the root."""
+    out, p = [], os.path.dirname(path)
+    while p != os.path.dirname(p):
+        out.append(p)
+        p = os.path.dirname(p)
+    return out
+
+
 def reachable_path(path: str, deny: list[Path], own: list[str] | None = None) -> str:
     """A PATH value without its entries inside a denied folder that the sandbox does not give back (program folders,
     the agent's own homes): a command found there could not run. `uvx`, for one, puts its environment, in the uv
@@ -204,6 +213,11 @@ def sandbox_profile(
     rules += "".join(f'(allow file-read* (subpath "{p}"))' for p in _programs())
     for d in [*_real([workspace] if workspace else []), *_real(own or [])]:
         rules += f'(allow file-read* file-write* (subpath "{d}"))'
+    # the folders above a home or program folder that sits inside a denied one: their metadata (stat), not their
+    # contents, so a program can resolve its own path there (Codex canonicalizes CODEX_HOME, inside robouse's cache)
+    above = sorted({a for p in [*_programs(), *_real(own or [])] for a in _ancestors(p)})
+    if above:
+        rules += "(allow file-read-metadata " + " ".join(f'(literal "{a}")' for a in above) + ")"
     rules += "(deny process-exec " + " ".join(f'(literal "{p}")' for p in MACOS_ESCAPES) + ")"
     rules += "(deny appleevent-send)"  # no Apple events to other applications, from any program
     rules += '(deny network-outbound (remote ip "localhost:*"))'

@@ -179,6 +179,24 @@ def test_macos_agents_cannot_start_programs_that_act_outside_the_sandbox(tmp_pat
     assert "(deny appleevent-send)" in prof
 
 
+def test_macos_agents_can_resolve_their_own_home_inside_a_denied_folder(tmp_path, monkeypatch) -> None:
+    """Codex canonicalizes CODEX_HOME, which needs the metadata of every folder above it. Inside robouse's cache
+    (denied) that failed on macOS ("failed to canonicalize CODEX_HOME: Operation not permitted"; sandbox-exec, Codex
+    0.162.1), so Codex ran without its PATH aliases. The profile now allows the metadata of those folders, never their
+    contents."""
+    p = _home(tmp_path)
+    _isolate(monkeypatch, p)
+    own = sandbox.own_homes({"CODEX_HOME": str(p["own"])})
+    prof = sandbox.sandbox_profile(tmp_path / "ws", (), [], own)
+    cache, codex = (os.path.realpath(p["home"] / rel) for rel in (".cache/robouse", ".codex"))
+    rule = prof[prof.index("(allow file-read-metadata ") :]
+    rule = rule[: rule.index("))") + 2]
+    assert f'(literal "{cache}")' in rule and f'(literal "{codex}")' in rule  # above the own home and ~/.codex/packages
+    assert f'(literal "{own[0]}")' not in rule and prof.index(rule) > prof.index(f'(subpath "{cache}")')
+    assert f'(allow file-read* (literal "{cache}"))' not in prof
+    assert f'(allow file-read* (subpath "{cache}"))' not in prof
+
+
 def test_the_runner_s_python_is_read_only_to_agents(tmp_path) -> None:
     """The episode server and the verifier run on the runner's Python, so an agent must not change it (deep audit,
     security item 10). bubblewrap binds it read-only before the denied folders, so a robouse install inside it stays
