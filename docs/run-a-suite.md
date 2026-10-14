@@ -4,7 +4,7 @@
 
 ## A suite
 
-A suite is a subfolder of `robouse tasks --path`. This runs the first 4 Meta-World reference solutions, 4 at a time:
+A suite is a subfolder of `robouse tasks --path`. Meta-World needs its extra, `pip install 'robouse[metaworld]'` (the [Suites](suites.md) table lists the extra for each suite). This runs the first 4 Meta-World reference solutions, 4 at a time:
 
 ```console
 $ robouse run-many --tasks "$(robouse tasks --path)/metaworld" --harness oracle --out runs/mw-oracle --concurrency 4 --limit 4

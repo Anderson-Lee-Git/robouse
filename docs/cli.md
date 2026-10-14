@@ -10,24 +10,24 @@ Robo Use: run robot tasks with an agent harness as the policy.
 https://robouse.ai
 
 options:
-  -h, --help    show this help message and exit
-  --version     show program's version number and exit
+  -h, --help      show this help message and exit
+  --version       show program's version number and exit
 
 commands:
   COMMAND
-    run         run one trial end to end
-    run-many    run a set of trials
-    tasks       list, create and check tasks
-    components  list, show and check components
-    fetch-assets
-                download the MuJoCo Menagerie robot models (menagerie,
-                roboharm, drone; --robot or --all for the embodiment suites
-                and composed tasks)
-    report      metrics with 95% confidence intervals over run folders,
-                grouped by trial attributes
-    summarize   distil a trial into learnings (markdown) for --prior-learnings
-    doctor      what this machine can run: simulators, harnesses, credentials
-                and the VLA server
+    run           run one trial end to end
+    run-many      run a set of trials
+    tasks         list, create and check tasks
+    components    list, show and check components
+    fetch-assets  download the MuJoCo Menagerie robot models (menagerie,
+                  roboharm, drone; --robot or --all for the embodiment suites
+                  and composed tasks)
+    report        metrics with 95% confidence intervals over run folders,
+                  grouped by trial attributes
+    summarize     distil a trial into learnings (markdown) for --prior-
+                  learnings
+    doctor        what this machine can run: simulators, harnesses,
+                  credentials and the VLA server
 ```
 
 ## `robouse run`

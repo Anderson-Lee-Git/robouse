@@ -95,8 +95,11 @@ These simulators pin versions that conflict with the main environment. The episo
 
 ```sh
 # dexjoco (ROBOUSE_DEXJOCO_PYTHON); also pip install 'robouse[dexjoco]'
-git clone --depth 1 https://github.com/brave-eai/dexjoco.git \
-  ~/.cache/robouse/dexjoco
+git init -q ~/.cache/robouse/dexjoco
+git -C ~/.cache/robouse/dexjoco fetch --depth 1 \
+  https://github.com/brave-eai/dexjoco.git \
+  8d23b0fab23b17a58c4b55f3942e17013aaf8267
+git -C ~/.cache/robouse/dexjoco checkout -q FETCH_HEAD
 uv venv -p 3.11 ~/.cache/robouse/dexjoco-venv
 VIRTUAL_ENV=~/.cache/robouse/dexjoco-venv uv pip install \
   -e ~/.cache/robouse/dexjoco/dexjoco \
@@ -106,13 +109,13 @@ VIRTUAL_ENV=~/.cache/robouse/dexjoco-venv uv pip install \
 uv venv -p 3.11 ~/.cache/robouse/metadrive-venv
 uv pip install \
   -p ~/.cache/robouse/metadrive-venv/bin/python \
-  metadrive-simulator==0.4.3
+  metadrive-simulator==0.4.3 gymnasium==1.3.0
 
 # dmcontrol (ROBOUSE_DMCONTROL_PYTHON)
 uv venv -p 3.12 ~/.cache/robouse/dmcontrol-venv
 uv pip install \
   -p ~/.cache/robouse/dmcontrol-venv/bin/python \
-  dm-control==1.0.47
+  dm-control==1.0.47 mujoco==3.14.0
 
 # myosuite (ROBOUSE_MYOSUITE_PYTHON)
 uv venv -p 3.11 ~/.cache/robouse/myosuite-venv

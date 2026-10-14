@@ -20,7 +20,7 @@ MetaDrive brings numpy 2, opencv, pygame, panda3d and gymnasium 1.x, which must 
 
 ```
 uv venv -p 3.11 ~/.cache/robouse/metadrive-venv
-uv pip install -p ~/.cache/robouse/metadrive-venv/bin/python metadrive-simulator==0.4.3
+uv pip install -p ~/.cache/robouse/metadrive-venv/bin/python metadrive-simulator==0.4.3 gymnasium==1.3.0
 ```
 
 - The backend looks for `~/.cache/robouse/metadrive-venv/bin/python`; override with `ROBOUSE_METADRIVE_PYTHON`. Set `ROBOUSE_METADRIVE_QUIET=0` to see the worker's stderr.
