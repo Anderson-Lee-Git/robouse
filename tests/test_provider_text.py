@@ -4,6 +4,8 @@ them: environment variables, not a key file."""
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from robouse.cli import main
@@ -11,6 +13,10 @@ from robouse.harnesses import models
 
 EXAMPLE = "glm/glm-5.3"
 UNTESTED = ("openrouter", "together", "fireworks", "groq", "deepinfra", "baseten")
+
+# Baseten named in text (BASETEN_API_KEY, a baseten/ model, the provider, inference.baseten.co); a path segment that
+# merely contains the word, such as a checkout or cache under ~/no-baseten/, is not a mention
+BASETEN_MENTION = re.compile(r"(?<![\w./-])baseten|baseten\.co", re.IGNORECASE)
 
 
 @pytest.mark.parametrize("cmd", ["run", "run-many"])
@@ -52,7 +58,13 @@ def test_doctor_checks_the_settings_where_the_gateway_reads_them(monkeypatch, ca
     assert f"-- {line}" in _doctor(monkeypatch, capsys)  # both are needed
     monkeypatch.setenv("GLM_BASE_URL", "http://127.0.0.1:9/v1")
     out = _doctor(monkeypatch, capsys)
-    assert f"ok {line}" in out and "baseten" not in out.lower()
+    assert f"ok {line}" in out and not BASETEN_MENTION.search(out)
+
+
+def test_a_path_is_not_a_baseten_mention() -> None:
+    for text in ("BASETEN_API_KEY in the environment", "for baseten/ models", "(Baseten)", "inference.baseten.co/v1"):
+        assert BASETEN_MENTION.search(text), text
+    assert not BASETEN_MENTION.search("-- driving (worker virtualenv /home/u/no-baseten/fix/cache/metadrive-venv)")
 
 
 def test_doctor_without_the_registry_says_what_to_install(monkeypatch, capsys) -> None:
