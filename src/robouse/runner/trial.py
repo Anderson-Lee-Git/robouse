@@ -149,7 +149,11 @@ def _verify(task: Task, episode: dict, tdir: Path) -> float:
             ["bash", str(task.verifier_script)],
             capture_output=True,
             text=True,
-            env={**os.environ, "ROBOUSE_EPISODE_DIR": private, "ROBOUSE_VERIFIER_DIR": str(tdir / "verifier")},
+            env={
+                **without_provider_keys(os.environ),
+                "ROBOUSE_EPISODE_DIR": private,
+                "ROBOUSE_VERIFIER_DIR": str(tdir / "verifier"),
+            },
             check=False,
         )
     (tdir / "verifier" / "test-stdout.txt").write_text(vt.stdout + vt.stderr)
@@ -235,17 +239,18 @@ PROVIDER_KEY_PREFIXES = ("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN"
 SECRET_NAME = re.compile(r"SECRET|PASSWORD|PASSWD|APIKEY|(?:^|_)(?:TOKEN|KEY|PASS|AUTH|CREDENTIALS?)(?:_|$)", re.I)
 
 
-def agent_env(environ: dict[str, str]) -> dict[str, str]:
+def without_provider_keys(environ) -> dict[str, str]:
+    """An environment without model provider keys: the episode server's and the verifier's (neither calls a model)."""
+    names = _secret_env_names()
+    return {k: v for k, v in environ.items() if not k.startswith(PROVIDER_KEY_PREFIXES) and k not in names}
+
+
+def agent_env(environ) -> dict[str, str]:
     """The environment an agent starts from: the runner's, without model provider keys and without any variable whose
     name marks a credential (`SECRET_NAME`, e.g. GITHUB_TOKEN, HF_TOKEN, AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, or the
     session token of an agent that launched the runner), whatever set it. A harness adds back what its program needs:
     its vendor's login, a gateway key, a policy server's token."""
-    names = _secret_env_names()
-    return {
-        k: v
-        for k, v in environ.items()
-        if not k.startswith(PROVIDER_KEY_PREFIXES) and k not in names and not SECRET_NAME.search(k)
-    }
+    return {k: v for k, v in without_provider_keys(environ).items() if not SECRET_NAME.search(k)}
 
 
 def _wait_agent(agent: subprocess.Popen, timeout: float, stop_file: Path | None) -> tuple[int | None, bool]:
@@ -419,7 +424,8 @@ def run_trial(
     # the reference solution's token and the key that signs the verdict go to the server on its stdin: never in an
     # environment or a command line, which other processes of this user can read
     oracle_token, result_key = secrets.token_hex(16), secrets.token_hex(32)
-    server_env = {k: v for k, v in os.environ.items() if k != "ROBOUSE_ORACLE_TOKEN"}
+    # nor a provider key: the server calls no model, and other processes of this user may read its environment
+    server_env = {k: v for k, v in without_provider_keys(os.environ).items() if k != "ROBOUSE_ORACLE_TOKEN"}
     with open(tdir / "episode" / "server.log", "w") as server_log:  # the child keeps its own copy of the handle
         server = subprocess.Popen(
             server_cmd, env=server_env, stdin=subprocess.PIPE, stdout=server_log, stderr=subprocess.STDOUT

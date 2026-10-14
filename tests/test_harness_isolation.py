@@ -506,3 +506,43 @@ def test_molmoact2_gets_its_server_token_from_the_harness(tmp_path, monkeypatch)
     task = SimpleNamespace(metadata={"language_instruction": "stack"}, meta={}, spec={})
     launch = harnesses.HARNESSES["molmoact2"]("", "TASK", tmp_path, task, {"PATH": "/usr/bin"})
     assert launch.env["ROBOUSE_MOLMOACT2_TOKEN"] == "preview-token"
+
+
+def test_the_episode_server_and_verifier_get_no_provider_key(tmp_path, monkeypatch) -> None:
+    """The episode server and the verifier never call a model, yet inherited the runner's provider keys, where other
+    processes of this user could read them (audit, security item 4). Their other settings stay."""
+    pytest.importorskip("mujoco")
+    import subprocess
+
+    from robouse.runner import run_trial
+    from robouse.tasks import load_task
+
+    monkeypatch.setenv("ROBOUSE_SANDBOX", "0")
+    for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "BASETEN_API_KEY"):
+        monkeypatch.setenv(k, "LEAK")
+    monkeypatch.setenv("HF_TOKEN", "kept")  # not a model provider key: a simulator may need it to download assets
+    seen: dict[str, dict] = {}
+    popen, run = subprocess.Popen, subprocess.run
+
+    def spy_popen(cmd, *args, **kw):
+        if "serve" in cmd:
+            seen["server"] = dict(kw.get("env") or os.environ)
+        return popen(cmd, *args, **kw)
+
+    def spy_run(cmd, *args, **kw):
+        if cmd[:1] == ["bash"] and str(cmd[-1]).endswith("test.sh"):
+            seen["verifier"] = dict(kw.get("env") or os.environ)
+        return run(cmd, *args, **kw)
+
+    def done(model, prompt, workspace, task, env) -> harnesses.Launch:
+        return harnesses.Launch(["robo", "done", "ok"], env, notes={"model": "none"})
+
+    monkeypatch.setattr(subprocess, "Popen", spy_popen)
+    monkeypatch.setattr(subprocess, "run", spy_run)
+    monkeypatch.setitem(harnesses.HARNESSES, "done", done)
+    res = run_trial(load_task(ROOT / "tasks" / "arc-style" / "arc-gravity"), "done", "", tmp_path / "job")
+    assert res["exception"] is None, res
+    assert sorted(seen) == ["server", "verifier"]
+    for name, env in seen.items():
+        assert not [k for k, v in env.items() if v == "LEAK"], name
+        assert env["HF_TOKEN"] == "kept" and env["PATH"], name
