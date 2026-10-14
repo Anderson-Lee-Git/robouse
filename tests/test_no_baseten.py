@@ -169,6 +169,45 @@ def test_the_gateway_names_every_missing_setting_at_once() -> None:
         check_settings(ref, "openai-responses", 0.0, env)
 
 
+def test_messages_clients_reach_glm_over_chat_completions(monkeypatch) -> None:
+    """LiteLLM sends an Anthropic Messages request with thinking enabled to an OpenAI-compatible provider's Responses
+    API; the Coding Plan has none (404 at .../paas/v4/responses: dimcode stopped at its first request). For such a
+    provider the gateway removes `thinking`, so Claude Code and dimcode get chat completions."""
+    pytest.importorskip("benchflow")
+    pytest.importorskip("litellm")
+    import asyncio
+
+    from benchflow.providers.litellm_config import resolve_litellm_route
+
+    from robouse.harnesses import gateway
+    from robouse.harnesses.providers import gateway_hook as H
+
+    env = {"GLM_API_KEY": "k", "GLM_BASE_URL": "http://127.0.0.1:9/v1", "ZAI_API_KEY": "k"}
+    reg = models.provider_registry()
+    glm = models.resolve("dimcode", "glm/glm-5.3")
+    route = gateway._same_protocol_route(resolve_litellm_route(glm.id, env), reg["glm"], "anthropic-messages", env)
+    assert route.upstream_model == "openai/glm-5.3"
+    assert gateway.drops_thinking(route, reg["glm"], "anthropic-messages")
+    assert not gateway.drops_thinking(route, reg["glm"], "openai-completions")  # mini-swe-agent, show-harness
+    zai = models.resolve("dimcode", "zai/glm-5.1")  # a provider with its own Anthropic endpoint: unchanged
+    zroute = gateway._same_protocol_route(resolve_litellm_route(zai.id, env), reg["zai"], "anthropic-messages", env)
+    assert not gateway.drops_thinking(zroute, reg["zai"], "anthropic-messages")
+
+    body = {"model": "m", "max_tokens": 10, "thinking": {"type": "enabled", "budget_tokens": 1024}, "messages": []}
+    monkeypatch.setenv("ROBOUSE_GATEWAY_DROP_THINKING", "1")
+    out = asyncio.run(
+        H.RobouseGateway().async_pre_call_hook(None, None, json.loads(json.dumps(body)), "anthropic_messages")
+    )
+    assert "thinking" not in out and out["max_tokens"] == 10
+    chat = {"model": "m", "messages": [], "reasoning_effort": "medium"}  # other call types pass as sent
+    assert asyncio.run(H.RobouseGateway().async_pre_call_hook(None, None, dict(chat), "acompletion")) == chat
+    monkeypatch.delenv("ROBOUSE_GATEWAY_DROP_THINKING")
+    out = asyncio.run(
+        H.RobouseGateway().async_pre_call_hook(None, None, json.loads(json.dumps(body)), "anthropic_messages")
+    )
+    assert out["thinking"] == body["thinking"]
+
+
 def test_run_checks_the_model_before_any_trial(tmp_path, monkeypatch, capsys, no_provider_env) -> None:
     pytest.importorskip("benchflow")
     from robouse.cli.run import _check_model

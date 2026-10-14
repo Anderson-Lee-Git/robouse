@@ -6,13 +6,13 @@ harness reaches the provider over its own protocol: Claude Code over Anthropic M
 Responses API (the request passes through unchanged, reasoning effort and earlier reasoning included; images in tool
 results move into the next user message, which every Responses provider takes), mini-swe-agent over chat completions.
 A provider that serves only chat completions, such as BenchFlow's `glm` (GLM-5.3 on the Z.ai Coding Plan), is reached
-over chat completions by every harness but Codex (LiteLLM translates Claude Code's and dimcode's Messages requests);
-Codex needs a Responses endpoint. The gateway holds the provider key (the agent gets only a per-trial master key),
-applies the trial's image input to every request, and enforces the trial's spend cap (`providers/gateway_hook.py`):
-once the model's cost reaches the cap, every further request is refused and the gateway writes
-gateway/budget_stop.json, which the runner watches to stop the agent. No Responses-to-chat-completions bridge: it
-dropped Codex's reasoning effort and every earlier reasoning item, and Codex on GLM-5.3 reasoned about a quarter as
-much and solved fewer tasks.
+over chat completions by every harness but Codex (LiteLLM translates Claude Code's and dimcode's Messages requests, and
+the gateway removes their `thinking`, for which LiteLLM would call a Responses API); Codex needs a Responses endpoint.
+The gateway holds the provider key (the agent gets only a per-trial master key), applies the trial's image input to
+every request, and enforces the trial's spend cap (`providers/gateway_hook.py`): once the model's cost reaches the
+cap, every further request is refused and the gateway writes gateway/budget_stop.json, which the runner watches to
+stop the agent. No Responses-to-chat-completions bridge: it dropped Codex's reasoning effort and every earlier
+reasoning item, and Codex on GLM-5.3 reasoned about a quarter as much and solved fewer tasks.
 
 Files, in the trial folder (outside the agent's sandbox): gateway/config.yaml, gateway/requests.jsonl (image counts
 per request, no content), gateway/proxy.log. No key is written to any of them: the provider key and the per-trial
@@ -136,6 +136,18 @@ def _same_protocol_route(route, cfg, protocol: str | None, env: dict):
     return dataclasses.replace(route, upstream_model=params["model"], litellm_params=params)
 
 
+def drops_thinking(route, cfg, protocol: str | None) -> bool:
+    """True when the gateway must remove `thinking` from the agent's Anthropic Messages requests: the provider is
+    reached over chat completions and serves no Responses API. LiteLLM sends a Messages request with thinking enabled
+    to an OpenAI-compatible provider's Responses API instead (to return reasoning text), and such a provider answers
+    404: dimcode on glm/glm-5.3 (the Z.ai Coding Plan) stopped at its first request."""
+    return (
+        protocol == "anthropic-messages"
+        and not route.upstream_model.startswith("anthropic/")
+        and "openai-responses" not in cfg.all_endpoints
+    )
+
+
 def prices(ref: models.ModelRef) -> dict | None:
     """USD per 1M tokens for this model from runner/pricing.json ({input, output, cached_input}), or None."""
     from ..runner.cost import price_of
@@ -207,6 +219,7 @@ def start(
         "ROBOUSE_GATEWAY_PRICE": json.dumps(price or {}),
         "PYTHONPATH": str(d),
         **({"ROBOUSE_GATEWAY_BEARER_ENV": cfg.auth_env} if route.upstream_model.startswith("anthropic/") else {}),
+        **({"ROBOUSE_GATEWAY_DROP_THINKING": "1"} if drops_thinking(route, cfg, protocol) else {}),
         "DOCS_URL": "",
         "NO_DOCS": "true",
     }
