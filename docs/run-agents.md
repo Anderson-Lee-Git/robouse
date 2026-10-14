@@ -4,7 +4,7 @@
 
 ## Model harnesses
 
-A provider-prefixed model goes through the trial's model gateway, which needs Python 3.12 or newer and the `llm` extra. `mini-swe-agent` and `dimcode` default to `glm/glm-5.3`: GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider. It needs the plan's API key and endpoint, and the spend cap turned off, because the plan has no per-token price:
+A provider-prefixed model goes through the trial's model gateway, which needs Python 3.12 or newer and the `llm` extra. `mini-swe-agent` and `dimcode` default to `glm/glm-5.3`: GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider. It needs the plan's API key and endpoint (the one below is for a plan bought on bigmodel.cn), and the spend cap turned off, because the plan has no per-token price:
 
 ```sh
 pip install 'robouse[sim,llm]'

@@ -12,6 +12,8 @@ Robo Use 0.5.0.
 | VLA presets · `vla` | a policy server, usually on a GPU |
 | `allenai/MolmoAct2-LIBERO-LeRobot` · `molmoact2` | a policy server on a GPU |
 
+How `glm/glm-5.3` was checked (2026-10-14): with each of its three harnesses, whole trials through the model gateway against a scripted stand-in for the plan's endpoint, and requests to the plan itself, which answered with its usage-limit error. No scored GLM-5.3 trial on the plan is published yet.
+
 ## Platforms
 
 | Platform | Notes |
