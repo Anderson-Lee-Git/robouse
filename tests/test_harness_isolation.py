@@ -225,3 +225,29 @@ def test_mini_swe_agent_loads_no_global_env_of_the_user(tmp_path, monkeypatch) -
     monkeypatch.setattr(harnesses.shutil, "which", lambda name, path=None: f"/opt/bin/{name}")
     launch = harnesses.HARNESSES["mini-swe-agent"]("p/m", "TASK", ws, None, {"PATH": "/usr/bin"})
     assert launch.env["MSWEA_GLOBAL_CONFIG_DIR"] == str(ws / ".robouse" / "mini-config")
+
+
+def test_each_claude_code_trial_gets_its_own_config_home(tmp_path, monkeypatch) -> None:
+    """Claude Code's config folder was one shared ~/.cache/robouse/claude-home, so a trial's auto-memory could reach the
+    next (deep audit, security item 11). Each trial now gets an empty one inside its own workspace, on its own vendor
+    and through the gateway."""
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-key")
+    monkeypatch.setattr(harnesses, "_via_gateway", lambda h, m: None)
+    homes = []
+    for name in ("a", "b"):
+        ws = tmp_path / name
+        (ws / ".robouse").mkdir(parents=True)
+        launch = harnesses.HARNESSES["claude-code"]("claude-opus-5-5", "TASK", ws, None, {"PATH": "/usr/bin"})
+        homes.append(Path(launch.env["CLAUDE_CONFIG_DIR"]))
+        assert homes[-1] == ws / ".robouse" / "claude-home" and homes[-1].is_dir() and not any(homes[-1].iterdir())
+    assert homes[0] != homes[1]
+
+    gw = SimpleNamespace(url="http://127.0.0.1:1", key="k", model="m", stats={}, stop=lambda: None, stop_file=None)
+    monkeypatch.setattr(harnesses, "_via_gateway", lambda h, m: SimpleNamespace(bare="m", id="p/m", provider="p"))
+    monkeypatch.setattr(harnesses, "_gateway", lambda ref, env, protocol: gw)
+    ws = tmp_path / "c"
+    (ws / ".robouse").mkdir(parents=True)
+    launch = harnesses.HARNESSES["claude-code"]("p/m", "TASK", ws, None, {"PATH": "/usr/bin"})
+    assert launch.env["CLAUDE_CONFIG_DIR"] == str(ws / ".robouse" / "claude-home")

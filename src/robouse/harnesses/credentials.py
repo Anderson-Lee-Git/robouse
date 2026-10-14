@@ -21,10 +21,11 @@ _claude_rr = itertools.count()
 _codex_rr = itertools.count()
 
 
-def clean_claude_home() -> str:
-    """Empty Claude Code config dir: no user settings, CLAUDE.md, MCP servers or plugins leak into trials."""
-    d = config.cache_dir() / "claude-home"
-    d.mkdir(parents=True, exist_ok=True)
+def clean_claude_home(workspace: Path) -> str:
+    """An empty Claude Code config folder for one trial, inside its workspace: no user settings, CLAUDE.md, MCP servers
+    or plugins leak into the trial, and nothing it writes there (sessions, auto-memory) reaches another trial."""
+    d = workspace / ".robouse" / "claude-home"
+    d.mkdir(parents=True, exist_ok=True, mode=0o700)
     return str(d)
 
 

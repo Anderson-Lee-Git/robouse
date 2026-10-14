@@ -143,7 +143,7 @@ def _via_gateway(harness: str, model: str) -> object | None:
 
 def _claude_code(model, prompt, workspace, task, env) -> Launch:
     if model and (ref := _via_gateway("claude-code", model)) is not None:
-        home = credentials.clean_claude_home()
+        home = credentials.clean_claude_home(workspace)
         gw = _gateway(ref, env, "anthropic-messages")
         env.update(
             {
@@ -161,7 +161,7 @@ def _claude_code(model, prompt, workspace, task, env) -> Launch:
         return _gateway_launch(gw, ref, _claude_cmd(prompt, gw.model), env)
     m = (model or "claude-sonnet-5").removeprefix("anthropic/")
     env.update(credentials.claude_auth())
-    env["CLAUDE_CONFIG_DIR"] = credentials.clean_claude_home()
+    env["CLAUDE_CONFIG_DIR"] = credentials.clean_claude_home(workspace)
     return Launch(_claude_cmd(prompt, m), env, notes={"model": m})
 
 
