@@ -60,14 +60,6 @@ Leaving `robo` off the `PATH` states what the agent is offered; it is not a secu
 
 The trajectory converter treats a call of a `robo` MCP tool as the equivalent `robo` command, so trajectories and video indexes line up as they do for the CLI.
 
-```console
-$ robouse run --task cubepick-reach-layout-0 --harness claude-code --model baseten/zai-org/GLM-5.3 --interface mcp --out runs/mcp
-{
-  "trial": "cubepick-reach-layout-0__claude-code__4e2813",
-  "reward": 1.0,
-  "outcome": "success_reached",
-  "steps": 7,
-  "wall_s": 15.7,
-  "exception": null
-}
+```sh
+robouse run --task cubepick-reach-layout-0 --harness claude-code --model glm/glm-5.3 --interface mcp --out runs/mcp
 ```

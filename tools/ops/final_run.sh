@@ -8,9 +8,12 @@ set -uo pipefail
 cd "$(dirname "$0")/../.."
 export MUJOCO_GL=cgl
 # harness:model:concurrency:tag. Models other than a harness's own vendor's go through the trial's model gateway, which
-# needs their provider key (e.g. BASETEN_API_KEY) in the environment and stops a trial at ROBOUSE_SPEND_CAP_USD (default 5).
-PAIRS=("codex:gpt-6-astra:4:astra" "claude-code:baseten/zai-org/GLM-5.3:3:cc-glm" "codex:baseten/zai-org/GLM-5.3:2:codex-glm"
-  "mini-swe-agent:baseten/zai-org/GLM-5.3:2:mini-glm")
+# needs their provider's settings in the environment: for glm/glm-5.3 (GLM-5.3 on the Z.ai Coding Plan) GLM_API_KEY and
+# GLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4. The plan has no per-token price, so its trials run without
+# the spend cap (ROBOUSE_SPEND_CAP_USD=0, set below unless given). Codex has no route to the plan (no Responses API).
+# The tags differ from the September runs' (cc-glm, codex-glm, mini-glm, served by Baseten), so --resume never mixes the two.
+export ROBOUSE_SPEND_CAP_USD="${ROBOUSE_SPEND_CAP_USD:-0}"
+PAIRS=("codex:gpt-6-astra:4:astra" "claude-code:glm/glm-5.3:3:cc-zai" "mini-swe-agent:glm/glm-5.3:2:mini-zai")
 if [ -n "${FINAL_PAIRS:-}" ]; then read -r -a PAIRS <<< "$FINAL_PAIRS"; fi
 # Embodiment suites (not arms): quadruped humanoid mobile-manip dexhand crazyflie (robot models: `robouse fetch-assets`);
 # driving needs MetaDrive in its own venv (docs/suites/driving.md).

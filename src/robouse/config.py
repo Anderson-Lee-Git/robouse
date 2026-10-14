@@ -32,8 +32,8 @@ ENV: dict[str, str] = {
     "ROBOUSE_VERIFIER_DIR": "folder a task verifier writes reward.txt to (set by the runner)",
     "ROBOUSE_AGENT_IMAGES": "0: the model gets no image input in this run, whatever it takes (its gateway replaces every "
     "image part; recorded as image_input: false). Default: from the model registry",
-    "ROBOUSE_SPEND_CAP_USD": "the model spend at which the model gateway stops a trial, in USD (default 5; 0: no cap; "
-    "recorded as a budget stop)",
+    "ROBOUSE_SPEND_CAP_USD": "the model spend at which the model gateway stops a trial, in USD (default 5; 0: no cap, "
+    "needed for a model without a price, such as glm/glm-5.3; recorded as a budget stop)",
     "ROBOUSE_GATEWAY_KEY": "the per-trial key a harness uses for its model gateway (set by the runner, never a provider "
     "key)",
     "ROBOUSE_GATEWAY_URL": "the trial's model gateway, http://127.0.0.1:<port> (set by the runner)",

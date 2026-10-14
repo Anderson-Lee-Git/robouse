@@ -19,7 +19,7 @@ The episode server records the physical state at every control step in `episode/
 
 Navigation tasks add `arrived`, `spl`, `soft_spl`, `collisions`, `time_to_target_s`, `path_ratio` and `excess_turning_rad_per_m`.
 
-Each trial's `result.json` also has `cost`: prompt, completion and cached tokens from the trajectory, and US dollars from the harness (Claude Code) or from Robo Use's price table for Baseten models (override with `ROBOUSE_PRICING`).
+Each trial's `result.json` also has `cost`: prompt, completion and cached tokens from the trajectory, and US dollars from the harness (Claude Code) or from Robo Use's price table (override with `ROBOUSE_PRICING`).
 
 ## Splits
 

@@ -6,9 +6,7 @@ Robo Use 0.4.0.
 
 | Model · harness | Needs |
 |---|---|
-| `baseten/zai-org/GLM-5.3` · `claude-code`, `codex`, `mini-swe-agent`, `dimcode`, `show-harness` | `BASETEN_API_KEY`; Python 3.12 or newer and `pip install 'robouse[llm]'` (the model gateway) |
-| `baseten/moonshotai/Kimi-K3` · `claude-code` | `BASETEN_API_KEY`; Python 3.12 or newer and `pip install 'robouse[llm]'` |
-| `baseten/zai-org/GLM-5.3-Flash` · `show-harness` | `BASETEN_API_KEY`; Python 3.12 or newer and `pip install 'robouse[llm]'` |
+| `glm/glm-5.3` (GLM-5.3 on the Z.ai Coding Plan) · `mini-swe-agent`, `dimcode`, `claude-code` | `GLM_API_KEY`, `GLM_BASE_URL` and `ROBOUSE_SPEND_CAP_USD=0`; Python 3.12 or newer and `pip install 'robouse[llm]'` (the model gateway) |
 | `claude-sonnet-5` · `claude-code` | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` |
 | `gpt-6-astra` · `codex` | `OPENAI_API_KEY` or a `codex login` |
 | VLA presets · `vla` | a policy server, usually on a GPU |
