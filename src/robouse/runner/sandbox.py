@@ -14,8 +14,8 @@ In both, an agent cannot read or write:
   - other trials' workspaces and episode sockets;
   - sockets that act for the user or control the machine (`control_sockets`: container engines, the SSH agent), and
     any Unix socket inside a denied folder.
-On macOS it also cannot start `open`, `osascript` or `shortcuts` (`MACOS_ESCAPES`) or send Apple events, which act
-outside the sandbox.
+On macOS it also cannot start `open`, `osascript`, `shortcuts` or `security` (`MACOS_ESCAPES`) or send Apple events,
+which act outside the sandbox.
 Program folders inside a denied folder that a harness runs from (`HOME_PROGRAMS`, e.g. Codex's standalone install in
 ~/.codex/packages) stay readable, never writable, and so does the runner's Python (`interpreters`), which the episode
 server and the verifier run on. The agent keeps its own workspace, the episode socket and the network
@@ -80,8 +80,10 @@ HOME_DENIED = (
 # Program folders inside those that a harness may run from: readable, never writable
 HOME_PROGRAMS = (".codex/packages", ".claude/local")
 # macOS programs that act outside the sandbox: `open` hands a file or URL to LaunchServices, `osascript` and `shortcuts`
-# drive other applications
-MACOS_ESCAPES = ("/usr/bin/open", "/usr/bin/osascript", "/usr/bin/shortcuts")
+# drive other applications, and `security` queries the login keychain through securityd, where Claude Code and the
+# GitHub CLI keep their logins (file rules do not cover the keychain). The Security framework itself stays available:
+# Codex checks TLS certificates with it
+MACOS_ESCAPES = ("/usr/bin/open", "/usr/bin/osascript", "/usr/bin/shortcuts", "/usr/bin/security")
 # The variables naming a harness's own config home (the runner's values are denied, the agent's allowed)
 HOME_VARS = ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
 # When robouse runs from a source checkout: its task folders (every task's reference solution and verifier), run

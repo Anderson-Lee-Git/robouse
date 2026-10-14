@@ -172,11 +172,16 @@ def test_a_source_checkout_s_tasks_runs_and_generators_are_denied(tmp_path, monk
 def test_macos_agents_cannot_start_programs_that_act_outside_the_sandbox(tmp_path) -> None:
     """`open` hands a file or URL to LaunchServices, outside Seatbelt (108 calls in the Mac runs; deep audit, security
     item 8); `osascript` and `shortcuts` drive other applications. Checked on macOS 26 with sandbox-exec: both exit
-    126 (Operation not permitted), and a copy of `open` elsewhere is killed by code signing."""
+    126 (Operation not permitted), and a copy of `open` elsewhere is killed by code signing.
+
+    `security` looked up the Claude Code and GitHub CLI login items in the login keychain from inside the profile
+    (macOS 26.5, sandbox-exec; file rules do not cover the keychain). Refused, it exits 126 from a shell; a symlink to it
+    is refused and a copy is killed by code signing. Refusing securityd's Mach service instead broke Codex's TLS."""
     prof = sandbox.sandbox_profile(tmp_path / "ws")
-    programs = '(literal "/usr/bin/open") (literal "/usr/bin/osascript") (literal "/usr/bin/shortcuts")'
+    programs = " ".join(f'(literal "/usr/bin/{p}")' for p in ("open", "osascript", "shortcuts", "security"))
     assert f"(deny process-exec {programs})" in prof
     assert "(deny appleevent-send)" in prof
+    assert "SecurityServer" not in prof
 
 
 def test_macos_agents_can_resolve_their_own_home_inside_a_denied_folder(tmp_path, monkeypatch) -> None:
@@ -279,6 +284,7 @@ cat {other_oracle} >/dev/null 2>&1 && echo other-oracle-readable
 if [ "$(uname)" = Darwin ]; then
   /usr/bin/osascript -e 'return "osascript-ran"' 2>/dev/null
   /usr/bin/open -h >/dev/null 2>&1; echo "open-rc=$?"
+  /usr/bin/security list-keychains >/dev/null 2>&1; echo "security-rc=$?"
 fi
 echo "runner-home=${{CLAUDE_CONFIG_DIR:-unset}} ssh-agent=${{SSH_AUTH_SOCK:-unset}}"
 for s in {sockets}; do
@@ -350,8 +356,8 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
         assert "own-readable" in out and "own-writable" in out, out
         assert "program-ok" in out and "program-writable" not in out, out
         assert "prefix-writable" not in out, out  # the runner's Python, which the next episode server runs on
-        if sys.platform == "darwin":  # LaunchServices and Apple events act outside the sandbox
-            assert "osascript-ran" not in out and "open-rc=126" in out, out
+        if sys.platform == "darwin":  # LaunchServices, Apple events and the login keychain are outside the sandbox
+            assert "osascript-ran" not in out and "open-rc=126" in out and "security-rc=126" in out, out
         if sandbox.checkout_denied():  # robouse runs from this checkout: the other tasks' oracles are out of reach
             assert "other-oracle-readable" not in out, out
         assert "runner-home=unset ssh-agent=unset" in out, out
