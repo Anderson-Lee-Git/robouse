@@ -1,6 +1,6 @@
 # CLIs
 
-`robouse` runs tasks, trials and runs; `robo` is the agent's only way to act. The help below is the output of `robouse 0.5.0`.
+`robouse` runs tasks, trials and runs; `robo` is the agent's only way to act. The help below is the output of `robouse 0.4.1`.
 
 ```console
 $ robouse --help
@@ -71,7 +71,7 @@ options:
                         appended to the instruction
 ```
 
-Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`. A non-null `exception` means the trial did not run to a result (an infrastructure failure: a missing credential, a harness error before the episode ended, or Ctrl-C); it is not scored and the command exits 1.
+Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`. A non-null `exception` means the trial did not run to a result (an infrastructure failure: a missing credential, a harness error before the episode ended, every request to the model failing, as at a provider's usage limit, or Ctrl-C); it is not scored and the command exits 1.
 
 ## `robouse run-many`
 
