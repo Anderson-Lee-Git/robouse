@@ -112,7 +112,7 @@ uv pip install \
 uv venv -p 3.12 ~/.cache/robouse/dmcontrol-venv
 uv pip install \
   -p ~/.cache/robouse/dmcontrol-venv/bin/python \
-  dm-control==1.0.47
+  dm-control==1.0.47 mujoco==3.14.0
 
 # myosuite (ROBOUSE_MYOSUITE_PYTHON)
 uv venv -p 3.11 ~/.cache/robouse/myosuite-venv

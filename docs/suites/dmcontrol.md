@@ -10,18 +10,18 @@ The dm_control suite has 17 tasks in `tasks/dmcontrol/`, adapted from DeepMind's
 
 ## Source and licences
 
-- Code and models: [google-deepmind/dm_control](https://github.com/google-deepmind/dm_control), Apache-2.0 ([LICENSE](https://github.com/google-deepmind/dm_control/blob/main/LICENSE)), PyPI release `dm-control==1.0.47`, which pins `mujoco==3.14.0` (Apache-2.0). The Control Suite models, the Duplo bricks and the arena ship inside the wheel.
+- Code and models: [google-deepmind/dm_control](https://github.com/google-deepmind/dm_control), Apache-2.0 ([LICENSE](https://github.com/google-deepmind/dm_control/blob/main/LICENSE)), PyPI release `dm-control==1.0.47` with `mujoco==3.14.0` (Apache-2.0). The Control Suite models, the Duplo bricks and the arena ship inside the wheel.
 - Kinova Jaco arm and hand models (`dm_control/third_party/kinova`): BSD-3-Clause, "Original work: Copyright (c) 2017, Kinova Robotics inc.; Modified work: Copyright (c) 2018, The dm_control Authors" ([LICENSE](https://github.com/google-deepmind/dm_control/blob/main/dm_control/third_party/kinova/LICENSE)). The wheel ships the models without that file; the notice is reproduced here.
 
 Both licences allow redistribution and use in a public benchmark (keep the notices). Dataset: `google-deepmind/dm-control` (the GitHub organisation that published the benchmark, lowercased).
 
 ## Setup
 
-dm_control 1.0.47 pins its own MuJoCo (3.14.0), newer than the Robo Use environment's (3.3.0), so it runs in its own virtualenv as a subprocess of the episode server that speaks JSON lines (the DexJoCo, driving and MyoSuite pattern).
+dm_control 1.0.47 needs MuJoCo 3.14 or later, and the worker is built for 3.14.0 (later releases fail before the first step), newer than the Robo Use environment's (3.3.0), so it runs in its own virtualenv as a subprocess of the episode server that speaks JSON lines (the DexJoCo, driving and MyoSuite pattern).
 
 ```
 uv venv -p 3.12 ~/.cache/robouse/dmcontrol-venv
-uv pip install -p ~/.cache/robouse/dmcontrol-venv/bin/python dm-control==1.0.47
+uv pip install -p ~/.cache/robouse/dmcontrol-venv/bin/python dm-control==1.0.47 mujoco==3.14.0
 ```
 
 - The backend looks for `~/.cache/robouse/dmcontrol-venv/bin/python`; override with `ROBOUSE_DMCONTROL_PYTHON`. Set `ROBOUSE_DMCONTROL_QUIET=0` to see the worker's stderr. The full frozen environment is in the hub runtime (`templates/runtimes/dmcontrol/requirements-dmcontrol.txt` in robohub).

@@ -31,17 +31,23 @@ Each trial's `result.json` also has `cost`: prompt, completion and cached tokens
 
 ## Reports
 
-`robouse report` aggregates run folders:
+`robouse report` aggregates run folders. To compare the four Meta-World reference solutions from [Run a suite or dataset](run-a-suite.md#a-suite) (`runs/mw-oracle`) with the no-op control on the same tasks:
 
-```console
-$ robouse report runs/mw-oracle runs/mine --metrics success,progress
-| harness | model | n | success | progress |
-|---|---|---|---|---|
-| noop | none | 1 | 0.0 [0.0, 79.3] | 0.0 [0.0, 0.0] |
-| oracle | scripted | 6 | 83.3 [43.6, 97.0] | 83.3 [50.0, 100.0] |
+```sh
+robouse run-many --tasks "$(robouse tasks --path)/metaworld" --harness noop --out runs/mw-noop --concurrency 4 --limit 4
 ```
 
-Proportions and progress are in percent; brackets are 95% intervals (Wilson for proportions, bootstrap for means). Without `--metrics`, the table has the nine robot metrics and cost.
+```console
+$ robouse report runs/mw-oracle runs/mw-noop --metrics success,progress
+| harness | model | n | success | progress |
+|---|---|---|---|---|
+| noop | none | 4 | 0.0 [0.0, 49.0] | 0.0 [0.0, 0.0] |
+| oracle | scripted | 4 | 100.0 [51.0, 100.0] | 100.0 [100.0, 100.0] |
+
+Proportions and progress in %; brackets are 95% intervals (Wilson for proportions, bootstrap for means).
+```
+
+Without `--metrics`, the table has the nine robot metrics and cost.
 
 - `--by harness,model` (default) groups trials; other keys: `suite`, `category`, `difficulty`, `task`, `split`, `seed`, `mode` (sim, real or hil-mock), `run`, `regime`, `released`.
 - When a task has several trials, pass@k is averaged over tasks.
