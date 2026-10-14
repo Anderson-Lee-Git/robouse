@@ -38,15 +38,15 @@ def _ok(flag: bool) -> str:
     return "ok " if flag else "-- "
 
 
-def gateway_key_var(provider: str) -> str:
-    """The variable the model gateway reads a provider's key from: its `auth_env` in the provider registry
-    (harnesses/gateway.py checks exactly that, in the environment)."""
+def gateway_env_vars(provider: str) -> list[str]:
+    """The variables the model gateway needs for a provider, in the environment: its key and any base URL without a
+    default (harnesses/gateway.py checks exactly these). [] when the registry is not installed or lacks the provider."""
     from ..harnesses import models
 
     try:
-        return str(models.provider_registry()[provider].auth_env)
-    except (RuntimeError, KeyError, AttributeError):  # BenchFlow (the llm extra) not installed: the pending entry
-        return str(models.PENDING_PROVIDERS[provider]["auth_env"])
+        return models.required_env(models.provider_registry()[provider])
+    except (RuntimeError, KeyError):  # BenchFlow (the llm extra) not installed
+        return []
 
 
 def _rendering() -> None:
@@ -115,11 +115,17 @@ def run() -> int:
     }
     for k, v in creds.items():
         print(f"  {_ok(v)}{k}")
-    var = gateway_key_var("baseten")
-    print(
-        f"  {_ok(bool(os.environ.get(var)))}{var} in the environment "
-        "(what the model gateway reads for baseten/ models; no key file is read)"
-    )
+    from ..harnesses import models
+
+    default = models.ZAI_CODING_PLAN_MODEL
+    provider = default.split("/", 1)[0]
+    if names := gateway_env_vars(provider):
+        print(
+            f"  {_ok(all(os.environ.get(v) for v in names))}{' and '.join(names)} in the environment (what the model "
+            f"gateway reads for {provider}/ models, such as the default {default}; no key file is read)"
+        )
+    else:
+        print(f"  -- the model gateway's provider registry (pip install 'robouse[llm]'; for {default} and the like)")
     print(
         f"  {_ok(bool(config.env('ROBOUSE_VLA_URL')))}vla (ROBOUSE_VLA_URL {config.env('ROBOUSE_VLA_URL', 'not set')})"
     )
