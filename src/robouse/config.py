@@ -57,8 +57,7 @@ ENV: dict[str, str] = {
     "ROBOUSE_SANDBOX": "0 disables the sandbox around agent processes (macOS Seatbelt, Linux bubblewrap; default 1)",
     "ROBOUSE_SANDBOX_DENY": "extra colon-separated paths agents may neither read nor write",
     "ROBOUSE_CLAUDE_TOKEN_FILE": "optional env file of Claude Code OAuth tokens (NAME=token lines), used in turn when "
-    "neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set; denied to agents (on Linux the sandbox hides folders "
-    "only: keep the file in a folder listed in ROBOUSE_SANDBOX_DENY)",
+    "neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set; denied to agents",
     "ROBOUSE_CODEX_AUTH_DIR": "optional folder of Codex logins (<account>.json, copies of a `codex login` auth.json), "
     "used in turn when OPENAI_API_KEY is not set; denied to agents",
     # simulator worker interpreters (one virtualenv per simulator that conflicts with the main environment)
