@@ -264,6 +264,8 @@ def _molmoact2(model, prompt, workspace, task, env) -> Launch:
         raise RuntimeError("molmoact2 needs ROBOUSE_MOLMOACT2_URL (the URL of a MolmoAct2 policy server)")
     client = workspace / ".robouse" / "molmoact2_client.py"
     client.write_text((Path(__file__).parent / "molmoact2" / "client.py").read_text())
+    if config.env("ROBOUSE_MOLMOACT2_TOKEN"):  # the runner passes no credential on its own
+        env["ROBOUSE_MOLMOACT2_TOKEN"] = config.env("ROBOUSE_MOLMOACT2_TOKEN")
     env["ROBOUSE_TASK_LANGUAGE"] = _task_language(task)
     m = model or "allenai/MolmoAct2-LIBERO-LeRobot"
     return Launch(["python3", str(client)], env, notes={"model": m, "server": url})

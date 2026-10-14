@@ -430,3 +430,79 @@ def test_each_codex_trial_gets_its_own_home(tmp_path, monkeypatch) -> None:
     pool_home.mkdir()
     credentials.remove_trial_home(str(pool_home))
     assert pool_home.is_dir()
+
+
+# ---- the agent's environment -------------------------------------------------------------------------------------
+
+CREDENTIAL_VARS = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_MESSAGING_TOKEN",  # the launching Claude Code session's (audit, security item 1)
+    "CODEX_AUTH_JSON",
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "HF_TOKEN",
+    "HUGGING_FACE_HUB_TOKEN",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "DAYTONA_API_KEY",
+    "WANDB_API_KEY",
+    "PGPASSWORD",
+    "NPM_CONFIG__AUTH",
+    "SSH_AUTH_SOCK",
+    "ROBOUSE_GRADER_API_KEY",
+    "ROBOUSE_BEHAVIOR_SECRET",
+    "ROBOUSE_MOLMOACT2_TOKEN",
+    "ZAI_API_KEY",
+)
+HARMLESS_VARS = ("PATH", "HOME", "LANG", "MUJOCO_GL", "TOKENIZERS_PARALLELISM", "GIT_AUTHOR_NAME", "HTTPS_PROXY")
+
+
+def test_no_credential_variable_reaches_an_agent(monkeypatch) -> None:
+    """A Mac agent ran `env` and printed a provider key and CLAUDE_CODE_MESSAGING_TOKEN, both inherited from the session
+    that launched the runner (audit, security item 1). Only provider keys were filtered, by name: now every variable
+    whose name marks a credential is dropped, and the rest of the environment stays."""
+    from robouse.runner import trial
+
+    monkeypatch.setattr(trial, "_secret_env_names", lambda: {"ZAI_API_KEY"})
+    environ = {k: "not-a-real-credential" for k in (*CREDENTIAL_VARS, *HARMLESS_VARS)}
+    env = trial.agent_env(environ)
+    assert sorted(env) == sorted(HARMLESS_VARS)
+
+
+def test_a_trial_s_agent_inherits_no_credential(tmp_path, monkeypatch) -> None:
+    """The whole runner: a scripted agent prints its environment. Credentials set in the runner's environment are
+    absent; the episode socket and the runner's harmless settings are there."""
+    pytest.importorskip("mujoco")
+    from robouse.runner import run_trial
+    from robouse.tasks import load_task
+
+    monkeypatch.setenv("ROBOUSE_SANDBOX", "0")  # the variables, not the sandbox, are under test
+    for k in CREDENTIAL_VARS:
+        monkeypatch.setenv(k, f"LEAK-{k}")
+    monkeypatch.setenv("MUJOCO_GL", "egl")
+
+    def dump(model, prompt, workspace, task, env) -> harnesses.Launch:
+        return harnesses.Launch(["sh", "-c", "robo done ok >/dev/null; env"], env, notes={"model": "none"})
+
+    monkeypatch.setitem(harnesses.HARNESSES, "dump", dump)
+    res = run_trial(load_task(ROOT / "tasks" / "arc-style" / "arc-gravity"), "dump", "", tmp_path / "job")
+    out = (tmp_path / "job" / res["trial"] / "agent" / "stdout.jsonl").read_text()
+    assert "LEAK-" not in out, [line for line in out.splitlines() if "LEAK-" in line]
+    assert "ROBOUSE_SOCKET=" in out and "MUJOCO_GL=egl" in out
+    assert res["exception"] is None, res
+
+
+def test_molmoact2_gets_its_server_token_from_the_harness(tmp_path, monkeypatch) -> None:
+    """The MolmoAct2 client relied on the runner passing ROBOUSE_MOLMOACT2_TOKEN through; the harness now adds it."""
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("ROBOUSE_MOLMOACT2_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("ROBOUSE_MOLMOACT2_TOKEN", "preview-token")
+    (tmp_path / ".robouse").mkdir()
+    task = SimpleNamespace(metadata={"language_instruction": "stack"}, meta={}, spec={})
+    launch = harnesses.HARNESSES["molmoact2"]("", "TASK", tmp_path, task, {"PATH": "/usr/bin"})
+    assert launch.env["ROBOUSE_MOLMOACT2_TOKEN"] == "preview-token"

@@ -229,6 +229,25 @@ def _secret_env_names() -> set[str]:
     return models.secret_env_names()
 
 
+# Model provider keys by prefix (the registry's names come from `_secret_env_names`)
+PROVIDER_KEY_PREFIXES = ("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN", "OPENROUTER")
+# A variable whose name has one of these parts holds a credential: a token, key, secret, password or login
+SECRET_NAME = re.compile(r"SECRET|PASSWORD|PASSWD|APIKEY|(?:^|_)(?:TOKEN|KEY|PASS|AUTH|CREDENTIALS?)(?:_|$)", re.I)
+
+
+def agent_env(environ: dict[str, str]) -> dict[str, str]:
+    """The environment an agent starts from: the runner's, without model provider keys and without any variable whose
+    name marks a credential (`SECRET_NAME`, e.g. GITHUB_TOKEN, HF_TOKEN, AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, or the
+    session token of an agent that launched the runner), whatever set it. A harness adds back what its program needs:
+    its vendor's login, a gateway key, a policy server's token."""
+    names = _secret_env_names()
+    return {
+        k: v
+        for k, v in environ.items()
+        if not k.startswith(PROVIDER_KEY_PREFIXES) and k not in names and not SECRET_NAME.search(k)
+    }
+
+
 def _wait_agent(agent: subprocess.Popen, timeout: float, stop_file: Path | None) -> tuple[int | None, bool]:
     """(return code, timed out). Waits for the agent; stops it at the timeout, or as soon as its model gateway writes
     `stop_file` (the trial's spend cap is reached)."""
@@ -419,14 +438,9 @@ def run_trial(
             ready, server, timeout=float(task.spec.get("ready_timeout_s", 300)), log=tdir / "episode" / "server.log"
         )
         (ws / ".robouse" / "socket").write_text(sock)
-        # no provider key reaches an agent: a harness adds its own vendor's login back; others use the gateway
-        secret_names = _secret_env_names()
-        base_env = {
-            k: v
-            for k, v in os.environ.items()
-            if not k.startswith(("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN", "OPENROUTER"))
-            and k not in secret_names
-        }
+        # no provider key or other credential reaches an agent: a harness adds its own vendor's login back; others use
+        # the gateway
+        base_env = agent_env(dict(os.environ))
         base_env["PATH"] = (
             f"{ws / '.robouse' / 'bin'}:{Path(py).parent}:{base_env.get('PATH', '')}"
             if harness == "oracle"
