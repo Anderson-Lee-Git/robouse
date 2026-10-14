@@ -4,19 +4,19 @@
 
 ## Model harnesses
 
-A provider-prefixed model goes through the trial's model gateway, which needs Python 3.12 or newer and the `llm` extra. `mini-swe-agent` and `dimcode` default to `glm/glm-5.3`: GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider. It needs the plan's API key and endpoint (the one below is for a plan bought on bigmodel.cn), and the spend cap turned off, because the plan has no per-token price:
+A provider-prefixed model goes through the trial's model gateway, which needs Python 3.12 or newer and the `llm` extra. `mini-swe-agent` and `dimcode` default to `glm/glm-5.3`: GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider. It needs the plan's API key and endpoint (the one below is for a plan bought on bigmodel.cn) and, because the plan has no per-token price, the spend cap turned off, or a price for `glm-5.3` in `ROBOUSE_PRICING` ([Configuration](configuration.md)). mini-swe-agent is a separate package, installed here with Robo Use:
 
 ```sh
-pip install 'robouse[sim,llm]'
+pip install 'robouse[sim,llm]' mini-swe-agent
 export GLM_API_KEY=...
 export GLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4
 export ROBOUSE_SPEND_CAP_USD=0
 robouse run --task arc-gravity --harness mini-swe-agent --model glm/glm-5.3 --out runs/try
 ```
 
-Claude Code takes the same model with `--harness claude-code --model glm/glm-5.3`. Codex cannot use it: it needs a provider with a Responses API, which the plan does not have. The gateway sends GLM-5.3 no images (BenchFlow's registry does not list its inputs, and the plan's endpoint refuses image parts); the camera images are still files in the agent's workspace. If a setting is missing, `robouse run` names it and starts no trial.
+Claude Code takes the same model with `--harness claude-code --model glm/glm-5.3`. Codex cannot use it: it needs a provider with a Responses API, which the plan does not have. The gateway sends GLM-5.3 no images (BenchFlow's registry does not list its inputs, and the plan's endpoint refuses image parts); the camera images are still files in the agent's workspace. If a setting is missing, `robouse run` names it and starts no trial. mini-swe-agent, Claude Code and dimcode have run whole trials on `glm/glm-5.3` only against a local stand-in for the plan's endpoint; with GLM-5.3 itself they were checked only up to the plan's usage-limit error, so no trial on the plan has reached a result yet ([Supported](supported.md)).
 
-A non-null `exception` in the printed summary means the trial did not run to a result (a missing credential, a harness not on `PATH`, a harness that stopped on an API error before ending the episode, or Ctrl-C); that trial is not scored, and `robouse run` exits 1. Tasks on other simulators need their extra, for example `pip install 'robouse[metaworld]'` for `metaworld-*` ([Suites](suites.md)).
+A non-null `exception` in the printed summary means the trial did not run to a result (a missing credential, a harness that is not installed, a harness that stopped on an API error before ending the episode, every request to the model failing, as when the plan is at its usage limit, or Ctrl-C); that trial is not scored, and `robouse run` exits 1. Tasks on other simulators need their extra, for example `pip install 'robouse[metaworld]'` for `metaworld-*` ([Suites](suites.md)).
 
 Options:
 
