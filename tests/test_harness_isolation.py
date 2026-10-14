@@ -243,6 +243,29 @@ def test_path_entries_the_agent_cannot_reach_are_dropped(tmp_path, monkeypatch) 
     assert kept == [str(p["tool"].parent), "/usr/bin", "", str(p["own"])]
 
 
+def test_the_robo_mcp_server_runs_on_a_python_the_agent_can_run(tmp_path, monkeypatch) -> None:
+    """The MCP server runs inside the agent's sandbox. Under `uvx` the first python3 on PATH is the runner's, in the uv
+    cache that the sandbox denies, so the server could not start: it takes the first python3 the agent can run. With
+    the sandbox off, PATH is taken as it is."""
+    p = _home(tmp_path)
+    _isolate(monkeypatch, p)
+    uvx, system = p["home"] / ".cache" / "uv" / "archive-v0" / "abc" / "bin", tmp_path / "usr" / "bin"
+    for d in (uvx, system):
+        d.mkdir(parents=True)
+        (d / "python3").write_text("#!/bin/sh\n")
+        (d / "python3").chmod(0o755)
+    ws = tmp_path / "ws"
+    (ws / ".robouse" / "bin").mkdir(parents=True)
+    path = os.pathsep.join([str(ws / ".robouse" / "bin"), str(uvx), str(system)])
+    monkeypatch.delenv("ROBOUSE_SANDBOX", raising=False)
+    cfg = iface.stdio_config(ws, "/tmp/x.sock", {"PATH": path})
+    assert cfg["command"] == str(system / "python3") and cfg["args"] == [str(ws / ".robouse" / "bin" / "robo"), "mcp"]
+    monkeypatch.setenv("PATH", path)
+    assert iface.robo_mcp_cmd(ws)[0] == str(system / "python3")  # dimcode's: this process's PATH
+    monkeypatch.setenv("ROBOUSE_SANDBOX", "0")
+    assert iface.stdio_config(ws, "/tmp/x.sock", {"PATH": path})["command"] == str(uvx / "python3")
+
+
 PEEK = r"""robo done peek >/dev/null
 for f in {planted} {runner}/.credentials.json; do
   cat "$f" 2>/dev/null | grep -q {secret} && echo "LEAK $f"
