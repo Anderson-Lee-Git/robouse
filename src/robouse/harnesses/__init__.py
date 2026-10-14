@@ -38,7 +38,9 @@ from typing import Any
 from .. import config
 from . import credentials
 
-DISALLOWED_CLAUDE_TOOLS = "WebFetch,WebSearch,Task"
+# the only built-in tools Claude Code offers its model (`--tools`); the robo MCP tools come on top with --interface
+# mcp or both. Without an allowlist it also offered web, scheduling, messaging, worktree and workflow tools
+CLAUDE_TOOLS = "Bash,Read,Write,Edit,Glob,Grep"
 # Codex offers its model a web search tool unless told not to (0.155 and later: on by default)
 CODEX_WEB_SEARCH = 'web_search="disabled"'
 
@@ -75,8 +77,8 @@ def _claude_cmd(prompt: str, model: str) -> list[str]:
         "--dangerously-skip-permissions",
         "--max-turns",
         "400",
-        "--disallowedTools",
-        DISALLOWED_CLAUDE_TOOLS,
+        "--tools",
+        CLAUDE_TOOLS,
     ]
 
 

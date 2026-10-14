@@ -32,3 +32,19 @@ def test_codex_web_search_setting_is_valid_toml() -> None:
     import tomllib
 
     assert tomllib.loads(harnesses.CODEX_WEB_SEARCH) == {"web_search": "disabled"}
+
+
+def test_claude_code_gets_an_allowlist_of_tools(tmp_path) -> None:
+    """Claude Code is offered only Bash, Read, Write, Edit, Glob and Grep (`--tools`), not a short deny list that left
+    Workflow, Skill, SendMessage, CronCreate, EnterWorktree and others available. With the MCP interface the robo
+    tools come from --mcp-config on top: `--tools` names built-in tools only (Claude Code 2.1.285 against a local
+    stub offered exactly these six plus the eight mcp__robo__ tools)."""
+    cmd = harnesses._claude_cmd("TASK", "claude-opus-5-5")
+    assert "--disallowedTools" not in cmd and "--allowedTools" not in cmd
+    assert cmd[cmd.index("--tools") + 1].split(",") == ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
+    ws = tmp_path / "ws"
+    (ws / ".robouse" / "bin").mkdir(parents=True)
+    launch = harnesses.Launch(cmd, {"PATH": f"{ws / '.robouse' / 'bin'}:/usr/bin"})
+    iface.apply("claude-code", launch, "both", ws, "/tmp/x.sock")
+    assert launch.cmd[launch.cmd.index("--tools") + 1] == harnesses.CLAUDE_TOOLS
+    assert launch.cmd[launch.cmd.index("--mcp-config") + 2] == "--strict-mcp-config"
