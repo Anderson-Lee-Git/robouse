@@ -58,7 +58,7 @@ def test_robo_mcp_help_anywhere_before_run_serves_nothing(capsys) -> None:
     assert "Transports" in capsys.readouterr().out
 
 
-def test_give_up_help_leaves_a_live_episode_running(tmp_path, monkeypatch) -> None:
+def test_give_up_help_leaves_a_live_episode_running(tmp_path, sock_dir, monkeypatch) -> None:
     """The installed command against a real episode server: the episode is still open after `robo give-up --help` and
     `robo done -h`, and ends only on a real give-up."""
     pytest.importorskip("imageio")
@@ -69,7 +69,7 @@ def test_give_up_help_leaves_a_live_episode_running(tmp_path, monkeypatch) -> No
     monkeypatch.setattr(S, "make_backend", FakeBackend)
     monkeypatch.delenv("ROBOUSE_ORACLE_TOKEN", raising=False)
     monkeypatch.delenv("ROBOUSE_SEND_VIA", raising=False)
-    sock, ws, ready = str(tmp_path / "e.sock"), tmp_path / "ws", tmp_path / "ready"
+    sock, ws, ready = str(sock_dir / "e.sock"), tmp_path / "ws", tmp_path / "ready"
     ws.mkdir()
     out: dict = {}
     th = threading.Thread(

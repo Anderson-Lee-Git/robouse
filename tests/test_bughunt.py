@@ -462,12 +462,12 @@ def test_ctrl_c_during_run_many_records_every_running_trial(tmp_path, monkeypatc
             os.kill(int(p.name), 0)
 
 
-def test_robo_waits_for_long_stepping_requests(tmp_path, monkeypatch) -> None:  # humanoidbench-maze: walk_to > 120 s
+def test_robo_waits_for_long_stepping_requests(sock_dir, monkeypatch) -> None:  # humanoidbench-maze: walk_to > 120 s
     import socket as so
 
     from robouse import agent_cli
 
-    path = str(tmp_path / "s.sock")
+    path = str(sock_dir / "s.sock")
     srv = so.socket(so.AF_UNIX, so.SOCK_STREAM)
     srv.bind(path)
     srv.listen(4)

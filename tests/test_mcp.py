@@ -10,7 +10,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -37,18 +36,14 @@ def fake_backend(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def short_sock_dir(monkeypatch):
-    """A short folder for the servers' sockets: a Unix socket path has at most 104 bytes on macOS (108 on Linux), and
-    tmp_path under a long TMPDIR (macOS's /var/folders/...) exceeds it."""
-    with tempfile.TemporaryDirectory(prefix="robo-", dir="/tmp") as d:
-        monkeypatch.setattr(Server, "sock_dir", Path(d))
-        yield
+def short_sockets(sock_dir, monkeypatch):
+    monkeypatch.setattr(Server, "sock_dir", sock_dir)
 
 
 class Server:
     """An episode server on a Unix socket in a thread (the fake backend)."""
 
-    sock_dir: Path | None = None  # set by short_sock_dir
+    sock_dir: Path | None = None  # set by short_sockets
 
     def __init__(self, tmp: Path, name: str, secrets: dict | None = None, **spec):
         self.sock = str((self.sock_dir or tmp) / f"{name}.sock")

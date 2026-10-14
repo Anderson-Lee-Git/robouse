@@ -117,10 +117,10 @@ def test_a_judge_that_raises_scores_zero(tmp_path) -> None:
     ep.close()
 
 
-def test_serve_over_the_socket(tmp_path, monkeypatch) -> None:
+def test_serve_over_the_socket(tmp_path, sock_dir, monkeypatch) -> None:
     from robouse.agent_cli import _send
 
-    sock = str(tmp_path / "s.sock")
+    sock = str(sock_dir / "s.sock")
     ready = tmp_path / "ready"
     out: dict = {}
     th = threading.Thread(

@@ -747,7 +747,7 @@ def test_operator_notices_reach_the_file_channel():
     assert logged == [("operator_notice", {"text": "the arm is holding", "channel": "file"})]
 
 
-def test_interruption_holds_the_arm(tmp_path):
+def test_interruption_holds_the_arm(tmp_path, sock_dir):
     """A terminate request to a real-robot episode server (a run interrupted) ends the episode, and the arm holds where
     it is before the server exits: nothing moves on its own, and nothing is asked."""
     import signal
@@ -757,7 +757,7 @@ def test_interruption_holds_the_arm(tmp_path):
     task = _real_task_root(tmp_path) / "real-metal-reach"
     run_dir, ready = tmp_path / "ep", tmp_path / "ready"
     cmd = [sys.executable, "-m", "robouse.cli", "serve", "--task", str(task), "--run-dir", str(run_dir)]
-    proc = subprocess.Popen(cmd + ["--socket", str(tmp_path / "s.sock"), "--ready-file", str(ready)])
+    proc = subprocess.Popen(cmd + ["--socket", str(sock_dir / "s.sock"), "--ready-file", str(ready)])
     for _ in range(600):
         if ready.exists():
             break
@@ -1135,14 +1135,14 @@ def test_idle_check_watches_the_arm_between_requests(tmp_path, fault):
         assert any(e["event"] == "retarget" for e in ev)
 
 
-def test_server_watches_the_arm_while_no_request_comes(tmp_path):
+def test_server_watches_the_arm_while_no_request_comes(tmp_path, sock_dir):
     """R5 end to end: an e-stop latched while the agent sends nothing ends the episode within about a second."""
     from robouse.real import safety
     from robouse.session import serve
     from robouse.tasks import load_task
 
     spec = load_task(_real_task_root(tmp_path) / "real-metal-reach").spec
-    ready, sock = tmp_path / "ready", str(tmp_path / "s.sock")
+    ready, sock = tmp_path / "ready", str(sock_dir / "s.sock")
     th = threading.Thread(target=serve, args=(spec, tmp_path / "ep", sock), kwargs={"ready_file": ready}, daemon=True)
     th.start()
     for _ in range(300):
