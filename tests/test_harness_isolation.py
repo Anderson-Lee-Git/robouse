@@ -491,6 +491,17 @@ def test_no_credential_variable_reaches_an_agent(monkeypatch) -> None:
     assert sorted(env) == sorted(HARMLESS_VARS)
 
 
+def test_z_ai_settings_count_as_provider_settings(monkeypatch) -> None:
+    """A Z.ai key kept under another name (GLM_CODING_API_KEY) and its endpoint (GLM_BASE_URL) reach neither the agent
+    nor the episode server and verifier, as on the no-baseten branch."""
+    from robouse.runner import trial
+
+    monkeypatch.setattr(trial, "_secret_env_names", lambda: set())
+    environ = {"GLM_CODING_API_KEY": "k", "GLM_BASE_URL": "http://127.0.0.1:9/v1", "ZAI_REGION": "x", "PATH": "/bin"}
+    assert trial.agent_env(environ) == {"PATH": "/bin"}
+    assert trial.without_provider_keys(environ) == {"PATH": "/bin"}
+
+
 def test_a_trial_s_agent_inherits_no_credential(tmp_path, monkeypatch) -> None:
     """The whole runner: a scripted agent prints its environment. Credentials set in the runner's environment are
     absent; the episode socket and the runner's harmless settings are there."""
