@@ -22,7 +22,8 @@ ENV: dict[str, str] = {
     "ROBOUSE_MENAGERIE_ASSETS": "MuJoCo Menagerie robot models (default: the checkout's assets/menagerie, else "
     "<cache>/menagerie)",
     "ROBOUSE_ROBOHARM_TEX": "generated texture cache for the roboharm scenes (default <cache>/roboharm_tex)",
-    "ROBOUSE_PRICING": "JSON price table for trial cost (default: the packaged pricing.json)",
+    "ROBOUSE_PRICING": "JSON price table for trial cost and the spend cap, used instead of the packaged pricing.json "
+    "(not added to it)",
     # episode server
     "ROBOUSE_SOCKET": "episode server socket the `robo` client talks to (set by the runner)",
     "ROBOUSE_ORACLE_TOKEN": "per-episode token that unlocks privileged state for the reference solution (set by the "
@@ -32,8 +33,9 @@ ENV: dict[str, str] = {
     "ROBOUSE_VERIFIER_DIR": "folder a task verifier writes reward.txt to (set by the runner)",
     "ROBOUSE_AGENT_IMAGES": "0: the model gets no image input in this run, whatever it takes (its gateway replaces every "
     "image part; recorded as image_input: false). Default: from the model registry",
-    "ROBOUSE_SPEND_CAP_USD": "the model spend at which the model gateway stops a trial, in USD (default 5; 0: no cap, "
-    "needed for a model without a price, such as glm/glm-5.3; recorded as a budget stop)",
+    "ROBOUSE_SPEND_CAP_USD": "the model spend at which the model gateway stops a trial, in USD (default 5; 0: no cap; "
+    "recorded as a budget stop). A model without a price, such as glm/glm-5.3, runs with 0 or with its price in "
+    "ROBOUSE_PRICING",
     "ROBOUSE_GATEWAY_KEY": "the per-trial key a harness uses for its model gateway (set by the runner, never a provider "
     "key)",
     "ROBOUSE_GATEWAY_URL": "the trial's model gateway, http://127.0.0.1:<port> (set by the runner)",

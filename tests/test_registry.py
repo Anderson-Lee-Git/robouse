@@ -104,3 +104,9 @@ def test_seeds_selection_and_cost(tmp_path, monkeypatch) -> None:
     c = trial_cost(tdir, "m", None)
     assert c["cost_usd"] == 2.0 and c["cost_source"].startswith("pricing.json")
     assert trial_cost(tmp_path / "none", "scripted", None)["cost_usd"] == 0.0
+    # ROBOUSE_PRICING replaces the packaged table (docs/configuration.md), it does not add to it
+    from robouse.runner.cost import price_of
+
+    assert price_of("m") is not None and price_of("zai-org/GLM-5.3") is None
+    monkeypatch.delenv("ROBOUSE_PRICING")
+    assert price_of("zai-org/GLM-5.3") is not None and price_of("m") is None
