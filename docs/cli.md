@@ -114,7 +114,8 @@ options:
                         failure, with backoff; the failed trial is kept in
                         OUT/_infra_failed (default 0)
   --resume              skip tasks that have a finished trial in --out that
-                        did not fail on infrastructure
+                        did not fail on infrastructure (refused when --out
+                        holds trials of another harness or model)
   --dry-run             print the resolved trial plan and exit
   --harness HARNESS, --agent HARNESS
                         harness: oracle, noop, claude-code, codex, mini-swe-
