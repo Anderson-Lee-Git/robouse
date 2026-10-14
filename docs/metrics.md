@@ -47,7 +47,7 @@ $ robouse report runs/mw-oracle runs/mw-noop --metrics success,progress
 Proportions and progress in %; brackets are 95% intervals (Wilson for proportions, bootstrap for means).
 ```
 
-Without `--metrics`, the table has the nine robot metrics and cost.
+Proportions and progress are in percent; brackets are 95% intervals (Wilson for proportions, bootstrap for means). Without `--metrics`, the table has the nine robot metrics and cost.
 
 - `--by harness,model` (default) groups trials; other keys: `suite`, `category`, `difficulty`, `task`, `split`, `seed`, `mode` (sim, real or hil-mock), `run`, `regime`, `released`.
 - When a task has several trials, pass@k is averaged over tasks.

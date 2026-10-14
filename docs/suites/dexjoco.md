@@ -9,11 +9,14 @@ Backend: `src/robouse/backends/dexjoco.py` (bridge) and `src/robouse/backends/de
 DexJoCo pins Python 3.11, MuJoCo 3.4.0 and numpy 1.26, which conflict with the main robouse environment, so it gets its own virtualenv and runs as a subprocess of the episode server (the same pattern as the RoboCasa backend).
 
 ```
-git clone --depth 1 https://github.com/brave-eai/dexjoco.git ~/.cache/robouse/dexjoco          # 305 MB (MuJoCo scenes and meshes)
+git init -q ~/.cache/robouse/dexjoco
+git -C ~/.cache/robouse/dexjoco fetch --depth 1 https://github.com/brave-eai/dexjoco.git 8d23b0fab23b17a58c4b55f3942e17013aaf8267   # 305 MB (MuJoCo scenes and meshes)
+git -C ~/.cache/robouse/dexjoco checkout -q FETCH_HEAD
 uv venv -p 3.11 ~/.cache/robouse/dexjoco-venv
 VIRTUAL_ENV=~/.cache/robouse/dexjoco-venv uv pip install -e ~/.cache/robouse/dexjoco/dexjoco "numcodecs<0.16"
 ```
 
+- The commit is the one the hub's dexjoco runtime pins; DexJoCo has no releases.
 - `numcodecs<0.16`: newer numcodecs removed a function that `zarr<3` (pinned by DexJoCo) imports.
 - The backend looks for the interpreter at `~/.cache/robouse/dexjoco-venv/bin/python`; override with `ROBOUSE_DEXJOCO_PYTHON`. Set `ROBOUSE_DEXJOCO_QUIET=0` to see the worker's stderr.
 - The worker forces single-threaded BLAS (`OPENBLAS_NUM_THREADS=1`). DexJoCo's controller inverts small matrices on every physics substep, and with threaded BLAS on macOS a control step took 460 ms instead of 6.5 ms. With it, a step takes 3 ms (water plant) to about 50 ms (bimanual scenes, mostly mesh contacts).
