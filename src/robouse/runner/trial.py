@@ -433,8 +433,8 @@ def run_trial(
             else f"{ws / '.robouse' / 'bin'}:{base_env.get('PATH', '')}"
         )
         base_env["ROBOUSE_SOCKET"] = sock
-        for k in sandbox.HOME_VARS:  # the runner's own Claude Code and Codex homes: a harness sets the agent's
-            base_env.pop(k, None)
+        for k in (*sandbox.HOME_VARS, "SSH_AUTH_SOCK"):  # the runner's own config homes (a harness sets the agent's)
+            base_env.pop(k, None)  # and its SSH agent
         base_env["_ROBOUSE_TRIAL_DIR"] = str(tdir)  # read and removed by the harness builder (model gateway)
         base_env["_ROBOUSE_IMAGE_INPUT"] = "0" if plan["image_input"] is False else "1"
         base_env["_ROBOUSE_SPEND_CAP_USD"] = str(cap)

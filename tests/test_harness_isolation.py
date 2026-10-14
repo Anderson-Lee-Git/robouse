@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import socket
 import sys
 import tempfile
 import tomllib
@@ -103,6 +105,14 @@ def _home(base: Path) -> dict[str, Path]:
     return {"home": home, "tool": tool, "own": own, "runner": runner}
 
 
+@pytest.fixture
+def outside_tmp():
+    """A folder outside /tmp, which bubblewrap replaces with an empty one (and Unix socket paths must be short)."""
+    base = Path(tempfile.mkdtemp(dir="/var/tmp"))
+    yield base
+    shutil.rmtree(base, ignore_errors=True)
+
+
 def _isolate(monkeypatch, paths: dict[str, Path]) -> None:
     monkeypatch.setenv("HOME", str(paths["home"]))
     monkeypatch.delenv("ROBOUSE_CACHE_DIR", raising=False)
@@ -111,7 +121,8 @@ def _isolate(monkeypatch, paths: dict[str, Path]) -> None:
     monkeypatch.setattr(_maintainer, "private_dirs", lambda: [])
 
 
-def test_the_profile_and_bwrap_deny_credential_and_task_copy_locations(tmp_path, monkeypatch) -> None:
+def test_the_profile_and_bwrap_deny_credential_and_task_copy_locations(outside_tmp, monkeypatch) -> None:
+    tmp_path = outside_tmp
     p = _home(tmp_path)
     _isolate(monkeypatch, p)
     real = {k: os.path.realpath(v) for k, v in p.items()}
@@ -141,6 +152,28 @@ def test_the_profile_and_bwrap_deny_credential_and_task_copy_locations(tmp_path,
     assert ("--bind", real["own"]) in pairs and args.index(real["own"]) > args.index(f"{home}/.cache/robouse")
 
 
+def test_the_profile_refuses_sockets_of_denied_folders_other_trials_and_the_machine(tmp_path, monkeypatch) -> None:
+    """Seatbelt's file rules do not stop a connection to a Unix socket (checked on macOS 26 with nc -U): every denied
+    path also gets a network rule. Other trials' episode sockets are refused, the agent's own is not, and the SSH agent
+    and container engine sockets are denied on both platforms."""
+    p = _home(tmp_path)
+    _isolate(monkeypatch, p)
+    agent = tmp_path / "ssh-agent.sock"
+    agent.write_text("")  # stands in for the socket: bubblewrap puts /dev/null over any denied file
+    monkeypatch.setenv("SSH_AUTH_SOCK", str(agent))
+    real_agent = os.path.realpath(agent)
+    assert real_agent in sandbox._denied([]) and "/var/run/docker.sock" in sandbox.SOCKETS
+    sock = "/tmp/robouse-0123456789.sock"
+    prof = sandbox.sandbox_profile(tmp_path / "ws", (), [], [], sock)
+    home = os.path.realpath(p["home"])
+    for d in (f"{home}/.docker", f"{home}/.cache/robouse", real_agent, os.path.realpath("/var/run/docker.sock")):
+        assert f'(deny network-outbound (remote unix-socket (subpath "{d}")))' in prof, d
+    tmp = re.escape(os.path.realpath("/tmp"))
+    deny_others = f'(deny network-outbound (remote unix-socket (path-regex #"^{tmp}/robouse-[0-9a-f]+\\.sock$")))'
+    allow_own = f'(allow network-outbound (remote unix-socket (path-literal "{os.path.realpath(sock)}")))'
+    assert prof.index(deny_others) < prof.index(allow_own)
+
+
 def test_path_entries_the_agent_cannot_reach_are_dropped(tmp_path, monkeypatch) -> None:
     """`uvx` puts its environment, in the uv cache, first on PATH; inside the sandbox nothing there can run."""
     p = _home(tmp_path)
@@ -160,32 +193,58 @@ grep -q OWN "$CODEX_HOME/auth.json" && echo own-readable
 touch "$CODEX_HOME/new" && echo own-writable
 {tool}
 touch {tool_dir}/x 2>/dev/null && echo program-writable
-echo "runner-home=${{CLAUDE_CONFIG_DIR:-unset}}"
+echo "runner-home=${{CLAUDE_CONFIG_DIR:-unset}} ssh-agent=${{SSH_AUTH_SOCK:-unset}}"
+for s in {sockets}; do
+  python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1]); print("CONNECTED", sys.argv[1])' "$s" 2>/dev/null
+done
 exit 0
 """
 
 
-def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, monkeypatch) -> None:
+def _listen(path: Path) -> socket.socket:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    s = socket.socket(socket.AF_UNIX)
+    s.bind(str(path))
+    s.listen(8)
+    return s
+
+
+def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tmp, monkeypatch) -> None:
     """A whole trial under this platform's sandbox: a scripted agent tries every planted location and the runner's own
-    Claude Code home (outside /tmp, which bubblewrap replaces anyway), and can use only its own Codex home and run, not
-    change, a program inside ~/.codex."""
+    Claude Code home, and connects to a Docker socket inside ~/.docker, a container engine socket, the SSH agent and
+    another trial's episode socket. It can use only its own Codex home, run (not change) a program inside ~/.codex,
+    and reach a socket nobody denied (the control). Everything sits in /var/tmp: bubblewrap replaces /tmp anyway, and
+    a Unix socket path must be short."""
     pytest.importorskip("mujoco")
     from robouse.runner import run_trial
     from robouse.tasks import load_task
 
     if not (sys.platform == "darwin" or (sys.platform.startswith("linux") and sandbox.bwrap_works())):
         pytest.skip("needs the macOS Seatbelt sandbox or working bubblewrap on Linux")
-    base = Path(tempfile.mkdtemp(dir="/var/tmp")) if sys.platform.startswith("linux") else tmp_path
+    base = outside_tmp
+    other = Path(f"/tmp/robouse-{os.urandom(5).hex()}.sock")  # another trial's episode socket
+    listening = []
     try:
         p = _home(base)
         _isolate(monkeypatch, p)
         monkeypatch.delenv("ROBOUSE_SANDBOX", raising=False)
+        sockets = {
+            "docker-desktop": p["home"] / ".docker" / "run" / "docker.sock",
+            "engine": base / "run" / "docker.sock",
+            "ssh-agent": base / "ssh" / "agent.sock",
+            "other-trial": other,
+            "control": base / "free" / "free.sock",
+        }
+        listening = [_listen(s) for s in sockets.values()]
+        monkeypatch.setattr(sandbox, "SOCKETS", (str(sockets["engine"]),))
+        monkeypatch.setenv("SSH_AUTH_SOCK", str(sockets["ssh-agent"]))
         script = PEEK.format(
             planted=" ".join(str(p["home"] / rel) for rel in PLANTED),
             runner=p["runner"],
             secret=SECRET,
             tool=p["tool"],
             tool_dir=p["tool"].parent,
+            sockets=" ".join(str(s) for s in sockets.values()),
         )
 
         def peek(model, prompt, workspace, task, env) -> harnesses.Launch:
@@ -202,11 +261,15 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, monkeypatc
         assert "LEAK" not in out, out
         assert "own-readable" in out and "own-writable" in out, out
         assert "program-ok" in out and "program-writable" not in out, out
-        assert "runner-home=unset" in out, out
+        assert "runner-home=unset ssh-agent=unset" in out, out
+        assert [line.split()[1] for line in out.splitlines() if line.startswith("CONNECTED")] == [
+            str(sockets["control"])
+        ], out
         assert res["exception"] is None, res
     finally:
-        if base != tmp_path:
-            shutil.rmtree(base, ignore_errors=True)
+        for s in listening:
+            s.close()
+        other.unlink(missing_ok=True)
 
 
 def test_mini_swe_agent_loads_no_global_env_of_the_user(tmp_path, monkeypatch) -> None:

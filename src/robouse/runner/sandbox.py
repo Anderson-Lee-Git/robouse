@@ -10,7 +10,9 @@ In both, an agent cannot read or write:
     the agent's own harness home (`own`: its CLAUDE_CONFIG_DIR or CODEX_HOME);
   - the run folder (trial records, including the episode's result.json) and the task folder (its reference solution);
   - any robouse source or install (a `robouse` package directory);
-  - other trials' workspaces.
+  - other trials' workspaces and episode sockets;
+  - sockets that act for the user or control the machine (`control_sockets`: container engines, the SSH agent), and
+    any Unix socket inside a denied folder.
 Program folders inside a denied folder that a harness runs from (`HOME_PROGRAMS`, e.g. Codex's standalone install in
 ~/.codex/packages) stay readable, never writable. The agent keeps its own workspace, the episode socket and the network
 (model APIs). On macOS, TCP connections to this machine are refused except to `local_ports` (a harness's own local
@@ -23,6 +25,7 @@ from __future__ import annotations
 import functools
 import glob
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -59,7 +62,11 @@ HOME_DENIED = (
     ".azure",
     ".config/gcloud",
     ".kube",
-    ".docker",  # registry logins
+    ".docker",  # registry logins; Docker Desktop's socket
+    ".colima",  # container VMs and their Docker sockets (Colima, Lima, OrbStack, Rancher Desktop)
+    ".lima",
+    ".orbstack",
+    ".rd",
     ".pypirc",
     ".npmrc",
     ".huggingface",
@@ -70,6 +77,15 @@ HOME_DENIED = (
 HOME_PROGRAMS = (".codex/packages", ".claude/local")
 # The variables naming a harness's own config home (the runner's values are denied, the agent's allowed)
 HOME_VARS = ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
+# Sockets that act for the user or control this machine: container engines (root on the host for a member of their
+# group) and, from the environment, the SSH agent
+SOCKETS = (
+    "/var/run/docker.sock",
+    "/run/docker.sock",
+    "/run/podman/podman.sock",
+    "/var/snap/lxd/common/lxd/unix.socket",
+    "/var/lib/lxd/unix.socket",
+)
 
 
 class SandboxUnavailable(RuntimeError):
@@ -92,6 +108,13 @@ def home_denied() -> list[str]:
     return [*out, str(config.cache_dir())]
 
 
+def control_sockets() -> list[str]:
+    """SOCKETS, the user's rootless Docker and Podman sockets, and the SSH agent's socket ($SSH_AUTH_SOCK)."""
+    run = config.env("XDG_RUNTIME_DIR")
+    out = [*SOCKETS, *([f"{run}/docker.sock", f"{run}/podman"] if run else [])]
+    return [*out, *([sock] if (sock := config.env("SSH_AUTH_SOCK")) else [])]
+
+
 def own_homes(env: dict) -> list[str]:
     """The agent's own config homes (its CLAUDE_CONFIG_DIR and CODEX_HOME), which it may read and write wherever they
     are."""
@@ -99,7 +122,7 @@ def own_homes(env: dict) -> list[str]:
 
 
 def _denied(extra: list[Path]) -> list[str]:
-    return _real([*config.sandbox_denied_paths(), *home_denied(), *map(str, extra), str(PKG)])
+    return _real([*config.sandbox_denied_paths(), *home_denied(), *control_sockets(), *map(str, extra), str(PKG)])
 
 
 def _programs() -> list[str]:
@@ -128,9 +151,21 @@ def sandbox_profile(
     local_ports: tuple[int, ...] = (),
     deny: list[Path] | None = None,
     own: list[str] | None = None,
+    socket: str | None = None,
 ) -> str:
-    """The macOS Seatbelt profile: everything is allowed except the module docstring's list. Later rules win."""
-    rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in _denied(deny or []))
+    """The macOS Seatbelt profile: everything is allowed except the module docstring's list. Later rules win. A file
+    rule does not stop a connection to a Unix socket, so each denied path also gets a network rule; other trials'
+    episode sockets (robouse-*.sock next to `socket`, the agent's own) are refused the same way."""
+    denied = _denied(deny or [])
+    rules = "".join(f'(deny file-read* file-write* (subpath "{d}"))' for d in denied)
+    rules += "".join(f'(deny network-outbound (remote unix-socket (subpath "{d}")))' for d in denied)
+    if socket:
+        own_socket = os.path.realpath(socket)
+        others = re.escape(os.path.dirname(own_socket)) + r"/robouse-[0-9a-f]+\.sock$"
+        rules += f'(deny file-read* file-write* (regex #"^{others}"))'
+        rules += f'(deny network-outbound (remote unix-socket (path-regex #"^{others}")))'
+        rules += f'(allow file-read* file-write* (literal "{own_socket}"))'
+        rules += f'(allow network-outbound (remote unix-socket (path-literal "{own_socket}")))'
     rules += '(deny file-read* (regex #"/site-packages/robouse(/|$)") (regex #"/src/robouse(/|$)"))'
     rules += '(deny file-read* file-write* (regex #"/robouse-ws-[^/]*(/|$)"))'
     rules += "".join(f'(allow file-read* (subpath "{p}"))' for p in _programs())
@@ -164,7 +199,7 @@ def bwrap_args(workspace: Path, socket: str, deny: list[Path], own: list[str] | 
             continue  # a folder holding the workspace stays
         if os.path.isdir(d):
             args += ["--tmpfs", d]
-        elif os.path.exists(d):
+        elif os.path.exists(d) and not _inside(d, ["/tmp"]):  # a file or socket; /tmp is fresh already
             args += ["--ro-bind", "/dev/null", d]
     args += ["--bind", str(workspace), str(workspace), "--bind", socket, socket]
     for p in _programs():
@@ -198,7 +233,8 @@ def wrap(
     if not config.flag("ROBOUSE_SANDBOX", default=True):
         return cmd, "none"
     if sys.platform == "darwin":
-        return ["sandbox-exec", "-p", sandbox_profile(workspace, local_ports, deny, own), *cmd], "macos-seatbelt"
+        profile = sandbox_profile(workspace, local_ports, deny, own, socket)
+        return ["sandbox-exec", "-p", profile, *cmd], "macos-seatbelt"
     if sys.platform.startswith("linux") and bwrap_works():
         return [*bwrap_args(workspace, socket, deny, own), *cmd], "linux-bubblewrap"
     raise SandboxUnavailable(
