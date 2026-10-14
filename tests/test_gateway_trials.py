@@ -307,3 +307,153 @@ def test_a_relative_job_folder(stub_provider, tmp_path, monkeypatch) -> None:
     assert res["exception"] is None, res
     _, result = _trial(tmp_path / "runs" / "rel", res)
     assert result["proxy_stats"]["upstream_calls"] == 1
+
+
+class ChatOnly(BaseHTTPRequestHandler):
+    """A provider that serves only chat completions, as the Z.ai Coding Plan does for BenchFlow's `glm` entry: any other
+    path (such as /responses) answers 404. It streams as GLM-5.3 does, reasoning_content first, then a call to the Bash
+    tool, or a short text once a tool result is in the conversation."""
+
+    bodies: list = []
+    paths: list = []
+
+    def do_POST(self) -> None:
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        ChatOnly.bodies.append(body)
+        ChatOnly.paths.append(self.path)
+        if not self.path.endswith("/chat/completions"):
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        call = {"index": 0, "id": "call_1", "type": "function", "function": {"name": "Bash", "arguments": ""}}
+        args = {"index": 0, "function": {"arguments": json.dumps({"command": "robo done"})}}
+        if any(m.get("role") == "tool" for m in body.get("messages", [])):
+            deltas, finish = [{"content": "Done."}], "stop"
+        else:
+            deltas, finish = [{"tool_calls": [call]}, {"tool_calls": [args]}], "tool_calls"
+        deltas.insert(0, {"role": "assistant", "reasoning_content": "The episode can end now."})
+        usage = {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110}
+        base = {"id": "chatcmpl-stub", "object": "chat.completion.chunk", "created": 0, "model": "glm-5.3"}
+        chunks = [{**base, "choices": [{"index": 0, "delta": d, "finish_reason": None}]} for d in deltas]
+        chunks.append({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": finish}], "usage": usage})
+        if body.get("stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for c in chunks:
+                self.wfile.write(f"data: {json.dumps(c)}\n\n".encode())
+            self.wfile.write(b"data: [DONE]\n\n")
+            return
+        message: dict = {"role": "assistant", "content": None, "reasoning_content": deltas[0]["reasoning_content"]}
+        if finish == "stop":
+            message["content"] = "Done."
+        else:
+            message["tool_calls"] = [{**call, "function": {"name": "Bash", "arguments": args["function"]["arguments"]}}]
+        reply = {**base, "object": "chat.completion", "usage": usage}
+        reply["choices"] = [{"index": 0, "message": message, "finish_reason": finish}]
+        out = json.dumps(reply).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(out)))
+        self.end_headers()
+        self.wfile.write(out)
+
+    def log_message(self, *a) -> None:
+        pass
+
+
+@pytest.fixture
+def chat_only_glm(monkeypatch):
+    """BenchFlow's real `glm` provider, its GLM_BASE_URL pointed at a local ChatOnly stub (no request leaves this
+    machine)."""
+    ChatOnly.bodies, ChatOnly.paths = [], []
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), ChatOnly)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    monkeypatch.setenv("GLM_API_KEY", "stub-glm-key")
+    monkeypatch.setenv("GLM_BASE_URL", f"http://127.0.0.1:{srv.server_address[1]}/api/coding/paas/v4")
+    yield
+    srv.shutdown()
+
+
+def _events(resp) -> list[dict]:
+    """The JSON events of a server-sent event stream."""
+    out = []
+    for line in resp.read().decode().splitlines():
+        data = line[5:].strip() if line.startswith("data:") else ""
+        if data and data != "[DONE]":
+            out.append(json.loads(data))
+    return out
+
+
+@pytest.mark.parametrize("harness", ["claude-code", "dimcode"])
+def test_messages_harnesses_reach_a_chat_only_provider_translated(harness, chat_only_glm, tmp_path) -> None:
+    """Claude Code and dimcode speak Anthropic Messages; glm/glm-5.3 (the Z.ai Coding Plan) serves only chat
+    completions. Through the real gateway (LiteLLM), a streamed Messages request with extended thinking and a tool, then
+    the tool's result, reaches the provider as chat completions (never /responses, where the plan answers 404), the
+    tool as a function and the result as a tool message; the provider's streamed tool call comes back as a tool_use
+    block; and the trial's proxy_stats count the requests whose thinking the gateway removed."""
+    import urllib.request
+
+    env = {
+        "_ROBOUSE_TRIAL_DIR": str(tmp_path / "trial"),
+        "_ROBOUSE_IMAGE_INPUT": "0",
+        "_ROBOUSE_SPEND_CAP_USD": "0",
+        "PATH": "/usr/bin:/bin",
+    }
+    ref = models.resolve(harness, "glm/glm-5.3")
+    gw = harnesses._gateway(ref, env, harnesses.GATEWAY_PROTOCOLS[harness])
+    tools = [
+        {
+            "name": "Bash",
+            "description": "Run a shell command",
+            "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]},
+        }
+    ]
+
+    def ask(messages: list) -> list[dict]:
+        body = {
+            "model": gw.model,
+            "max_tokens": 2048,
+            "stream": True,
+            "thinking": {"type": "enabled", "budget_tokens": 1024},
+            "tools": tools,
+            "messages": messages,
+        }
+        headers = {"Content-Type": "application/json", "x-api-key": gw.key, "anthropic-version": "2023-06-01"}
+        req = urllib.request.Request(gw.url + "/v1/messages", json.dumps(body).encode(), headers)
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return _events(r)
+
+    try:
+        first = [{"role": "user", "content": "End the episode."}]
+        events = ask(first)
+        tool = next(
+            e["content_block"]
+            for e in events
+            if e.get("type") == "content_block_start" and e["content_block"]["type"] == "tool_use"
+        )
+        args = "".join(
+            e["delta"]["partial_json"]
+            for e in events
+            if e.get("type") == "content_block_delta" and e["delta"].get("type") == "input_json_delta"
+        )
+        assert tool["name"] == "Bash" and json.loads(args) == {"command": "robo done"}
+        assert next(e for e in events if e.get("type") == "message_delta")["delta"]["stop_reason"] == "tool_use"
+        use = {"type": "tool_use", "id": tool["id"], "name": "Bash", "input": {"command": "robo done"}}
+        result = {"type": "tool_result", "tool_use_id": tool["id"], "content": "episode over"}
+        events = ask([*first, {"role": "assistant", "content": [use]}, {"role": "user", "content": [result]}])
+        text = "".join(e["delta"].get("text", "") for e in events if e.get("type") == "content_block_delta")
+        assert "Done." in text
+    finally:
+        gw.stop()
+    assert ChatOnly.paths == ["/api/coding/paas/v4/chat/completions"] * 2  # never /responses
+    sent_first, sent_second = ChatOnly.bodies
+    assert sent_first["model"] == "glm-5.3" and "thinking" not in sent_first
+    assert [t["function"]["name"] for t in sent_first["tools"]] == ["Bash"]
+    call = next(m for m in sent_second["messages"] if m.get("tool_calls"))["tool_calls"][0]
+    reply = next(m for m in sent_second["messages"] if m["role"] == "tool")
+    assert call["function"]["name"] == "Bash" and json.loads(call["function"]["arguments"]) == {"command": "robo done"}
+    assert reply["tool_call_id"] == call["id"] and "episode over" in json.dumps(reply["content"])
+    assert gw.stats["drops_thinking"] is True and gw.stats["thinking_dropped"] == 2
+    assert gw.stats["upstream_calls"] == 2 and gw.stats["failures"] == 0

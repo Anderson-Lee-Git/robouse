@@ -35,7 +35,9 @@ def test_legacy_harness_names_read_as_a_baseten_model_and_are_refused_for_a_new_
         assert _unknown_harness(name) == 2  # recorded trials keep the name; a new run does not take it
         err = capsys.readouterr().err
         assert f"{name} is the name the September 2026 runs used for {canon} with a Baseten model" in err
-        assert f"--harness {canon}" in err and "glm/glm-5.3" in err
+        # what to run instead is a pair that starts: Codex has no route to glm (no Responses API), so its own model
+        assert f"--harness {canon}" in err and ("gpt-6-astra" if canon == "codex" else "glm/glm-5.3") in err
+        assert canon != "codex" or "glm" not in err.split("Run --harness")[1]
         with pytest.raises(ValueError, match="kept only to read those trials"):
             image_input_plan(name, "")
         with pytest.raises(ValueError, match="kept only to read those trials"):

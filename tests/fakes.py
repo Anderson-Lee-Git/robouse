@@ -88,3 +88,25 @@ def glm_registry() -> dict:
         all_endpoints={"openai-completions": url},
     )
     return {"glm": glm}
+
+
+def gateway_registry() -> dict:
+    """glm_registry() plus a stand-in for a provider that serves the Responses API (shaped like BenchFlow's
+    `azure-foundry-openai` or `zai-coding`), the kind Codex needs: Codex has no route to glm."""
+    from types import SimpleNamespace
+
+    url = "https://responses.invalid/v1"
+    resp = SimpleNamespace(
+        name="stub-responses",
+        base_url=url,
+        api_protocol="openai-completions",
+        auth_type="api_key",
+        auth_env="STUB_RESPONSES_API_KEY",
+        url_params={},
+        url_param_defaults={},
+        models=[],
+        model_prefixes=["stub-responses"],
+        endpoints={"openai-responses": url},
+        all_endpoints={"openai-completions": url, "openai-responses": url},
+    )
+    return {**glm_registry(), "stub-responses": resp}

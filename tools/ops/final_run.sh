@@ -9,10 +9,10 @@ cd "$(dirname "$0")/../.."
 export MUJOCO_GL=cgl
 # harness:model:concurrency:tag. Models other than a harness's own vendor's go through the trial's model gateway, which
 # needs their provider's settings in the environment: for glm/glm-5.3 (GLM-5.3 on the Z.ai Coding Plan) GLM_API_KEY and
-# GLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4. The plan has no per-token price, so its trials run without
-# the spend cap (ROBOUSE_SPEND_CAP_USD=0, set below unless given). Codex has no route to the plan (no Responses API).
+# GLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4. The plan has no per-token price, so a glm/ stream runs
+# without the spend cap (ROBOUSE_SPEND_CAP_USD=0 in that stream only, unless given); every other stream keeps the
+# runner's default cap. Codex has no route to the plan (no Responses API).
 # The tags differ from the September runs' (cc-glm, codex-glm, mini-glm, served by Baseten), so --resume never mixes the two.
-export ROBOUSE_SPEND_CAP_USD="${ROBOUSE_SPEND_CAP_USD:-0}"
 PAIRS=("codex:gpt-6-astra:4:astra" "claude-code:glm/glm-5.3:3:cc-zai" "mini-swe-agent:glm/glm-5.3:2:mini-zai")
 if [ -n "${FINAL_PAIRS:-}" ]; then read -r -a PAIRS <<< "$FINAL_PAIRS"; fi
 # Embodiment suites (not arms): quadruped humanoid mobile-manip dexhand crazyflie (robot models: `robouse fetch-assets`);
@@ -22,6 +22,7 @@ SUITES=("$@"); [ ${#SUITES[@]} -gt 0 ] || SUITES=(metaworld gymrobotics libero l
 for spec in "${PAIRS[@]}"; do
   IFS=: read h m c tag <<< "$spec"
   (
+    if [ -z "${ROBOUSE_SPEND_CAP_USD:-}" ] && [[ $m == glm/* ]]; then export ROBOUSE_SPEND_CAP_USD=0; fi
     for suite in "${SUITES[@]}"; do
       [ -d "tasks/$suite" ] || continue
       job="runs/final-$suite-$tag"; mkdir -p "$job"

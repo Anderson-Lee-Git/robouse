@@ -75,6 +75,7 @@ def summarize(log: Path) -> dict:
         "refused_over_cap": 0,
         "spent_usd": 0.0,
         "images_moved": 0,
+        "thinking_dropped": 0,
     }
     if not log.exists():
         return out
@@ -85,6 +86,7 @@ def summarize(log: Path) -> dict:
             out["images_in"] += r["images_in"]
             out["images_removed"] += r["images_removed"]
             out["images_moved"] += r.get("images_moved", 0)
+            out["thinking_dropped"] += bool(r.get("thinking_dropped"))
         elif r["event"] == "upstream":
             out["upstream_calls"] += 1
             out["upstream_image_parts"] += r["image_parts"]
@@ -155,11 +157,26 @@ def prices(ref: models.ModelRef) -> dict | None:
     return price_of(ref.bare)
 
 
-def check_settings(ref: models.ModelRef, protocol: str | None, spend_cap_usd: float, env: dict) -> None:
+def provider_environ() -> dict:
+    """The environment the model gateway reads a provider's settings from. start() and the run command's check before a
+    trial (`runner.trial.check_model`) both use this one function, so they agree on what is set: a variable robouse
+    derives from another belongs here, not in either caller."""
+    return dict(os.environ)
+
+
+def check_settings(ref: models.ModelRef, protocol: str | None, spend_cap_usd: float, env: dict | None = None) -> None:
     """Raise one RuntimeError that names everything this model is missing before the gateway can serve it: the
-    provider's variables (its key and any base URL without a default), and a price when the spend cap is on. No
-    request is sent."""
-    cfg = models.provider_registry()[ref.provider]
+    provider's variables (its key and any base URL without a default), and a price when the spend cap is on. `env`
+    defaults to provider_environ(). No request is sent."""
+    env = provider_environ() if env is None else env
+    registry = models.provider_registry()
+    if ref.provider not in registry:  # e.g. anthropic/...: BenchFlow's registry has no first-party Anthropic entry
+        own = next((h for h, v in models.NATIVE_VENDORS.items() if v == ref.provider), None)
+        raise RuntimeError(
+            f"the model gateway cannot reach {ref.id}: {ref.provider} is not in BenchFlow's provider registry"
+            + (f" (run it on --harness {own} with the bare id, {ref.bare})" if own else "")
+        )
+    cfg = registry[ref.provider]
     if protocol == "openai-responses" and protocol not in cfg.all_endpoints:
         raise RuntimeError(f"Codex needs a provider that serves the Responses API; {ref.provider} does not")
     problems = []
@@ -186,9 +203,9 @@ def start(
     import yaml
     from benchflow.providers.litellm_config import litellm_proxy_config, resolve_litellm_route
 
-    cfg = models.provider_registry()[ref.provider]
-    env = dict(os.environ)
+    env = provider_environ()
     check_settings(ref, protocol, spend_cap_usd, env)
+    cfg = models.provider_registry()[ref.provider]
     route = _same_protocol_route(resolve_litellm_route(ref.id, env), cfg, protocol, env)
     key = "sk-robouse-" + secrets.token_hex(16)
     # the trial folder keeps config.yaml: it names the master key's variable, and the key itself goes only into the
@@ -209,6 +226,7 @@ def start(
     if not exe:
         raise RuntimeError("the model gateway needs LiteLLM: pip install 'robouse[llm]'")
     price = prices(ref)
+    drop_thinking = drops_thinking(route, cfg, protocol)
     penv = {
         **env,
         MASTER_KEY_ENV: key,
@@ -219,7 +237,7 @@ def start(
         "ROBOUSE_GATEWAY_PRICE": json.dumps(price or {}),
         "PYTHONPATH": str(d),
         **({"ROBOUSE_GATEWAY_BEARER_ENV": cfg.auth_env} if route.upstream_model.startswith("anthropic/") else {}),
-        **({"ROBOUSE_GATEWAY_DROP_THINKING": "1"} if drops_thinking(route, cfg, protocol) else {}),
+        **({"ROBOUSE_GATEWAY_DROP_THINKING": "1"} if drop_thinking else {}),
         "DOCS_URL": "",
         "NO_DOCS": "true",
     }
@@ -255,5 +273,8 @@ def start(
             "image_cap": image_cap(ref, images),
             "route": route.upstream_model,
             "spend_cap_usd": spend_cap_usd or None,
+            # True: the gateway removes the agent's extended-thinking setting from its Messages requests
+            # (drops_thinking); summarize() counts the requests it was removed from as thinking_dropped
+            "drops_thinking": drop_thinking,
         },
     )

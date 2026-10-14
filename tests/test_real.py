@@ -185,11 +185,24 @@ def test_operator_verdict_mock_proxy_and_feedback(tmp_path):
     ep.close()
 
 
-def test_a_vlm_verdict_names_its_model(tmp_path):
-    """real.verdict: vlm has no default model (it was Kimi K3 on Baseten): the task names one, read at
-    ROBOUSE_GRADER_URL, or the episode does not start."""
+def test_a_vlm_verdict_names_its_model(tmp_path, monkeypatch):
+    """real.verdict: vlm has no default model or endpoint (it was Kimi K3 on Baseten): the task names the model, and
+    ROBOUSE_GRADER_URL and ROBOUSE_GRADER_API_KEY say where it is, or the episode does not start. The verdict is asked
+    only at the episode's end, so a missing setting found there would cost the whole run on the robot."""
+    for var in ("ROBOUSE_GRADER_URL", "ROBOUSE_GRADER_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("BASETEN_API_KEY", "a-baseten-key-that-must-not-be-used")
     with pytest.raises(ValueError, match=r"real\.verdict: vlm needs real\.vlm_model"):
-        _episode("real-metal-bead-to-bowl", tmp_path, verdict="vlm")
+        _episode("real-metal-bead-to-bowl", tmp_path / "a", verdict="vlm")
+    with pytest.raises(RuntimeError, match="the VLM grader needs ROBOUSE_GRADER_URL and ROBOUSE_GRADER_API_KEY"):
+        _episode("real-metal-bead-to-bowl", tmp_path / "b", verdict="vlm", vlm_model="some-vlm")
+    monkeypatch.setenv("ROBOUSE_GRADER_URL", "http://127.0.0.1:9/v1")
+    with pytest.raises(RuntimeError, match="the VLM grader needs ROBOUSE_GRADER_API_KEY"):
+        _episode("real-metal-bead-to-bowl", tmp_path / "c", verdict="vlm", vlm_model="some-vlm")
+    monkeypatch.setenv("ROBOUSE_GRADER_API_KEY", "grader-key")
+    ep = _episode("real-metal-bead-to-bowl", tmp_path / "d", verdict="vlm", vlm_model="some-vlm")
+    assert ep.backend.verdict_mode == "vlm"
+    ep.close()
 
 
 def test_scripted_operator_refused_for_live_driver(tmp_path):

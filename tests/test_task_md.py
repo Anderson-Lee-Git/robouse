@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
-from fakes import glm_registry
+from fakes import gateway_registry
 
 from robouse.cli import main
 from robouse.tasks import TaskFormatError, find_tasks, load_task
@@ -78,7 +78,7 @@ def test_the_prompt_is_the_task_md_body_and_the_workspace_has_no_copy(tmp_path, 
         ("dimcode", ""),
         ("codex", ""),
         ("claude-code", ""),
-        ("codex", "glm/glm-5.3"),
+        ("codex", "stub-responses/some-model"),  # Codex through the gateway needs a Responses API, which glm lacks
         ("claude-code", "glm/glm-5.3"),
         ("show-harness", "glm/glm-5.3"),
     ],
@@ -97,8 +97,9 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, model, t
     # a model gateway stand-in: the real one starts a LiteLLM proxy for the trial (harnesses/gateway.py)
     gw = SimpleNamespace(url="http://127.0.0.1:9", key="gw", model="m", stats=None, stop=None, stop_file=None)
     monkeypatch.setattr(harnesses, "_gateway", lambda ref, env, protocol: gw)
-    # and a provider registry stand-in with BenchFlow's glm entry, so the test runs without the llm extra (BenchFlow)
-    monkeypatch.setattr(models, "provider_registry", glm_registry)
+    # and a provider registry stand-in with BenchFlow's glm entry and a Responses provider, so the test runs without
+    # the llm extra (BenchFlow)
+    monkeypatch.setattr(models, "provider_registry", gateway_registry)
     monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(tmp_path / "cache"))  # harness homes go to the cache
     stubs = tmp_path / "bin"  # the agent programs only need to exist: nothing is launched
     stubs.mkdir()
@@ -112,7 +113,7 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, model, t
         (stubs / exe).chmod(0o755)
     monkeypatch.setenv("ROBOUSE_DIMCODE", str(stubs / "dimcode"))
     monkeypatch.setenv("PATH", f"{stubs}:{os.environ.get('PATH', '')}")
-    for var in ("GLM_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+    for var in ("GLM_API_KEY", "STUB_RESPONSES_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.setenv(var, "not-a-real-key")
     task = load_task(ARC)
     ws = _make_workspace(task)

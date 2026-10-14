@@ -8,6 +8,11 @@ from __future__ import annotations
 import builtins
 import json
 import os
+import subprocess
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
@@ -84,22 +89,20 @@ def _watch_reads(monkeypatch, agents: Path) -> list[str]:
     return seen
 
 
-def test_the_key_file_is_never_read(tmp_path, monkeypatch, capsys, no_provider_env) -> None:
+def test_doctor_the_model_plan_and_run_use_no_baseten_key(tmp_path, monkeypatch, capsys, no_provider_env) -> None:
     """A maintainer's ~/.config/bf-agents/baseten.env is there, and BASETEN_API_KEY is in the environment: doctor, the
-    grader, the model plan and the run command's checks open no Baseten file and use neither."""
+    model plan and the run command's checks open no Baseten file, and the run still stops for want of the default
+    model's own settings (with a Baseten default, the key in the environment would have let it start)."""
     agents = tmp_path / "bf-agents"
     agents.mkdir()
     (agents / "baseten.env").write_text("BASETEN_API_KEY=from-a-key-file\n")
     monkeypatch.setattr(_maintainer, "AGENTS_DIR", agents)
-    from robouse.analysis import grader
     from robouse.core import gl
 
     monkeypatch.setattr(gl, "auto_select", lambda: None)
     monkeypatch.setattr(gl, "probe", lambda p=None, python=None: None)
     seen = _watch_reads(monkeypatch, agents)
     assert main(["doctor"]) == 0
-    with pytest.raises(RuntimeError, match="ROBOUSE_GRADER_URL and ROBOUSE_GRADER_API_KEY"):
-        grader.endpoint()
     for h in ("claude-code", "codex", "mini-swe-agent", "dimcode"):
         try:
             image_input_plan(h, "")
@@ -109,6 +112,59 @@ def test_the_key_file_is_never_read(tmp_path, monkeypatch, capsys, no_provider_e
     out = capsys.readouterr()
     assert "from-a-key-file" not in out.out + out.err and "BASETEN" not in out.out + out.err
     assert seen == [] and not (tmp_path / "job").exists()
+
+
+class _Grader(BaseHTTPRequestHandler):
+    """An OpenAI-compatible endpoint that records the Authorization header of every request and says yes."""
+
+    seen: list = []
+
+    def do_POST(self) -> None:
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        _Grader.seen.append(self.headers.get("Authorization", ""))
+        out = json.dumps({"choices": [{"message": {"content": '{"verdict": "yes", "reason": "stub"}'}}]}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(out)))
+        self.end_headers()
+        self.wfile.write(out)
+
+    def log_message(self, *a) -> None:
+        pass
+
+
+def test_the_grader_never_uses_the_baseten_key_or_key_file(tmp_path, monkeypatch, capsys, no_provider_env) -> None:
+    """The VLM grader (`robouse grade`, `real.verdict: vlm`) was the one reader of BASETEN_API_KEY and of
+    ~/.config/bf-agents/baseten.env: given only one of them, robouse 0.4.0 sent that key to the grader's endpoint. With
+    the variable set, then with only the file, it now stops before any request; with its own key it sends that one."""
+    pytest.importorskip("PIL")
+    from robouse.analysis import grader
+
+    _Grader.seen = []
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), _Grader)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    agents = tmp_path / "bf-agents"
+    agents.mkdir()
+    (agents / "baseten.env").write_text("BASETEN_API_KEY=from-a-key-file\n")
+    monkeypatch.setattr(_maintainer, "AGENTS_DIR", agents)
+    monkeypatch.setattr(_maintainer, "BASETEN_ENV", agents / "baseten.env", raising=False)  # where 0.4.0 read it
+    monkeypatch.setenv("ROBOUSE_GRADER_URL", f"http://127.0.0.1:{srv.server_address[1]}/v1")
+    frames = [np.zeros((4, 4, 3), np.uint8)]
+    reads = _watch_reads(monkeypatch, agents)
+    try:
+        with pytest.raises(RuntimeError, match="the VLM grader needs ROBOUSE_GRADER_API_KEY"):  # BASETEN_API_KEY set
+            grader.vlm_verdict(frames, "task", None, "some-vlm")
+        monkeypatch.delenv("BASETEN_API_KEY")
+        with pytest.raises(RuntimeError, match="the VLM grader needs ROBOUSE_GRADER_API_KEY"):  # only the file
+            grader.vlm_verdict(frames, "task", None, "some-vlm")
+        assert main(["grade", "--model", "some-vlm", str(tmp_path)]) == 2
+        assert _Grader.seen == [] and reads == []
+        monkeypatch.setenv("ROBOUSE_GRADER_API_KEY", "grader-key")
+        assert grader.vlm_verdict(frames, "task", None, "some-vlm")["verdict"] == "yes"
+        assert _Grader.seen == ["Bearer grader-key"] and reads == []
+    finally:
+        srv.shutdown()
+    assert "from-a-key-file" not in capsys.readouterr().err
 
 
 def test_the_grader_needs_its_own_endpoint_key_and_model(tmp_path, monkeypatch, capsys, no_provider_env) -> None:
@@ -169,7 +225,7 @@ def test_the_gateway_names_every_missing_setting_at_once() -> None:
         check_settings(ref, "openai-responses", 0.0, env)
 
 
-def test_messages_clients_reach_glm_over_chat_completions(monkeypatch) -> None:
+def test_messages_clients_reach_glm_over_chat_completions(monkeypatch, tmp_path) -> None:
     """LiteLLM sends an Anthropic Messages request with thinking enabled to an OpenAI-compatible provider's Responses
     API; the Coding Plan has none (404 at .../paas/v4/responses: dimcode stopped at its first request). For such a
     provider the gateway removes `thinking`, so Claude Code and dimcode get chat completions."""
@@ -195,12 +251,17 @@ def test_messages_clients_reach_glm_over_chat_completions(monkeypatch) -> None:
 
     body = {"model": "m", "max_tokens": 10, "thinking": {"type": "enabled", "budget_tokens": 1024}, "messages": []}
     monkeypatch.setenv("ROBOUSE_GATEWAY_DROP_THINKING", "1")
+    monkeypatch.setenv("ROBOUSE_GATEWAY_LOG", str(tmp_path / "requests.jsonl"))
     out = asyncio.run(
         H.RobouseGateway().async_pre_call_hook(None, None, json.loads(json.dumps(body)), "anthropic_messages")
     )
     assert "thinking" not in out and out["max_tokens"] == 10
     chat = {"model": "m", "messages": [], "reasoning_effort": "medium"}  # other call types pass as sent
     assert asyncio.run(H.RobouseGateway().async_pre_call_hook(None, None, dict(chat), "acompletion")) == chat
+    # recorded: the trial's result.json gets the count (proxy_stats), so such trials can be told apart
+    stats = gateway.summarize(tmp_path / "requests.jsonl")
+    assert (stats["requests"], stats["thinking_dropped"]) == (2, 1)
+    monkeypatch.delenv("ROBOUSE_GATEWAY_LOG")
     monkeypatch.delenv("ROBOUSE_GATEWAY_DROP_THINKING")
     out = asyncio.run(
         H.RobouseGateway().async_pre_call_hook(None, None, json.loads(json.dumps(body)), "anthropic_messages")
@@ -264,3 +325,184 @@ def test_no_provider_variable_reaches_the_agent(tmp_path, monkeypatch) -> None:
     assert not any(v in json.dumps(seen["env"]) for v in secret.values())
     # the runner's own environment keeps it: the gateway runs there
     assert os.environ["GLM_CODING_API_KEY"] == "glm-key-0002"
+
+
+def test_a_provider_outside_the_registry_is_named_not_a_traceback(tmp_path, capsys, no_provider_env) -> None:
+    """BenchFlow's registry has no first-party Anthropic entry: a gateway harness given anthropic/... got a KeyError
+    traceback from the check before a trial."""
+    pytest.importorskip("benchflow")
+    if "anthropic" in models.provider_registry():
+        pytest.skip("this BenchFlow has an anthropic provider")
+    for h in ("codex", "mini-swe-agent"):
+        args = ["run", "--task", str(ARC), "--harness", h, "--model", "anthropic/claude-opus-5-5"]
+        assert main([*args, "--out", str(tmp_path / "job")]) == 2
+        err = capsys.readouterr().err
+        assert "the model gateway cannot reach anthropic/claude-opus-5-5" in err and "Traceback" not in err
+        assert "--harness claude-code with the bare id, claude-opus-5-5" in err
+    assert not (tmp_path / "job").exists()
+
+
+def test_the_run_check_and_the_gateway_read_one_environment(tmp_path, monkeypatch, no_provider_env) -> None:
+    """The check before a trial and the gateway itself read a provider's settings from gateway.provider_environ(): a
+    variable derived from another (a branch derives MiMo's Anthropic URL from MIMO_BASE_URL) must be derived there, or
+    the check refuses a model the gateway would serve."""
+    pytest.importorskip("benchflow")
+    from robouse.harnesses import gateway
+    from robouse.runner.trial import check_model
+
+    settings = {"GLM_API_KEY": "k", "GLM_BASE_URL": "http://127.0.0.1:9/v1"}  # in neither os.environ nor the check
+    monkeypatch.setenv("ROBOUSE_SPEND_CAP_USD", "0")
+    monkeypatch.setattr(gateway, "provider_environ", lambda: dict(settings))
+    assert check_model("mini-swe-agent", "")["model"] == "glm/glm-5.3"
+    assert check_model("claude-code", "glm/glm-5.3")["model"] == "glm/glm-5.3"
+    seen: dict = {}
+
+    def stop(ref, protocol, cap, env=None):
+        seen["env"] = env
+        raise RuntimeError("stopped before the proxy starts")
+
+    monkeypatch.setattr(gateway, "check_settings", stop)
+    with pytest.raises(RuntimeError, match="stopped before the proxy starts"):
+        gateway.start(models.resolve("mini-swe-agent", "glm/glm-5.3"), tmp_path, images=False)
+    assert seen["env"] == settings
+
+
+def test_no_published_docs_page_names_baseten() -> None:
+    """Baseten served the September runs and stays only in their records: no page the docs builder publishes names it
+    (a merge with an older docs branch would bring its Baseten examples and defaults back)."""
+    import ast
+
+    tree = ast.parse((ROOT / "tools" / "docs" / "build_docs.py").read_text())
+    pages = next(
+        ast.literal_eval(n.value)
+        for n in tree.body
+        if isinstance(n, ast.AnnAssign) and getattr(n.target, "id", "") == "PAGES"
+    )
+    assert len(pages) > 10
+    hits = [
+        f"{page[1]}:{i}"
+        for page in pages
+        for i, line in enumerate((ROOT / page[1]).read_text().splitlines(), 1)
+        if "baseten" in line.lower()
+    ]
+    assert not hits
+
+
+def test_agents_cannot_read_the_maintainers_provider_keys(tmp_path, monkeypatch) -> None:
+    """The maintainers keep provider keys in env files under ~/.config/benchflow (the Z.ai Coding Plan's among them):
+    the agent sandbox hides the folder, as it hides ~/.config/bf-agents."""
+    from robouse import config
+    from robouse.runner.sandbox import bwrap_args, sandbox_profile
+
+    keys = tmp_path / "config-benchflow"
+    keys.mkdir()
+    (keys / "glm-coding.env").write_text("GLM_CODING_API_KEY=not-a-real-key\n")
+    monkeypatch.setattr(_maintainer, "PROVIDER_KEYS", keys)
+    real = os.path.realpath(keys)
+    assert str(keys) in config.sandbox_denied_paths()
+    assert f'(deny file-read* file-write* (subpath "{real}"))' in sandbox_profile(tmp_path / "ws")
+    args = bwrap_args(tmp_path / "ws", str(tmp_path / "sock"), [])
+    assert any(a == "--tmpfs" and b == real for a, b in zip(args, args[1:], strict=False))
+
+
+def test_the_maintainer_script_turns_the_spend_cap_off_only_for_glm_streams(tmp_path) -> None:
+    """tools/ops/final_run.sh: a glm/ stream runs without the spend cap (no per-token price), every other stream keeps
+    the runner's default, and a cap given in the environment applies to all."""
+    import shutil
+
+    repo = tmp_path / "repo"
+    (repo / "tools" / "ops").mkdir(parents=True)
+    shutil.copy(ROOT / "tools" / "ops" / "final_run.sh", repo / "tools" / "ops" / "final_run.sh")
+    for d in ("tasks/s", ".venv/bin", "runs"):
+        (repo / d).mkdir(parents=True)
+    exe = repo / ".venv" / "bin" / "robouse"  # records the cap each stream's run-many sees
+    exe.write_text('#!/bin/sh\necho "cap=${ROBOUSE_SPEND_CAP_USD:-unset}"\n')
+    exe.chmod(0o755)
+    pairs = "codex:gpt-6-astra:1:astra claude-code:glm/glm-5.3:1:cc-zai mini-swe-agent:openrouter/x/y:1:or"
+
+    def caps(**extra: str) -> dict:
+        for f in (repo / "runs").glob("final-s-*/console.log"):
+            f.unlink()
+        env = {k: v for k, v in os.environ.items() if k != "ROBOUSE_SPEND_CAP_USD"} | {"FINAL_PAIRS": pairs, **extra}
+        subprocess.run(["bash", str(repo / "tools" / "ops" / "final_run.sh"), "s"], env=env, check=True, timeout=30)
+        logs = {t: repo / "runs" / f"final-s-{t}" / "console.log" for t in ("astra", "cc-zai", "or")}
+        deadline = time.time() + 20
+        while time.time() < deadline and not all(f.exists() and f.read_text() for f in logs.values()):
+            time.sleep(0.1)
+        return {t: f.read_text().strip() for t, f in logs.items()}
+
+    assert caps() == {"astra": "cap=unset", "cc-zai": "cap=0", "or": "cap=unset"}
+    assert caps(ROBOUSE_SPEND_CAP_USD="2") == {"astra": "cap=2", "cc-zai": "cap=2", "or": "cap=2"}
+
+
+def _rerun_tool():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("rerun_infra", ROOT / "tools" / "analysis" / "rerun_infra.py")
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _infra_failed_job(tmp_path: Path, pairs: dict) -> tuple[Path, Path]:
+    job = tmp_path / "runs" / "j"
+    recs = []
+    for name, (h, m) in pairs.items():
+        d = job / name
+        d.mkdir(parents=True)
+        (d / "config.json").write_text(json.dumps({"task_path": str(ARC), "harness": h, "model": m}))
+        recs.append({"path": str(d), "job": "j", "trial": name, "infra_failure": True, "harness": h})
+    audit = tmp_path / "audit.json"
+    audit.write_text(json.dumps({"trials": recs}))
+    return job, audit
+
+
+def test_rerun_infra_reruns_no_baseten_pair_and_moves_only_what_it_reruns(
+    tmp_path, monkeypatch, capsys, no_provider_env
+) -> None:
+    """tools/analysis/rerun_infra.py re-runs a trial's recorded pair with run_trial directly. A pair served by Baseten
+    (a -glm name, a baseten/ model, or 0.4.0's empty-model default) is not re-run, whatever key is set; a pair that
+    cannot start here is not either; neither is moved out of its job. It used to move the trial first and then fail
+    (a -glm name) or reach Baseten (a baseten/ model with BASETEN_API_KEY set)."""
+    pytest.importorskip("benchflow")
+    mod = _rerun_tool()
+    pairs = {
+        "a__codex-glm__1": ("codex-glm", "zai-org/GLM-5.3"),
+        "b__mini-swe-agent-glm__2": ("mini-swe-agent-glm", ""),
+        "c__claude-code__3": ("claude-code", "baseten/moonshotai/Kimi-K3"),
+        "d__mini-swe-agent__4": ("mini-swe-agent", ""),  # recorded by 0.4.0: its default, Baseten's GLM-5.3
+        "e__mini-swe-agent__5": ("mini-swe-agent", "glm/glm-5.3"),  # no GLM settings here
+        "f__noop__6": ("noop", ""),
+    }
+    job, audit = _infra_failed_job(tmp_path, pairs)
+    calls = []
+
+    def run_trial(task, harness, model, job_dir):
+        calls.append((harness, model))
+        return {"trial": "f__noop__new", "reward": 0.0, "outcome": "gave_up"}
+
+    monkeypatch.setattr(mod, "run_trial", run_trial)
+    monkeypatch.setattr(sys, "argv", ["rerun_infra.py", "--audit", str(audit), "--concurrency", "1"])
+    mod.main()
+    out = capsys.readouterr().out
+    assert calls == [("noop", "")]
+    assert out.count("served by Baseten") == 4 and "cannot start here: model glm/glm-5.3 needs GLM_API_KEY" in out
+    left = {p.name for p in job.iterdir() if p.is_dir() and p.name != "_infra_failed"}
+    assert left == set(pairs) - {"f__noop__6"} and {p.name for p in (job / "_infra_failed").iterdir()} == {"f__noop__6"}
+
+    # a re-run that raises before it starts puts the trial back, and the other re-runs go on
+    job2, audit2 = _infra_failed_job(tmp_path / "2", {"g__noop__7": ("noop", ""), "h__oracle__8": ("oracle", "")})
+    calls.clear()
+
+    def run_trial2(task, harness, model, job_dir):
+        calls.append(harness)
+        if harness == "noop":
+            raise ValueError("cannot start")
+        return {"trial": "h__oracle__new", "reward": 1.0, "outcome": "success_reached"}
+
+    monkeypatch.setattr(mod, "run_trial", run_trial2)
+    monkeypatch.setattr(sys, "argv", ["rerun_infra.py", "--audit", str(audit2), "--concurrency", "1"])
+    mod.main()
+    assert sorted(calls) == ["noop", "oracle"] and (job2 / "g__noop__7" / "config.json").is_file()
+    assert "not re-run, left in place: ValueError: cannot start" in capsys.readouterr().out

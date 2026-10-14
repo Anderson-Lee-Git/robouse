@@ -164,19 +164,12 @@ def _unknown_harness(name: str) -> int:
 
 
 def _check_model(harness: str, model: str) -> int:
-    """0 when the harness can start with this model: the model resolves, and a model behind the model gateway has its
-    provider's settings (its key, a base URL without a default) and, with the spend cap on, a price. Else the message,
-    naming what to set, and 2. Sends no request."""
-    from ..harnesses import GATEWAY_PROTOCOLS, gateway, models
-    from ..runner.trial import image_input_plan, spend_cap_usd
+    """0 when the harness can start with this model (runner.trial.check_model), else the message, naming what to set,
+    and 2. Sends no request."""
+    from ..runner.trial import check_model
 
     try:
-        plan = image_input_plan(harness, model)
-        h, m = plan["harness"], plan["model"] or ""
-        if h in GATEWAY_PROTOCOLS and models.split(m)[0] is not None:
-            ref = models.resolve(h, m)
-            if models.NATIVE_VENDORS.get(h) != ref.provider:
-                gateway.check_settings(ref, GATEWAY_PROTOCOLS[h], spend_cap_usd(), dict(os.environ))
+        check_model(harness, model)
     except (ValueError, RuntimeError) as e:
         print(f"robouse: {e}", file=sys.stderr)
         return 2

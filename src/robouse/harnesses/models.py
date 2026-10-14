@@ -34,14 +34,15 @@ NATIVE_VENDORS = {"claude-code": "anthropic", "codex": "openai"}
 FIRST_PARTY_IMAGE_PROVIDERS = {"anthropic", "openai"}
 
 # GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider: the key in GLM_API_KEY and the plan's
-# OpenAI-compatible endpoint in GLM_BASE_URL (BenchFlow has no default for it). The plan is a flat subscription, so
-# pricing.json has no per-token price for glm-5.3, and a trial needs ROBOUSE_SPEND_CAP_USD=0.
+# OpenAI-compatible endpoint in GLM_BASE_URL (BenchFlow has no default for it; ZAI_CODING_PLAN_URL is the endpoint of a
+# plan bought on bigmodel.cn, the one tested). The plan is a flat subscription, so pricing.json has no per-token price
+# for glm-5.3, and a trial needs ROBOUSE_SPEND_CAP_USD=0.
 ZAI_CODING_PLAN_MODEL = "glm/glm-5.3"
 ZAI_CODING_PLAN_URL = "https://open.bigmodel.cn/api/coding/paas/v4"
-# what an error about a provider's missing settings adds, per provider
+# what an error about a provider's missing settings adds, per provider: how the default setup sets them
 SETUP_HINTS = {
-    "glm": f"for GLM-5.3 on the Z.ai Coding Plan: GLM_API_KEY=<the plan's API key>, GLM_BASE_URL={ZAI_CODING_PLAN_URL}"
-    " and ROBOUSE_SPEND_CAP_USD=0"
+    "glm": f"the Z.ai Coding Plan's settings, as for the default {ZAI_CODING_PLAN_MODEL}: GLM_API_KEY=<the plan's API "
+    f"key>, GLM_BASE_URL={ZAI_CODING_PLAN_URL} and ROBOUSE_SPEND_CAP_USD=0, since the plan has no per-token price"
 }
 
 # the model a harness runs when none is given; show-harness has none, since its model must read the camera images
@@ -192,9 +193,13 @@ def legacy_refusal(harness: str) -> str | None:
     if harness not in LEGACY_HARNESSES:
         return None
     canon = LEGACY_HARNESSES[harness][0]
+    if canon == "codex":  # Codex needs a Responses API, which the Z.ai Coding Plan does not serve
+        instead = f"Run --harness codex with its own model ({DEFAULT_MODELS['codex']}, the default)"
+    else:
+        instead = f"Run --harness {canon} with --model (a provider-prefixed id, e.g. {ZAI_CODING_PLAN_MODEL})"
     return (
         f"{harness} is the name the September 2026 runs used for {canon} with a Baseten model; it is kept only to "
-        f"read those trials. Run --harness {canon} with --model (a provider-prefixed id, e.g. {ZAI_CODING_PLAN_MODEL})"
+        f"read those trials. {instead}"
     )
 
 
