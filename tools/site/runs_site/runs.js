@@ -422,7 +422,7 @@
   function ocOf(d) { return d.outcome === "budget_stop" && d.budget_stop && d.budget_stop.cap_usd != null ? "Stopped at the $" + d.budget_stop.cap_usd + " budget" : oc(d.outcome); }
   var WITHHELD = "Trajectory not published: during this trial the agent looked at files outside its workspace (for example listing the home folder or searching the whole disk), so its commands and their outputs may show unrelated local files. The recording, the camera images, the reward and the outcome are shown.";
   // a trial whose model received no camera images (its recorded image_input; build_runs_site.noimg_tag on the server-built pages)
-  var NOIMG = '<span class="noimg" title="The model received no camera images in these runs; vision tasks were attempted from text observations only.">no image input</span>';
+  var NOIMG = '<span class="noimg" title="The model never received camera images as input. On vision tasks it read the saved camera frames with Python it wrote, using the camera matrices from robo info where the task provides them.">no image input</span>';
 
   /* ---------------------------------------------------------------- trial page */
   function initTrial(id) {

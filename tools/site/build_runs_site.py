@@ -469,13 +469,14 @@ STATUS_LONG = {"partial": "Stopped before it finished, not scored", "infra": "In
 # a column, run or trial whose model received no camera images (each trial's recorded image_input) carries this quiet
 # label in quiet text (.noimg in runs.css: no box, so a column of them reads cleanly); its tooltip is the hub leaderboard
 # footnote's sentence
-NOIMG_WHY = "The model received no camera images in these runs; vision tasks were attempted from text observations only."
+NOIMG_WHY = ("The model never received camera images as input. On vision tasks it read the saved camera frames with Python it "
+             "wrote, using the camera matrices from robo info where the task provides them.")
 
 
 def noimg_tag(title: str = NOIMG_WHY, spaced: bool = True, hm: int | None = None) -> str:
     """The quiet "no image input" tag. spaced: a space before it, widened (.nis in runs.css), that collapses where the
     tag starts a line, so a wrapped tag shares the left edge of the lines around it (a margin would indent it). A pair
-    whose camera images were sent and rejected (hm in REJECTED) says that instead of "attempted from text"."""
+    whose camera images were sent and rejected (hm in REJECTED) says that instead of NOIMG_WHY."""
     if hm is not None and hm in REJECTED:
         title = REJECTED[hm]
     return ('<span class="nis"> </span>' if spaced else "") + f'<span class="noimg" title="{esc(title)}">no image input</span>'
