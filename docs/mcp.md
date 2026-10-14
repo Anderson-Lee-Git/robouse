@@ -60,6 +60,8 @@ Leaving `robo` off the `PATH` states what the agent is offered; it is not a secu
 
 The trajectory converter treats a call of a `robo` MCP tool as the equivalent `robo` command, so trajectories and video indexes line up as they do for the CLI.
 
+Claude Code on GLM-5.3 with the MCP tools only, after the settings in [Run agents and VLAs](run-agents.md#model-harnesses):
+
 ```sh
 robouse run --task cubepick-reach-layout-0 --harness claude-code --model glm/glm-5.3 --interface mcp --out runs/mcp
 ```
