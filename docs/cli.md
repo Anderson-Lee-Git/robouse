@@ -1,6 +1,6 @@
 # CLIs
 
-`robouse` runs tasks, trials and runs; `robo` is the agent's only way to act. The help below is the output of `robouse 0.4.0`.
+`robouse` runs tasks, trials and runs; `robo` is the agent's only way to act. The help below is the output of `robouse 0.4.1`.
 
 ```console
 $ robouse --help
@@ -49,8 +49,7 @@ options:
                         harness: oracle, noop, claude-code, codex, mini-swe-
                         agent, dimcode, show-harness, molmoact2 or vla;
                         --model takes a provider-prefixed id such as
-                        baseten/zai-org/GLM-5.3
-                        (https://robouse.ai/docs/harnesses/)
+                        glm/glm-5.3 (https://robouse.ai/docs/harnesses/)
   --model MODEL         model for the harness (default: the harness's)
   --interface {cli,mcp,both}
                         what the agent drives the robot with: the robo CLI,
@@ -72,7 +71,7 @@ options:
                         appended to the instruction
 ```
 
-Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`. A non-null `exception` means the trial did not run to a result (an infrastructure failure: a missing credential, a harness error before the episode ended, or Ctrl-C); it is not scored and the command exits 1.
+Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`. A non-null `exception` means the trial did not run to a result (an infrastructure failure: a missing credential, a harness error before the episode ended, every request to the model failing, as at a provider's usage limit, or Ctrl-C); it is not scored and the command exits 1.
 
 ## `robouse run-many`
 
@@ -115,14 +114,14 @@ options:
                         failure, with backoff; the failed trial is kept in
                         OUT/_infra_failed (default 0)
   --resume              skip tasks that have a finished trial in --out that
-                        did not fail on infrastructure
+                        did not fail on infrastructure (refused when --out
+                        holds trials of another harness or model)
   --dry-run             print the resolved trial plan and exit
   --harness HARNESS, --agent HARNESS
                         harness: oracle, noop, claude-code, codex, mini-swe-
                         agent, dimcode, show-harness, molmoact2 or vla;
                         --model takes a provider-prefixed id such as
-                        baseten/zai-org/GLM-5.3
-                        (https://robouse.ai/docs/harnesses/)
+                        glm/glm-5.3 (https://robouse.ai/docs/harnesses/)
   --model MODEL         model for the harness (default: the harness's)
   --interface {cli,mcp,both}
                         what the agent drives the robot with: the robo CLI,

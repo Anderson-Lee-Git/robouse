@@ -15,7 +15,7 @@ metaworld-bin-picking                    reward=1 outcome=success_reached steps=
 oracle/-: 4/4 solved
 ```
 
-Without `--tasks`, `run-many` runs every task in the package. Each finished trial is appended to `runs/mw-oracle/run_log.jsonl`. After an interruption, run the same command with `--resume`: tasks that already have a finished trial are skipped.
+Without `--tasks`, `run-many` runs every task in the package. Each finished trial is appended to `runs/mw-oracle/run_log.jsonl`. After an interruption, run the same command with `--resume`: tasks that already have a finished trial are skipped. A run folder holds one harness and model: if it has trials of another, `--resume` names them and stops before any trial.
 
 A trial that ended in an infrastructure failure (the simulator or the harness failed, for example on an API error, or the run was interrupted) has an `EXC` note on its line and is not scored; `--retries N` reruns it up to N times, `--resume` reruns it, and `run-many` exits 1 if any trial ends that way.
 

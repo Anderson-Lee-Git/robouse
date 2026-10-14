@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+from fakes import gateway_registry
 
 from robouse.cli import main
 from robouse.tasks import TaskFormatError, find_tasks, load_task
@@ -71,9 +72,18 @@ def test_the_prompt_is_the_task_md_body_and_the_workspace_has_no_copy(tmp_path, 
 
 
 @pytest.mark.parametrize(
-    "harness", ["mini-swe-agent-glm", "codex-glm", "claude-code-glm", "codex", "claude-code", "dimcode", "show-harness"]
+    "harness,model",
+    [
+        ("mini-swe-agent", ""),
+        ("dimcode", ""),
+        ("codex", ""),
+        ("claude-code", ""),
+        ("codex", "stub-responses/some-model"),  # Codex through the gateway needs a Responses API, which glm lacks
+        ("claude-code", "glm/glm-5.3"),
+        ("show-harness", "stub-responses/vlm"),  # a model that reads images: glm/glm-5.3 is refused for it
+    ],
 )
-def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path, monkeypatch) -> None:
+def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, model, tmp_path, monkeypatch) -> None:
     """The workspace holds only robouse's internals (.robouse/) and observations/; the task reaches the agent only as
     its prompt (mini-swe-agent's harness used to write it to .robouse/task.txt as well)."""
     import os
@@ -87,9 +97,9 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path
     # a model gateway stand-in: the real one starts a LiteLLM proxy for the trial (harnesses/gateway.py)
     gw = SimpleNamespace(url="http://127.0.0.1:9", key="gw", model="m", stats=None, stop=None, stop_file=None)
     monkeypatch.setattr(harnesses, "_gateway", lambda ref, env, protocol: gw)
-    # and a provider registry stand-in with the Baseten entry, so the test runs without the llm extra (BenchFlow)
-    baseten = SimpleNamespace(**models.PENDING_PROVIDERS["baseten"])
-    monkeypatch.setattr(models, "provider_registry", lambda: {"baseten": baseten})
+    # and a provider registry stand-in with BenchFlow's glm entry and a Responses provider, so the test runs without
+    # the llm extra (BenchFlow)
+    monkeypatch.setattr(models, "provider_registry", gateway_registry)
     monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(tmp_path / "cache"))  # harness homes go to the cache
     stubs = tmp_path / "bin"  # the agent programs only need to exist: nothing is launched
     stubs.mkdir()
@@ -103,12 +113,12 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path
         (stubs / exe).chmod(0o755)
     monkeypatch.setenv("ROBOUSE_DIMCODE", str(stubs / "dimcode"))
     monkeypatch.setenv("PATH", f"{stubs}:{os.environ.get('PATH', '')}")
-    for var in ("BASETEN_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+    for var in ("GLM_API_KEY", "STUB_RESPONSES_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.setenv(var, "not-a-real-key")
     task = load_task(ARC)
     ws = _make_workspace(task)
     try:
-        launch = harnesses.build(harness, "", task.instruction, ws, task, {"PATH": os.environ.get("PATH", "")})
+        launch = harnesses.build(harness, model, task.instruction, ws, task, {"PATH": os.environ.get("PATH", "")})
         assert any(task.instruction.strip() in str(arg) for arg in launch.cmd)  # the prompt
         entries = sorted(p.relative_to(ws) for p in ws.rglob("*"))
         assert all(e.parts[0] in (".robouse", "observations") for e in entries), entries
@@ -117,3 +127,61 @@ def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, tmp_path
         assert not copies, copies
     finally:
         shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_mini_swe_agent_is_found_where_pip_puts_it_or_named_for_install(tmp_path, monkeypatch) -> None:
+    """mini-swe-agent is not a dependency of robouse. `pip install mini-swe-agent` into Robo Use's environment puts
+    `mini` next to its Python, which is on PATH only when the environment is activated: the harness finds it there too.
+    Without it anywhere, the harness names the package to install, before any model gateway starts."""
+    import sys
+    from types import SimpleNamespace
+
+    from robouse import harnesses
+    from robouse.harnesses import models
+
+    started: list = []
+    gw = SimpleNamespace(url="http://127.0.0.1:9", key="gw", model="m", stats=None, stop=None, stop_file=None)
+    monkeypatch.setattr(harnesses, "_gateway", lambda ref, env, protocol: started.append(ref) or gw)
+    monkeypatch.setattr(models, "provider_registry", gateway_registry)
+    venv = tmp_path / "venv" / "bin"
+    venv.mkdir(parents=True)
+    monkeypatch.setattr(sys, "executable", str(venv / "python"))
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "ws" / ".robouse").mkdir(parents=True)
+
+    def build():
+        return harnesses.build("mini-swe-agent", "glm/glm-5.3", "move", tmp_path / "ws", None, {"PATH": "/usr/bin"})
+
+    with pytest.raises(RuntimeError, match=r"no `mini` on PATH, .*\(pip install mini-swe-agent\)"):
+        build()
+    assert started == []
+    (venv / "mini").write_text("#!/bin/sh\nexit 0\n")
+    (venv / "mini").chmod(0o755)
+    assert build().cmd[0] == str(venv / "mini") and len(started) == 1
+
+
+def test_doctor_and_the_gateway_find_litellm_next_to_this_python(tmp_path, monkeypatch, capsys) -> None:
+    """The llm extra puts `litellm` next to Robo Use's Python, which is on PATH only when the environment is activated:
+    the model gateway starts it from there, and `robouse doctor` reports it from there too (it looked only on PATH)."""
+    import sys
+
+    from robouse.cli import main
+    from robouse.core import gl
+    from robouse.harnesses import gateway
+
+    venv = tmp_path / "venv" / "bin"
+    venv.mkdir(parents=True)
+    monkeypatch.setattr(sys, "executable", str(venv / "python"))
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    monkeypatch.setattr(gl, "auto_select", lambda: None)
+    monkeypatch.setattr(gl, "probe", lambda p=None, python=None: None)
+    assert gateway.litellm_exe() is None
+    assert main(["doctor"]) == 0
+    missing = "-- model gateway (provider-prefixed models) (`litellm`: pip install 'robouse[llm]')"
+    assert missing in capsys.readouterr().out
+    (venv / "litellm").write_text("#!/bin/sh\nexit 0\n")
+    (venv / "litellm").chmod(0o755)
+    assert gateway.litellm_exe() == str(venv / "litellm")
+    assert main(["doctor"]) == 0
+    assert f"ok model gateway (provider-prefixed models) ({venv / 'litellm'})" in capsys.readouterr().out

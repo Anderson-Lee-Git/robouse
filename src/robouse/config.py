@@ -22,7 +22,8 @@ ENV: dict[str, str] = {
     "ROBOUSE_MENAGERIE_ASSETS": "MuJoCo Menagerie robot models (default: the checkout's assets/menagerie, else "
     "<cache>/menagerie)",
     "ROBOUSE_ROBOHARM_TEX": "generated texture cache for the roboharm scenes (default <cache>/roboharm_tex)",
-    "ROBOUSE_PRICING": "JSON price table for trial cost (default: the packaged pricing.json)",
+    "ROBOUSE_PRICING": "JSON price table for trial cost and the spend cap, used instead of the packaged pricing.json "
+    "(not added to it)",
     # episode server
     "ROBOUSE_SOCKET": "episode server socket the `robo` client talks to (set by the runner)",
     "ROBOUSE_ORACLE_TOKEN": "per-episode token that unlocks privileged state for the reference solution (set by the "
@@ -33,13 +34,16 @@ ENV: dict[str, str] = {
     "ROBOUSE_AGENT_IMAGES": "0: the model gets no image input in this run, whatever it takes (its gateway replaces every "
     "image part; recorded as image_input: false). Default: from the model registry",
     "ROBOUSE_SPEND_CAP_USD": "the model spend at which the model gateway stops a trial, in USD (default 5; 0: no cap; "
-    "recorded as a budget stop)",
+    "recorded as a budget stop). A model without a price, such as glm/glm-5.3, runs with 0 or with its price in "
+    "ROBOUSE_PRICING",
     "ROBOUSE_GATEWAY_KEY": "the per-trial key a harness uses for its model gateway (set by the runner, never a provider "
     "key)",
     "ROBOUSE_GATEWAY_URL": "the trial's model gateway, http://127.0.0.1:<port> (set by the runner)",
     "ROBOUSE_GATEWAY_MAX_IMAGES": "gateway process only: images per request (0 none, -1 no limit), from the registry",
     "ROBOUSE_GATEWAY_LOG": "gateway process only: the request log (image counts, no content)",
     "ROBOUSE_GATEWAY_BEARER_ENV": "gateway process only: the provider key variable sent as a Bearer token",
+    "ROBOUSE_GATEWAY_DROP_THINKING": "gateway process only: 1 removes `thinking` from Anthropic Messages requests (a "
+    "provider without a Responses API, where LiteLLM would send such a request)",
     "ROBOUSE_GATEWAY_SPEND_CAP": "gateway process only: the trial's spend cap in USD (0: none)",
     "ROBOUSE_GATEWAY_PRICE": "gateway process only: the model's price, USD per 1M tokens (JSON, from pricing.json)",
     "ROBOUSE_GATEWAY_STOP_FILE": "gateway process only: the file it writes when the spend cap is reached",
@@ -120,8 +124,10 @@ ENV: dict[str, str] = {
     "ROBOUSE_SHOW_HARNESS_MODEL": "the model name the `show-harness` client sends (set by the runner)",
     "ROBOUSE_SHOW_HARNESS_SETTINGS": "the `show-harness` client's mode, task sentence and overrides (set by the runner)",
     "ROBOUSE_TASK_LANGUAGE": "the language instruction a VLA client sends (set by the runner)",
-    "ROBOUSE_GRADER_URL": "OpenAI-compatible endpoint for `robouse grade` (default: Baseten)",
-    "ROBOUSE_GRADER_API_KEY": "API key for `robouse grade` (default: BASETEN_API_KEY)",
+    "ROBOUSE_GRADER_URL": "OpenAI-compatible endpoint (base URL) of the vision-language model for `robouse grade` and "
+    "`real.verdict: vlm` (required by both; no default)",
+    "ROBOUSE_GRADER_API_KEY": "API key for that endpoint, sent as a bearer token (required; no default). The runner "
+    "keeps it out of agents' environments",
     # real robots
     "ROBOUSE_RIG": "real-robot rig file; real tasks run on live hardware instead of the hardware-in-the-loop mock",
     "ROBOUSE_OPERATOR_DIR": "operator channel and e-stop latch for real robots (default ~/.config/robouse-operator)",

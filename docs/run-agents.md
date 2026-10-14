@@ -4,15 +4,19 @@
 
 ## Model harnesses
 
-A Baseten model goes through the trial's model gateway, which needs Python 3.12 or newer and the `llm` extra:
+A provider-prefixed model goes through the trial's model gateway, which needs Python 3.12 or newer and the `llm` extra. `mini-swe-agent` and `dimcode` default to `glm/glm-5.3`: GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider. It needs the plan's API key and endpoint (the one below is for a plan bought on bigmodel.cn) and, because the plan has no per-token price, the spend cap turned off, or a price for `glm-5.3` in `ROBOUSE_PRICING` ([Configuration](configuration.md)). mini-swe-agent is a separate package, installed here with Robo Use:
 
 ```sh
-pip install 'robouse[sim,llm]'
-export BASETEN_API_KEY=...
-robouse run --task arc-gravity --harness claude-code --model baseten/moonshotai/Kimi-K3 --out runs/try
+pip install 'robouse[sim,llm]' mini-swe-agent
+export GLM_API_KEY=...
+export GLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4
+export ROBOUSE_SPEND_CAP_USD=0
+robouse run --task arc-gravity --harness mini-swe-agent --model glm/glm-5.3 --out runs/try
 ```
 
-A non-null `exception` in the printed summary means the trial did not run to a result (a missing credential, a harness not on `PATH`, a harness that stopped on an API error before ending the episode, or Ctrl-C); that trial is not scored, and `robouse run` exits 1. Tasks on other simulators need their extra, for example `pip install 'robouse[metaworld]'` for `metaworld-*` ([Suites](suites.md)).
+Claude Code takes the same model with `--harness claude-code --model glm/glm-5.3`. Codex cannot use it: it needs a provider with a Responses API, which the plan does not have. The gateway sends GLM-5.3 no images (BenchFlow's registry does not list its inputs, and the plan's endpoint refuses image parts); the camera images are still files in the agent's workspace. If a setting is missing, `robouse run` names it and starts no trial. mini-swe-agent, Claude Code and dimcode have run whole trials on `glm/glm-5.3` only against a local stand-in for the plan's endpoint; with GLM-5.3 itself they were checked only up to the plan's usage-limit error, so no trial on the plan has reached a result yet ([Supported](supported.md)).
+
+A non-null `exception` in the printed summary means the trial did not run to a result (a missing credential, a harness that is not installed, a harness that stopped on an API error before ending the episode, every request to the model failing, as when the plan is at its usage limit, or Ctrl-C); that trial is not scored, and `robouse run` exits 1. Tasks on other simulators need their extra, for example `pip install 'robouse[metaworld]'` for `metaworld-*` ([Suites](suites.md)).
 
 Options:
 
@@ -23,19 +27,7 @@ Options:
 
 ## Show-Harness
 
-`show-harness` runs NUS Show Lab's [Show-Harness](https://showlab.github.io/Show-Harness/): the model looks at the task's camera images and picks one parameter-free action unit per call (a move in one of six directions, `GRASP`, `RELEASE` or `DONE`), and an interpreter turns each unit into closed-loop hand motion, every control step counting against the step budget. A provider-prefixed model runs Show-Harness's zero-shot loop; a model you serve at `ROBOUSE_SHOW_HARNESS_URL`, such as one of its fine-tuned adapters on vLLM, runs the fine-tuned loop. It runs only tasks on the `tabletop`, `libero` and `cubepick` backends, and stops before moving any other robot. It sees the images, the hand's height and the gripper's width, not object coordinates, and it does not turn the hand. It has no unit for refusing, so it cannot pass the four `safety: refuse` tasks on these robots. On LIBERO a unit takes 8 to 12 control steps, so the step budgets there (280 to 520 steps) are tight for it.
-
-```console
-$ robouse run --task cubepick-reach-layout-0 --harness show-harness --model baseten/zai-org/GLM-5.3-Flash --out runs/show
-{
-  "trial": "cubepick-reach-layout-0__show-harness__4f8c19",
-  "reward": 1.0,
-  "outcome": "success_reached",
-  "steps": 33,
-  "wall_s": 54.6,
-  "exception": null
-}
-```
+`show-harness` runs NUS Show Lab's [Show-Harness](https://showlab.github.io/Show-Harness/): the model looks at the task's camera images and picks one parameter-free action unit per call (a move in one of six directions, `GRASP`, `RELEASE` or `DONE`), and an interpreter turns each unit into closed-loop hand motion, every control step counting against the step budget. `--model` is required, since the policy is the model's reading of the images: a provider-prefixed model runs Show-Harness's zero-shot loop through the model gateway if BenchFlow's provider registry lists it as reading images (`robouse run` refuses any other before the trial starts, `glm/glm-5.3` included, since the gateway would remove every camera image); a model you serve at `ROBOUSE_SHOW_HARNESS_URL`, such as one of its fine-tuned adapters on vLLM, runs the fine-tuned loop. No provider-prefixed model has been tested with it in Robo Use 0.4.1. It runs only tasks on the `tabletop`, `libero` and `cubepick` backends, and stops before moving any other robot. It sees the images, the hand's height and the gripper's width, not object coordinates, and it does not turn the hand. It has no unit for refusing, so it cannot pass the four `safety: refuse` tasks on these robots. On LIBERO a unit takes 8 to 12 control steps, so the step budgets there (280 to 520 steps) are tight for it.
 
 ## Isolation
 

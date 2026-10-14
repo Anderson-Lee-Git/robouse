@@ -1,26 +1,33 @@
-"""User-facing text names only the provider tested with Robo Use (Baseten), and `robouse doctor` checks the provider
-key where the model gateway reads it: the environment variable, not a key file."""
+"""User-facing text names only the model route tested with Robo Use (GLM-5.3 on the Z.ai Coding Plan, `glm/glm-5.3`
+through BenchFlow's glm provider), and `robouse doctor` checks that provider's settings where the model gateway reads
+them: environment variables, not a key file."""
 
 from __future__ import annotations
+
+import re
 
 import pytest
 
 from robouse.cli import main
 from robouse.harnesses import models
 
-EXAMPLE = "baseten/zai-org/GLM-5.3"
-UNTESTED = ("openrouter", "together", "fireworks", "groq", "deepinfra")
+EXAMPLE = "glm/glm-5.3"
+UNTESTED = ("openrouter", "together", "fireworks", "groq", "deepinfra", "baseten")
+
+# Baseten named in text (BASETEN_API_KEY, a baseten/ model, the provider, inference.baseten.co); a path segment that
+# merely contains the word, such as a checkout or cache under ~/no-baseten/, is not a mention
+BASETEN_MENTION = re.compile(r"(?<![\w./-])baseten|baseten\.co", re.IGNORECASE)
 
 
 @pytest.mark.parametrize("cmd", ["run", "run-many"])
-def test_harness_help_gives_the_baseten_example_only(cmd, capsys) -> None:
+def test_harness_help_gives_the_zai_example_only(cmd, capsys) -> None:
     with pytest.raises(SystemExit):
         main([cmd, "--help"])
     out = " ".join(capsys.readouterr().out.split())
     assert EXAMPLE in out and not any(p in out.lower() for p in UNTESTED)
 
 
-def test_missing_prefix_error_gives_the_baseten_example_only() -> None:
+def test_missing_prefix_error_gives_the_zai_example_only() -> None:
     with pytest.raises(ValueError) as e:
         models.resolve("mini-swe-agent", "GLM-5.3")  # a bare id, for a harness with no vendor of its own
     msg = str(e.value)
@@ -36,20 +43,36 @@ def _doctor(monkeypatch, capsys) -> str:
     return capsys.readouterr().out
 
 
-def test_doctor_checks_the_key_where_the_gateway_reads_it(monkeypatch, capsys) -> None:
-    from robouse import _maintainer
-    from robouse.cli.doctor import gateway_key_var
+def test_doctor_checks_the_settings_where_the_gateway_reads_them(monkeypatch, capsys) -> None:
+    pytest.importorskip("benchflow")  # the provider registry
+    from robouse.cli.doctor import gateway_env_vars
 
-    var = gateway_key_var("baseten")
-    assert var == models.PENDING_PROVIDERS["baseten"]["auth_env"] == "BASETEN_API_KEY"
-    # a maintainer key file does not count: the gateway passes only the environment to the provider proxy
-    monkeypatch.setattr(_maintainer, "baseten_key", lambda: "from-a-key-file")
-    monkeypatch.delenv(var, raising=False)
+    names = gateway_env_vars("glm")
+    assert names == ["GLM_API_KEY", "GLM_BASE_URL"]  # BenchFlow's glm entry: the key, and a base URL with no default
+    line = "GLM_API_KEY and GLM_BASE_URL in the environment (what the model gateway reads for glm/ models"
+    for var in names:
+        monkeypatch.delenv(var, raising=False)
     out = _doctor(monkeypatch, capsys)
-    assert f"-- {var} in the environment (what the model gateway reads" in out
-    monkeypatch.setenv(var, "not-a-real-key")
+    assert f"-- {line}" in out and "default glm/glm-5.3; no key file is read" in out
+    monkeypatch.setenv("GLM_API_KEY", "not-a-real-key")
+    assert f"-- {line}" in _doctor(monkeypatch, capsys)  # both are needed
+    monkeypatch.setenv("GLM_BASE_URL", "http://127.0.0.1:9/v1")
     out = _doctor(monkeypatch, capsys)
-    assert f"ok {var} in the environment (what the model gateway reads" in out
+    assert f"ok {line}" in out and not BASETEN_MENTION.search(out)
+
+
+def test_a_path_is_not_a_baseten_mention() -> None:
+    for text in ("BASETEN_API_KEY in the environment", "for baseten/ models", "(Baseten)", "inference.baseten.co/v1"):
+        assert BASETEN_MENTION.search(text), text
+    assert not BASETEN_MENTION.search("-- driving (worker virtualenv /home/u/no-baseten/fix/cache/metadrive-venv)")
+
+
+def test_doctor_without_the_registry_says_what_to_install(monkeypatch, capsys) -> None:
+    import sys
+
+    monkeypatch.setitem(sys.modules, "benchflow.agents.providers", None)  # importing it raises ImportError
+    out = _doctor(monkeypatch, capsys)
+    assert "-- the model gateway's provider registry (pip install 'robouse[llm]'; for glm/glm-5.3" in out
 
 
 @pytest.mark.parametrize("version,needs", [((3, 11), "Python 3.12 or newer"), ((3, 12), "pip install 'robouse[llm]'")])
@@ -61,3 +84,8 @@ def test_without_benchflow_the_message_says_what_helps(version, needs, monkeypat
     with pytest.raises(RuntimeError) as e:
         models.provider_registry()
     assert needs in str(e.value)
+    # the default model's prefix is known only to BenchFlow's registry: the message says what to install, not that
+    # the id lacks a prefix
+    with pytest.raises(RuntimeError) as e:
+        models.resolve("mini-swe-agent", "glm/glm-5.3")
+    assert needs in str(e.value) and "provider prefix" not in str(e.value)

@@ -21,7 +21,7 @@ from pathlib import Path
 
 DOC = Path(__file__).resolve().parents[2] / "docs" / "cli.md"
 NOTES = {
-    "run": "Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`. A non-null `exception` means the trial did not run to a result (an infrastructure failure: a missing credential, a harness error before the episode ended, or Ctrl-C); it is not scored and the command exits 1.",
+    "run": "Prints a JSON summary: `trial`, `reward`, `outcome`, `steps`, `wall_s`, `exception`. A non-null `exception` means the trial did not run to a result (an infrastructure failure: a missing credential, a harness error before the episode ended, every request to the model failing, as at a provider's usage limit, or Ctrl-C); it is not scored and the command exits 1.",
     "run-many": "Prints one line per finished trial, appends it to `OUT/run_log.jsonl`, and ends with the number solved; exits 1 if any trial failed on infrastructure. Examples: [Run a suite or dataset](run-a-suite.md).",
     "tasks": "`robouse tasks` alone lists the tasks: id, backend and simulator env id. `tasks init` composes a task from components and keeps it only if the reference solution scores 1 and the no-op control 0; with only `DIR` it scaffolds a blank task folder. `tasks check` re-runs those checks on any task folder ([Write or compose a task](write-a-task.md)).",
     "serve": "Runs one episode server until the episode ends, then prints the verdict as JSON. `robouse run` starts it for you; to drive a robot by hand, start it and set `ROBOUSE_SOCKET` to the socket path.",

@@ -1,11 +1,13 @@
 """Maintainer-only fallbacks, isolated here. None of them is needed to use robouse; each applies only when its folder
 exists on the machine.
 
-- Credential pools under ~/.config/bf-agents: `oauth.env` (Claude Code OAuth tokens, rotated), `baseten.env`
-  (BASETEN_API_KEY) and `codex-auth/*.json` (a pool of Codex accounts).
+- Credential pools under ~/.config/bf-agents: `oauth.env` (Claude Code OAuth tokens, rotated) and `codex-auth/*.json`
+  (a pool of Codex accounts). No model provider's key is read from a file: the model gateway takes it from the
+  environment only.
 - Remote worker endpoint files inside a development checkout: <repo>/runs/_<name>/remote.json.
-- Folders agents must never read in the local runner's sandbox: the maintainers' workspace (~/benchflow) and the
-  credential pools.
+- Folders agents must never read in the local runner's sandbox: the maintainers' workspace (~/benchflow), the
+  credential pools, and the maintainers' provider key files (~/.config/benchflow, e.g. the Z.ai Coding Plan's key,
+  which the runner keeps out of agent environments as well).
 """
 
 from __future__ import annotations
@@ -14,9 +16,9 @@ from pathlib import Path
 
 AGENTS_DIR = Path.home() / ".config" / "bf-agents"
 OAUTH_ENV = AGENTS_DIR / "oauth.env"
-BASETEN_ENV = AGENTS_DIR / "baseten.env"
 CODEX_POOL = AGENTS_DIR / "codex-auth"
 WORKSPACE = Path.home() / "benchflow"
+PROVIDER_KEYS = Path.home() / ".config" / "benchflow"  # env files the maintainers source before a run
 CHECKOUT = Path(__file__).resolve().parents[2]
 
 
@@ -37,10 +39,6 @@ def claude_tokens() -> list[str]:
     return [v for k, v in sorted(read_env_file(OAUTH_ENV).items()) if k.startswith("BF_REVIEW_TOKEN") and v]
 
 
-def baseten_key() -> str:
-    return read_env_file(BASETEN_ENV).get("BASETEN_API_KEY", "")
-
-
 def codex_accounts() -> list[Path]:
     return sorted(CODEX_POOL.glob("*.json")) if CODEX_POOL.is_dir() else []
 
@@ -50,4 +48,4 @@ def remote_endpoint_files(name: str) -> list[Path]:
 
 
 def private_dirs() -> list[Path]:
-    return [WORKSPACE, AGENTS_DIR]
+    return [WORKSPACE, AGENTS_DIR, PROVIDER_KEYS]

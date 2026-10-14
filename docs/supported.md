@@ -1,18 +1,18 @@
 # Supported
 
-Robo Use 0.4.0.
+Robo Use 0.4.1.
 
 ## Models and harnesses
 
 | Model · harness | Needs |
 |---|---|
-| `baseten/zai-org/GLM-5.3` · `claude-code`, `codex`, `mini-swe-agent`, `dimcode`, `show-harness` | `BASETEN_API_KEY`; Python 3.12 or newer and `pip install 'robouse[llm]'` (the model gateway) |
-| `baseten/moonshotai/Kimi-K3` · `claude-code` | `BASETEN_API_KEY`; Python 3.12 or newer and `pip install 'robouse[llm]'` |
-| `baseten/zai-org/GLM-5.3-Flash` · `show-harness` | `BASETEN_API_KEY`; Python 3.12 or newer and `pip install 'robouse[llm]'` |
+| `glm/glm-5.3` (GLM-5.3 on the Z.ai Coding Plan) · `mini-swe-agent`, `dimcode`, `claude-code` | `GLM_API_KEY`, `GLM_BASE_URL` and `ROBOUSE_SPEND_CAP_USD=0` (or a price in `ROBOUSE_PRICING`); Python 3.12 or newer and `pip install 'robouse[llm]'` (the model gateway) |
 | `claude-sonnet-5` · `claude-code` | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` |
 | `gpt-6-astra` · `codex` | `OPENAI_API_KEY` or a `codex login` |
 | VLA presets · `vla` | a policy server, usually on a GPU |
 | `allenai/MolmoAct2-LIBERO-LeRobot` · `molmoact2` | a policy server on a GPU |
+
+How the `glm/glm-5.3` row was checked (2026-10-14): each of its three harnesses (mini-swe-agent 2.4.6, Claude Code 2.1.285, dimcode 0.1.0-next.7) ran whole trials through the model gateway, on Linux arm64 under bubblewrap, against a scripted local stand-in for the plan's endpoint. With GLM-5.3 itself they were checked only up to the plan's usage-limit error (HTTP 429), so no trial on the plan has reached a result yet, and how these pairs do on a task is untested.
 
 ## Platforms
 

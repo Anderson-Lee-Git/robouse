@@ -267,6 +267,42 @@ def test_a_harness_error_is_an_infrastructure_failure(tmp_path, monkeypatch, cap
     assert r["exception"] and "Invalid API key" in r["exception"]
 
 
+def test_resume_does_not_fill_a_job_with_another_pair(tmp_path, monkeypatch, capsys) -> None:
+    """--resume counted a finished trial as done whatever harness and model ran it, so resuming a job started with
+    another pair (such as robouse 0.4.0's default for mini-swe-agent, Baseten's GLM-5.3) filled the rest with the new
+    one. It is refused before any trial starts; the same pair resumes as before."""
+    pytest.importorskip("mujoco")
+    from fakes import glm_registry
+
+    from robouse.harnesses import models
+    from robouse.runner import run_many
+    from robouse.runner.jobs import resume_refusal
+
+    _scripted(monkeypatch, "first", "robo done\n")
+    _scripted(monkeypatch, "second", "robo done\n")
+    job = tmp_path / "job"
+    (r,) = run_many(ARC.parent, "first", "", job, include=["arc-gravity"])
+    assert not r["exception"]
+    with pytest.raises(ValueError, match=r"holds trials of first \(1 trial\), not of second; a job holds one harness"):
+        run_many(ARC.parent, "second", "", job, include=["arc-gravity"], resume=True)
+    args = ["run-many", "--tasks", str(ARC.parent), "--include", "arc-gravity", "--out", str(job), "--resume"]
+    assert main([*args, "--harness", "second"]) == 2
+    assert "run this pair into a new --out" in capsys.readouterr().err
+    assert len(list(job.glob("*/config.json"))) == 1
+    assert main([*args, "--harness", "first"]) == 0  # its finished trial counts as done: nothing to run
+    assert len(list(job.glob("*/config.json"))) == 1
+    # a 0.4.0 folder of mini-swe-agent recorded no model: it reads as Baseten's GLM-5.3, not today's glm/glm-5.3
+    monkeypatch.setattr(models, "provider_registry", glm_registry)
+    old = tmp_path / "old" / "arc-gravity__mini-swe-agent__a1b2c3"
+    old.mkdir(parents=True)
+    (old / "config.json").write_text(json.dumps({"harness": "mini-swe-agent", "model": ""}))
+    why = resume_refusal(old.parent, "mini-swe-agent", "")
+    want = "of mini-swe-agent with baseten/zai-org/GLM-5.3 (1 trial), not of mini-swe-agent with glm/glm-5.3"
+    assert why and want in why
+    (old / "config.json").write_text(json.dumps({"harness": "mini-swe-agent", "model": "glm/glm-5.3"}))
+    assert resume_refusal(old.parent, "mini-swe-agent", "") is None
+
+
 def test_ctrl_c_stops_the_agent_and_records_the_trial(tmp_path, monkeypatch, ctrl_c) -> None:  # CB-15, CB-003
     pytest.importorskip("mujoco")
     from robouse.runner import run_trial
