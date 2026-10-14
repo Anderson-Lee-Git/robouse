@@ -501,17 +501,19 @@ def test_a_trial_s_agent_inherits_no_credential(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("ROBOUSE_SANDBOX", "0")  # the variables, not the sandbox, are under test
     for k in CREDENTIAL_VARS:
         monkeypatch.setenv(k, f"LEAK-{k}")
-    monkeypatch.setenv("MUJOCO_GL", "egl")
+    # a harmless setting that must stay (not MUJOCO_GL: the session already chose the OpenGL platform, and the
+    # episode server renders with it)
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "kept")
 
     def dump(model, prompt, workspace, task, env) -> harnesses.Launch:
         return harnesses.Launch(["sh", "-c", "robo done ok >/dev/null; env"], env, notes={"model": "none"})
 
     monkeypatch.setitem(harnesses.HARNESSES, "dump", dump)
     res = run_trial(load_task(ROOT / "tasks" / "arc-style" / "arc-gravity"), "dump", "", tmp_path / "job")
+    assert res["exception"] is None, res
     out = (tmp_path / "job" / res["trial"] / "agent" / "stdout.jsonl").read_text()
     assert "LEAK-" not in out, [line for line in out.splitlines() if "LEAK-" in line]
-    assert "ROBOUSE_SOCKET=" in out and "MUJOCO_GL=egl" in out
-    assert res["exception"] is None, res
+    assert "ROBOUSE_SOCKET=" in out and "GIT_AUTHOR_NAME=kept" in out
 
 
 def test_molmoact2_gets_its_server_token_from_the_harness(tmp_path, monkeypatch) -> None:
