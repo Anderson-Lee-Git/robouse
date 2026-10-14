@@ -1,6 +1,6 @@
 # Supported
 
-Robo Use 0.4.0.
+Robo Use 0.5.0.
 
 ## Models and harnesses
 
