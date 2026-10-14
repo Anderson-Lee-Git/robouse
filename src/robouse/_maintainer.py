@@ -1,8 +1,9 @@
 """Maintainer-only fallbacks, isolated here. None of them is needed to use robouse; each applies only when its folder
 exists on the machine.
 
-- Credential pools under ~/.config/bf-agents: `oauth.env` (Claude Code OAuth tokens, rotated), `baseten.env`
-  (BASETEN_API_KEY) and `codex-auth/*.json` (a pool of Codex accounts).
+- Credential pools under ~/.config/bf-agents: `oauth.env` (Claude Code OAuth tokens, rotated) and `codex-auth/*.json`
+  (a pool of Codex accounts). No model provider's key is read from a file: the model gateway takes it from the
+  environment only.
 - Remote worker endpoint files inside a development checkout: <repo>/runs/_<name>/remote.json.
 - Folders agents must never read in the local runner's sandbox: the maintainers' workspace (~/benchflow) and the
   credential pools.
@@ -14,7 +15,6 @@ from pathlib import Path
 
 AGENTS_DIR = Path.home() / ".config" / "bf-agents"
 OAUTH_ENV = AGENTS_DIR / "oauth.env"
-BASETEN_ENV = AGENTS_DIR / "baseten.env"
 CODEX_POOL = AGENTS_DIR / "codex-auth"
 WORKSPACE = Path.home() / "benchflow"
 CHECKOUT = Path(__file__).resolve().parents[2]
@@ -35,10 +35,6 @@ def read_env_file(path: Path) -> dict[str, str]:
 def claude_tokens() -> list[str]:
     """Claude Code OAuth tokens from the pool (BF_REVIEW_TOKEN_* entries), in a stable order."""
     return [v for k, v in sorted(read_env_file(OAUTH_ENV).items()) if k.startswith("BF_REVIEW_TOKEN") and v]
-
-
-def baseten_key() -> str:
-    return read_env_file(BASETEN_ENV).get("BASETEN_API_KEY", "")
 
 
 def codex_accounts() -> list[Path]:

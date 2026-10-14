@@ -120,8 +120,9 @@ ENV: dict[str, str] = {
     "ROBOUSE_SHOW_HARNESS_MODEL": "the model name the `show-harness` client sends (set by the runner)",
     "ROBOUSE_SHOW_HARNESS_SETTINGS": "the `show-harness` client's mode, task sentence and overrides (set by the runner)",
     "ROBOUSE_TASK_LANGUAGE": "the language instruction a VLA client sends (set by the runner)",
-    "ROBOUSE_GRADER_URL": "OpenAI-compatible endpoint for `robouse grade` (default: Baseten)",
-    "ROBOUSE_GRADER_API_KEY": "API key for `robouse grade` (default: BASETEN_API_KEY)",
+    "ROBOUSE_GRADER_URL": "OpenAI-compatible endpoint (base URL) of the vision-language model for `robouse grade` and "
+    "`real.verdict: vlm` (required by both; no default)",
+    "ROBOUSE_GRADER_API_KEY": "API key for that endpoint, sent as a bearer token (required; no default)",
     # real robots
     "ROBOUSE_RIG": "real-robot rig file; real tasks run on live hardware instead of the hardware-in-the-loop mock",
     "ROBOUSE_OPERATOR_DIR": "operator channel and e-stop latch for real robots (default ~/.config/robouse-operator)",

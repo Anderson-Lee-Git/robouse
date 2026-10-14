@@ -185,6 +185,13 @@ def test_operator_verdict_mock_proxy_and_feedback(tmp_path):
     ep.close()
 
 
+def test_a_vlm_verdict_names_its_model(tmp_path):
+    """real.verdict: vlm has no default model (it was Kimi K3 on Baseten): the task names one, read at
+    ROBOUSE_GRADER_URL, or the episode does not start."""
+    with pytest.raises(ValueError, match=r"real\.verdict: vlm needs real\.vlm_model"):
+        _episode("real-metal-bead-to-bowl", tmp_path, verdict="vlm")
+
+
 def test_scripted_operator_refused_for_live_driver(tmp_path):
     from robouse.real.safety import SafetyStop
 

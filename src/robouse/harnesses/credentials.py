@@ -3,8 +3,8 @@ never printed or written to a trial folder.
 
   claude-code   ANTHROPIC_API_KEY, else CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`)
   codex         OPENAI_API_KEY, else a private copy of ~/.codex/auth.json (from `codex login`)
-  *-glm         BASETEN_API_KEY
-Maintainer pools (robouse._maintainer) are used only when none of these is set.
+Maintainer pools (robouse._maintainer) are used only when none of these is set. A provider-prefixed model's key (e.g.
+GLM_API_KEY for glm/glm-5.3) is not handled here: the model gateway reads it from the environment (gateway.py).
 """
 
 from __future__ import annotations
@@ -90,13 +90,6 @@ def claude_auth() -> dict[str, str]:
     return {"CLAUDE_CODE_OAUTH_TOKEN": toks[next(_claude_rr) % len(toks)]}
 
 
-def baseten_key() -> str:
-    k = os.environ.get("BASETEN_API_KEY") or _maintainer.baseten_key()
-    if not k:
-        raise RuntimeError("no Baseten key: set BASETEN_API_KEY")
-    return k
-
-
 def have_claude() -> bool:
     return bool(
         os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or _maintainer.claude_tokens()
@@ -109,7 +102,3 @@ def have_codex() -> bool:
         or (Path.home() / ".codex" / "auth.json").exists()
         or _maintainer.codex_accounts()
     )
-
-
-def have_baseten() -> bool:
-    return bool(os.environ.get("BASETEN_API_KEY") or _maintainer.baseten_key())
