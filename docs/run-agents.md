@@ -39,7 +39,16 @@ $ robouse run --task cubepick-reach-layout-0 --harness show-harness --model base
 
 ## Isolation
 
-Model harnesses run in a sandbox, so the agent cannot read the reference solution, the run folder or other trials. The reference solution and the no-op control run without it.
+Model harnesses run in a sandbox that hides the trial's run folder, the task folder, the installed package and other trials' workspaces from the agent. The reference solution and the no-op control run without it.
+
+The sandbox is a deny list, not a container. It keeps an agent from stumbling on the answer, not one that looks for it:
+
+- The agent runs as your user and can read the rest of the machine: your home folder, other checkouts and package caches, which can hold other copies of the tasks with their reference solutions. Add such paths to `ROBOUSE_SANDBOX_DENY`.
+- The network is open, and public copies of the tasks, including reference solutions and verifiers, are on the internet. On Linux, services listening on localhost are reachable too.
+- Environment variables other than model-provider keys, such as `GITHUB_TOKEN` or cloud credentials, reach the agent.
+- On macOS, episode sockets are in the shared `/tmp` without per-trial authentication, and `open` runs files and URLs outside the sandbox.
+
+Run agents you do not trust in a disposable VM or container with no credentials of yours, and check the trial logs before you publish a score.
 
 - **macOS**: the system's Seatbelt sandbox (`sandbox-exec`); nothing to install.
 - **Linux**: bubblewrap. Install it first, for example `sudo apt-get install bubblewrap`. Ubuntu 24.04 blocks the user namespaces bubblewrap needs unless an AppArmor profile allows them; if `robouse run` stops with "no sandbox for the agent on this machine", add the profile and load it:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the static Robo Use docs site (robouse.ai/docs/) from docs/.
 
-    python tools/docs/build_docs.py --out ~/benchflow/roboharm/site/docs
+    python tools/docs/build_docs.py --out <site checkout>/site/docs
     python tools/docs/build_docs.py --out /tmp/docs --base /docs/     # --base is the URL prefix the pages are served under
 
 Standard library only (Python 3.11+): it has its own small markdown converter that covers what these docs use
@@ -12,9 +12,9 @@ site's shared header and footer from the site repository's tools/chrome.py (foun
 expects /theme.js, /surface.css, /bridge.css, /chrome.css, /prose.css (the site's one type system) and /fonts/ at the site root.
 
 Only the pages in PAGES are published. Links between them are rewritten to the generated pages (anchors kept);
-links to repository files that are not published become plain text or inline code, since the repository is
-private; site links starting with "/" are kept. The build fails if a link between pages is broken, or if the
-output contains a banned word or anything that looks like a credential (see check_output).
+links to repository files that are not published become plain text or inline code, so that every link on the
+site leads to a published page; site links starting with "/" are kept. The build fails if a link between pages is
+broken, or if the output contains a banned word or anything that looks like a credential (see check_output).
 
 Sources are read from git HEAD by default (--ref REV for another revision, --worktree for uncommitted edits), so
 the site matches the repository.
@@ -219,15 +219,11 @@ PAGES: list[tuple[str, str, str, str, str]] = [
 ]
 # Docs kept in the repository but not published: internal notes, run logs and machine-specific setup.
 EXCLUDED = {
-    "docs/review-log.md": "internal log of documentation review passes",
     "docs/components.md": "maintainers' notes on components; the public part is in concepts.md and write-a-task.md",
     "docs/components-design.md": "design of components",
     "docs/remix.md": "replaced by the compose sections of concepts.md and write-a-task.md",
-    "docs/research/": "internal literature and dataset surveys",
-    "docs/dogfood.md": "log of the commands run to check the public docs",
-    "docs/results.md": "generated table for the repository; the public results are robouse.ai/runs/",
     "docs/audit.md": "the maintainers' audit script over local runs",
-    "docs/viewer.md": "the maintainers' viewer setup and viewer formats",
+    "docs/viewer.md": "the viewer formats and the maintainers' viewer tools",
     "docs/benchflow.md": "maintainers' notes on the BenchFlow engine",
     "docs/molmoact2.md": "GPU server setup notes",
     "docs/real-robots.md": "the real suite is not in the package",

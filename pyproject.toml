@@ -8,11 +8,15 @@ dynamic = ["version"]
 description = "Agent as a policy for embodied agents"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
-license = "Apache-2.0 AND MIT"  # MIT: the vendored CaP-X and RLE-Bench code (NOTICE)
+# MIT: vendored code (CaP-X, PyRoKi, RLE-Bench, the CubePick port) and task data (LIBERO instructions, DexJoCo);
+# CC-BY-4.0: the Adroit demonstrations from D4RL. NOTICE lists every source.
+license = "Apache-2.0 AND MIT AND CC-BY-4.0"
 license-files = [
     "LICENSE",
     "NOTICE",
+    "licenses/*.txt",
     "src/robouse/backends/capx/capx_upstream/LICENSE",
+    "src/robouse/backends/capx/capx_upstream/capx/integrations/motion/pyroki_snippets/LICENSE",
     "src/robouse/backends/rlebench/rlebench_upstream/LICENSE",
 ]
 authors = [{ name = "Xiangyi Li", email = "xiangyi@benchflow.ai" }]
@@ -39,7 +43,7 @@ dependencies = ["numpy>=1.24", "pyyaml>=6"]
 # MuJoCo and video recording: the built-in tabletop, ARC-style, hard, safety, vision, robo-use-families, RoboHarm,
 # menagerie and drone suites.
 # MuJoCo is pinned: with 3.14, robosuite, menagerie, gymrobotics and drone episodes crash and some reference solutions fail
-# (docs/dogfood.md). 3.3.0 is also the version Meta-World requires.
+# (checked in September 2026). 3.3.0 is also the version Meta-World requires.
 sim = ["mujoco==3.3.0", "imageio>=2.34", "imageio-ffmpeg>=0.5", "pillow>=10"]
 metaworld = ["robouse[sim]", "metaworld>=3.1", "packaging"]
 gymrobotics = ["robouse[sim]", "gymnasium-robotics>=1.4"]
@@ -50,18 +54,24 @@ robosuite = ["robouse[sim]", "robosuite>=1.5.2,<1.6"]
 dexjoco = ["robouse[sim]", "scipy>=1.10"]
 # BenchFlow, pinned to the same build as `llm` so a later pre-release cannot change what installs. From PyPI it adds
 # BenchFlow's `bench` CLI (`bench tasks migrate` converts older task folders). Running trials in Docker through
-# BenchFlow, and BenchFlow loading robouse task folders as a native task format, need BenchFlow's task-format hook:
-# until a release has it, BenchFlow from its `robouse` branch (see [tool.uv.sources]).
+# BenchFlow, and BenchFlow loading robouse task folders as a native task format, need BenchFlow's embodied layer and
+# task-format hook, which no BenchFlow release on PyPI has yet (0.7.9.dev2354 does not).
 benchflow = ["benchflow==0.7.9.dev2354; python_version >= '3.12'"]
 # Provider-prefixed models (baseten/...): BenchFlow's provider registry and LiteLLM routing, and the LiteLLM proxy each
 # trial's model gateway runs. Both pinned to the builds this release was tested with (BenchFlow's Baseten registry
 # entry is not released yet; robouse supplies it), so a later pre-release cannot change what installs.
 llm = ["benchflow==0.7.9.dev2354; python_version >= '3.12'", "litellm[proxy]==1.91.0; python_version >= '3.12'"]
+# Licenses: litellm[proxy] 1.91.0, which `llm` asks for and BenchFlow 0.7.9.dev2354 requires, installs litellm-enterprise
+# 0.1.44, whose PyPI license is proprietary (LicenseRef-Proprietary). So `llm` and `benchflow` install it; the rest of
+# Robo Use does not need it.
 all = ["robouse[sim,metaworld,gymrobotics,robosuite,dexjoco]"]
 
 [project.urls]
 Homepage = "https://robouse.ai"
 Documentation = "https://robouse.ai/docs/"
+Source = "https://github.com/benchflow-ai/robouse"
+Issues = "https://github.com/benchflow-ai/robouse/issues"
+Changelog = "https://github.com/benchflow-ai/robouse/blob/main/CHANGELOG.md"
 
 [project.scripts]
 robouse = "robouse.cli:main"
@@ -71,9 +81,9 @@ robo = "robouse.agent_cli:main"
 [project.entry-points."benchflow.task_formats"]
 robouse = "robouse.engine.format:RobouseTaskFormat"
 
-# Until BenchFlow publishes the task-format hook, install it from the branch that adds it.
-[tool.uv.sources]
-benchflow = { git = "https://github.com/benchflow-ai/benchflow", branch = "robouse" }
+# Development tools (PEP 735): `uv pip install -e ".[sim]" --group dev`, or `pip install --group dev` with pip 25.1 or newer.
+[dependency-groups]
+dev = ["pytest", "pytest-cov", "ruff==0.14.3", "mypy==1.18.2", "types-PyYAML"]
 
 [tool.hatch.version]
 path = "src/robouse/__init__.py"
@@ -128,7 +138,7 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "assets/robocasa/provenance.json" = "robouse/assets_provenance/robocasa.json"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/assets/humanoidbench/provenance.json", "/assets/robocasa/provenance.json", "/README.md", "/LICENSE", "/NOTICE", "/pyproject.toml"]
+include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/assets/humanoidbench/provenance.json", "/assets/robocasa/provenance.json", "/README.md", "/LICENSE", "/NOTICE", "/licenses", "/pyproject.toml"]
 exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]
 
 [tool.ruff]
@@ -161,7 +171,7 @@ ignore = [
 
 [tool.ruff.format]
 quote-style = "preserve"
-# files other agents are editing on other branches this week; formatted once they have merged
+# maintainer tools that other branches are still changing; to be formatted once those branches have merged
 exclude = ["tools/site/build_runs_site.py", "tools/docs/build_docs.py", "tools/docs/cli_reference.py"]
 
 [tool.mypy]
@@ -195,6 +205,10 @@ files = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
+markers = [
+    "needs_benchflow_embodied: needs BenchFlow's embodied layer and task-format hook, which no BenchFlow release has yet (skipped without them)",
+    "maintainer: tests of maintainer tools under tools/ (Python 3.12 or newer; skipped on 3.11)",
+]
 
 [tool.coverage.run]
 source = ["robouse"]

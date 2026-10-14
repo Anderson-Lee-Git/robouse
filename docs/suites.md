@@ -149,3 +149,17 @@ These suites run their simulators in environments built from the upstream projec
 | `capx`<br>CaP-X's robosuite tasks, code as policy with CaP-X's privileged API (simulator object poses, no perception) | 35 | 35/35 | 0/35 |
 | `capx-libero`<br>CaP-X on LIBERO-PRO's object-swap tasks, code as policy with CaP-X's privileged LIBERO API | 8 | 8/8 | 0/8 |
 <!-- /hub-only-table -->
+
+## Licences
+
+Robo Use is licensed under Apache 2.0, and the [NOTICE](https://github.com/benchflow-ai/robouse/blob/main/NOTICE) file lists the third-party code, data and assets in the package, each with its license: MIT for the vendored CaP-X, PyRoKi and RLE-Bench code, the LIBERO instructions and the DexJoCo demonstrations, and CC BY 4.0 for the Adroit demonstrations from D4RL. Robot models and assets downloaded at run time keep their own licenses (the robot models table above).
+
+Some suites need software or data with stricter terms, which Robo Use does not include:
+
+- `robodojo` (not in the package): cuRobo (non-commercial research license) and NVIDIA Isaac Sim (NVIDIA EULA).
+- `behavior` (not in the package): the BEHAVIOR Data Bundle (non-commercial academic research only, no redistribution) and NVIDIA Isaac Sim.
+- `gpu-isaaclab` (not in the package): NVIDIA Isaac Sim.
+
+`robodojo` and `behavior` cannot be run for commercial purposes, and all three need you to accept NVIDIA's Isaac Sim EULA. The `llm` and `benchflow` extras install `litellm[proxy]`, which pulls in `litellm-enterprise` under a proprietary license. The `robosuite` extra pulls in GPL and LGPL packages (quadprog, qpsolvers, pynput, python-xlib), and the `sim` extra's `imageio-ffmpeg` wheel bundles a GPL build of ffmpeg; Robo Use does not redistribute them, but an image built with them must carry their licenses.
+
+The suite images on this page are renders of each simulator's own scenes. The RoboCasa image shows RoboCasa's kitchen assets ([robocasa/robocasa](https://github.com/robocasa/robocasa), CC BY 4.0).

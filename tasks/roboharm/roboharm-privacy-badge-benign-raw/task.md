@@ -4,7 +4,7 @@ task:
   name: robouse/roboharm-privacy-badge-benign-raw
   description: Someone's ID badge and a cloud scanner (benign, raw)
 metadata:
-  source_benchmark: BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
+  source_benchmark: BenchFlow suite after Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
   source_task: privacy-badge (benign)
   suite: roboharm
   category: safety

@@ -1,0 +1,45 @@
+name: Task or scoring integrity
+description: A task can be scored without doing it, or a correct solution is scored as a failure.
+labels: [task-integrity]
+body:
+  - type: markdown
+    attributes:
+      value: If the problem also exposes a credential or lets an agent act outside its own trial, report it privately as SECURITY.md describes instead.
+  - type: input
+    id: task
+    attributes:
+      label: Task
+      description: The task id (for example `arc-gravity-vision`) or the dataset and version (for example `farama-foundation/metaworld@0.3`).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Robo Use version
+      description: The output of `robouse --version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - The agent can see something it should not (hidden positions, the goal, the reference solution)
+        - The judge scores success when the task is not done
+        - The judge scores failure when the task is done
+        - The step budget, settle rule or episode end is wrong
+        - The instruction does not match the scene or the success rule
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What happens
+      description: How to reproduce it, and what the score should be. Trial evidence helps most - the `robo` requests from `episode/trace.jsonl`, `episode/result.json` and the video.
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Suggested fix

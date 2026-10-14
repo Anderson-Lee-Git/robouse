@@ -5,11 +5,17 @@ published as earlier runs), budget stops are their own labelled result, and a co
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+# a maintainer tool (not in the package), written for Python 3.12
+pytestmark = [
+    pytest.mark.maintainer,
+    pytest.mark.skipif(sys.version_info < (3, 12), reason="tools/site/build_runs_site.py needs Python 3.12"),
+]
 
 
 @pytest.fixture

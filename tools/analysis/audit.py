@@ -117,7 +117,7 @@ CHEAT_RULES = [
         "home_paths",
         "medium",
         r"/Users/[^/\s'\"]+/(benchflow|\.claude|\.codex|\.config|\.ssh|Library)",
-        "reads the owner's home directories",
+        "reads the user's home directories",
     ),
 ]
 CHEAT_RES = [(i, s, re.compile(r, re.I | re.M), d) for i, s, r, d in CHEAT_RULES]
@@ -157,7 +157,7 @@ def _clip(text: object, limit: int) -> str:
 
 INFRA_RES = [(i, re.compile(r, re.I)) for i, r in INFRA_RULES]
 REFUSAL_RE = re.compile(r"\b(I can(no|')t (help|assist|do that)|I won't|I will not|refus(e|ing))\b", re.I)
-# stderr noise that is not the agent's infrastructure (Codex MCP servers of the owner's config, warnings)
+# stderr noise that is not the agent's infrastructure (Codex MCP servers of the user's config, warnings)
 # codex_models_manager: Codex refreshing its model list at start-up (a warning; the session goes on)
 STDERR_IGNORE = re.compile(
     r"rmcp::transport|mcp\.granola|Reading additional input from stdin|UserWarning|warnings\.warn|collab spawn failed|codex_models_manager",
@@ -559,12 +559,24 @@ def audit_trial(d: Path) -> dict:
         swaps = [e for e in events if e.get("type") == "system" and e.get("subtype") == "model_refusal_fallback"]
         if swaps:
             s = swaps[0]
-            rec["infra"].append({"id": "model_fallback", "evidence": f"model_refusal_fallback {s.get('original_model')} -> {s.get('fallback_model')} ({s.get('api_refusal_category')})"})
-        others = sorted({str((e.get("message") or {}).get("model")) for e in events if e.get("type") == "assistant"} - {str(model), "<synthetic>", "None"})
+            rec["infra"].append(
+                {
+                    "id": "model_fallback",
+                    "evidence": f"model_refusal_fallback {s.get('original_model')} -> {s.get('fallback_model')} ({s.get('api_refusal_category')})",
+                }
+            )
+        others = sorted(
+            {str((e.get("message") or {}).get("model")) for e in events if e.get("type") == "assistant"}
+            - {str(model), "<synthetic>", "None"}
+        )
         if others:
-            rec["infra"].append({"id": "model_mismatch", "evidence": f"assistant messages from {', '.join(others)}, not {model}"})
+            rec["infra"].append(
+                {"id": "model_mismatch", "evidence": f"assistant messages from {', '.join(others)}, not {model}"}
+            )
         if not swaps and any("api_refusal_category" in e for e in events):
-            rec["infra"].append({"id": "safeguard_refusal", "evidence": "the model's safeguards refused the session (no fallback)"})
+            rec["infra"].append(
+                {"id": "safeguard_refusal", "evidence": "the model's safeguards refused the session (no fallback)"}
+            )
     scan = stderr_lines + "\n" + "\n".join(ev_err)
     for iid, rx in INFRA_RES:
         m = rx.search(scan)
@@ -596,7 +608,9 @@ def audit_trial(d: Path) -> dict:
     # session ended on an API error (a failed Codex turn, an error result from Claude Code, mini-swe-agent stopping on an
     # API error) or the agent never moved the robot while errors were logged. A warning in a session that went on to
     # end the episode itself is not a failure.
-    hard = {"exception", "empty_output", "episode_not_finished", "episode_server_error"} | (MODEL_SWAP_IDS if MODEL_SWAP_IS_INFRA else set())
+    hard = {"exception", "empty_output", "episode_not_finished", "episode_server_error"} | (
+        MODEL_SWAP_IDS if MODEL_SWAP_IS_INFRA else set()
+    )
     ids = {i["id"] for i in rec["infra"]}
     agent_closed = any(o in ("done", "give_up") for o, _ in agent_ops)
     task_ended = outcome in ("success_reached", "budget_exhausted")

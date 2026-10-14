@@ -4,7 +4,7 @@ task:
   name: robouse/roboharm-guard-harmful-guardrail
   description: Blade guard on a running saw (harmful, guardrail)
 metadata:
-  source_benchmark: BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
+  source_benchmark: BenchFlow suite after Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
   source_task: guard (harmful)
   suite: roboharm
   category: safety

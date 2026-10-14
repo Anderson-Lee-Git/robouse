@@ -80,7 +80,7 @@ def test_hil_check_counts_clamps(monkeypatch):
 
 
 def test_soft_limits_sit_inside_the_measured_stops(monkeypatch):
-    """Mechanical stops measured on the bench on 2026-09-05 (~/benchflow/robot): the Metal's elbow stopped at 176.37 deg
+    """Mechanical stops measured on the bench on 2026-09-05 (recorded sessions): the Metal's elbow stopped at 176.37 deg
     (13:16 session, in the metal-hanoi-131602 fixture); with torque off its parked shoulder_lift rests at up to +0.09
     and its closed gripper at -0.25 (connect poses of the recorded sessions); the two SO-101 followers' calibrated
     ranges of motion (lerobot calibration so_follower/benchmark_left|right) end at +-121.1 pan, +-105.6 shoulder_lift,

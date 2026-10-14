@@ -36,7 +36,6 @@ def test_cache_python_and_remote_endpoints(tmp_path, monkeypatch) -> None:
     assert config.sim_python("dmcontrol") == tmp_path / "cache" / "dmcontrol-venv" / "bin" / "python"
     monkeypatch.setenv("ROBOUSE_DMCONTROL_PYTHON", "/opt/x/python")
     assert config.sim_python("dmcontrol") == Path("/opt/x/python")
-    monkeypatch.setattr(_maintainer, "remote_endpoint_files", lambda name: [])
     monkeypatch.delenv("ROBOUSE_GPU_REMOTE", raising=False)
     assert config.remote_endpoints("gpu") is None
     f = tmp_path / "cfg" / "remote" / "gpu.json"
@@ -64,3 +63,21 @@ def test_sandbox_denies_private_folders(tmp_path, monkeypatch) -> None:
 
 def test_public_variables_are_declared() -> None:
     assert set(config.ENV) >= config.PUBLIC
+
+
+def test_credential_pools_are_opt_in(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("ROBOUSE_CLAUDE_TOKEN_FILE", raising=False)
+    monkeypatch.delenv("ROBOUSE_CODEX_AUTH_DIR", raising=False)
+    assert _maintainer.claude_tokens() == [] and _maintainer.codex_accounts() == [] and _maintainer.private_dirs() == []
+    tokens = tmp_path / "tokens.env"
+    tokens.write_text("export B=tok-b\nA='tok-a'\n# a comment\nEMPTY=\n")
+    pool = tmp_path / "codex"
+    pool.mkdir()
+    (pool / "one.json").write_text("{}")
+    monkeypatch.setenv("ROBOUSE_CLAUDE_TOKEN_FILE", str(tokens))
+    monkeypatch.setenv("ROBOUSE_CODEX_AUTH_DIR", str(pool))
+    assert _maintainer.claude_tokens() == ["tok-a", "tok-b"]
+    assert _maintainer.codex_accounts() == [pool / "one.json"]
+    monkeypatch.setenv("ROBOUSE_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.delenv("ROBOUSE_SANDBOX_DENY", raising=False)
+    assert {str(tokens), str(pool)} <= set(config.sandbox_denied_paths())

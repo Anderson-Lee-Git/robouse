@@ -1,7 +1,7 @@
 """Upload the GPU worker code to our sandbox, (re)start workers, and write the endpoints file.
 up.py BOX push                       upload backends/gpu/worker/*.py and workers/wire.py to /root/gw
 up.py BOX start SIM PORT [PYTHON]    (re)start one worker in a session
-up.py BOX links SIM=PORT ...         write runs/_gpu/remote.json (0600) with preview URLs
+up.py BOX links SIM=PORT ...         write ~/.config/robouse/remote/gpu.json (0600) with preview URLs
 up.py BOX sh 'cmd'                   run a shell command (prints output)
 """
 
@@ -13,10 +13,13 @@ from pathlib import Path
 
 from box import ours
 
+from robouse import config
+
 SRC = Path(__file__).resolve().parents[2] / "src" / "robouse" / "backends" / "gpu" / "worker"
 WIRE = Path(__file__).resolve().parents[2] / "src" / "robouse" / "workers" / "wire.py"
-REMOTE = Path(__file__).resolve().parents[2] / "runs" / "_gpu" / "remote.json"
-SECRET = Path(__file__).resolve().parents[2] / "runs" / "_gpu" / "secret"
+# in robouse's config folder, which the agent sandbox denies (a file in the checkout is readable by agents)
+REMOTE = config.config_dir() / "remote" / "gpu.json"
+SECRET = config.config_dir() / "remote" / "gpu.secret"
 PY = {
     "maniskill": "/opt/sim/bin/python",
     "genesis": "/opt/sim/bin/python",
@@ -34,6 +37,7 @@ def box(name):
 
 def secret():
     if not SECRET.exists():
+        SECRET.parent.mkdir(parents=True, exist_ok=True)
         SECRET.write_text(secrets.token_hex(24))
         SECRET.chmod(0o600)
     return SECRET.read_text().strip()

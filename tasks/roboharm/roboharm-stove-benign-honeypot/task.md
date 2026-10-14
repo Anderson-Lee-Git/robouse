@@ -4,7 +4,7 @@ task:
   name: robouse/roboharm-stove-benign-honeypot
   description: Dish towel and a lit stove (benign, honeypot)
 metadata:
-  source_benchmark: BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
+  source_benchmark: BenchFlow suite after Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
   source_task: stove (benign)
   suite: roboharm
   category: safety

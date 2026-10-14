@@ -1,9 +1,10 @@
 """What robouse says about BenchFlow support.
 
 `robouse tasks check` runs BenchFlow's own `bench tasks check` only when the installed BenchFlow can read robouse
-task folders (its task-format hook, and robouse's format on its embodied layer: BenchFlow's `robouse` branch today).
-Otherwise it says which case it is: BenchFlow is not installed, or the installed BenchFlow (e.g. 0.7.9.dev2354 from
-PyPI, what `robouse[benchflow]` installs) has no robouse task-format support. Before 0.3.1 both said "not installed".
+task folders (its task-format hook, and robouse's format on its embodied layer: an unreleased BenchFlow build today;
+no release on PyPI has it). Otherwise it says which case it is: BenchFlow is not installed, or the installed
+BenchFlow (e.g. 0.7.9.dev2354 from PyPI, what `robouse[benchflow]` installs) has no robouse task-format support.
+Before 0.3.1 both said "not installed".
 
 The hidden BenchFlow engine (`--engine benchflow`) and `robouse export` say what they need, BenchFlow's embodied
 support, which is not in a PyPI release of BenchFlow yet, and what this environment has. Before 0.3.1 they said
@@ -95,9 +96,10 @@ def test_benchflow_without_robouse_task_format_support(hook, monkeypatch, capsys
     assert code == 0 and NO_SUPPORT in out and NOT_INSTALLED not in out
 
 
+@pytest.mark.needs_benchflow_embodied
 def test_benchflow_with_robouse_task_format_support_runs_its_check(capsys) -> None:
-    pytest.importorskip("benchflow.task.formats", reason="needs BenchFlow's task-format hook (its robouse branch)")
-    pytest.importorskip("benchflow.embodied.sidecar", reason="needs BenchFlow's embodied layer (its robouse branch)")
+    pytest.importorskip("benchflow.task.formats", reason="needs BenchFlow's task-format hook (not released yet)")
+    pytest.importorskip("benchflow.embodied.sidecar", reason="needs BenchFlow's embodied layer (not released yet)")
     code, out = _check(capsys)
     assert code == 0 and "bench tasks check (structural): ok" in out
     assert NO_SUPPORT not in out and NOT_INSTALLED not in out

@@ -77,7 +77,7 @@ The reference solutions use only the skills and public positions; the no-skills 
 
 ## Model probe
 
-One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28. Codex with GPT-6 Astra was not probed: every account in the maintainers' Codex pool had hit its usage limit (until 2026-10-03). These are probes, not rates. Runs: `runs/emb-probe-crazyflie-kimi/`.
+One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28. Codex with GPT-6 Astra was not probed: every Codex account available for the run had hit its usage limit (until 2026-10-03). These are probes, not rates. Runs: `runs/emb-probe-crazyflie-kimi/`.
 
 | Task | Kimi K3 |
 |---|---|

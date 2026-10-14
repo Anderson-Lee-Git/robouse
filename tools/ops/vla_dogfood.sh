@@ -6,7 +6,7 @@ set -uo pipefail
 cd "$(dirname "$0")/../.."
 OUT=${1:-runs/vla-dogfood}
 V=${VLA_TEST_PYTHON:-$HOME/.cache/robouse/vla-test-venv/bin/python}
-P=${ROBOUSE_PYTHON:-$HOME/benchflow/robouse/.venv/bin/python}
+P=${ROBOUSE_PYTHON:-.venv/bin/python}
 LIB=tasks/libero/libero-10-0
 DEMO=$LIB/oracle/demo_actions.json
 ik() { PYTHONPATH=src $P -c "

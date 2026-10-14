@@ -20,7 +20,7 @@ GPU required. Every task in this track needs a remote NVIDIA RTX GPU worker; non
 
 - The trusted episode server (`robouse serve`) runs on the Robo Use host as for every suite: step and wall budgets, the trace, the video, and the verdict. Its backend (`src/robouse/backends/gpu.py`) is a thin HTTPS client.
 - The simulator runs in a worker on the GPU machine (`src/robouse/backends/gpu_worker/server.py`), one worker per simulator family, each on its own port. Every episode gets its own child process, because each GPU engine (PhysX GPU, Genesis, JAX, Isaac Sim) holds process-wide state.
-- The worker's address and the shared secret are read from `runs/_gpu/remote.json` (or the file named by `$ROBOUSE_GPU_REMOTE`). The file lives under `~/benchflow`, which the macOS sandbox profile denies to model harnesses, and the worker rejects requests without the secret. Delete the file when the runs are over.
+- The worker's address and the shared secret are read from `~/.config/robouse/remote/gpu.json` (or the file named by `$ROBOUSE_GPU_REMOTE`), which `tools/gpu/up.py links` writes. The sandbox denies `~/.config/robouse` to model harnesses (a file in the checkout would be readable), and the worker rejects requests without the secret. Delete the file when the runs are over.
 - Reference solutions are the tasks' own scripted or planner-based policies. They run next to the simulator on the privileged state; the oracle's observations (oracle token only) carry the policy's next action, and `robouse.oracle --backend gpu` sends it through the socket like an agent's `robo act` or `robo skill`.
 - Each task declares its robot in BenchFlow's embodied spec (`embodiment` in `robo info`): action groups, cameras, proprioception, skills and budgets.
 

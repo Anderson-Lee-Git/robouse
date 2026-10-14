@@ -2,7 +2,7 @@
 
 Code reads settings through the helpers here (`env`, `flag`, `path`, `cache_dir`, `sim_python`, ...), never through
 `os.environ` directly, so the list below stays complete (tests/test_config.py checks it against the source).
-Maintainer-only fallbacks (credential pools, endpoint files inside a checkout) live in `robouse._maintainer`.
+Optional credential pools (ROBOUSE_CLAUDE_TOKEN_FILE, ROBOUSE_CODEX_AUTH_DIR) are read in `robouse._maintainer`.
 """
 
 from __future__ import annotations
@@ -52,6 +52,11 @@ ENV: dict[str, str] = {
     # local runner sandbox
     "ROBOUSE_SANDBOX": "0 disables the macOS Seatbelt sandbox around agent processes (default 1)",
     "ROBOUSE_SANDBOX_DENY": "extra colon-separated paths agents may neither read nor write",
+    "ROBOUSE_CLAUDE_TOKEN_FILE": "optional env file of Claude Code OAuth tokens (NAME=token lines), used in turn when "
+    "neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set; denied to agents (on Linux the sandbox hides folders "
+    "only: keep the file in a folder listed in ROBOUSE_SANDBOX_DENY)",
+    "ROBOUSE_CODEX_AUTH_DIR": "optional folder of Codex logins (<account>.json, copies of a `codex login` auth.json), "
+    "used in turn when OPENAI_API_KEY is not set; denied to agents",
     # simulator worker interpreters (one virtualenv per simulator that conflicts with the main environment)
     "ROBOUSE_DEXJOCO_PYTHON": "Python of the DexJoCo virtualenv (default <cache>/dexjoco-venv/bin/python)",
     "ROBOUSE_DMCONTROL_PYTHON": "Python of the dm_control virtualenv (default <cache>/dmcontrol-venv/bin/python)",
@@ -207,22 +212,16 @@ def sim_python(backend: str, venv: str | None = None) -> Path:
 
 
 def remote_endpoints(name: str) -> Path | None:
-    """Endpoints file of a remote worker pool: $ROBOUSE_<NAME>_REMOTE, <config>/remote/<name>.json, or a maintainer
-    fallback; None when there is none."""
-    from . import _maintainer
-
+    """Endpoints file of a remote worker pool: $ROBOUSE_<NAME>_REMOTE, else <config>/remote/<name>.json (a folder the
+    sandbox denies to agents); None when there is none. No file inside a checkout is read: agents can read those."""
     explicit = env(f"ROBOUSE_{name.upper()}_REMOTE")
-    candidates = (
-        [Path(explicit).expanduser()]
-        if explicit
-        else [config_dir() / "remote" / f"{name}.json", *_maintainer.remote_endpoint_files(name)]
-    )
-    return next((p for p in candidates if p.is_file()), None)
+    p = Path(explicit).expanduser() if explicit else config_dir() / "remote" / f"{name}.json"
+    return p if p.is_file() else None
 
 
 def sandbox_denied_paths() -> list[str]:
-    """Paths agents may neither read nor write: private settings, the operator channel, maintainer folders, and
-    $ROBOUSE_SANDBOX_DENY."""
+    """Paths agents may neither read nor write: private settings, the operator channel, the optional credential pools
+    (robouse._maintainer), and $ROBOUSE_SANDBOX_DENY."""
     from . import _maintainer
 
     paths = [config_dir(), operator_dir(), *_maintainer.private_dirs()]

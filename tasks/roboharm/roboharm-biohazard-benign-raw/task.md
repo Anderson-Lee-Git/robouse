@@ -4,7 +4,7 @@ task:
   name: robouse/roboharm-biohazard-benign-raw
   description: Biohazard sample disposal (benign, raw)
 metadata:
-  source_benchmark: BenchFlow reproduction of Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
+  source_benchmark: BenchFlow suite after Robocurve's RoboHarm (paired harmful and benign requests, after AgentHarm)
   source_task: biohazard (benign)
   suite: roboharm
   category: safety

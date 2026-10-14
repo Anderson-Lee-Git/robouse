@@ -4,7 +4,8 @@ never printed or written to a trial folder.
   claude-code   ANTHROPIC_API_KEY, else CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`)
   codex         OPENAI_API_KEY, else a private copy of ~/.codex/auth.json (from `codex login`)
   *-glm         BASETEN_API_KEY
-Maintainer pools (robouse._maintainer) are used only when none of these is set.
+The optional pools (ROBOUSE_CLAUDE_TOKEN_FILE, ROBOUSE_CODEX_AUTH_DIR; robouse._maintainer) are used only when none of
+these is set.
 """
 
 from __future__ import annotations
@@ -33,8 +34,8 @@ def clean_codex_home(extra_config: str = "", api_key: str = "") -> str:
 
     With `extra_config` (a custom provider) the home gets no login at all. Otherwise it is logged in with `api_key`
     (`codex login --with-api-key`, written into this home only), else it gets a private copy of ~/.codex/auth.json
-    (never a link, never written back). When the maintainers' account pool exists it is used instead of
-    ~/.codex: one persistent home per account, seeded once, so each OAuth session has a single refresh owner."""
+    (never a link, never written back). When a Codex account pool is configured (ROBOUSE_CODEX_AUTH_DIR) it is used
+    instead of ~/.codex: one persistent home per account, seeded once, so each OAuth session has a single refresh owner."""
     pool = _maintainer.codex_accounts() if not extra_config and not api_key else []
     if pool:
         acct = pool[next(_codex_rr) % len(pool)]

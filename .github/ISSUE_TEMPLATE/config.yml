@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/benchflow-ai/robouse/security/advisories/new
+    about: Credentials reaching an agent, sandbox escapes and anything else in SECURITY.md. Please do not open a public issue.
+  - name: Questions and discussion
+    url: https://discord.gg/mZ9Rc8q8W3
+    about: Ask on the BenchFlow Discord.
+  - name: Documentation
+    url: https://robouse.ai/docs/
+    about: Quickstart, concepts, the task format and every CLI.

@@ -1,0 +1,40 @@
+name: Feature, suite or harness request
+description: Propose a new feature, simulator suite, harness or change to the task format.
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - New suite or tasks from a benchmark
+        - New harness or model provider
+        - Change to the task format, scoring or episode server
+        - CLI or runner feature
+        - Documentation
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: What you want to do, and the problem it solves.
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source and license
+      description: For a suite, the upstream benchmark, its license, the simulator it needs and whether it runs on a CPU. For a harness, how it is installed and how it authenticates.
+  - type: textarea
+    id: design
+    attributes:
+      label: Design
+      description: How it would work, and how it is scored (a reference solution that scores 1 and a no-op control that scores 0).
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contribution
+      options:
+        - label: I would like to implement this myself.

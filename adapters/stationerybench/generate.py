@@ -7,7 +7,7 @@ the progress metric (stage / 4). On the hardware-in-the-loop mock (default) noth
 operator credits stage 0: the mock checks the pipeline (gates, safety, rubric verdicts, recording), not the skill. Run on
 the rig with `--rig rig.yaml --epochs 20` for the published protocol.
 
-Usage: python adapters/stationerybench/generate.py [--src ~/benchflow/_refs/stationerybench] [--out tasks/stationerybench]
+Usage: python adapters/stationerybench/generate.py --src <clone of robocurve/stationerybench> [--out tasks/stationerybench]
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ def body(key: str, t: dict, budget: int) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default=str(Path.home() / "benchflow/_refs/stationerybench"))
+    ap.add_argument("--src", required=True, help="a clone of https://github.com/robocurve/stationerybench")
     ap.add_argument("--out", default=str(Path(__file__).resolve().parents[2] / "tasks" / "stationerybench"))
     a = ap.parse_args()
     out = Path(a.out)

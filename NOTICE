@@ -1,15 +1,116 @@
 Robo Use (the robouse package)
+Copyright 2026 BenchFlow and the Robo Use contributors
 
-Robo Use is licensed under the Apache License 2.0 (LICENSE). It includes source code from the projects below, each under its own license. Each project's license text is next to its code, and the VENDORED.md beside it lists the files copied and what was changed. Paths are given as in the source distribution; in the wheel they start at robouse/.
+Robo Use is licensed under the Apache License 2.0 (LICENSE). It contains code, data and assets from the projects below, each under its own license. Paths are as in the repository. "Wheel" marks what the PyPI wheel ships (task folders as robouse/bundled_tasks/<suite>/, package files under robouse/); "sdist" what the source distribution ships; "repository" what only the repository holds. License texts are in LICENSE (Apache 2.0, which also covers every Apache-2.0 entry below), next to the code they cover, or in licenses/.
+
+Code
+====
 
 CaP-X
   https://github.com/capgym/cap-x, commit 53e9966d7a8e2fa7494676772bccc35280f5c0ed
   MIT License, Copyright (c) 2026 Max Fu
-  Code: src/robouse/backends/capx/capx_upstream/
-  License: src/robouse/backends/capx/capx_upstream/LICENSE
+  Code: src/robouse/backends/capx/capx_upstream/ (wheel, sdist); the CaP-X tasks' reference solutions and API descriptions in tasks/capx/, tasks/capx-libero/ (sdist) and adapters/capx/ (repository)
+  License: src/robouse/backends/capx/capx_upstream/LICENSE; VENDORED.md beside the code lists the files copied and what was changed
+
+PyRoKi (through CaP-X)
+  https://github.com/chungmin99/pyroki, examples/pyroki_snippets, as copied into CaP-X
+  MIT License, Copyright (c) 2025 Chung Min Kim
+  Code: src/robouse/backends/capx/capx_upstream/capx/integrations/motion/pyroki_snippets/ (wheel, sdist)
+  License: src/robouse/backends/capx/capx_upstream/capx/integrations/motion/pyroki_snippets/LICENSE
 
 RLE-Bench
   https://github.com/RLE-Bench/RLE-Bench, commit 34a73aa3daebd92a4adc56142b87f2bccda4780d
   MIT License, Copyright (c) 2026 RLE-Bench contributors
-  Code: src/robouse/backends/rlebench/rlebench_upstream/
-  License: src/robouse/backends/rlebench/rlebench_upstream/LICENSE
+  Code: src/robouse/backends/rlebench/rlebench_upstream/ (wheel, sdist)
+  License: src/robouse/backends/rlebench/rlebench_upstream/LICENSE; VENDORED.md beside the code
+
+inspect-robots
+  https://github.com/robocurve/inspect-robots (src/inspect_robots/mock/cubepick.py)
+  MIT License, Copyright (c) 2026 robocurve
+  Ported: the CubePick world in src/robouse/backends/cubepick/ (wheel, sdist)
+  License: licenses/inspect-robots-MIT.txt
+
+Show-Harness
+  https://github.com/showlab/Show-Harness, commit 403f068
+  Apache License 2.0
+  Prompts and action-unit definitions quoted in src/robouse/harnesses/show_harness/ (wheel, sdist)
+
+BenchFlow
+  https://github.com/benchflow-ai/benchflow, commit 0a848984 (benchflow.embodied.spec)
+  Apache License 2.0
+  Copied: src/robouse/core/embodiment_spec.py (wheel, sdist)
+
+Data
+====
+
+LIBERO
+  Demonstrations and initial states: https://huggingface.co/datasets/yifengzhu-hf/LIBERO-datasets, Apache License 2.0
+  Instructions and scenes: https://github.com/Lifelong-Robot-Learning/LIBERO, MIT License, Copyright (c) 2023 Lifelong Robot Learning
+  Files: tasks/libero/ and tasks/libero-90/ (wheel, sdist): the oracle/demo_actions.json files and the task instructions
+  License: licenses/LIBERO-MIT.txt (MIT); LICENSE (Apache 2.0)
+
+DexJoCo
+  https://huggingface.co/datasets/DexJoCo/DexJoCo-Datasets-Raw (code: https://github.com/brave-eai/dexjoco)
+  MIT License, Copyright (c) 2026 Dexjoco contributors
+  Files: the demonstration actions in tasks/dexjoco/*/oracle/demo.json (wheel, sdist)
+  License: licenses/DexJoCo-MIT.txt
+
+Adroit hand demonstrations (DAPG, D4RL, Minari)
+  Recorded for DAPG: https://github.com/aravindr93/hand_dapg, Apache License 2.0
+  Released in D4RL under the Creative Commons Attribution 4.0 International license (https://creativecommons.org/licenses/by/4.0/), as re-packaged in Minari's farama-minari/D4RL (https://huggingface.co/datasets/farama-minari/D4RL, revision a0fd465d1d9d, door, hammer, pen and relocate human-v2)
+  Changes: one episode per task; actions rounded to 5 decimals; the episode's start state used as the task's initial state
+  Files: tasks/adroit/*/oracle/demo.json and the initial state in tasks/adroit/*/task.md (wheel, sdist)
+  License: licenses/CC-BY-4.0.txt (CC BY 4.0); LICENSE (Apache 2.0)
+
+MyoSuite
+  https://github.com/MyoHub/myosuite, NPG baseline policies (myosuite/agents/baslines_NPG)
+  Apache License 2.0
+  Files: tasks/myosuite/*/oracle/policy.json (wheel, sdist)
+
+StationeryBench
+  https://github.com/robocurve/stationerybench, commit 43d5dd3
+  MIT License, Copyright (c) 2026 robocurve
+  Files: the instructions and stage rubrics in tasks/stationerybench/ (sdist) and adapters/stationerybench/ (repository)
+  License: licenses/StationeryBench-MIT.txt
+
+RoboDojo
+  https://github.com/RoboDojo-Benchmark/RoboDojo, commit 726e9aa
+  MIT License, Copyright (c) 2026 RoboDojo Contributors. At the pinned commit the LICENSE file is MIT while the README named a non-commercial research license; upstream made the MIT terms consistent in commit cb2a37d (2026-10-08).
+  Files: the task instructions in tasks/robodojo/ (sdist) and adapters/robodojo/ (repository)
+  License: licenses/RoboDojo-MIT.txt
+  Running these tasks needs cuRobo (NVIDIA, non-commercial license) and NVIDIA Isaac Sim (NVIDIA EULA), which Robo Use does not include.
+
+BEHAVIOR-1K
+  https://github.com/StanfordVL/BEHAVIOR-1K (docs/challenge/task_data.json and BDDL activity definitions)
+  MIT License, Copyright (c) 2023 Stanford Vision and Learning Group
+  Files: adapters/behavior/challenge_tasks.json and tasks/behavior/ (repository)
+  License: licenses/BEHAVIOR-1K-MIT.txt
+  Running these tasks needs the BEHAVIOR Data Bundle (non-commercial academic research only, no redistribution) and NVIDIA Isaac Sim (NVIDIA EULA), which Robo Use does not include.
+
+Assets
+======
+
+SO-ARM100 (SO-101 arm)
+  https://github.com/TheRobotStudio/SO-ARM100, commit 5f6d2b876a53a4872e405b991dd925556c9e38a4 (Simulation/SO101/so101_new_calib.urdf)
+  Apache License 2.0
+  Files: the kinematic chain in src/robouse/real/data/so101_chain.json (wheel, sdist)
+
+MakerMods Metal arm
+  https://github.com/makermods-robotics/metal-python-ros, commit ef4181f1305cbcfc63431d3bcfb96f5fb7f72763 (the arm's URDFs)
+  The repository states no license, and MakerMods has not confirmed terms for this use.
+  Files: the kinematic chain (joint origins, axes and limits) in src/robouse/real/data/metal_chain.json (wheel, sdist)
+
+MuJoCo Menagerie
+  https://github.com/google-deepmind/mujoco_menagerie, commit 8161bba
+  Franka Emika Panda and Skydio X2: Apache License 2.0. ALOHA 2: BSD 3-Clause License, Copyright (c) 2023, Trossen Robotics.
+  Files: assets/menagerie/ (repository), each model with its LICENSE beside it; provenance.json and skydio_x2/PROVENANCE.json list every file and its SHA-256 (also in the wheel, as robouse/assets_provenance/)
+
+Documentation images
+  docs/img/suites/ and docs/suites/img/ (repository) are renders of each suite's simulator scenes, made with the assets of the projects named on each suite's page. docs/img/suites/robocasa.webp shows RoboCasa's kitchen assets (https://github.com/robocasa/robocasa), which are licensed under CC BY 4.0. docs/img/suites/gpu-isaaclab.webp and docs/img/suites/gpu/il-*.jpg show NVIDIA Isaac Lab assets (NVIDIA's asset terms).
+
+Downloaded at run time, not redistributed
+=========================================
+
+robouse fetch-assets and the suites download these at pinned revisions, with SHA-256 checks, under their own licenses: MuJoCo Menagerie robot models (BSD-3-Clause, Apache-2.0 or MIT, each with its LICENSE), RoboCasa assets (CC BY 4.0), the HumanoidBench H1 walking policy (unitree_rl_gym, BSD-3-Clause), and Meta-World's scripted policies (MIT), which `robouse export` copies into exported reference solutions together with Meta-World's license.
+
+Robo Use's own RoboHarm suite (tasks/roboharm/) was written independently. It cites Robocurve's RoboHarm (https://github.com/robocurve/roboharm, CC BY-NC 4.0) for its design and contains none of its text, code or assets.

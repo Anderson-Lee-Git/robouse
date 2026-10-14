@@ -1,4 +1,4 @@
-"""Results tables from all trials under runs/ -> docs/results.md.
+"""Results tables from all trials under runs/ -> runs/_audit/results.md (or --out).
 
 Uses runs/_audit/audit.json (run tools/analysis/audit.py first). One row per harness + model, one column per suite:
 solved / scored trials, where scored excludes infrastructure failures and still-running trials. If a task was run
@@ -6,7 +6,8 @@ more than once by the same harness + model, the latest trial counts.
 
   .venv/bin/python tools/analysis/results.py
 
-It takes no arguments: any argument, including --help, is ignored and docs/results.md is rewritten.
+Options: --jobs (comma-separated job prefixes) and --out (default runs/_audit/results.md, next to the audit). The public
+results are the runs site, robouse.ai/runs/.
 """
 
 from __future__ import annotations
@@ -48,9 +49,9 @@ ORDER = list(LABEL)
 def main() -> None:
     import argparse
 
-    ap = argparse.ArgumentParser(description="Write docs/results.md from runs/_audit/audit.json.")
+    ap = argparse.ArgumentParser(description="Write a results table (Markdown) from runs/_audit/audit.json.")
     ap.add_argument("--jobs", default="", help="comma-separated job prefixes to include (default: all)")
-    ap.add_argument("--out", default=str(ROOT / "docs" / "results.md"))
+    ap.add_argument("--out", default=str(ROOT / "runs" / "_audit" / "results.md"))
     args = ap.parse_args()
     prefixes = tuple(p for p in args.jobs.split(",") if p)
     audit = json.loads((ROOT / "runs" / "_audit" / "audit.json").read_text())

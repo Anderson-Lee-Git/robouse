@@ -106,7 +106,7 @@ The backend's `judge_detail()` (kept in `last_judge` after scoring) gives the re
 
 ## Model probe
 
-One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28, on the final tasks. Codex with GPT-6 Astra was not probed: every account in the maintainers' Codex pool had hit its usage limit (until 2026-10-03). Runs: `runs/emb-probe-driving-kimi-r2/`.
+One trial per task with Claude Code against Kimi K3 on Baseten (`claude-code-glm --model moonshotai/Kimi-K3`), 2026-09-28, on the final tasks. Codex with GPT-6 Astra was not probed: every Codex account available for the run had hit its usage limit (until 2026-10-03). Runs: `runs/emb-probe-driving-kimi-r2/`.
 
 | Task | Kimi K3 |
 |---|---|

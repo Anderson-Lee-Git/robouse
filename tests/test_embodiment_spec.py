@@ -25,6 +25,7 @@ def test_round_trip_and_validation() -> None:
         ours.Embodiment(name="x", kind="submarine", action_groups=e.action_groups).validate()
 
 
+@pytest.mark.needs_benchflow_embodied
 def test_same_as_benchflow() -> None:
     theirs = pytest.importorskip("benchflow.embodied.spec")
     for name, obj in inspect.getmembers(ours, dataclasses.is_dataclass):

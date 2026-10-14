@@ -36,7 +36,7 @@ Mac (robo-use runner, episode server, simulator)           GPU (Daytona sandbox)
             robo observe (2 PNGs + state), robo act x10    <--   10-action chunk from MolmoAct2
 ```
 
-- `src/robouse/molmoact2/client.py` is the harness process. It is standard library only. The runner copies it into the trial workspace and runs it with `python3` under the same macOS Seatbelt sandbox as the LLM harnesses, so it has no access to the simulator or the repo. Each cycle:
+- `src/robouse/molmoact2/client.py` is the harness process. It is standard library only. The runner copies it into the trial workspace and runs it with `python3` under the same sandbox as the LLM harnesses, which hides the simulator's run folder, the task folder and the installed package from it (see [Isolation](run-agents.md#isolation) for what it does not hide). Each cycle:
   1. `observe` with `camera=agentview` and `camera=robot0_eye_in_hand` (the episode server saves the PNGs).
   2. POST both PNGs, the robot state and the task's language instruction to the server.
   3. Apply the returned chunk with one `act` per action, stopping as soon as the episode ends.
@@ -57,7 +57,7 @@ Mac (robo-use runner, episode server, simulator)           GPU (Daytona sandbox)
 Commands (the scripts are in `runs/final-libero-molmoact2/_job/`):
 
 ```
-# GPU sandbox (daytona SDK; key from the owner's env file, never printed): create.py -> H100 80 GB
+# GPU sandbox (daytona SDK; key from a private env file, never printed): create.py -> H100 80 GB
 # in the sandbox: setup.sh
 git clone https://github.com/huggingface/lerobot && cd lerobot && git checkout e595b790
 uv sync --locked --python 3.12 --extra molmoact2        # no libero extra: the server needs no simulator, and egl-probe needs CMake
@@ -121,8 +121,8 @@ The job folders linked below are under `runs/`, which is not committed to git; t
 
 | Job | Harness | Checkpoint | Simulator and tasks | Episodes | Solved |
 | --- | --- | --- | --- | --- | --- |
-| [`runs/molmoact2-lerobot-eval`](../runs/molmoact2-lerobot-eval/README.md) | LeRobot `lerobot-eval` | `allenai/MolmoAct2-LIBERO-LeRobot` (bf16) | LIBERO (robosuite 1.4 / MuJoCo), Franka Panda, 1 episode per task, all 40 tasks of the 4 suites | 40 | 39 (97.5%) |
-| [`runs/molmoact2-sim-eval`](../runs/molmoact2-sim-eval/README.md) | AllenAI `molmoact2` repo: FastAPI `/act` server plus `sim_eval` ManiSkill client | `allenai/MolmoAct2-DROID` (served in bf16) | ManiSkill3 `DroidPutEverythingInBox-v1`, Franka FR3 with Robotiq gripper, zero-shot | 10 | 9 (90%) |
+| `runs/molmoact2-lerobot-eval` (local, not published) | LeRobot `lerobot-eval` | `allenai/MolmoAct2-LIBERO-LeRobot` (bf16) | LIBERO (robosuite 1.4 / MuJoCo), Franka Panda, 1 episode per task, all 40 tasks of the 4 suites | 40 | 39 (97.5%) |
+| `runs/molmoact2-sim-eval` (local, not published) | AllenAI `molmoact2` repo: FastAPI `/act` server plus `sim_eval` ManiSkill client | `allenai/MolmoAct2-DROID` (served in bf16) | ManiSkill3 `DroidPutEverythingInBox-v1`, Franka FR3 with Robotiq gripper, zero-shot | 10 | 9 (90%) |
 
 Per suite (LeRobot job):
 
@@ -141,7 +141,7 @@ Both have videos in their trial directories.
 
 These are small samples: 1 episode per LIBERO task, where the paper uses 50, and 10 ManiSkill episodes. They show that the pipeline and checkpoints work end to end and are consistent with the published numbers. They are not a re-measurement of those numbers. The 95% interval on 39/40 is roughly 87-100%.
 
-All 50 trials pass `tools/analysis/audit.py` with no flags. They show up in `tools/ops/view.sh` and `tools/site/build_gallery.py` like any other job. In the viewer, harness is `lerobot-eval` or `molmoact2-sim-eval`, and model is the HF model id.
+All 50 trials pass `tools/analysis/audit.py` with no flags. They show up in the trial viewer and `tools/site/build_gallery.py` like any other job. In the viewer, harness is `lerobot-eval` or `molmoact2-sim-eval`, and model is the HF model id.
 
 ### How it ran
 

@@ -26,9 +26,9 @@ Robo Use 0.4.0.
 
 | Mode | Isolation |
 |---|---|
-| `robouse run` on macOS | model harnesses run under Seatbelt ([Run agents and VLAs](run-agents.md#isolation)) |
-| `robouse run` on Linux | model harnesses run under bubblewrap |
-| `bench eval run -d` | agent and simulator in separate Docker containers |
+| `robouse run` on macOS | model harnesses run under Seatbelt, which hides the trial's files from the agent but not the rest of the machine or the network ([Run agents and VLAs](run-agents.md#isolation)) |
+| `robouse run` on Linux | model harnesses run under bubblewrap, with the same limits |
+| `bench eval run -d` | agent and simulator in separate Docker containers; the simulator container has no network |
 
 ## Formats
 
