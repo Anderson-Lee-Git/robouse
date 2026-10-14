@@ -158,9 +158,10 @@ def removed_text(e: dict) -> str:
 
 
 def check_removed(trials: list[dict]) -> list[str]:
-    """Every applied entry must match a published trial of its pair, and every re-run must be a trial of the same task,
-    run by the same harness, with the same image input, and not a trial of another registered pair (collect moves a
-    re-run into the entry's pair, so naming another pair's trial would silently move that pair's result)."""
+    """Every applied entry must match a published trial of its pair, and every re-run must be a finished trial that was
+    not an infrastructure failure, of the same task, run by the same harness, with the same image input, and not a trial
+    of another registered pair (collect moves a re-run into the entry's pair, so naming another pair's trial would
+    silently move that pair's result)."""
     by = {t["trial"]: t for t in trials}
     bad = []
     for name, e in REMOVED.items():
@@ -178,6 +179,10 @@ def check_removed(trials: list[dict]) -> list[str]:
         if r is None:
             bad.append(f"removed.json: the re-run {rr} of {name} is not a finished trial in runs/final-*")
             continue
+        if r.get("infra") or r.get("partial"):  # it would count as an unscored task while the notes say it counts
+            bad.append(f"removed.json: the re-run {rr} of {name} "
+                       f"{'ended as an infrastructure failure' if r.get('infra') else 'did not finish'}, so it cannot count "
+                       "in its place; run the task again and name that trial")
         if t is not None and r["task"] != t["task"]:
             bad.append(f"removed.json: the re-run {rr} is a trial of {r['task']}, not {t['task']}")
         pi = next(i for i, p in enumerate(HM) if p["key"] == e["pair"])
