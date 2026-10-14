@@ -58,7 +58,8 @@ for i in range(int(os.environ["N_REQUESTS"])):
     json.dump(report, open(os.environ["REPORT"], "w"))
     if report["codes"][-1] != 200:
         time.sleep(float(os.environ.get("HOLD_S", "0")))  # the runner should stop us here
-subprocess.run(["robo", "done", "scripted agent"], check=False)
+if not os.environ.get("NO_DONE"):
+    subprocess.run(["robo", "done", "scripted agent"], check=False)
 '''
 
 
@@ -90,11 +91,21 @@ class Stub(BaseHTTPRequestHandler):
     bodies: list = []
     paths: list = []
     usage = {"prompt_tokens": 1000, "completion_tokens": 10, "total_tokens": 1010}
+    limited = False  # True: every request gets HTTP 429, as at a plan's usage limit
 
     def do_POST(self) -> None:
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         Stub.bodies.append(body.decode())
         Stub.paths.append(self.path)
+        if Stub.limited:
+            out = json.dumps({"error": {"code": "1310", "message": "usage limit reached"}}).encode()
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("retry-after-ms", "20")  # the gateway's retries, without their default backoff
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+            return
         if self.path.endswith("/responses"):
             return self._reply(RESPONSE)
         self._reply(
@@ -124,7 +135,7 @@ class Stub(BaseHTTPRequestHandler):
 def stub_provider(tmp_path, monkeypatch):
     """A provider `stubprov` in the registry, serving one text-only model from a local stub; its price in a pricing
     file; a scripted harness `stubagent` that reaches it through the trial's gateway."""
-    Stub.bodies, Stub.paths = [], []
+    Stub.bodies, Stub.paths, Stub.limited = [], [], False
     srv = ThreadingHTTPServer(("127.0.0.1", 0), Stub)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_address[1]}/v1"
@@ -225,6 +236,53 @@ def test_the_spend_cap_stops_the_trial_as_a_budget_stop(stub_provider, tmp_path,
     assert rec["outcome"] == "budget_stop" and rec["infra_failure"] is False and rec["budget_stop"]
 
 
+@pytest.mark.parametrize("hold_s,timeout", [(0, 120), (600, 30)])
+def test_a_provider_that_answers_no_request_is_an_infrastructure_failure(
+    hold_s, timeout, stub_provider, tmp_path, monkeypatch
+) -> None:
+    """At a plan's usage limit every request gets HTTP 429. mini-swe-agent, Claude Code and dimcode kept retrying until
+    their time limit, and the trial was scored as the model's timeout (reward 0, no exception). With no request
+    answered and the episode not ended by the agent, it is an infrastructure failure: not scored, rerun by --retries
+    and --resume. hold_s=0: the agent exits without ending the episode; 600: it waits until the runner stops it at the
+    time limit."""
+    from robouse.harnesses import gateway
+
+    Stub.limited = True
+    # one retry instead of eight: the gateway's backoff for eight takes about 40 s
+    monkeypatch.setattr(gateway, "RETRY_POLICY", {"RateLimitErrorRetries": 1, "InternalServerErrorRetries": 0})
+    monkeypatch.setenv("N_REQUESTS", "1")
+    monkeypatch.setenv("NO_DONE", "1")
+    monkeypatch.setenv("HOLD_S", str(hold_s))
+    job = tmp_path / "job"
+    res = run_trial(load_task(VISION_TASK), "stubagent", MODEL, job, timeout=timeout)
+    _, result = _trial(job, res)
+    assert json.loads(stub_provider.read_text())["codes"] == [429]
+    assert len(Stub.bodies) == 2  # the request and the gateway's one retry
+    stats = result["proxy_stats"]
+    assert stats["successes"] == 0 and stats["failures"] >= 1 and stats["rate_limited"] == stats["failures"]
+    assert res["exception"] == (
+        f"ProviderError: none of the agent's model requests succeeded ({stats['failures']} failed, "
+        f"{stats['failures']} with HTTP 429, the provider's rate or usage limit; gateway/requests.jsonl has the errors)"
+    )
+    assert result["status"] == "error" and result["agent_timed_out"] is bool(hold_s)
+    assert result["episode"]["outcome"] == ("agent_timeout" if hold_s else "gave_up")
+
+    sys.path.insert(0, str(ROOT / "tools" / "analysis"))
+    import audit
+
+    assert audit.audit_trial(job / res["trial"])["infra_failure"] is True  # off the leaderboard, rerun by rerun_infra
+
+
+def test_a_provider_that_answered_is_not_an_infrastructure_failure(stub_provider, tmp_path, monkeypatch) -> None:
+    """The agent got answers and then stopped without ending the episode: the model's result (reward 0), as before."""
+    monkeypatch.setenv("N_REQUESTS", "2")
+    monkeypatch.setenv("NO_DONE", "1")
+    res = run_trial(load_task(VISION_TASK), "stubagent", MODEL, tmp_path / "job", timeout=120)
+    _, result = _trial(tmp_path / "job", res)
+    assert result["proxy_stats"]["successes"] == 2 and result["proxy_stats"]["failures"] == 0
+    assert res["exception"] is None and result["status"] == "completed" and res["outcome"] == "gave_up"
+
+
 def test_codex_requests_reach_the_provider_with_their_reasoning(stub_provider, tmp_path) -> None:
     """Regression (2026-10-01): the Responses-to-chat bridge dropped Codex's reasoning effort and every earlier
     reasoning item, and Codex on GLM-5.3 reasoned about a quarter as much. Codex now uses the provider's own Responses
@@ -286,6 +344,7 @@ def test_codex_requests_reach_the_provider_with_their_reasoning(stub_provider, t
             assert r.status == 200
     finally:
         launch.stop()
+    assert launch.helper["successes"] == 1  # the Responses route logs answered requests (ProviderError relies on it)
     assert Stub.paths[-1].endswith("/responses")  # Responses, not chat completions
     sent = json.loads(Stub.bodies[-1])
     assert sent["reasoning"] == {"effort": "medium", "summary": "auto"}
@@ -456,4 +515,4 @@ def test_messages_harnesses_reach_a_chat_only_provider_translated(harness, chat_
     assert call["function"]["name"] == "Bash" and json.loads(call["function"]["arguments"]) == {"command": "robo done"}
     assert reply["tool_call_id"] == call["id"] and "episode over" in json.dumps(reply["content"])
     assert gw.stats["drops_thinking"] is True and gw.stats["thinking_dropped"] == 2
-    assert gw.stats["upstream_calls"] == 2 and gw.stats["failures"] == 0
+    assert gw.stats["upstream_calls"] == gw.stats["successes"] == 2 and gw.stats["failures"] == 0

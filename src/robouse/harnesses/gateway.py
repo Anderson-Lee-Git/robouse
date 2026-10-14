@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -38,6 +39,11 @@ from . import models
 HOOK = Path(__file__).parent / "providers" / "gateway_hook.py"
 STOP_FILE = "budget_stop.json"  # the hook's name for it too (gateway_hook.py imports nothing from robouse)
 MASTER_KEY_ENV = "LITELLM_MASTER_KEY"  # LiteLLM's own variable; config.yaml names it, the key stays out of the file
+# a failed request the provider answered with HTTP 429 (its rate or usage limit), as LiteLLM reports it
+RATE_LIMITED = re.compile(r"RateLimitError|\b429\b")
+# A provider's rate limit (HTTP 429) is shared by everyone on the account: the gateway waits and retries (LiteLLM's
+# backoff, about 40 s for eight retries) instead of passing it to the harness, whose own few retries end the trial
+RETRY_POLICY = {"RateLimitErrorRetries": 8, "InternalServerErrorRetries": 2}
 
 
 @dataclass
@@ -72,6 +78,8 @@ def summarize(log: Path) -> dict:
         "upstream_image_parts": 0,
         "upstream_data_uris": 0,
         "failures": 0,
+        "rate_limited": 0,  # failed requests (after the gateway's retries) whose error was HTTP 429
+        "successes": 0,  # requests the provider answered without an error
         "refused_over_cap": 0,
         "spent_usd": 0.0,
         "images_moved": 0,
@@ -93,7 +101,9 @@ def summarize(log: Path) -> dict:
             out["upstream_data_uris"] += r["data_uris"]
         elif r["event"] == "failure":
             out["failures"] += 1
+            out["rate_limited"] += bool(RATE_LIMITED.search(str(r.get("error", ""))))
         elif r["event"] == "success":
+            out["successes"] += 1
             out["spent_usd"] = r.get("spent_usd", out["spent_usd"])
         elif r["event"] == "refused":
             out["refused_over_cap"] += 1
@@ -211,12 +221,7 @@ def start(
     # the trial folder keeps config.yaml: it names the master key's variable, and the key itself goes only into the
     # proxy's environment (penv), as the provider key does
     conf = litellm_proxy_config(route, master_key=f"os.environ/{MASTER_KEY_ENV}", callback_module="gateway_hook")
-    # a provider's rate limit (HTTP 429) is shared by everyone on the account: the gateway waits and retries (LiteLLM's
-    # backoff, honouring Retry-After) instead of passing it to the harness, whose own few retries end the trial
-    conf.setdefault("router_settings", {})["retry_policy"] = {
-        "RateLimitErrorRetries": 8,
-        "InternalServerErrorRetries": 2,
-    }
+    conf.setdefault("router_settings", {})["retry_policy"] = dict(RETRY_POLICY)
     d = Path(run_dir).resolve() / "gateway"  # absolute: the proxy runs in this folder and is given paths inside it
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(HOOK, d / "gateway_hook.py")

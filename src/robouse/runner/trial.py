@@ -334,6 +334,24 @@ def _harness_error(tdir: Path, harness: str, agent_rc: int | None, episode: dict
     return None
 
 
+def _provider_error(stats: object, episode: dict) -> str | None:
+    """An agent that never ended the episode itself, behind a model gateway where none of its model requests succeeded
+    (each one failed, e.g. with HTTP 429 at a plan's usage limit, while the harness kept retrying until its time
+    limit): the model never answered, so the trial is an infrastructure failure, not the model's result. Once one
+    request has succeeded, the trial is scored as usual, however the rest went."""
+    if not isinstance(stats, dict) or not stats.get("failures") or stats.get("successes"):
+        return None
+    if not (episode.get("outcome") == "gave_up" and str(episode.get("agent_text", "")).startswith(RUNNER_PREFIX)):
+        return None
+    limit = ""
+    if stats.get("rate_limited"):
+        limit = f", {stats['rate_limited']} with HTTP 429, the provider's rate or usage limit"
+    return (
+        f"ProviderError: none of the agent's model requests succeeded ({stats['failures']} failed{limit}; "
+        "gateway/requests.jsonl has the errors)"
+    )
+
+
 def run_trial(
     task: Task,
     harness: str,
@@ -553,6 +571,8 @@ def run_trial(
         exc = "VerdictError: the episode's result.json is missing or does not carry the server's signature"
     if exc is None and not timed_out and not budget_stop:  # a harness stopped at the spend cap did not fail
         exc = _harness_error(tdir, harness, agent_rc, episode)
+    if exc is None and not budget_stop and launch is not None:  # also after a timeout: the harness may retry until then
+        exc = _provider_error(launch.helper, episode)
     if timed_out and episode.get("outcome") == "gave_up":
         episode["outcome"] = "agent_timeout"
     if budget_stop and episode.get("outcome") in ("gave_up", "agent_timeout"):
