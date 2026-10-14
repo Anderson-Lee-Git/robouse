@@ -80,7 +80,7 @@ def test_the_prompt_is_the_task_md_body_and_the_workspace_has_no_copy(tmp_path, 
         ("claude-code", ""),
         ("codex", "stub-responses/some-model"),  # Codex through the gateway needs a Responses API, which glm lacks
         ("claude-code", "glm/glm-5.3"),
-        ("show-harness", "glm/glm-5.3"),
+        ("show-harness", "stub-responses/vlm"),  # a model that reads images: glm/glm-5.3 is refused for it
     ],
 )
 def test_a_harness_puts_no_copy_of_the_prompt_in_the_workspace(harness, model, tmp_path, monkeypatch) -> None:
@@ -159,3 +159,29 @@ def test_mini_swe_agent_is_found_where_pip_puts_it_or_named_for_install(tmp_path
     (venv / "mini").write_text("#!/bin/sh\nexit 0\n")
     (venv / "mini").chmod(0o755)
     assert build().cmd[0] == str(venv / "mini") and len(started) == 1
+
+
+def test_doctor_and_the_gateway_find_litellm_next_to_this_python(tmp_path, monkeypatch, capsys) -> None:
+    """The llm extra puts `litellm` next to Robo Use's Python, which is on PATH only when the environment is activated:
+    the model gateway starts it from there, and `robouse doctor` reports it from there too (it looked only on PATH)."""
+    import sys
+
+    from robouse.cli import main
+    from robouse.core import gl
+    from robouse.harnesses import gateway
+
+    venv = tmp_path / "venv" / "bin"
+    venv.mkdir(parents=True)
+    monkeypatch.setattr(sys, "executable", str(venv / "python"))
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    monkeypatch.setattr(gl, "auto_select", lambda: None)
+    monkeypatch.setattr(gl, "probe", lambda p=None, python=None: None)
+    assert gateway.litellm_exe() is None
+    assert main(["doctor"]) == 0
+    missing = "-- model gateway (provider-prefixed models) (`litellm`: pip install 'robouse[llm]')"
+    assert missing in capsys.readouterr().out
+    (venv / "litellm").write_text("#!/bin/sh\nexit 0\n")
+    (venv / "litellm").chmod(0o755)
+    assert gateway.litellm_exe() == str(venv / "litellm")
+    assert main(["doctor"]) == 0
+    assert f"ok model gateway (provider-prefixed models) ({venv / 'litellm'})" in capsys.readouterr().out

@@ -121,7 +121,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     m.add_argument(
         "--resume",
         action="store_true",
-        help="skip tasks that have a finished trial in --out that did not fail on infrastructure",
+        help="skip tasks that have a finished trial in --out that did not fail on infrastructure (refused when --out "
+        "holds trials of another harness or model)",
     )
     m.add_argument("--dry-run", action="store_true", help="print the resolved trial plan and exit")
     _trial_opts(m, many=True)
@@ -313,6 +314,11 @@ def run_many(a: argparse.Namespace) -> int:
     if rc := _prepare_local(a):
         return rc
     from ..runner import run_many as run_trials
+    from ..runner.jobs import resume_refusal
+
+    if a.resume and (why := resume_refusal(Path(a.out), a.harness, a.model)):
+        print(f"robouse: {why}", file=sys.stderr)
+        return 2
 
     results = run_trials(
         root,
@@ -381,6 +387,11 @@ def _benchflow_missing(e: ImportError, what: str) -> int:
 
 
 def _run_benchflow(a: argparse.Namespace, tasks: list[Task]) -> int:
+    from ..harnesses.models import history_refusal
+
+    if why := history_refusal(a.model or ""):  # baseten/...: the models of recorded trials only, on either engine
+        print(f"robouse: {why}", file=sys.stderr)
+        return 2
     try:
         from benchflow.embodied.rollouts import parse_seeds
 

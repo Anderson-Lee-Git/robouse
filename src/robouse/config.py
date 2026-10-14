@@ -126,7 +126,8 @@ ENV: dict[str, str] = {
     "ROBOUSE_TASK_LANGUAGE": "the language instruction a VLA client sends (set by the runner)",
     "ROBOUSE_GRADER_URL": "OpenAI-compatible endpoint (base URL) of the vision-language model for `robouse grade` and "
     "`real.verdict: vlm` (required by both; no default)",
-    "ROBOUSE_GRADER_API_KEY": "API key for that endpoint, sent as a bearer token (required; no default)",
+    "ROBOUSE_GRADER_API_KEY": "API key for that endpoint, sent as a bearer token (required; no default). The runner "
+    "keeps it out of agents' environments",
     # real robots
     "ROBOUSE_RIG": "real-robot rig file; real tasks run on live hardware instead of the hardware-in-the-loop mock",
     "ROBOUSE_OPERATOR_DIR": "operator channel and e-stop latch for real robots (default ~/.config/robouse-operator)",

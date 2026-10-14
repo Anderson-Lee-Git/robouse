@@ -92,7 +92,8 @@ def glm_registry() -> dict:
 
 def gateway_registry() -> dict:
     """glm_registry() plus a stand-in for a provider that serves the Responses API (shaped like BenchFlow's
-    `azure-foundry-openai` or `zai-coding`), the kind Codex needs: Codex has no route to glm."""
+    `azure-foundry-openai` or `zai-coding`), the kind Codex needs: Codex has no route to glm. Its model `vlm` reads
+    images, as show-harness needs."""
     from types import SimpleNamespace
 
     url = "https://responses.invalid/v1"
@@ -104,7 +105,7 @@ def gateway_registry() -> dict:
         auth_env="STUB_RESPONSES_API_KEY",
         url_params={},
         url_param_defaults={},
-        models=[],
+        models=[{"id": "vlm", "name": "Stub VLM", "input": ["text", "image"]}],
         model_prefixes=["stub-responses"],
         endpoints={"openai-responses": url},
         all_endpoints={"openai-completions": url, "openai-responses": url},

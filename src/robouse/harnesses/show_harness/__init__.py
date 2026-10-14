@@ -4,8 +4,8 @@
 clients; see its docstring for the loop.
 
 Models (--model is required: the policy is the model's reading of the camera images, so there is no default):
-  provider-prefixed                                   zero-shot mode, through the trial's model gateway
-                                                      (chat completions; image input and spend cap apply)
+  provider-prefixed, of a model the provider registry  zero-shot mode, through the trial's model gateway
+  lists as reading images (others are refused)         (chat completions; image input and spend cap apply)
   any other name, with ROBOUSE_SHOW_HARNESS_URL        a self-hosted OpenAI-compatible server (vLLM serving a
                                                       Show-Harness LoRA, e.g. Qwen3.5-2B): fine-tuned mode, no gateway
   ROBOUSE_SHOW_HARNESS_TOKEN   token for that server (optional): a bearer token, or under the header the overrides name

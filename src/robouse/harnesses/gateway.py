@@ -113,6 +113,12 @@ def summarize(log: Path) -> dict:
     return out
 
 
+def litellm_exe() -> str | None:
+    """LiteLLM's `litellm` command: next to this Python (the llm extra, in an environment that is not activated), else
+    on PATH. None when it is not installed. `robouse doctor` reports the same."""
+    return shutil.which("litellm", path=str(Path(sys.executable).parent)) or shutil.which("litellm")
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -190,7 +196,10 @@ def check_settings(ref: models.ModelRef, protocol: str | None, spend_cap_usd: fl
         )
     cfg = registry[ref.provider]
     if protocol == "openai-responses" and protocol not in cfg.all_endpoints:
-        raise RuntimeError(f"Codex needs a provider that serves the Responses API; {ref.provider} does not")
+        raise RuntimeError(
+            f"Codex needs a provider that serves the Responses API; {ref.provider} does not ({ref.id} runs on "
+            f"claude-code, mini-swe-agent or dimcode; Codex runs on its own model, {models.DEFAULT_MODELS['codex']})"
+        )
     problems = []
     if need := [v for v in models.required_env(cfg) if not env.get(v)]:
         problems.append(f"model {ref.id} needs {' and '.join(need)} in the environment")
@@ -229,7 +238,7 @@ def start(
     shutil.copy(HOOK, d / "gateway_hook.py")
     (d / "config.yaml").write_text(yaml.safe_dump(conf, sort_keys=False))
     port = _free_port()
-    exe = shutil.which("litellm", path=str(Path(sys.executable).parent)) or shutil.which("litellm")
+    exe = litellm_exe()
     if not exe:
         raise RuntimeError("the model gateway needs LiteLLM: pip install 'robouse[llm]'")
     price = prices(ref)

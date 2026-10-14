@@ -96,12 +96,16 @@ def run() -> int:
         py = config.sim_python(venv)
         print(f"  {_ok(py.exists())}{b} (worker virtualenv {py})")
     print("Harnesses")
-    for h, exe in (
-        ("claude-code", "claude"),
-        ("codex", "codex"),
-        ("model gateway (provider-prefixed models)", "litellm"),
-    ):
+    for h, exe in (("claude-code", "claude"), ("codex", "codex")):
         print(f"  {_ok(shutil.which(exe) is not None)}{h} (`{exe}` on PATH)")
+    from ..harnesses.gateway import litellm_exe
+
+    llm = litellm_exe()  # where the gateway finds it: next to this Python (the llm extra), else on PATH
+    print(
+        f"  {_ok(bool(llm))}model gateway (provider-prefixed models) ("
+        + (llm if llm else "`litellm`: pip install 'robouse[llm]'")
+        + ")"
+    )
     from ..harnesses import mini_exe
 
     mini = mini_exe()  # where the harness finds it: on PATH or next to this Python (not a dependency of robouse)
@@ -109,8 +113,8 @@ def run() -> int:
     dim = config.env("ROBOUSE_DIMCODE") or shutil.which("dimcode")
     print(f"  {_ok(bool(dim))}dimcode (" + (dim if dim else "`dimcode` on PATH, or ROBOUSE_DIMCODE") + ")")
     print(
-        f"  {_ok(shutil.which('python3') is not None)}show-harness (`python3` on PATH; a provider-prefixed model "
-        "through the model gateway, or a self-hosted one at ROBOUSE_SHOW_HARNESS_URL)"
+        f"  {_ok(shutil.which('python3') is not None)}show-harness (`python3` on PATH; a provider-prefixed model that "
+        "reads images, through the model gateway, or a self-hosted one at ROBOUSE_SHOW_HARNESS_URL)"
     )
     creds = {
         "ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN": credentials.have_claude(),

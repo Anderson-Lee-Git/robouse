@@ -177,11 +177,17 @@ def image_input_plan(harness: str, model: str) -> dict:
     model as text-only or does not describe it (harnesses/models.py), or ROBOUSE_AGENT_IMAGES=0 turns images off for
     the run. The trial's model gateway then replaces every image part before it reaches the provider. The task itself
     is unchanged: the agent's workspace still holds the camera images as files (code may read their pixels), and a
-    vision task never falls back to the object state it hides. Harnesses without a language model record None."""
+    vision task never falls back to the object state it hides. Harnesses without a language model record None.
+
+    Refused (ValueError): a legacy -glm harness name or a baseten/ model (recorded trials only), and show-harness
+    through the gateway with a model the registry does not list as reading images (its policy is the model's reading
+    of the camera images, which the gateway would remove)."""
     from .. import config
     from ..harnesses import models
 
     if why := models.legacy_refusal(harness):  # claude-code-glm etc.: names of recorded trials only
+        raise ValueError(why)
+    if why := models.history_refusal(model):  # baseten/...: the models of recorded trials only
         raise ValueError(why)
     canon, mid = harness, model
     if canon not in LLM_HARNESSES:
@@ -204,6 +210,13 @@ def image_input_plan(harness: str, model: str) -> dict:
     plan = {"harness": canon, "model": ref.id if models.split(mid)[0] else mid, "accepts_images": accepts}
     if canon in models.NO_IMAGE_HARNESSES:
         plan.update(image_input=False, image_input_reason=f"{canon} passes no images to its model")
+    elif accepts is not True and canon == "show-harness":  # its policy is the model's reading of the camera images
+        listed = f"lists {ref.id} as text-only" if accepts is False else f"lists no image input for {ref.id}"
+        raise ValueError(
+            f"show-harness needs a model that reads images, and the model registry {listed}: through the model "
+            "gateway it would get no camera image. A model you serve at ROBOUSE_SHOW_HARNESS_URL, named without a "
+            "provider prefix, gets them"
+        )
     elif accepts is not True:
         why = (
             "the model registry lists it as text-only"
@@ -462,8 +475,9 @@ def run_trial(
         )
         (ws / ".robouse" / "socket").write_text(sock)
         # no provider key reaches an agent: a harness adds its own vendor's login back; others use the gateway (GLM_ and
-        # ZAI_ also cover a Z.ai Coding Plan key kept under another name, such as GLM_CODING_API_KEY)
-        secret_names = _secret_env_names()
+        # ZAI_ also cover a Z.ai Coding Plan key kept under another name, such as GLM_CODING_API_KEY). Nor does the VLM
+        # grader's key: the episode server, which gets os.environ, reads it for `real.verdict: vlm`
+        secret_names = _secret_env_names() | {"ROBOUSE_GRADER_API_KEY"}
         prefixes = ("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN", "OPENROUTER", "GLM_", "ZAI_")
         base_env = {k: v for k, v in os.environ.items() if not k.startswith(prefixes) and k not in secret_names}
         base_env["PATH"] = (

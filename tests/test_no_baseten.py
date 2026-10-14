@@ -1,7 +1,8 @@
 """No default reaches Baseten, and no Baseten key is ever loaded implicitly. The defaults are GLM-5.3 on the Z.ai Coding
 Plan (`glm/glm-5.3`, BenchFlow's glm provider: GLM_API_KEY and GLM_BASE_URL), or an explicit model where the model
 must read images (show-harness, the VLM grader). Baseten stays only as history: the earlier trial folders still map
-to their baseten/ pairs (test_models.py, test_runs_site.py). Nothing here sends a request."""
+to their baseten/ pairs (test_models.py, test_runs_site.py), and a new run refuses a baseten/ model. Nothing here sends
+a request."""
 
 from __future__ import annotations
 
@@ -60,8 +61,8 @@ def test_no_source_file_names_the_baseten_key_file_or_reads_the_key() -> None:
     assert not hasattr(credentials, "baseten_key") and not hasattr(credentials, "have_baseten")
     files = [p for p in SRC.rglob("*.py") if "_upstream" not in str(p)]
     assert not [str(p) for p in files if "baseten.env" in p.read_text()]
-    # the one mention left is the history entry's auth_env (models.PENDING_PROVIDERS), which only an explicit baseten/
-    # id reaches; the runner's agent-environment filter strips the prefix BASETEN
+    # the one mention left is the history entry's auth_env (models.PENDING_PROVIDERS), which no new run reaches (a
+    # baseten/ id is refused); the runner's agent-environment filter strips the prefix BASETEN
     assert [p.name for p in files if "BASETEN_API_KEY" in p.read_text()] == ["models.py"]
 
 
@@ -289,7 +290,20 @@ def test_run_checks_the_model_before_any_trial(tmp_path, monkeypatch, capsys, no
     monkeypatch.setenv("GLM_BASE_URL", "http://127.0.0.1:9/v1")
     assert "no price for glm-5.3" in run("--harness", "mini-swe-agent")
     monkeypatch.setenv("ROBOUSE_SPEND_CAP_USD", "0")
-    assert "glm does not" in run("--harness", "codex", "--model", "glm/glm-5.3")
+    err = run("--harness", "codex", "--model", "glm/glm-5.3")
+    assert "glm does not" in err and "Codex runs on its own model, gpt-6-astra" in err  # and what to run instead
+    # a baseten/ model is history, refused for a new run although BASETEN_API_KEY is set (no_provider_env)
+    for h in ("mini-swe-agent", "dimcode", "claude-code", "codex", "show-harness"):
+        err = run("--harness", h, "--model", "baseten/zai-org/GLM-5.3")
+        assert "baseten/zai-org/GLM-5.3 is a Baseten model of the earlier runs" in err and "glm/glm-5.3" in err
+    err = run("--engine", "benchflow", "--harness", "claude-code", "--model", "baseten/moonshotai/Kimi-K3")
+    assert "baseten/moonshotai/Kimi-K3 is a Baseten model of the earlier runs" in err  # on the BenchFlow engine too
+    # show-harness's policy reads the camera images: a gateway model the registry does not list as reading images
+    # would get none, so it is refused rather than run blind
+    err = run("--harness", "show-harness", "--model", "glm/glm-5.3")
+    assert "show-harness needs a model that reads images" in err and "lists no image input for glm/glm-5.3" in err
+    err = run("--harness", "mini-swe-agent", "--model", "nosuch/model")
+    assert "'nosuch' is not a provider in BenchFlow's registry" in err
     assert not out.exists()  # no trial folder for a run that could not start
     # all set: the checks pass (the run itself would reach Z.ai, so it is not started here)
     for h, m in (("mini-swe-agent", ""), ("dimcode", ""), ("claude-code", "glm/glm-5.3"), ("claude-code", "")):
@@ -317,14 +331,16 @@ def test_no_provider_variable_reaches_the_agent(tmp_path, monkeypatch) -> None:
         "GLM_CODING_API_KEY": "glm-key-0002",  # the Coding Plan key kept under another name
         "ZAI_API_KEY": "zai-key-0003",
         "BASETEN_API_KEY": "baseten-key-0004",
+        "ROBOUSE_GRADER_API_KEY": "grader-key-0005",  # the VLM grader's: the episode server reads it, the agent must not
     }
     for k, v in secret.items():
         monkeypatch.setenv(k, v)
     run_trial(load_task(ARC), "envdump", "", tmp_path / "job")
     assert seen["env"] and not set(secret) & set(seen["env"])
     assert not any(v in json.dumps(seen["env"]) for v in secret.values())
-    # the runner's own environment keeps it: the gateway runs there
+    # the runner's own environment keeps them: the gateway runs there, and the episode server gets it (the grader key)
     assert os.environ["GLM_CODING_API_KEY"] == "glm-key-0002"
+    assert os.environ["ROBOUSE_GRADER_API_KEY"] == "grader-key-0005"
 
 
 def test_a_provider_outside_the_registry_is_named_not_a_traceback(tmp_path, capsys, no_provider_env) -> None:

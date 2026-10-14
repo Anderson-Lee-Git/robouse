@@ -5,7 +5,7 @@ A model id is provider-prefixed, as in BenchFlow: `glm/glm-5.3` (GLM-5.3 on the 
 names an entry in BenchFlow's provider registry (`benchflow.agents.providers.PROVIDERS`); Robo Use keeps no registry of
 its own. `PENDING_PROVIDERS` holds the one entry BenchFlow does not ship, `baseten`, in BenchFlow's own
 `ProviderConfig` shape: it served the earlier GLM-5.3 and Kimi K3 runs (and robouse 0.4.0's defaults), and their
-trial folders still name it.
+trial folders still name it. A new run refuses a `baseten/` id (`history_refusal()`).
 
 A bare id keeps working for a harness's own vendor: `claude-*` is Anthropic's, `gpt-*`/`o<n>` OpenAI's. The legacy
 `-glm` harness names of the September runs read as Baseten's (`legacy()`, `canonical()`); a new run refuses them
@@ -66,9 +66,9 @@ RECORDED_DEFAULT_MODELS = {
 # files with code)
 NO_IMAGE_HARNESSES = {"mini-swe-agent"}
 
-# Baseten served the earlier GLM-5.3 and Kimi K3 runs (the legacy -glm names, then baseten/ ids). The
-# entry stays so those trial folders resolve (split(), the image metadata below) and an explicit baseten/ id still
-# routes; no default, help text or key file uses it. Verified on 2026-09-30 against inference.baseten.co: all three
+# Baseten served the earlier GLM-5.3 and Kimi K3 runs (the legacy -glm names, then baseten/ ids). The entry stays so
+# those trial folders resolve (split(), the image metadata below); a new run refuses a baseten/ id (history_refusal()),
+# and no default, help text or key file uses it. Verified on 2026-09-30 against inference.baseten.co: all three
 # protocols answer, and both models below read an image on each of them
 # (scratch/provider-spike/evidence/image-probe2.jsonl). maxImages: the Messages endpoint rejects a request with more
 # than 8 images. Baseten's Responses endpoint rejects an image inside a tool result (function_call_output); see
@@ -169,6 +169,11 @@ def resolve(harness: str, model: str) -> ModelRef:
             provider_registry()
         if harness in NATIVE_VENDORS:
             provider = NATIVE_VENDORS[harness]
+        elif "/" in model:  # a prefix, but not a provider: a typo or a guessed name
+            raise ValueError(
+                f"model {model!r}: {model.partition('/')[0]!r} is not a provider in BenchFlow's registry; a model "
+                f"id starts with one, e.g. {ZAI_CODING_PLAN_MODEL}"
+            )
         else:
             raise ValueError(f"model {model!r} needs a provider prefix, e.g. {ZAI_CODING_PLAN_MODEL}")
     meta: dict = {}
@@ -200,6 +205,18 @@ def legacy_refusal(harness: str) -> str | None:
     return (
         f"{harness} is the name the September 2026 runs used for {canon} with a Baseten model; it is kept only to "
         f"read those trials. {instead}"
+    )
+
+
+def history_refusal(model: str) -> str | None:
+    """Why a new run cannot use this model (a `baseten/` id: Baseten served the earlier runs, and Robo Use sends it no
+    new request), or None. Those trials still read with their baseten/ pair (split(), canonical())."""
+    if split(model)[0] != "baseten":
+        return None
+    return (
+        f"{model} is a Baseten model of the earlier runs; it is kept only to read those trials, and a new run sends "
+        f"no request to Baseten. Run a provider-prefixed model instead, e.g. {ZAI_CODING_PLAN_MODEL}, the default of "
+        "mini-swe-agent and dimcode"
     )
 
 
