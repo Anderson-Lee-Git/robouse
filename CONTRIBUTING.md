@@ -83,6 +83,15 @@ Some of the repository serves the maintainers' own runs and infrastructure, and 
 - Do not commit credentials, `.env` files, run folders (`runs/`) or large binary files. Robot models and benchmark assets are downloaded at run time (`robouse fetch-assets`), not committed.
 - A maintainer reviews every pull request. Changes to scoring, the sandbox or the task format need a maintainer's approval before merge.
 
+## Releases
+
+A release is a pull request and a tag.
+
+1. In the pull request, bump the version in `src/robouse/__init__.py`, `docs/suites.md`, `docs/supported.md` and the supported page's description in `tools/docs/build_docs.py`. Regenerate `docs/cli.md` with `tools/docs/cli_reference.py` against the built wheel, and turn the changelog's top section into `## X.Y.Z (YYYY-MM-DD)`, dated the day it goes to PyPI (UTC).
+2. Merge it, tag the merge commit and push the tag: `git tag -a vX.Y.Z -m "robouse X.Y.Z" <commit> && git push origin vX.Y.Z`.
+3. `.github/workflows/release.yml` checks that the tag, the package and the changelog agree. It builds the package, installs the wheel and publishes to PyPI through trusted publishing, so no token is stored. PyPI's trusted publisher for `robouse` is: owner `benchflow-ai`, repository `robouse`, workflow `release.yml`, environment `pypi`.
+4. Rebuild robouse.ai/docs from the tagged commit (`tools/docs/build_docs.py --out <site checkout>/site/docs`) and deploy the site.
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the [Apache License 2.0](LICENSE), as section 5 of the license describes.
