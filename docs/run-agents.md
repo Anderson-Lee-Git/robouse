@@ -80,3 +80,30 @@ robouse run --task libero-10-0 --harness vla --model openpi/pi05_libero --out ru
 | `openpi/generic`, `gr00t/generic`, `xpolicylab/generic`, `http-json/generic` | templates to fill in |
 
 A preset fixes the wire protocol, how the policy's observation is built from the task's cameras and state, how its actions map onto the task's action vector, and how action chunks are executed. Override any field with a JSON file in `ROBOUSE_VLA_POLICY_CONFIG`. Before the first action the client checks that the preset fits the task (backend, action dimension, control mode); a mismatch ends the episode at 0 steps. A VLA does not decide when it is finished: the client calls `robo done` when the step budget is nearly spent, or, if the preset sets `stop.still_steps`, once the commanded action stops changing.
+
+## Dream-1
+
+The `dream` harness drives the robot with Dream Labs' Dream-1, a world-action model behind Dream Labs' DreamAPI. Its client is Dream's own client library running Dream's own simulation loop: it sends the three cameras' last nine frames (0.2 s apart in simulated time, 320x176 JPEG), the joint angles and the task's instruction, and executes the 48-step joint chunk it gets back through `robo`, then asks again. The simulation waits while a request is out. Dream-1's public models drive Dream's bimanual YAM, so the harness runs the `yam` suite ([Suites](suites.md)); on any other robot it stops at 0 steps and says why.
+
+```sh
+uv venv -p 3.12 ~/.cache/robouse/dream-venv
+uv pip install -p ~/.cache/robouse/dream-venv/bin/python dreamlabs-client==1.0.0
+export DREAM_API_KEY=dl_live_...   # or ~/.dreamlabs/credentials, as the platform's Setup API page prints it
+robouse run --task yam-apple-to-bowl --harness dream --out runs/dream
+```
+
+`robouse doctor` says whether the client and the key are in place (`ok dream`). On a clean install of robouse 0.5.0 (macOS, Apple silicon, 2026-10-20), with the `yam` suite's virtualenv set up as in [Suites](suites.md), the last command printed:
+
+```console
+$ robouse run --task yam-apple-to-bowl --harness dream --out runs/dream
+{
+  "trial": "yam-apple-to-bowl__dream__08978f",
+  "reward": 1.0,
+  "outcome": "done",
+  "steps": 1199,
+  "wall_s": 54.9,
+  "exception": null
+}
+```
+
+`--model` is `dreamlabs/dream-1-beta` (the default) or `dreamlabs/dream-1-beta-flash`, or any checkpoint your account may run, such as a fine-tune. `ROBOUSE_DREAM_PYTHON` names another Python that has the client, and `ROBOUSE_DREAM_ACTIONS` how many rows of each chunk run before the next request (default all 48). The key goes to the client's environment only; the sandbox keeps `~/.dreamlabs` from every agent. Episodes are not recorded to your Dream Labs account: the client uploads every observation it is given unless told not to, and the harness tells it not to, as Dream's own simulation example does. DreamAPI bills by the hour of use; a trial on the `yam` suite takes about a minute. On 2026-10-19, with one trial per task, `dreamlabs/dream-1-beta` solved 6 of the 9 `yam` tasks and `dreamlabs/dream-1-beta-flash` 4.

@@ -23,9 +23,12 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 | `ROBOUSE_RLEBENCH_PYTHON` | Python of the RLE-Bench virtualenv (default <cache>/rlebench-venv/bin/python) |
 | `ROBOUSE_CAPX_PYTHON` | Python of the CaP-X virtualenv (default <cache>/capx-venv/bin/python) |
 | `ROBOUSE_CAPX_LIBERO_PYTHON` | Python of the CaP-X LIBERO virtualenv (default <cache>/capx-libero-venv/bin/python) |
+| `ROBOUSE_YAM_PYTHON` | Python of the dual-YAM virtualenv (MuJoCo 3.3.5+ and Dream Labs' scene; default <cache>/yam-venv/bin/python) |
 | `ROBOUSE_VLA_URL` | policy server for the `vla` harness |
 | `ROBOUSE_VLA_TOKEN` | bearer token for the policy server |
 | `ROBOUSE_VLA_POLICY_CONFIG` | JSON file with overrides for the `vla` preset |
+| `ROBOUSE_DREAM_PYTHON` | interpreter that runs the `dream` client, with Dream's client library installed (default <cache>/dream-venv/bin/python) |
+| `ROBOUSE_DREAM_ACTIONS` | rows of each Dream-1 action chunk the `dream` client executes before asking again (1-48, default 48) |
 | `ROBOUSE_MOLMOACT2_URL` | MolmoAct2 policy server for the `molmoact2` harness |
 | `ROBOUSE_MOLMOACT2_TOKEN` | bearer token for the MolmoAct2 server |
 | `ROBOUSE_DIMCODE` | the dimcode executable for the `dimcode` harness (default: `dimcode` on PATH) |

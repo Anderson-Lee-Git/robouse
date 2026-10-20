@@ -71,6 +71,8 @@ ENV: dict[str, str] = {
     "ROBOUSE_RLEBENCH_PYTHON": "Python of the RLE-Bench virtualenv (default <cache>/rlebench-venv/bin/python)",
     "ROBOUSE_CAPX_PYTHON": "Python of the CaP-X virtualenv (default <cache>/capx-venv/bin/python)",
     "ROBOUSE_CAPX_LIBERO_PYTHON": "Python of the CaP-X LIBERO virtualenv (default <cache>/capx-libero-venv/bin/python)",
+    "ROBOUSE_YAM_PYTHON": "Python of the dual-YAM virtualenv (MuJoCo 3.3.5+ and Dream Labs' scene; default "
+    "<cache>/yam-venv/bin/python)",
     **{
         f"ROBOUSE_{b}_QUIET": f"0 shows the {b.lower()} worker's stderr (default 1)"
         for b in (
@@ -84,6 +86,7 @@ ENV: dict[str, str] = {
             "RLEBENCH",
             "CAPX",
             "CAPX_LIBERO",
+            "YAM",
         )
     },
     "ROBOUSE_MANISKILL_DEBUG": "1: the ManiSkill worker logs each request",
@@ -117,6 +120,11 @@ ENV: dict[str, str] = {
     "ROBOUSE_VLA_POLICY_CONFIG": "JSON file with overrides for the `vla` preset",
     "ROBOUSE_VLA_PYTHON": "interpreter that runs the `vla` client (default python3)",
     "ROBOUSE_VLA_CONFIG": "resolved `vla` preset, passed to the client (set by the runner)",
+    "ROBOUSE_DREAM_PYTHON": "interpreter that runs the `dream` client, with Dream's client library installed "
+    "(default <cache>/dream-venv/bin/python)",
+    "ROBOUSE_DREAM_ACTIONS": "rows of each Dream-1 action chunk the `dream` client executes before asking again "
+    "(1-48, default 48)",
+    "ROBOUSE_DREAM_CONFIG": "the `dream` client's model and rows per chunk (set by the runner)",
     "ROBOUSE_MOLMOACT2_URL": "MolmoAct2 policy server for the `molmoact2` harness",
     "ROBOUSE_MOLMOACT2_TOKEN": "bearer token for the MolmoAct2 server",
     "ROBOUSE_DIMCODE": "the dimcode executable for the `dimcode` harness (default: `dimcode` on PATH)",
@@ -165,9 +173,12 @@ PUBLIC = frozenset(
         "ROBOUSE_RLEBENCH_PYTHON",
         "ROBOUSE_CAPX_PYTHON",
         "ROBOUSE_CAPX_LIBERO_PYTHON",
+        "ROBOUSE_YAM_PYTHON",
         "ROBOUSE_VLA_URL",
         "ROBOUSE_VLA_TOKEN",
         "ROBOUSE_VLA_POLICY_CONFIG",
+        "ROBOUSE_DREAM_PYTHON",
+        "ROBOUSE_DREAM_ACTIONS",
         "ROBOUSE_MOLMOACT2_URL",
         "ROBOUSE_MOLMOACT2_TOKEN",
         "ROBOUSE_DIMCODE",

@@ -43,6 +43,7 @@ BACKENDS: dict[str, tuple[str, str]] = {
     "roboharm": ("roboharm", "RoboHarmBackend"),
     "robosuite": ("robosuite", "RobosuiteBackend"),
     "tabletop": ("tabletop", "TabletopBackend"),
+    "yam": ("yam", "YamBackend"),  # Dream Labs' dual-YAM scene; simulator worker
 }
 
 

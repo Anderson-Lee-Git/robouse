@@ -9,6 +9,7 @@ import importlib
 import importlib.util
 import os
 import shutil
+from pathlib import Path
 
 from .. import config
 from ..harnesses import credentials
@@ -22,6 +23,7 @@ WORKER_VENVS = {
     "humanoidbench": "humanoidbench",
     "maniskill": "maniskill",
     "robocasa": "robocasa",
+    "yam": "yam",
 }
 REMOTE = {"behavior", "gpu", "robodojo"}  # simulators on remote GPU workers
 UPSTREAM_PKGS = {
@@ -115,6 +117,17 @@ def run() -> int:
     print(
         f"  {_ok(shutil.which('python3') is not None)}show-harness (`python3` on PATH; a provider-prefixed model that "
         "reads images, through the model gateway, or a self-hosted one at ROBOUSE_SHOW_HARNESS_URL)"
+    )
+    from ..harnesses import dream
+
+    try:
+        dream_key = bool(dream.credentials())
+    except RuntimeError:
+        dream_key = False
+    dream_py = dream.client_python()
+    print(
+        f"  {_ok(Path(dream_py).exists() and dream_key)}dream (Dream Labs' client in {dream_py}; DREAM_API_KEY or "
+        "~/.dreamlabs/credentials)"
     )
     creds = {
         "ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN": credentials.have_claude(),

@@ -130,6 +130,7 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "tasks/robosuite" = "robouse/bundled_tasks/robosuite"
 "tasks/safety" = "robouse/bundled_tasks/safety"
 "tasks/vision" = "robouse/bundled_tasks/vision"
+"tasks/yam" = "robouse/bundled_tasks/yam"
 "components" = "robouse/bundled_components"
 "assets/menagerie/provenance.json" = "robouse/assets_provenance/menagerie.json"
 "assets/menagerie/skydio_x2/PROVENANCE.json" = "robouse/assets_provenance/skydio_x2.json"

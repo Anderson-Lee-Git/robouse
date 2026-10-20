@@ -1,0 +1,14 @@
+id: dual-yam
+type: embodiment
+version: 0.1.0
+title: Dual I2RT YAM
+summary: 'Dream Labs'' bimanual YAM station in Dream''s own MuJoCo scene: two 6-joint YAM arms with parallel grippers, a top camera and two wrist cameras; joint-target control (yam suite).'
+track: arm
+kind: bimanual
+capabilities:
+- reach
+- grasp
+- bimanual
+composable: false
+suites:
+- yam

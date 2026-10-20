@@ -2,9 +2,9 @@
 
 Notable changes to the `robouse` package, newest first. Versions follow [semantic versioning](https://semver.org/); while the version is below 1.0, a minor version can change interfaces. Dates are PyPI release dates (UTC).
 
-## Unreleased
+## 0.5.0 (2026-10-20)
 
-Agent isolation fixes, and changes for the open-source release of the repository.
+Day-one support for Dream Labs' Dream-1 (the `dream` harness and the `yam` suite on Dream's bimanual YAM station), agent isolation fixes, and changes for the open-source release of the repository.
 
 ### Security
 
@@ -14,6 +14,14 @@ Agent isolation fixes, and changes for the open-source release of the repository
 - The sandbox, on macOS and Linux, denies credential and task-copy locations in the home folder: other programs' logins (`~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.netrc` and others), your own Claude Code, Codex and mini-swe-agent settings, BenchFlow's settings and task cache, the uv and pip caches, and Robo Use's cache apart from the agent's own harness folder. On Linux a denied file is hidden too, not only a folder.
 - The sandbox denies a source checkout's `tasks/`, `runs/` and `adapters/` folders, makes the runner's Python read-only, and refuses connections to other trials' episode sockets, to the Docker, Podman and LXD sockets and to the SSH agent. On macOS it refuses `open`, `osascript`, `shortcuts`, `security` and Apple events.
 - No variable whose name marks a credential (such as `GITHUB_TOKEN`, `HF_TOKEN`, `AWS_SECRET_ACCESS_KEY` or `SSH_AUTH_SOCK`) reaches an agent; each harness adds back what its own program needs. The episode server and the verifier get no model provider key.
+- The sandbox denies Dream Labs' credentials file (`~/.dreamlabs`), and no `DREAM_*` variable reaches an agent, the episode server or the verifier; the `dream` harness gives its client the key.
+
+### Added
+
+- The `yam` suite: 9 tasks on Dream Labs' bimanual YAM station, in Dream's own MuJoCo scene from the `dreamlabs` wheel (in a virtualenv of its own, since it needs MuJoCo 3.3.5 or later): the apple or the orange into the bowl, the banana onto the plate, each on Dream's layout and two shuffled ones. Agents see the joints and the three cameras, not the objects, and have `reach`, `set_gripper` and `home` skills. Reference solution 9/9, no-op 0/9.
+- The `dream` harness: Dream Labs' Dream-1 (`dreamlabs/dream-1-beta`, `dreamlabs/dream-1-beta-flash`) through DreamAPI, with Dream's own client library and simulation loop. It runs the `yam` suite and stops at 0 steps on any other robot.
+- `observe` takes `inline` (cameras, format, size, quality) and returns the camera frames encoded in the reply instead of writing image files, for policy clients that read every frame.
+- `robouse doctor` checks the `yam` suite's virtualenv and the `dream` harness's client and key.
 
 ### Changed
 

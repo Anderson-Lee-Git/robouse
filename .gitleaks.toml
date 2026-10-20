@@ -10,4 +10,5 @@ regexTarget = "line"
 regexes = [
   '''[=:]\s*["']?<[a-z][a-z0-9 _-]*>''',
   '''trossen-widowx-250s''',
+  '''kinova-gen3-2f85''',
 ]

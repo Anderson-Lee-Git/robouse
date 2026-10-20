@@ -45,6 +45,8 @@ log = logging.getLogger(__name__)
 SETTLE_STEPS = 10  # after `done`, hold still this many steps before judging success
 MAX_REPEAT = 50
 MAX_SKILL_STEPS = 150
+INLINE_FORMATS = ("jpeg", "png")  # `observe` with `inline`: frames in the reply
+MAX_INLINE_SIDE = 2048
 
 
 def _hook(obj: Any, name: str) -> Callable | None:
@@ -235,6 +237,8 @@ class Episode:
         if op == "status":
             return {"ok": True, "result": {"finished": self.finished, "outcome": self.outcome, "steps": self.steps}}
         if op == "observe":
+            if req.get("inline") is not None:  # policy clients: the frames in the reply, nothing written to disk
+                return self.observe_inline(req["inline"], privileged)
             return {"ok": True, "result": self.observe(bool(req.get("image", False)), privileged, req.get("camera"))}
         if op == "act":
             return self.act(req.get("action"), int(req.get("repeat", 1)))
@@ -316,6 +320,42 @@ class Episode:
                     paths.append(str(self.run_dir / "observations" / name))
             out["image_path"] = paths[0] if len(paths) == 1 else paths
         return out
+
+    def observe_inline(self, spec: Any, privileged: bool = False) -> dict:
+        """The state plus camera frames encoded in the reply (base64), for policy clients that read every frame, such
+        as a VLA's observation window: `inline` is {"cameras": [...], "format": "jpeg" | "png", "width", "height",
+        "quality"}. Cameras are the task's own; frames are resized (stretched) to width x height when both are given.
+        Nothing is saved: the agent's own `observe --image` keeps writing image files."""
+        if not isinstance(spec, dict):
+            return {"ok": False, "error": "inline must be an object: {cameras, format, width, height, quality}"}
+        cams = spec.get("cameras") or self.cameras[:1]
+        unknown = [c for c in cams if c not in self.cameras] if isinstance(cams, list) else cams
+        if not isinstance(cams, list) or unknown:
+            return {"ok": False, "error": f"inline cameras must be a list of the task's cameras {self.cameras}"}
+        fmt = str(spec.get("format", "jpeg")).lower()
+        if fmt not in INLINE_FORMATS:
+            return {"ok": False, "error": f"inline format must be one of {list(INLINE_FORMATS)}"}
+        width, height = spec.get("width"), spec.get("height")
+        quality = spec.get("quality", 85)
+        if any(
+            v is not None and not (isinstance(v, int) and 8 <= v <= MAX_INLINE_SIDE) for v in (width, height)
+        ) or not (isinstance(quality, int) and 1 <= quality <= 95):
+            return {"ok": False, "error": f"inline width and height are 8 to {MAX_INLINE_SIDE} pixels; quality 1-95"}
+        import base64
+        import io
+
+        from PIL import Image
+
+        images = {}
+        for cam in cams:
+            img = Image.fromarray(np.asarray(self._render(cam), dtype=np.uint8))
+            if isinstance(width, int) and isinstance(height, int) and img.size != (width, height):
+                img = img.resize((width, height), Image.Resampling.BILINEAR)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG" if fmt == "jpeg" else "PNG", **({"quality": quality} if fmt == "jpeg" else {}))
+            images[cam] = base64.b64encode(buf.getvalue()).decode("ascii")
+        result = {"state": self._state(privileged), "steps_used": self.steps, "max_steps": self.max_steps}
+        return {"ok": True, "result": {**result, "images": images, "format": fmt}}
 
     def _budget_left(self) -> bool:
         return self.steps < self.max_steps and not self.finished
@@ -569,11 +609,14 @@ def _finite(x: Any) -> bool:
 
 
 def _strip(resp: dict) -> dict:
-    """The response without the raw observation vector, to keep the trace readable."""
+    """The response without the raw observation vector or inline frames, to keep the trace readable."""
     r = json.loads(json.dumps(resp))
-    st = (r.get("result") or {}).get("state") if isinstance(r.get("result"), dict) else None
+    res = r.get("result") if isinstance(r.get("result"), dict) else {}
+    st = res.get("state")
     if isinstance(st, dict):
         st.pop("obs_vector", None)
+    if isinstance(res.get("images"), dict):  # inline frames: their sizes, not the bytes
+        res["images"] = {k: f"<{len(v)} base64 characters>" for k, v in res["images"].items()}
     return r
 
 

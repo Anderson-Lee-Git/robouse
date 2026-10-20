@@ -1,9 +1,9 @@
 """The episode protocol: one JSON request per Unix-socket connection, one JSON line back.
 
-Requests carry an `op`: info, status, observe (image, camera), act (action, repeat), move_to (pos, grip, max_steps, tol),
-grip (value, steps), skill (name, args), done (text), give_up (text), and the runner's shutdown. Replies are
-{"ok": true, "result": ...} or {"ok": false, "error": "..."}. The `robo` client (agent_cli.py) is the other end; it is a
-standalone script, so it keeps its own copy of the client side.
+Requests carry an `op`: info, status, observe (image, camera; or inline, for camera frames in the reply), act (action,
+repeat), move_to (pos, grip, max_steps, tol), grip (value, steps), skill (name, args), done (text), give_up (text), and
+the runner's shutdown. Replies are {"ok": true, "result": ...} or {"ok": false, "error": "..."}. The `robo` client
+(agent_cli.py) is the other end; it is a standalone script, so it keeps its own copy of the client side.
 """
 
 from __future__ import annotations

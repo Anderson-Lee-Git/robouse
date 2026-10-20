@@ -270,7 +270,16 @@ def _secret_env_names() -> set[str]:
 
 # Model provider settings by prefix (the registry's key names come from `_secret_env_names`); GLM_ and ZAI_ also cover
 # a Z.ai key kept under another name, such as GLM_CODING_API_KEY, and its endpoint
-PROVIDER_KEY_PREFIXES = ("ANTHROPIC_", "CLAUDE_CODE_OAUTH", "OPENAI_", "BASETEN", "OPENROUTER", "GLM_", "ZAI_")
+PROVIDER_KEY_PREFIXES = (
+    "ANTHROPIC_",
+    "CLAUDE_CODE_OAUTH",
+    "OPENAI_",
+    "BASETEN",
+    "OPENROUTER",
+    "GLM_",
+    "ZAI_",
+    "DREAM_",  # Dream Labs (DreamAPI): the `dream` harness adds back what its client needs
+)
 # A variable whose name has one of these parts holds a credential: a token, key, secret, password or login
 SECRET_NAME = re.compile(r"SECRET|PASSWORD|PASSWD|APIKEY|(?:^|_)(?:TOKEN|KEY|PASS|AUTH|CREDENTIALS?)(?:_|$)", re.I)
 

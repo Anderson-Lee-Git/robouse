@@ -31,10 +31,11 @@ img/suites/myosuite.webp | `myosuite`
 img/suites/humanoidbench.webp | `humanoidbench`
 img/suites/maniskill.webp | `maniskill`
 img/suites/robocasa.webp | `robocasa`
+img/suites/yam.webp | `yam`
 ```
 
 <!-- suites-table -->
-robouse 0.4.1 bundles 692 tasks in 31 suites. "Needs" is what a suite needs beyond `pip install 'robouse[sim]'`, if anything. The last two columns count the tasks that scored 1 with the reference solution and with the no-op control.
+robouse 0.5.0 bundles 701 tasks in 32 suites. "Needs" is what a suite needs beyond `pip install 'robouse[sim]'`, if anything. The last two columns count the tasks that scored 1 with the reference solution and with the no-op control.
 
 | Suite | Tasks | Needs | Reference solution | No-op control |
 |---|---|---|---|---|
@@ -69,6 +70,7 @@ robouse 0.4.1 bundles 692 tasks in 31 suites. "Needs" is what a suite needs beyo
 | `robosuite`<br>robosuite 1.5, five arms | 21 | `[robosuite]` | 21/21 | 0/21 |
 | `safety`<br>Harmful requests and benign twins | 8 |  | 8/8 | 0/8 |
 | `vision`<br>Camera images, no coordinates | 55 | `[metaworld]` | 55/55 | 0/55 |
+| `yam`<br>Dual YAM: Dream Labs' station scene | 9 | own virtualenv (below) | 9/9 | 0/9 |
 <!-- /suites-table -->
 
 `robouse fetch-assets` downloads the MuJoCo Menagerie robot models for `menagerie`, `roboharm` and `drone`; `robouse fetch-assets --all` adds every robot the other suites and composed tasks use (about 390 MB). Each file is checked by SHA-256. Results of models on these suites: [Runs](/runs/).
@@ -122,6 +124,15 @@ uv venv -p 3.11 ~/.cache/robouse/myosuite-venv
 uv pip install \
   -p ~/.cache/robouse/myosuite-venv/bin/python \
   myosuite==2.12.2 scipy==1.16.2
+
+# yam (ROBOUSE_YAM_PYTHON): Dream Labs' scene, from their wheel, without its other dependencies
+uv venv -p 3.12 ~/.cache/robouse/yam-venv
+uv pip install \
+  -p ~/.cache/robouse/yam-venv/bin/python \
+  mujoco==3.16.0 numpy pillow
+uv pip install \
+  -p ~/.cache/robouse/yam-venv/bin/python \
+  --no-deps dreamlabs==1.0.0
 ```
 
 `humanoidbench`, `maniskill` and `robocasa` run from the hub, with `bench eval run -d`.

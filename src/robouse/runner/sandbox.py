@@ -17,8 +17,8 @@ In both, an agent cannot read or write:
 On macOS it also cannot start `open`, `osascript`, `shortcuts` or `security` (`MACOS_ESCAPES`) or send Apple events,
 which act outside the sandbox.
 Program folders inside a denied folder that a harness runs from (`HOME_PROGRAMS`, e.g. Codex's standalone install in
-~/.codex/packages) stay readable, never writable, and so does the runner's Python (`interpreters`), which the episode
-server and the verifier run on. The agent keeps its own workspace, the episode socket and the network
+~/.codex/packages, and `CACHE_PROGRAMS`, e.g. the `dream` client's virtualenv) stay readable, never writable, and so
+does the runner's Python (`interpreters`), which the episode server and the verifier run on. The agent keeps its own workspace, the episode socket and the network
 (model APIs). On macOS, TCP connections to this machine are refused except to `local_ports` (a harness's own local
 proxy); on Linux the agent runs in its own PID namespace, so it cannot see the episode server's process. Set
 ROBOUSE_SANDBOX=0 to run without a sandbox (unsafe: the agent can then read the reference solution).
@@ -56,6 +56,8 @@ HOME_DENIED = (
     ".config/mini-swe-agent",  # mini-swe-agent's global .env, which may hold provider keys (Linux)
     "Library/Application Support/mini-swe-agent",  # (macOS)
     ".gemini",  # Gemini CLI's login
+    ".dreamlabs",  # Dream Labs' credentials file (DreamAPI key)
+    ".config/dream-yam-sim",  # Dream's MuJoCo example's saved key
     ".config/gh",  # GitHub CLI's token
     ".git-credentials",
     ".config/git/credentials",
@@ -79,6 +81,9 @@ HOME_DENIED = (
 )
 # Program folders inside those that a harness may run from: readable, never writable
 HOME_PROGRAMS = (".codex/packages", ".claude/local")
+# Harness interpreters in robouse's cache, which is denied as a whole: the `dream` client's virtualenv (Dream's public
+# client library only; no task files, no keys). Readable, never writable
+CACHE_PROGRAMS = ("dream-venv",)
 # macOS programs that act outside the sandbox: `open` hands a file or URL to LaunchServices, `osascript` and `shortcuts`
 # drive other applications, and `security` queries the login keychain through securityd, where Claude Code and the
 # GitHub CLI keep their logins (file rules do not cover the keychain). The Security framework itself stays available:
@@ -160,7 +165,8 @@ def _denied(extra: list[Path]) -> list[str]:
 
 
 def _programs() -> list[str]:
-    return [p for p in _real(Path.home() / rel for rel in HOME_PROGRAMS) if os.path.isdir(p)]
+    folders = [*(Path.home() / rel for rel in HOME_PROGRAMS), *(config.cache_dir() / rel for rel in CACHE_PROGRAMS)]
+    return [p for p in _real(folders) if os.path.isdir(p)]
 
 
 def _inside(path: str, roots: list[str]) -> bool:

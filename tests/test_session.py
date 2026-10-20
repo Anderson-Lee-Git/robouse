@@ -139,3 +139,28 @@ def test_serve_over_the_socket(tmp_path, sock_dir, monkeypatch) -> None:
     assert _send({"op": "done", "text": "ok"})["ok"]
     th.join(timeout=20)
     assert out["success"] and out["steps_used"] == 5
+
+
+def test_inline_frames_come_in_the_reply_and_stay_out_of_the_trace(tmp_path) -> None:
+    import base64
+    import io
+
+    from PIL import Image
+
+    ep = episode(tmp_path)
+    spec = {"cameras": ["front"], "format": "jpeg", "width": 32, "height": 16, "quality": 80}
+    r = ep.handle({"op": "observe", "inline": spec})
+    assert r["ok"] and r["result"]["format"] == "jpeg" and "hand_pos" in r["result"]["state"]
+    img = Image.open(io.BytesIO(base64.b64decode(r["result"]["images"]["front"])))
+    assert img.format == "JPEG" and img.size == (32, 16)
+    png = ep.handle({"op": "observe", "inline": {"format": "png"}})["result"]["images"]["front"]
+    assert Image.open(io.BytesIO(base64.b64decode(png))).format == "PNG"
+    assert "task's cameras" in ep.handle({"op": "observe", "inline": {"cameras": ["side"]}})["error"]
+    assert "format" in ep.handle({"op": "observe", "inline": {"format": "gif"}})["error"]
+    assert "8 to" in ep.handle({"op": "observe", "inline": {"width": 4, "height": 4}})["error"]
+    assert "quality" in ep.handle({"op": "observe", "inline": {"quality": 100}})["error"]
+    assert "object" in ep.handle({"op": "observe", "inline": "jpeg"})["error"]
+    assert not (tmp_path / "run" / "observations").exists()  # nothing written to disk
+    ep.close()
+    trace = (tmp_path / "run" / "trace.jsonl").read_text()
+    assert "base64 characters" in trace and r["result"]["images"]["front"] not in trace
