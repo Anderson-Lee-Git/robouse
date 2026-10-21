@@ -2,7 +2,8 @@
 
 metal   MakerMods Metal (6 Damiao joints + gripper, CAN, LeRobot `metal_follower` from makermods-robotics/lerobot branch
         arm/makermods-metal). Degrees, absolute. Kinematics: vendor canonical URDF (makermods-robotics/metal-python-ros
-        @ ef4181f), identity joint mapping, checked against 842 recorded hardware poses (Link6 within 0.12 mm).
+        @ ef4181f), identity joint mapping, checked against 842 recorded hardware poses (Link6 within 0.12 mm). The
+        chain is not shipped: it is built from the URDF on first use (kinematics.VENDOR_CHAINS).
 so101   SO-101 follower (6 Feetech STS3215, LeRobot `so_follower`; SO-100 uses the same profile with its own
         calibration). Degrees (LeRobot DEGREES mode); gripper 0-100 (LeRobot RANGE_0_100). Kinematics:
         TheRobotStudio/SO-ARM100 so101_new_calib.urdf (Apache-2.0), which matches LeRobot's calibration convention.

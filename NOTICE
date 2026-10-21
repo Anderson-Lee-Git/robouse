@@ -95,11 +95,6 @@ SO-ARM100 (SO-101 arm)
   Apache License 2.0
   Files: the kinematic chain in src/robouse/real/data/so101_chain.json (wheel, sdist)
 
-MakerMods Metal arm
-  https://github.com/makermods-robotics/metal-python-ros, commit ef4181f1305cbcfc63431d3bcfb96f5fb7f72763 (the arm's URDFs)
-  The repository states no license, and MakerMods has not confirmed terms for this use.
-  Files: the kinematic chain (joint origins, axes and limits) in src/robouse/real/data/metal_chain.json (wheel, sdist)
-
 MuJoCo Menagerie
   https://github.com/google-deepmind/mujoco_menagerie, commit 8161bba
   Franka Emika Panda and Skydio X2: Apache License 2.0. ALOHA 2: BSD 3-Clause License, Copyright (c) 2023, Trossen Robotics.
@@ -110,6 +105,11 @@ Documentation images
 
 Downloaded at run time, not redistributed
 =========================================
+
+MakerMods Metal arm
+  https://github.com/makermods-robotics/metal-python-ros, commit ef4181f1305cbcfc63431d3bcfb96f5fb7f72763 (metal_sdk/example/urdf/metal_with_gripper.urdf)
+  The repository has no license file. Its ROS package manifests give the license as "Business", and its metal_sdk/ folder, which holds this URDF, has an MIT license (Copyright (c) 2025 MakerMods). MakerMods has not confirmed which terms apply to the URDF.
+  The first use of the Metal arm's profile downloads the URDF, checks its SHA-256 and converts it into the kinematic chain (joint origins, axes and limits) on the user's machine, in <cache>/real/ (src/robouse/real/kinematics.py). Neither the URDF nor the chain is in the repository or the package; robouse 0.2.0 to 0.5.0 shipped the chain as robouse/real/data/metal_chain.json.
 
 robouse fetch-assets and the suites download these at pinned revisions, with SHA-256 checks, under their own licenses: MuJoCo Menagerie robot models (BSD-3-Clause, Apache-2.0 or MIT, each with its LICENSE), RoboCasa assets (CC BY 4.0), the HumanoidBench H1 walking policy (unitree_rl_gym, BSD-3-Clause), and Meta-World's scripted policies (MIT), which `robouse export` copies into exported reference solutions together with Meta-World's license.
 

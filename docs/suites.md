@@ -73,7 +73,7 @@ robouse 0.5.0 bundles 701 tasks in 32 suites. "Needs" is what a suite needs beyo
 | `yam`<br>Dual YAM: Dream Labs' station scene | 9 | own virtualenv (below) | 9/9 | 0/9 |
 <!-- /suites-table -->
 
-`robouse fetch-assets` downloads the MuJoCo Menagerie robot models for `menagerie`, `roboharm` and `drone`; `robouse fetch-assets --all` adds every robot the other suites and composed tasks use (about 390 MB). Each file is checked by SHA-256. Results of models on these suites: [Runs](/runs/).
+`robouse fetch-assets` downloads the MuJoCo Menagerie robot models for `menagerie`, `roboharm` and `drone`; `robouse fetch-assets --all` adds every robot the other suites and composed tasks use (about 390 MB). Each file is checked by SHA-256. Results of models on these suites: [Runs](https://robouse.ai/runs/).
 
 ## LIBERO
 

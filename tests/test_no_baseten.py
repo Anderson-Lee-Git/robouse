@@ -91,11 +91,11 @@ def _watch_reads(monkeypatch, agents: Path) -> list[str]:
 
 
 def test_doctor_the_model_plan_and_run_use_no_baseten_key(tmp_path, monkeypatch, capsys, no_provider_env) -> None:
-    """A baseten.env is in the configured credential pool folder (where 0.4.0 read ~/.config/bf-agents/baseten.env),
-    and BASETEN_API_KEY is in the environment: doctor, the model plan and the run command's checks open no Baseten
-    file, and the run still stops for want of the default model's own settings (with a Baseten default, the key in the
+    """A baseten.env is in the configured credential pool folder (0.4.0 read one from the maintainers' credential
+    folder), and BASETEN_API_KEY is in the environment: doctor, the model plan and the run command's checks open no
+    Baseten file, and the run still stops for want of the default model's own settings (with a Baseten default, the key in the
     environment would have let it start)."""
-    agents = tmp_path / "bf-agents"
+    agents = tmp_path / "pool"
     agents.mkdir()
     (agents / "baseten.env").write_text("BASETEN_API_KEY=from-a-key-file\n")
     monkeypatch.setenv("ROBOUSE_CODEX_AUTH_DIR", str(agents))
@@ -136,16 +136,16 @@ class _Grader(BaseHTTPRequestHandler):
 
 
 def test_the_grader_never_uses_the_baseten_key_or_key_file(tmp_path, monkeypatch, capsys, no_provider_env) -> None:
-    """The VLM grader (`robouse grade`, `real.verdict: vlm`) was the one reader of BASETEN_API_KEY and of
-    ~/.config/bf-agents/baseten.env: given only one of them, robouse 0.4.0 sent that key to the grader's endpoint. With
-    the variable set, then with only the file, it now stops before any request; with its own key it sends that one."""
+    """The VLM grader (`robouse grade`, `real.verdict: vlm`) was the one reader of BASETEN_API_KEY and of a baseten.env
+    in the maintainers' credential folder: given only one of them, robouse 0.4.0 sent that key to the grader's endpoint.
+    With the variable set, then with only the file, it now stops before any request; with its own key it sends that one."""
     pytest.importorskip("PIL")
     from robouse.analysis import grader
 
     _Grader.seen = []
     srv = ThreadingHTTPServer(("127.0.0.1", 0), _Grader)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    agents = tmp_path / "bf-agents"
+    agents = tmp_path / "pool"
     agents.mkdir()
     (agents / "baseten.env").write_text("BASETEN_API_KEY=from-a-key-file\n")
     monkeypatch.setenv("ROBOUSE_CODEX_AUTH_DIR", str(agents))

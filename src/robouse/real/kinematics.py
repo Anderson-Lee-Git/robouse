@@ -5,6 +5,9 @@ A chain file (`data/<robot>_chain.json`, written by `tools/assets/urdf_to_chain.
 the driver's joint values map onto the URDF joints (degrees -> radians, identity for the Metal arm and the SO-101 with
 LeRobot's calibration) and where the tool point is (a link plus an offset in that link's frame).
 
+A chain whose URDF Robo Use may not redistribute is not shipped (VENDOR_CHAINS): it is built on first use from the
+vendor's URDF, downloaded at a pinned commit and checked against its SHA-256, and kept in <cache>/real/.
+
 Used by the safety envelope (points on the arm checked against the table and the workspace box before any command) and
 by the backend's `move_to` skill (damped-least-squares IK on the tool point).
 """
@@ -12,11 +15,28 @@ by the backend's `move_to` skill (damped-least-squares IK on the tool point).
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
 import numpy as np
+
+# Chains built on first use from a vendor URDF instead of shipped. The MakerMods Metal arm's repository states no license
+# (see NOTICE), so neither its URDF nor the chain taken from it is in the package. Its URDF names the joints JOINT1..JOINT6
+# and the links Link1..Link6; the Metal profile uses joint1..joint6 and link1..link6, so the names are lower-cased.
+VENDOR_CHAINS: dict[str, dict[str, str]] = {
+    "metal_chain.json": {
+        "robot": "metal",
+        "display": "MakerMods Metal arm",
+        "url": "https://raw.githubusercontent.com/makermods-robotics/metal-python-ros/"
+        "ef4181f1305cbcfc63431d3bcfb96f5fb7f72763/metal_sdk/example/urdf/metal_with_gripper.urdf",
+        "sha256": "faac0ba624b28cf531834be0bf4eb90595ae78648dbfe12058b8ec656b65f7ef",
+        "source": "makermods-robotics/metal-python-ros@ef4181f1305cbcfc63431d3bcfb96f5fb7f72763 "
+        "metal_sdk/example/urdf/metal_with_gripper.urdf",
+        "urdf": "metal_with_gripper.urdf",
+    },
+}
 
 
 def rpy_matrix(r: float, p: float, y: float) -> np.ndarray:
@@ -46,13 +66,56 @@ class _Joint:
     axis: np.ndarray | None
 
 
+def chain_cache() -> Path:
+    """Where chains built from a vendor URDF are kept: <cache>/real ($ROBOUSE_CACHE_DIR/real)."""
+    from .. import config
+
+    return config.cache_dir() / "real"
+
+
+def build_vendor_chain(name: str) -> Path:
+    """Download the vendor URDF of a chain in VENDOR_CHAINS (unless the cache already holds it with the pinned hash), and
+    write the chain JSON next to it. Raises FileNotFoundError, saying how to place the URDF by hand, if the download fails."""
+    from ..lib.download import fetch
+
+    spec = VENDOR_CHAINS[name]
+    folder = chain_cache()
+    urdf = folder / spec["urdf"]
+    try:
+        fetch(spec["url"], urdf, spec["sha256"], timeout=60)
+    except OSError as e:  # no network, DNS, HTTP errors (urllib's URLError is an OSError)
+        raise FileNotFoundError(
+            f"the {spec['display']}'s kinematic chain is built from its vendor's URDF, which Robo Use does not ship, "
+            f"and downloading it failed ({e}). Download {spec['url']} to {urdf} (SHA-256 {spec['sha256']}) and run again."
+        ) from e
+    chain = urdf_to_chain(urdf, spec["robot"], spec["source"])
+    for j in chain["joints"]:
+        j.update(name=j["name"].lower(), parent=j["parent"].lower(), child=j["child"].lower())
+    chain["links"] = [{"name": link["name"].lower()} for link in chain["links"]]
+    chain["sources"]["sha256"] = spec["sha256"]
+    chain["joint_mapping"] = "identity: degrees -> radians; the URDF's joint and link names lower-cased"
+    out = folder / name
+    tmp = out.with_name(f".{out.name}.{os.getpid()}.part")
+    tmp.write_text(json.dumps(chain, indent=1) + "\n")
+    tmp.replace(out)
+    return out
+
+
 def load_chain_file(name: str) -> dict:
-    """A chain JSON shipped in robouse/real/data (by file name) or any path."""
+    """A chain JSON by path, shipped in robouse/real/data (by file name), or, for a chain in VENDOR_CHAINS, built on first
+    use from the vendor's URDF and read from <cache>/real/ afterwards."""
     p = Path(name)
     if p.exists():
         return json.loads(p.read_text())
-    with resources.files("robouse.real.data").joinpath(name).open() as fh:
-        return json.load(fh)
+    shipped = resources.files("robouse.real.data").joinpath(name)
+    if shipped.is_file():
+        return json.loads(shipped.read_text())
+    if name not in VENDOR_CHAINS:
+        raise FileNotFoundError(f"no kinematic chain {name!r} in robouse/real/data")
+    cached = chain_cache() / name
+    if not cached.is_file():
+        build_vendor_chain(name)
+    return json.loads(cached.read_text())
 
 
 class Chain:

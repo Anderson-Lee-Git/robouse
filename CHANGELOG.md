@@ -2,6 +2,12 @@
 
 Notable changes to the `robouse` package, newest first. Versions follow [semantic versioning](https://semver.org/); while the version is below 1.0, a minor version can change interfaces. Dates are PyPI release dates (UTC).
 
+## Unreleased
+
+### Changed
+
+- The MakerMods Metal arm's kinematic chain is no longer in the package (`robouse/real/data/metal_chain.json`, shipped since 0.2.0): MakerMods' repository states no license. The first use of the Metal profile downloads the arm's URDF from MakerMods' repository at a pinned commit, checks its SHA-256 and builds the chain in `<cache>/real/`. The chain is the same arm (forward kinematics unchanged), without the gripper's joints, which no check used. Without network access, the error says where to put the URDF by hand.
+
 ## 0.5.0 (2026-10-20)
 
 Day-one support for Dream Labs' Dream-1 (the `dream` harness and the `yam` suite on Dream's bimanual YAM station), agent isolation fixes, and changes for the open-source release of the repository.

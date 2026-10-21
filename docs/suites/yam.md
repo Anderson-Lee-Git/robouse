@@ -48,14 +48,14 @@ The client is Dream's own simulation loop (`dream_examples/yam_mujoco/dream_cont
 3. `get_action()` while the simulation waits, check the two 48-row chunks (shape, finite values, gripper openings within 0..1), clip them to the joint limits and execute up to `ROBOUSE_DREAM_ACTIONS` rows (default 48), handing the client every 4th step's frames.
 4. Repeat until the budget is nearly spent, then `robo done`.
 
-As in Dream's loop: `dreamlabs/dream-1-beta` reads hand poses, so it is sent the YAM station's keys (`state.arm_r.joint_pos`, `image_window.top`, `robot.arm: yam`, ...) from which the serve computes them; other models get their own keys (`state.right_arm`, `video.overhead`, ...) and switch when refused for missing poses. Config `{"timeout_ms": 45000, "strict": false, "action_hz": 20, "_record": false}`. `_record: false` matters: Dream's client otherwise uploads every observation it is given to Dream Labs in the background (its source says so; the public docs do not), and Dream's own MuJoCo example turns it off for simulated episodes. Session restarts are retried up to 3 times; retryable refusals (`rate_limited`, `pool_warming`) wait `retry_after_s`, at most 15 minutes in all. On any robot but a dual YAM with the three cameras the client gives up at 0 steps with the reason.
+As in Dream's loop: `dreamlabs/dream-1-beta` reads hand poses, so it is sent the YAM station's keys (`state.arm_r.joint_pos`, `image_window.top`, `robot.arm: yam`, ...) from which the serve computes them; other models get their own keys (`state.right_arm`, `video.overhead`, ...) and switch when refused for missing poses. Config `{"timeout_ms": 45000, "strict": false, "action_hz": 20, "_record": false}`. `_record: false` matters: Dream's client otherwise uploads every observation it is given to Dream Labs in the background (the client's source shows it), and Dream's own MuJoCo example turns it off for simulated episodes. Session restarts are retried up to 3 times; retryable refusals (`rate_limited`, `pool_warming`) wait `retry_after_s`, at most 15 minutes in all. On any robot but a dual YAM with the three cameras the client gives up at 0 steps with the reason.
 
 ## Results (2026-10-19, one trial per task)
 
 | Model | apple to bowl | orange to bowl | banana to plate | All |
 |---|---|---|---|---|
-| `dreamlabs/dream-1-beta` (Dream-WAN21-14B) | 3/3 | 2/3 | 1/3 | 6/9 |
-| `dreamlabs/dream-1-beta-flash` (Dream-WAN22-5B) | 1/3 | 3/3 | 0/3 | 4/9 |
+| `dreamlabs/dream-1-beta` | 3/3 | 2/3 | 1/3 | 6/9 |
+| `dreamlabs/dream-1-beta-flash` | 1/3 | 3/3 | 0/3 | 4/9 |
 
 25 inferences per trial; a trial took 52 to 70 s of wall time. Round trips (225 per model): beta median 0.64 s (10th to 90th percentile 0.52 to 0.93 s, the model's own inference 455 ms), flash median 0.45 s (0.25 to 0.85 s, inference 219 ms). One trial per task is far too few to rank the two models: 6/9 against 4/9 is well inside the noise.
 

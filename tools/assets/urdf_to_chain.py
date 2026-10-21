@@ -2,8 +2,9 @@
 
   python tools/assets/urdf_to_chain.py URDF --robot so101 --source "TheRobotStudio/SO-ARM100@<commit> Simulation/SO101/so101_new_calib.urdf"
 
-The Metal chain (metal_chain.json) was composed the same way from the vendor's canonical URDF plus the gripper mount of
-the description URDF (makermods-robotics/metal-python-ros @ ef4181f); see src/robouse/real/robots.py.
+Only chains from URDFs that Robo Use may redistribute belong there. The MakerMods Metal chain is not shipped: Robo Use
+builds it on first use from the vendor's URDF (makermods-robotics/metal-python-ros @ ef4181f) with the same converter;
+see VENDOR_CHAINS in src/robouse/real/kinematics.py.
 """
 from __future__ import annotations
 

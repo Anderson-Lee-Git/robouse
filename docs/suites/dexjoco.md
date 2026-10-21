@@ -1,6 +1,6 @@
 # DexJoCo suite
 
-14 dexterous tool-use tasks adapted from [DexJoCo](https://dexjoco.github.io) ([arXiv 2605.16257](https://arxiv.org/abs/2605.16257), v2 2026-09-22; code [brave-eai/dexjoco](https://github.com/brave-eai/dexjoco), MIT). A Franka Panda arm (or two) carries a four-fingered, 16-joint Allegro hand instead of a gripper, and the tasks are functional: water a plant with a trigger sprayer, hammer a nail, click a mouse, fill and lift a bucket, squeeze kitchen tongs, fold a pair of glasses into a box, and bimanual microwave cooking, photographing, iPad passcode entry and peg-in-hole assembly. Why this suite was picked over other 2026 releases: [../research/recent-2026.md](../research/recent-2026.md).
+14 dexterous tool-use tasks adapted from [DexJoCo](https://dexjoco.github.io) ([arXiv 2605.16257](https://arxiv.org/abs/2605.16257), v2 2026-09-22; code [brave-eai/dexjoco](https://github.com/brave-eai/dexjoco), MIT). A Franka Panda arm (or two) carries a four-fingered, 16-joint Allegro hand instead of a gripper, and the tasks are functional: water a plant with a trigger sprayer, hammer a nail, click a mouse, fill and lift a bucket, squeeze kitchen tongs, fold a pair of glasses into a box, and bimanual microwave cooking, photographing, iPad passcode entry and peg-in-hole assembly.
 
 Backend: `src/robouse/backends/dexjoco.py` (bridge) and `src/robouse/backends/dexjoco_worker.py` (runs in DexJoCo's own virtualenv). Generator: `adapters/dexjoco/generate.py`. Runs on the Mac (MuJoCo on CPU, no GPU).
 

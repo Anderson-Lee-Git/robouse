@@ -44,7 +44,7 @@ Compare runs with `robouse report` ([Metrics](metrics.md#reports)).
 
 ## A dataset
 
-A dataset is a named, versioned set of tasks on the [hub](/hub/), for example `farama-foundation/metaworld@0.3`. A registry file pins each version to one commit of the hub repository, [github.com/benchflow-ai/robohub](https://github.com/benchflow-ai/robohub), and a digest of every task. `bench` checks the digests, then runs each task in two Docker containers: the agent with only the `robo` client, and the simulator with no network, which also runs the verifier. `bench` is BenchFlow's command; `pip install 'robouse[benchflow]'` installs it (Python 3.12 or newer).
+A dataset is a named, versioned set of tasks on the [hub](https://robouse.ai/hub/), for example `farama-foundation/metaworld@0.3`. A registry file pins each version to one commit of the hub repository, [github.com/benchflow-ai/robohub](https://github.com/benchflow-ai/robohub), and a digest of every task. `bench` checks the digests, then runs each task in two Docker containers: the agent with only the `robo` client, and the simulator with no network, which also runs the verifier. `bench` is BenchFlow's command; `pip install 'robouse[benchflow]'` installs it (Python 3.12 or newer).
 
 ```console
 $ ROBOUSE_ORACLE_TOKEN=$(openssl rand -hex 16) \

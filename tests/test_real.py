@@ -16,6 +16,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 HIL = ROOT / "tests" / "fixtures" / "hil"  # sessions recorded on the Metal arm, for the mock (see each note)
 
+# Most of these tests run the Metal arm, whose kinematic chain is built on first use from the vendor's URDF (conftest.py)
+pytestmark = pytest.mark.usefixtures("metal_chain")
+
 
 @pytest.fixture(autouse=True)
 def _operator_dir(tmp_path, monkeypatch):
@@ -45,6 +48,44 @@ def _episode(task_id: str, tmp_path, secrets: dict | None = None, **real_overrid
     spec = load_task(ROOT / "tasks" / suite / task_id).spec
     spec["real"] = {**spec["real"], **real_overrides}
     return Episode(spec, tmp_path / "ep", secrets=secrets)
+
+
+def test_the_metal_chain_is_built_from_the_vendor_urdf_not_shipped(metal_chain):
+    """The MakerMods repository states no license, so the package holds neither the Metal arm's URDF nor its chain: the
+    chain comes from the URDF at the pinned commit, with the vendor's JOINTn and Linkn names lower-cased. Forward
+    kinematics at the home and zero poses, as robouse 0.2.0 to 0.5.0 computed them from the chain they shipped."""
+    from importlib import resources
+
+    from robouse.real.kinematics import VENDOR_CHAINS
+    from robouse.real.robots import METAL
+
+    assert not resources.files("robouse.real.data").joinpath("metal_chain.json").is_file()
+    assert not (ROOT / "src/robouse/real/data/metal_chain.json").exists()
+    spec = VENDOR_CHAINS["metal_chain.json"]
+    assert metal_chain["sources"] == {"urdf": spec["source"], "sha256": spec["sha256"]}
+    names = [j["name"] for j in metal_chain["joints"]]
+    assert names == ["fixed_base_joint", "joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+    ch = METAL.chain()
+    assert ch.tool(np.asarray(METAL.home[:6], dtype=float)) == pytest.approx([0.33751, -0.00025, 0.122497], abs=1e-6)
+    assert ch.tool(np.zeros(6)) == pytest.approx([0.161348, -0.00025, 0.18916], abs=1e-6)
+
+
+def test_without_network_the_metal_chain_says_where_to_put_the_urdf(tmp_path, monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    from robouse.real.kinematics import VENDOR_CHAINS, load_chain_file
+
+    def offline(*a, **k):
+        raise urllib.error.URLError("no network")
+
+    monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(urllib.request, "urlopen", offline)
+    with pytest.raises(FileNotFoundError) as e:
+        load_chain_file("metal_chain.json")
+    spec = VENDOR_CHAINS["metal_chain.json"]
+    assert spec["url"] in str(e.value) and str(tmp_path / "real" / spec["urdf"]) in str(e.value)
+    assert not [p for p in (tmp_path / "real").glob("*") if p.is_file()]  # nothing half-written
 
 
 def test_metal_fk_matches_recorded_hardware_poses():
