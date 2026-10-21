@@ -123,7 +123,7 @@ $ robouse run --task mytasks/blue-block-in-bowl --harness noop --out runs/mine
   ...
 ```
 
-Tabletop goal types: `in`, `on_pad`, `on_plate`, `on_top`, `on_top_level`, `stack`, `drawer`, `unmoved`, `upright`, `in_socket`, `grid`, `in_zone` and `handle_toward`. Constraints, listed under `scenario.constraints`, fail the task when broken: `no_contact`, `max_disp`, `max_down_speed`, `size_order`, `top_only`, `no_attempt` and `no_overfly`. To find a task that uses one:
+Tabletop goal types: `in`, `on_pad`, `on_plate`, `on_top`, `on_top_level`, `stack`, `drawer`, `unmoved`, `upright`, `in_socket`, `grid`, `in_zone`, `handle_toward`, `lid_open` and `standing`. Constraints, listed under `scenario.constraints`, fail the task when broken: `no_contact`, `max_disp`, `max_down_speed`, `size_order`, `top_only`, `no_attempt` and `no_overfly`. To find a task that uses one:
 
 ```sh
 grep -rl "type: stack" "$(robouse tasks --path)"

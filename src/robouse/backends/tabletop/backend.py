@@ -28,6 +28,8 @@ from ...core.protocol import agent_refused
 from ..base import ActionSpec, Backend, G, StepInfo, arm_layout
 from .scenarios import SCENARIOS
 from .scene import (
+    BALL_R,
+    CABINET_YAW,
     DR_FLOOR,
     DR_HANDLE,
     DR_IN,
@@ -37,6 +39,8 @@ from .scene import (
     HAND_HI,
     HAND_HOME,
     HAND_LO,
+    HANDLE_BAR,
+    HANDLE_GAP,
     SETTLE_SUBSTEPS,
     STEP_M,
     SUBSTEPS,
@@ -46,7 +50,12 @@ from .scene import (
     _fixture_xy,
     _obj_rest_half,
     _resolved_obj,
+    bottle_dims,
     build_xml,
+    cabinet_handle_local,
+    hinged_box_dims,
+    lid_dims,
+    obj_quat,
 )
 
 # --------------------------------------------------------------------------------------------------
@@ -98,11 +107,28 @@ class TabletopBackend(Backend):
         self._obj_qadr = {n: m.jnt_qposadr[m.joint(f"fj_{n}").id] for n in self._objs}
         self._fixtures = {f["name"]: f for f in sc.get("fixtures", [])}
         self._drawers = {
-            n: m.jnt_qposadr[m.joint(f"dj_{n}").id] for n, f in self._fixtures.items() if f["kind"] == "drawer"
+            n: m.jnt_qposadr[m.joint(f"dj_{n}").id]
+            for n, f in self._fixtures.items()
+            if f["kind"] in ("drawer", "cabinet")
         }
+        self._hinges = {
+            n: m.jnt_qposadr[m.joint(f"hj_{n}").id] for n, f in self._fixtures.items() if f["kind"] == "hinged_box"
+        }
+        # the moving part of a hinged box or a cabinet (its lid or its drawer), for the rule that it must be let go of
+        self._part_body = {
+            n: m.body(("lid_" if f["kind"] == "hinged_box" else "drawer_") + n).id
+            for n, f in self._fixtures.items()
+            if f["kind"] in ("hinged_box", "cabinet")
+        }
+        # `released` on a drawer goal checks the gripper against a cabinet's drawer (_part_touched); the older `drawer`
+        # fixture has no such part, so the option would do nothing there: refuse it rather than score without it
+        for gl in self.sc.get("goals", []):
+            if gl.get("type") == "drawer" and gl.get("released") and gl.get("drawer") not in self._part_body:
+                raise ValueError(f"drawer goal on {gl.get('drawer')!r}: `released` needs a cabinet's drawer")
         # geom owner labels for contact monitoring
         self._owner: dict[int, str] = {}
         bid_to_obj = {b: n for n, b in self._obj_body.items()}
+        bid_to_part = {b: n for n, b in self._part_body.items()}
         grip_bodies = {m.body(b).id for b in ("hand", "finger_l", "finger_r")}
         fig_bodies = {m.body(f"fx_{n}").id for n, f in self._fixtures.items() if f["kind"] == "figure"}
         for g in range(m.ngeom):
@@ -113,6 +139,8 @@ class TabletopBackend(Backend):
                 self._owner[g] = "gripper"
             elif b in fig_bodies:
                 self._owner[g] = "figure"
+            elif b in bid_to_part:
+                self._owner[g] = "part:" + bid_to_part[b]
         self._grip = -1.0
         self.steps = 0
 
@@ -152,11 +180,12 @@ class TabletopBackend(Backend):
                 o = {**o, "pos": [o["pos"][0] + offs[n][0], o["pos"][1] + offs[n][1], *o["pos"][2:]]}
             a = self._obj_qadr[n]
             z = o.get("z", _obj_rest_half(o)) + 0.0005
-            yaw = math.radians(o.get("yaw", 0.0))
             d.qpos[a : a + 3] = [o["pos"][0], o["pos"][1], z]
-            d.qpos[a + 3 : a + 7] = [math.cos(yaw / 2), 0, 0, math.sin(yaw / 2)]
+            d.qpos[a + 3 : a + 7] = obj_quat(o)
         for n, adr in self._drawers.items():
             d.qpos[adr] = float(self._fixtures[n].get("open", 0.0))
+        for n, adr in self._hinges.items():
+            d.qpos[adr] = math.radians(float(self._fixtures[n].get("open_deg", 0.0)))
         d.mocap_pos[0] = HAND_HOME
         self._grip = -1.0
         d.ctrl[:] = FINGER_OPEN
@@ -219,6 +248,14 @@ class TabletopBackend(Backend):
             r, hh = o["size"]
             c = abs(R[2, 2])
             return float(c * hh + math.sqrt(max(0.0, 1 - c * c)) * r)
+        if o["kind"] == "lid":  # its bounding box: the slab's footprint and the whole height, plug to knob
+            h = lid_dims(o)["height"] / 2
+            hx, hy = (o["size"][0], o["size"][0]) if o.get("shape") == "round" else o["size"][:2]
+            return float(abs(R[2, 0]) * hx + abs(R[2, 1]) * hy + abs(R[2, 2]) * h)
+        if o["kind"] == "bottle":  # its bounding cylinder: the body's radius and the whole length, base to cap
+            d = bottle_dims(o)
+            c = abs(R[2, 2])
+            return float(c * d["length"] / 2 + math.sqrt(max(0.0, 1 - c * c)) * d["body_r"])
         return 0.012
 
     def _half_xy(self, n: str) -> float:
@@ -227,6 +264,10 @@ class TabletopBackend(Backend):
             return float(max(o["size"][0], o["size"][1]))
         if o["kind"] == "cyl":
             return float(o["size"][0])
+        if o["kind"] == "lid":
+            return float(max(o["size"][:2]) if o.get("shape") != "round" else o["size"][0])
+        if o["kind"] == "bottle":
+            return bottle_dims(o)["body_r"]
         return 0.075
 
     def _tilt(self, n: str) -> float:
@@ -252,6 +293,18 @@ class TabletopBackend(Backend):
 
     def _drawer_open(self, n: str) -> float:
         return float(self.data.qpos[self._drawers[n]])
+
+    def _lid_deg(self, n: str) -> float:
+        """A hinged box's lid angle in degrees: 0 shut, larger open."""
+        return math.degrees(float(self.data.qpos[self._hinges[n]]))
+
+    def _local(self, body: int, p) -> np.ndarray:
+        """A point given in a body's frame, in world coordinates."""
+        return self.data.xpos[body] + self.data.xmat[body].reshape(3, 3) @ np.asarray(p, dtype=float)
+
+    def _part_touched(self, n: str) -> bool:
+        """The gripper touches the lid of hinged box `n`, or the drawer of cabinet `n`."""
+        return any({a, b} == {"gripper", "part:" + n} for a, b in self._contacts())
 
     def _contacts(self) -> list[tuple[str, str]]:
         out = []
@@ -458,7 +511,18 @@ class TabletopBackend(Backend):
             return ok and self._resting_on(order[0], 0.0)
         if t == "drawer":
             q = self._drawer_open(gl["drawer"])
+            if gl.get("released") and self._part_touched(gl["drawer"]):  # it has to stay open without the gripper
+                return False
             return q >= gl.get("min_open", -1) and q <= gl.get("max_open", 1)
+        if t == "lid_open":  # one-demo: a hinged lid swung open at least `min_deg`, resting there on its own
+            return self._lid_deg(gl["box"]) >= gl["min_deg"] and not self._part_touched(gl["box"])
+        if t == "standing":  # one-demo: standing upright on its base on the table, at rest
+            n = gl["obj"]
+            return bool(
+                self._tilt(n) < gl.get("max_tilt", 10)
+                and self._resting_on(n, gl.get("z", 0.0))
+                and self._speed(n) < gl.get("max_speed", 0.02)
+            )
         if t == "unmoved":
             return bool(np.linalg.norm(self._pos(gl["obj"])[:2] - self._init_pos[gl["obj"]][:2]) < gl.get("tol", 0.02))
         if t == "upright":
@@ -543,7 +607,8 @@ class TabletopBackend(Backend):
         objs = {}
         for n, o in self._objs.items():
             yaw, tilt = _quat_yaw_tilt(d.xmat[self._obj_body[n]])
-            e = {"kind": {"box": "box", "cyl": "cylinder", "knife": "knife"}[o["kind"]], "color": o.get("color")}
+            kind = {"box": "box", "cyl": "cylinder", "knife": "knife", "lid": "lid", "bottle": "bottle"}[o["kind"]]
+            e = {"kind": kind, "color": o.get("color")}
             if o.get("label"):
                 e["label"] = o["label"]
             e["pos"] = r4(self._pos(n))
@@ -552,6 +617,8 @@ class TabletopBackend(Backend):
                 e["yaw_deg"] = round(yaw, 1)
             elif o["kind"] == "cyl":
                 e["size"] = r4([2 * o["size"][0], 2 * o["size"][0], 2 * o["size"][1]])
+            elif o["kind"] in ("lid", "bottle"):
+                e.update(self._part_fields(n))
             else:
                 e["size"] = [0.15, 0.022, 0.024]
                 e["yaw_deg"] = round(yaw, 1)
@@ -608,6 +675,29 @@ class TabletopBackend(Backend):
                 e["pos"] = r4(c)
                 e["size"] = r4([2 * s for s in fx.get("size", [0.1, 0.4])])
                 e["top_z"] = round(c[2] + fx.get("height", 0.004), 4)
+            elif k == "hinged_box":
+                hb = hinged_box_dims(fx)
+                e["pos"] = r4(c)
+                e["size"] = r4(fx["size"])
+                e["hinge_side"] = fx.get("hinge", "left")
+                e["hinge_pos"] = r4(hb["hinge"])
+                e["lid_angle_deg"] = round(self._lid_deg(n), 1) + 0.0  # + 0.0: a shut lid reads 0.0, not -0.0
+                e["max_angle_deg"] = hb["max_deg"]
+                e["knob_pos"] = r4(self._local(self._part_body[n], [hb["sign"] * hb["knob"][0], 0.0, hb["knob"][1]]))
+                e["knob_diameter"] = round(2 * BALL_R, 4)
+                e["gripper_touching"] = self._part_touched(n)  # `holding` lists free objects only, not a lid
+            elif k == "cabinet":
+                yaw = math.radians(CABINET_YAW[fx.get("facing", "front")])
+                e["pos"] = r4(c)
+                e["size"] = r4(fx["size"])
+                e["facing"] = fx.get("facing", "front")
+                e["pull_direction"] = r4([math.sin(yaw), -math.cos(yaw), 0.0])
+                e["opening"] = round(self._drawer_open(n), 4)
+                e["max_opening"] = float(fx.get("travel", 0.1))
+                e["handle_pos"] = r4(self._local(self._part_body[n], cabinet_handle_local(fx)))
+                e["handle_length"] = round(2 * HANDLE_BAR[0], 4)
+                e["handle_gap"] = HANDLE_GAP
+                e["gripper_touching"] = self._part_touched(n)
             elif k == "figure":
                 yaw = math.radians(fx.get("yaw", 0.0))
                 u = np.array([math.cos(yaw), math.sin(yaw), 0])
@@ -639,6 +729,35 @@ class TabletopBackend(Backend):
             out["constraint_violations"] = list(self.violations)
         return out
 
+    def _part_fields(self, n: str) -> dict[str, Any]:
+        """Observation fields of a one-demo lid or bottle: its size and the points a strategy needs (the knob, the cap,
+        the base), where they are now."""
+        r4 = lambda v: [round(float(x), 4) for x in v]
+        o, R, p = self._objs[n], self._xmat(n), self._pos(n)
+        yaw = round(_quat_yaw_tilt(self.data.xmat[self._obj_body[n]])[0], 1) + 0.0
+        if o["kind"] == "lid":
+            d = lid_dims(o)
+            hx, hy = (o["size"][0], o["size"][0]) if o.get("shape") == "round" else o["size"][:2]
+            return {
+                "shape": o.get("shape", "box"),
+                "size": r4([2 * hx, 2 * hy, d["height"]]),
+                "yaw_deg": yaw,
+                "knob_pos": r4(p + R @ np.array([0.0, 0.0, d["height"] / 2 - d["knob_h"] / 2])),
+                "knob_diameter": round(2 * d["knob_r"], 4),
+                "plug_depth": round(d["plug"], 4),
+            }
+        d = bottle_dims(o)
+        half = d["length"] / 2
+        return {
+            "size": r4([2 * d["body_r"], 2 * d["body_r"], d["length"]]),
+            "axis": r4(R[:, 2]),
+            "base_pos": r4(p + R @ np.array([0.0, 0.0, -half])),
+            "cap_pos": r4(p + R @ np.array([0.0, 0.0, -half + d["body_len"] + d["neck_len"]])),
+            "body_diameter": round(2 * d["body_r"], 4),
+            "neck_diameter": round(2 * d["neck_r"], 4),
+            "cap_diameter": round(2 * BALL_R, 4),
+        }
+
     def render(self, width: int = 320, height: int = 320) -> np.ndarray:
         if self._renderer is None:
             self._renderer = self._mj.Renderer(self.model, height, width)
@@ -648,17 +767,20 @@ class TabletopBackend(Backend):
     def skills(self) -> list[str]:
         return ["move_to", "grip"]
 
-    # ---- hard suite: rule examples shown only as images ------------------------------------------
+    # ---- hard suite: rule examples shown only as images; one-demo suite: a demonstration's frames ---------------
     def workspace_images(self) -> dict[str, np.ndarray]:
         """Images the episode server saves into the agent's workspace at the start (observations/<name>).
         Scenarios with `image_examples` get one picture per example: the arrangement before and after the hidden rule,
-        rendered in this same scene from straight above. No example data is given in the observation."""
+        rendered in this same scene from straight above. No example data is given in the observation. Scenarios with a
+        `demo` (the one-demo suite) get the demonstration's frames, demo_1.png, demo_2.png, ... (demo_frames)."""
         exs = self.sc.get("image_examples") or []
         view = self.sc.get("example_view", {})
         out = {}
         for i, ex in enumerate(exs, 1):
             panels = [_render_arrangement(self.sc, ex["before"], view), _render_arrangement(self.sc, ex["after"], view)]
             out[f"example_{i}.png"] = _compose_example(panels, i)
+        if self.sc.get("demo"):
+            out.update(demo_frames(self.sc["demo"]))
         return out
 
     def mj_model_data(self):
@@ -744,6 +866,116 @@ def _compose_example(panels: list[np.ndarray], i: int) -> np.ndarray:
     y = top + h // 2
     dr.line([(w + 10, y), (w + gap - 12, y)], fill=(0, 0, 0), width=4)
     dr.polygon([(w + gap - 6, y), (w + gap - 18, y - 9), (w + gap - 18, y + 9)], fill=(0, 0, 0))
+    return np.asarray(canvas)
+
+
+DEMO_PANEL = (400, 320)  # one view of a demonstration frame, width x height
+DEMO_ABOVE = "from above (back of the table up; gripper see-through)"
+
+
+def demo_frames(demo: dict) -> dict[str, np.ndarray]:
+    """The one-demo suite's demonstration frames, demo_1.png, demo_2.png, ...: each frame is a simulator state the
+    generator kept from the demonstration episode (`qpos`, at a moment its reference strategy marked), set in the
+    demonstration's own scene and rendered from the front and above (`view_azimuth`: 90 looks along +y; less, from the
+    left; more, from the right) and from straight above. Both cameras look at the middle of everything that takes part
+    (the fingers and the demonstration's things, in every frame), from just far enough away to see all of it. From
+    above, the gripper is drawn see-through, so it does not hide what it holds. Nothing is simulated: the frames show
+    the recorded states."""
+    import mujoco
+
+    m = mujoco.MjModel.from_xml_string(build_xml({"objects": demo["objects"], "fixtures": demo["fixtures"]}))
+    d = mujoco.MjData(m)
+    frames = demo["frames"]
+    for fr in frames:
+        if len(fr["qpos"]) != m.nq:
+            raise ValueError(f"a demonstration frame has {len(fr['qpos'])} positions; its scene has {m.nq}")
+    gripper = [g for g in range(m.ngeom) if m.body(int(m.geom_bodyid[g])).name in ("hand", "finger_l", "finger_r")]
+    # what the cameras take in: the fingers (not the palm and wrist above them) and the demonstration's things
+    shown = [
+        g
+        for g in range(m.ngeom)
+        if (m.geom_contype[g] or m.geom_conaffinity[g] or m.geom(g).name.startswith("pad_"))
+        and m.geom(g).name not in ("floor", "table", "palm")
+    ]
+    lo, hi = np.full(3, np.inf), np.full(3, -np.inf)
+    for fr in frames:
+        d.qpos[:] = fr["qpos"]
+        mujoco.mj_forward(m, d)
+        for g in shown:
+            r = float(m.geom_rbound[g]) if g not in gripper else 0.02
+            lo, hi = np.minimum(lo, d.geom_xpos[g] - r), np.maximum(hi, d.geom_xpos[g] + r)
+    center = (lo + hi) / 2
+    corners = [np.array([x, y, z]) - center for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]
+    tv = math.tan(math.radians(float(m.vis.global_.fovy)) / 2)  # vertical half angle; the panel is 1.25x wider
+    th = tv * DEMO_PANEL[0] / DEMO_PANEL[1]
+    m.light_specular[:] = 0.0  # even light, so neither view is washed out
+    m.vis.headlight.ambient[:] = 0.45
+    m.vis.headlight.diffuse[:] = 0.3
+    m.vis.headlight.specular[:] = 0.0
+    alpha = m.geom_rgba[:, 3].copy()
+    az = float(demo.get("view_azimuth", 90.0))
+    side = "from the front" if az == 90 else ("from the front left" if az < 90 else "from the front right")
+    views = ((side, -30.0, az), (DEMO_ABOVE, -90.0, 90.0))
+    w, h = DEMO_PANEL
+    r = mujoco.Renderer(m, h, w)
+    out = {}
+    try:
+        for i, fr in enumerate(frames, 1):
+            d.qpos[:] = fr["qpos"]
+            mujoco.mj_forward(m, d)
+            panels = []
+            for name, elev, azim in views:
+                cam = mujoco.MjvCamera()
+                cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+                cam.lookat[:] = center
+                cam.distance = _fit_distance(corners, elev, azim, th, tv)
+                cam.elevation, cam.azimuth = elev, azim
+                m.geom_rgba[:, 3] = alpha
+                if elev < -60:
+                    m.geom_rgba[gripper, 3] = 0.35
+                r.update_scene(d, camera=cam)
+                panels.append((name, r.render().copy()))
+            m.geom_rgba[:, 3] = alpha
+            caption = f"demonstration frame {i} of {len(frames)}, step {fr['step']} (after command {fr['after']}): {fr['label']}"
+            out[f"demo_{i}.png"] = _compose_demo(panels, caption)
+    finally:
+        r.close()
+    return out
+
+
+def _fit_distance(corners: list[np.ndarray], elev: float, azim: float, th: float, tv: float) -> float:
+    """How far a free camera (MuJoCo's azimuth and elevation, in degrees) must stand from the middle of a box, given by
+    its corners relative to that middle, to see all of it with a 6% margin; th and tv are the tangents of the half
+    angles of view."""
+    e, a = math.radians(elev), math.radians(azim)
+    fwd = np.array([math.cos(e) * math.cos(a), math.cos(e) * math.sin(a), math.sin(e)])
+    right = np.array([math.sin(a), -math.cos(a), 0.0])
+    up = np.cross(right, fwd)
+    need = max(max(abs(c @ right) / th, abs(c @ up) / tv) - c @ fwd for c in corners)
+    return 1.06 * max(need, 0.05)
+
+
+def _font(size: int):
+    from PIL import ImageFont
+
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:  # Pillow before 10.1 has one bitmap size only
+        return ImageFont.load_default()
+
+
+def _compose_demo(panels: list[tuple[str, np.ndarray]], caption: str) -> np.ndarray:
+    from PIL import Image, ImageDraw
+
+    h, w = panels[0][1].shape[:2]
+    gap, top, label = 12, 34, 22
+    canvas = Image.new("RGB", (len(panels) * w + (len(panels) - 1) * gap, top + label + h), (255, 255, 255))
+    dr = ImageDraw.Draw(canvas)
+    dr.text((8, 8), caption, fill=(0, 0, 0), font=_font(16))
+    for k, (name, img) in enumerate(panels):
+        x = k * (w + gap)
+        dr.text((x + 4, top + 3), name, fill=(60, 60, 60), font=_font(14))
+        canvas.paste(Image.fromarray(img), (x, top + label))
     return np.asarray(canvas)
 
 

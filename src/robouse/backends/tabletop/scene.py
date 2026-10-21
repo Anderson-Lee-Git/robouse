@@ -52,6 +52,24 @@ DR_WALL_TOP = 0.056
 DR_HANDLE = (-0.117, 0.045)  # handle bar (y offset from cabinet centre when closed, z)
 DR_TRAVEL = 0.12
 
+# one-demo suite parts (onedemo.py): the part the gripper touches is the same on every object of a family, while the
+# object's size, shape and pose change. A ball (the hinged lid's knob, the bottle's cap) pinched from above can turn
+# about the pinch axis: it takes the box's or the bottle's contact parameters (priority) and has no torsional friction
+# (condim 3), so a held lid or bottle can swing about a horizontal y axis while the fingers stay level.
+BALL_R = 0.012
+BALL = 'priority="1" friction="1.5 0.005 0.0001" condim="3"'
+HB_LID_T = 0.008  # hinged lid: slab thickness
+HB_WALL_T = 0.006
+HB_STEM = 0.022  # height of the knob ball's centre above the lid's top face
+HB_INSET = 0.025  # the knob ball's centre from the lid's free edge
+HB_MAX_DEG = 110.0  # the lid's stop: past upright, so an opened lid rests open
+LID_KNOB = (0.01, 0.022)  # lift-off lid: the knob, a vertical cylinder (radius, height)
+LID_SLAB_T = 0.008
+CAB_T = 0.008  # cabinet wall thickness
+HANDLE_GAP = 0.035  # cabinet drawer handle: clear gap between the bar and the drawer face
+HANDLE_BAR = (0.04, 0.005, 0.006)  # the bar's half length (along the face), half thickness (out from it), half height
+CABINET_YAW = {"front": 0.0, "left": -90.0, "right": 90.0}  # the drawer slides out toward -y, -x or +x
+
 
 def _f(*v) -> str:
     return " ".join(f"{float(x):.5g}" for x in v)
@@ -105,7 +123,86 @@ def _obj_xml(o: dict) -> str:
             )
             + "</body>"
         )
+    if kind == "lid":
+        return _lid_xml(o, x, y, z, fr)
+    if kind == "bottle":
+        return _bottle_xml(o, x, y, z, fr)
     raise ValueError(f"unknown object kind {kind!r}")
+
+
+def lid_dims(o: dict) -> dict:
+    """A lift-off lid, from the bottom up: a plug that fits inside its container's opening, the slab that rests on the
+    rim, and a knob on top. The body's origin is the centre of that stack, so its bottom is `height` / 2 below it."""
+    plug = float(o.get("plug", 0.012))
+    kr, kh = LID_KNOB
+    return {"plug": plug, "slab": LID_SLAB_T, "knob_r": kr, "knob_h": kh, "height": plug + LID_SLAB_T + kh}
+
+
+def _lid_xml(o: dict, x: float, y: float, z: float, fr: str) -> str:
+    n, col = o["name"], o.get("color", "grey")
+    d = lid_dims(o)
+    h = d["height"]
+    inset = float(o.get("plug_inset", 0.012))  # the plug is this much smaller than the slab on every side
+    zp, zs, zk = -h / 2 + d["plug"] / 2, -h / 2 + d["plug"] + d["slab"] / 2, h / 2 - d["knob_h"] / 2
+    dens = o.get("density", 400)
+    if o.get("shape", "box") == "round":
+        r = float(o["size"][0])
+        slab = f'type="cylinder" pos="{_f(0, 0, zs)}" size="{_f(r, d["slab"] / 2)}"'
+        plug = f'type="cylinder" pos="{_f(0, 0, zp)}" size="{_f(r - inset, d["plug"] / 2)}"'
+    else:
+        hx, hy = o["size"][:2]
+        slab = f'type="box" pos="{_f(0, 0, zs)}" size="{_f(hx, hy, d["slab"] / 2)}"'
+        plug = f'type="box" pos="{_f(0, 0, zp)}" size="{_f(hx - inset, hy - inset, d["plug"] / 2)}"'
+    return (
+        f'<body name="obj_{n}" pos="{_f(x, y, z)}" euler="0 0 {o.get("yaw", 0.0)}"><freejoint name="fj_{n}"/>'
+        f'<geom name="g_{n}" {slab} rgba="{_rgba(col)}" density="{dens}" {fr} {MOVING}/>'
+        f'<geom name="g_{n}_plug" {plug} rgba="{_rgba(col)}" density="{dens}" {fr} {MOVING}/>'
+        f'<geom name="g_{n}_knob" type="cylinder" pos="{_f(0, 0, zk)}" size="{_f(d["knob_r"], d["knob_h"] / 2)}" '
+        f'rgba="{_rgba(o.get("knob_color", "darkgrey"))}" density="{dens}" {fr} {MOVING}/>'
+        "</body>"
+    )
+
+
+def bottle_dims(o: dict) -> dict:
+    """A bottle along its local z axis, base to cap: the body, the neck and a ball cap whose centre is the neck's end.
+    The body's origin is the middle of that length."""
+    rb, lb = (float(v) for v in o["body"])
+    rn, ln = (float(v) for v in o.get("neck", (0.008, 0.035)))
+    return {"body_r": rb, "body_len": lb, "neck_r": rn, "neck_len": ln, "length": lb + ln + BALL_R}
+
+
+def _bottle_xml(o: dict, x: float, y: float, z: float, fr: str) -> str:
+    """A full bottle is heavy: `mass` (kg) sits in its body. The fingers' pinch on the cap holds less than its weight, so
+    the cap cannot lift it clear of the table, but it can tip the bottle up about its base, which then carries most
+    of the weight."""
+    n, col = o["name"], o.get("color", "green")
+    d = bottle_dims(o)
+    z0 = -d["length"] / 2
+    q = _f(*obj_quat(o))
+    body = f'mass="{_f(o["mass"])}"' if "mass" in o else f'density="{o.get("density", 300)}"'
+    return (
+        f'<body name="obj_{n}" pos="{_f(x, y, z)}" quat="{q}"><freejoint name="fj_{n}"/>'
+        f'<geom name="g_{n}" type="cylinder" pos="{_f(0, 0, z0 + d["body_len"] / 2)}" size="{_f(d["body_r"], d["body_len"] / 2)}" '
+        f'rgba="{_rgba(col, o.get("alpha", 1.0))}" {body} {fr} {MOVING}/>'
+        f'<geom name="g_{n}_neck" type="cylinder" pos="{_f(0, 0, z0 + d["body_len"] + d["neck_len"] / 2)}" '
+        f'size="{_f(d["neck_r"], d["neck_len"] / 2)}" rgba="{_rgba(col, o.get("alpha", 1.0))}" density="300" {fr} {MOVING}/>'
+        f'<geom name="g_{n}_cap" type="sphere" pos="{_f(0, 0, z0 + d["body_len"] + d["neck_len"])}" size="{BALL_R}" '
+        f'rgba="{_rgba(o.get("cap_color", "white"))}" density="300" {BALL} {MOVING}/>'
+        "</body>"
+    )
+
+
+def obj_quat(o: dict) -> list[float]:
+    """An object's starting orientation (w, x, y, z): its yaw about z, after laying it on its side first if it is a bottle
+    with `lying` "+x" or "-x" (its axis, local z, then points that way)."""
+    yaw = math.radians(o.get("yaw", 0.0))
+    qz = [math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2)]
+    if o.get("kind") != "bottle" or not o.get("lying"):
+        return qz
+    a = math.radians(90.0 if o["lying"] == "+x" else -90.0)
+    w1, z1 = qz[0], qz[3]
+    w2, y2 = math.cos(a / 2), math.sin(a / 2)  # a quarter turn about y, then the yaw: qz * qy
+    return [w1 * w2, -z1 * y2, w1 * y2, z1 * w2]
 
 
 def _obj_rest_half(o: dict) -> float:
@@ -115,6 +212,11 @@ def _obj_rest_half(o: dict) -> float:
         return o["size"][1]
     if o["kind"] == "knife":
         return 0.012
+    if o["kind"] == "lid":
+        return lid_dims(o)["height"] / 2
+    if o["kind"] == "bottle":
+        d = bottle_dims(o)
+        return d["body_r"] if o.get("lying") else d["length"] / 2
     return 0.02
 
 
@@ -190,7 +292,123 @@ def _fixture_xml(fx: dict, grid: dict | None) -> str:
             f'<geom name="lane_{n}" type="box" pos="{_f(x, y, z0 + h / 2)}" size="{_f(hx, hy, h / 2)}" rgba="{_rgba(col)}" '
             f'friction="{_f(mu)} 0.005 0.0001" condim="3" {STATIC}/>'
         )
+    if k == "hinged_box":
+        return _hinged_box_xml(fx, x, y)
+    if k == "cabinet":
+        return _cabinet_xml(fx, x, y)
     raise ValueError(f"unknown fixture kind {k!r}")
+
+
+def hinged_box_dims(fx: dict) -> dict:
+    """A hinged box's lid in its own frame: the hinge line runs along y through `hinge` (the box's top outer edge on the
+    `hinge` side, at the lid's mid-thickness); the knob ball sits `knob` from it, measured along the closed lid toward its
+    free edge (x) and up (z). `sign` is +1 when the free edge lies toward +x (a hinge on the left), -1 otherwise."""
+    x, y = fx["pos"][:2]
+    sx, sy, sz = fx["size"]
+    s = 1.0 if fx.get("hinge", "left") == "left" else -1.0
+    return {
+        "sign": s,
+        "hinge": [x - s * sx / 2, y, sz - HB_LID_T / 2],
+        "knob": [sx - HB_INSET, HB_LID_T / 2 + HB_STEM],
+        "max_deg": float(fx.get("max_deg", HB_MAX_DEG)),
+    }
+
+
+def _hinged_box_xml(fx: dict, x: float, y: float) -> str:
+    """A box with a lid on a hinge along one of its top edges (a y axis), and a ball knob on a stem near the lid's free
+    edge. Its joint limit holds the closed lid at angle 0, and an opened lid stops at `max_deg`, past upright, where it
+    rests. The lid collides with the gripper and objects but not with its own box, so the hinge cannot jam."""
+    n = fx["name"]
+    sx, sy, sz = fx["size"]
+    hx, hy, t = sx / 2, sy / 2, HB_WALL_T
+    wall_h = sz - HB_LID_T
+    col = _rgba(fx.get("color", "tan"))
+    d = hinged_box_dims(fx)
+    s = d["sign"]
+    g = [
+        f'<body name="fx_{n}" pos="{_f(x, y, 0)}">',
+        f'<geom name="{n}_floor" type="box" pos="0 0 0.003" size="{_f(hx, hy, 0.003)}" rgba="{col}" {STATIC}/>',
+    ]
+    for side in (-1, 1):
+        g.append(
+            f'<geom type="box" pos="{_f(side * (hx - t / 2), 0, wall_h / 2)}" size="{_f(t / 2, hy, wall_h / 2)}" rgba="{col}" {STATIC}/>'
+        )
+        g.append(
+            f'<geom type="box" pos="{_f(0, side * (hy - t / 2), wall_h / 2)}" size="{_f(hx - t, t / 2, wall_h / 2)}" rgba="{col}" {STATIC}/>'
+        )
+    g.append("</body>")
+    kx, kz = s * d["knob"][0], d["knob"][1]
+    lcol, metal = _rgba(fx.get("lid_color", fx.get("color", "tan"))), _rgba("silver")
+    g += [
+        f'<body name="lid_{n}" pos="{_f(*d["hinge"])}">',
+        f'<joint name="hj_{n}" type="hinge" axis="0 {-s:g} 0" range="0 {d["max_deg"]:g}" damping="0.01" armature="0.0002" '
+        'solreflimit="0.005 1"/>',
+        f'<geom name="{n}_lid" type="box" pos="{_f(s * hx, 0, 0)}" size="{_f(hx + 0.002, hy + 0.002, HB_LID_T / 2)}" '
+        f'rgba="{lcol}" density="400" {DRAWER}/>',
+        f'<geom type="cylinder" fromto="{_f(kx, 0, HB_LID_T / 2 - 0.001, kx, 0, kz)}" size="0.004" rgba="{metal}" density="400" {DRAWER}/>',
+        f'<geom name="{n}_knob" type="sphere" pos="{_f(kx, 0, kz)}" size="{BALL_R}" rgba="{metal}" density="400" {BALL} {DRAWER}/>',
+        f'<geom type="cylinder" pos="0 0 0" euler="90 0 0" size="{_f(0.005, hy * 0.8)}" rgba="{metal}" {VISUAL}/>',
+        "</body>",
+    ]
+    return "".join(g)
+
+
+def cabinet_handle_local(fx: dict) -> list[float]:
+    """The centre of a cabinet drawer's handle bar in the cabinet's frame, with the drawer shut (it slides along -y)."""
+    w, d, h = fx["size"]
+    return [0.0, -d / 2 - HANDLE_GAP - HANDLE_BAR[1], float(fx.get("handle_z", h - 0.04))]
+
+
+def _cabinet_xml(fx: dict, x: float, y: float) -> str:
+    """A cabinet with one drawer that slides out of its face, facing the front (-y), the left (-x) or the right (+x), up to
+    `travel`. The handle is a bar on two posts with a HANDLE_GAP gap behind it. As with `drawer`, the drawer does not
+    collide with its own cabinet, only with the gripper and objects."""
+    n = fx["name"]
+    w, d, h = fx["size"]
+    t = CAB_T
+    yaw = CABINET_YAW[fx.get("facing", "front")]
+    c, metal = _rgba(fx.get("color", "darkgrey")), _rgba("silver")
+    g = [f'<body name="fx_{n}" pos="{_f(x, y, 0)}" euler="0 0 {yaw:g}">']
+    for side in (-1, 1):
+        g.append(
+            f'<geom type="box" pos="{_f(side * (w / 2 - t / 2), 0, h / 2)}" size="{_f(t / 2, d / 2, h / 2)}" rgba="{c}" {STATIC}/>'
+        )
+    g.append(
+        f'<geom type="box" pos="{_f(0, d / 2 - t / 2, h / 2)}" size="{_f(w / 2 - t, t / 2, h / 2)}" rgba="{c}" {STATIC}/>'
+    )
+    g.append(
+        f'<geom name="{n}_top" type="box" pos="{_f(0, 0, h - t / 2)}" size="{_f(w / 2, d / 2, t / 2)}" rgba="{c}" {STATIC}/>'
+    )
+    g.append("</body>")
+    iw = w / 2 - t - 0.003  # drawer box: half width, its back, the top of its sides
+    back = d / 2 - t - 0.004
+    side_h = (h - t) * 0.7
+    front_top = h - t - 0.003
+    dc, fc = _rgba(fx.get("drawer_color", "tan")), _rgba(fx.get("front_color", fx.get("color", "darkgrey")))
+    hx_, hy_, hz_ = HANDLE_BAR
+    _, by, bz = cabinet_handle_local(fx)
+    g += [
+        f'<body name="drawer_{n}" pos="{_f(x, y, 0)}" euler="0 0 {yaw:g}">',
+        f'<joint name="dj_{n}" type="slide" axis="0 -1 0" range="0 {float(fx.get("travel", 0.1)):g}" damping="4" frictionloss="0.3" armature="0.05"/>',
+        f'<geom type="box" pos="{_f(0, (back - d / 2 + 0.008) / 2, 0.003)}" size="{_f(iw, (back + d / 2 - 0.008) / 2, 0.003)}" rgba="{dc}" density="300" {DRAWER}/>',
+        f'<geom type="box" pos="{_f(0, back - 0.003, side_h / 2)}" size="{_f(iw, 0.003, side_h / 2)}" rgba="{dc}" density="300" {DRAWER}/>',
+    ]
+    for side in (-1, 1):
+        g.append(
+            f'<geom type="box" pos="{_f(side * (iw - 0.003), (back - d / 2 + 0.008) / 2, side_h / 2)}" '
+            f'size="{_f(0.003, (back + d / 2 - 0.008) / 2, side_h / 2)}" rgba="{dc}" density="300" {DRAWER}/>'
+        )
+        g.append(
+            f'<geom type="box" pos="{_f(side * (hx_ - 0.006), -d / 2 - HANDLE_GAP / 2, bz)}" size="{_f(0.004, HANDLE_GAP / 2, 0.005)}" '
+            f'rgba="{metal}" density="300" {DRAWER}/>'
+        )
+    g += [
+        f'<geom name="{n}_front" type="box" pos="{_f(0, -d / 2 + 0.004, (front_top + 0.004) / 2)}" '
+        f'size="{_f(w / 2 - t - 0.002, 0.004, (front_top - 0.004) / 2)}" rgba="{fc}" density="300" {DRAWER}/>',
+        f'<geom name="{n}_handle" type="box" pos="{_f(0, by, bz)}" size="{_f(hx_, hy_, hz_)}" rgba="{metal}" density="300" {DRAWER}/>',
+        "</body>",
+    ]
+    return "".join(g)
 
 
 def _drawer_xml(n: str, cx: float, cy: float, col: str) -> str:

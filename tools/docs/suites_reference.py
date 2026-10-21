@@ -72,6 +72,7 @@ FROM = {
     "maniskill": "ManiSkill3 on the CPU",
     "robocasa": "RoboCasa kitchens",
     "nav": "Object-goal navigation in homes",
+    "one-demo": "One demonstration, then another object",
     "cubepick": "Cube pick-and-reach",
     "real": "Real arms, on the mock by default",
 }

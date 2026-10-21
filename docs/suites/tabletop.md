@@ -8,6 +8,7 @@
 - Gripper: a floating two-finger parallel gripper (no arm). Its body is a free body welded to a mocap target, with gravity compensation, so control is robust and needs no inverse kinematics. The two fingers are slide joints driven by position actuators (kp 300, force limit 15 N, joint damping 30 so they close at about 0.5 m/s and cannot tunnel through thin objects); they close along y. Finger friction 1.5 with torsional friction (condim 4); objects have friction 1.0. Physics: 2 ms timestep, elliptic friction cones, impratio 10, multi-point convex collision (`multiccd`) so flat faces rest stably.
 - Objects (free bodies): coloured boxes/cubes, cylinders, square plates, a knife (handle + blade), heavy metal blocks.
 - Fixtures (static): coloured pads (flat, non-colliding markings), an octagonal low-walled bowl, rectangular trays (also one standing on the floor), a plate, a square socket, a cabinet with a drawer on a slide joint (0 to 12 cm travel) with a handle bar, a grid of cells marked on the table (ARC tasks), and a person-like figure (mannequin made of capsules and a sphere) lying on the table or on the floor.
+- The one-demo suite adds hinged boxes with a ball knob, one-drawer cabinets of any size facing the front, left or right, lift-off lids with a knob and a plug, and bottles with a ball cap ([one-demo.md](one-demo.md)).
 - Cameras: `front` (default, whole table), `wide` (also shows the floor on both sides; used by the push-off-the-edge pair), `top` and `side`. `render()` returns 320x320 RGB from the task's camera.
 
 ## Action and observation

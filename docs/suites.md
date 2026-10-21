@@ -32,10 +32,11 @@ img/suites/humanoidbench.webp | `humanoidbench`
 img/suites/maniskill.webp | `maniskill`
 img/suites/robocasa.webp | `robocasa`
 img/suites/yam.webp | `yam`
+img/suites/one-demo.webp | `one-demo` (a demonstration frame)
 ```
 
 <!-- suites-table -->
-robouse 0.5.0 bundles 774 tasks in 33 suites. "Needs" is what a suite needs beyond `pip install 'robouse[sim]'`, if anything. The last two columns count the tasks that scored 1 with the reference solution and with the no-op control.
+robouse 0.5.0 bundles 790 tasks in 34 suites. "Needs" is what a suite needs beyond `pip install 'robouse[sim]'`, if anything. The last two columns count the tasks that scored 1 with the reference solution and with the no-op control.
 
 | Suite | Tasks | Needs | Reference solution | No-op control |
 |---|---|---|---|---|
@@ -64,6 +65,7 @@ robouse 0.5.0 bundles 774 tasks in 33 suites. "Needs" is what a suite needs beyo
 | `mobile-manip`<br>Stretch 3, TIAGo, Google Robot | 10 | `robouse fetch-assets --all` | 10/10 | 0/10 |
 | `myosuite`<br>MyoSuite: muscle-driven arm and hand | 15 | own virtualenv (below) | 15/15 | 0/15 |
 | `nav`<br>Object-goal navigation in homes | 40 |  | 40/40 | 0/40 |
+| `one-demo`<br>One demonstration, then another object | 16 |  | 16/16 | 0/16 |
 | `quadruped`<br>Unitree Go2 and Go1, Spot, ANYmal C | 11 | `robouse fetch-assets --all` | 11/11 | 0/11 |
 | `robo-use-families`<br>Robo Use task families | 8 |  | 8/8 | 0/8 |
 | `robocasa`<br>RoboCasa kitchens | 24 | [the hub](run-a-suite.md#a-dataset) only | 24/24 | 0/24 |

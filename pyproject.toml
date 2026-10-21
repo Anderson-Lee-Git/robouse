@@ -125,6 +125,7 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "tasks/mobile-manip" = "robouse/bundled_tasks/mobile-manip"
 "tasks/myosuite" = "robouse/bundled_tasks/myosuite"
 "tasks/nav" = "robouse/bundled_tasks/nav"
+"tasks/one-demo" = "robouse/bundled_tasks/one-demo"
 "tasks/quadruped" = "robouse/bundled_tasks/quadruped"
 "tasks/robo-use-families" = "robouse/bundled_tasks/robo-use-families"
 "tasks/robocasa" = "robouse/bundled_tasks/robocasa"

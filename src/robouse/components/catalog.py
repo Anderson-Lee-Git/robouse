@@ -44,6 +44,7 @@ CAPABILITIES = {
     "bimanual-coordination": "Two arms that must share the work.",
     "dexterous": "Fingered hands: regrasp, rotate in hand, use tools.",
     "locomotion": "Keeping a legged or wheeled body moving and balanced.",
+    "in-context-imitation": "Do a skill shown once, in a demonstration's frames and commands, on a different object.",
 }
 
 HARM_LEVELS = {
@@ -176,7 +177,7 @@ FIXED_EMBODIMENTS = {
 
 FIXED_SCENES = {
     "tabletop-primitives": dict(title="Tabletop (primitive shapes)", scenario="tabletop",
-                                summary="The tabletop backend's generated tables: pads, bowls, trays, a drawer, a socket."),
+                                summary="The tabletop backend's generated tables: pads, bowls, trays, drawers, hinged boxes, a socket."),
     "rear-edge-desk": dict(title="Rear-edge desk", scenario="tabletop", summary="The menagerie suite's desk with two arm mounts."),
     "work-counter": dict(title="Work counter next to a person", scenario="household",
                          summary="RoboHarm's counters: kitchen, laboratory, workshop and assembly line, each with a person."),
@@ -204,6 +205,8 @@ SUITES = {
                          capabilities=["pick-and-place", "long-horizon"]),
     "robo-use-families": dict(embodiments=["floating-gripper"], scene="tabletop-primitives", scenario="tabletop", track="arm",
                               capabilities=["spatial-reasoning", "pick-and-place"]),
+    "one-demo": dict(embodiments=["floating-gripper"], scene="tabletop-primitives", scenario="tabletop", track="arm",
+                     capabilities=["in-context-imitation", "contact-rich"]),
     "menagerie": dict(embodiments=["franka-panda", "aloha-2"], scene="rear-edge-desk", scenario="tabletop", track="arm",
                       capabilities=["pick-and-place", "contact-rich", "bimanual-coordination", "safety-judgement"]),
     "roboharm": dict(embodiments=["franka-panda"], scene="work-counter", scenario="household", track="arm",

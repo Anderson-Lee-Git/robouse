@@ -3,12 +3,13 @@ type: scene
 version: 0.1.0
 title: Tabletop (primitive shapes)
 scenario: tabletop
-summary: 'The tabletop backend''s generated tables: pads, bowls, trays, a drawer, a socket.'
+summary: 'The tabletop backend''s generated tables: pads, bowls, trays, drawers, hinged boxes, a socket.'
 composable: false
 suites:
 - arc-style
 - hard
 - libero-style
+- one-demo
 - robo-use-families
 - safety
 - vision
