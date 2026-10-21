@@ -2,7 +2,9 @@
 
 Notable changes to the `robouse` package, newest first. Versions follow [semantic versioning](https://semver.org/); while the version is below 1.0, a minor version can change interfaces. Dates are PyPI release dates (UTC).
 
-## Unreleased
+## 0.6.0 (2026-10-21)
+
+New content: the `libero-pro` and `one-demo` suites, the `chemlab` suite (from a checkout), the `jev`, `gemini-cli`, `kinex`, `aspire` and `aspire-codex` harnesses, and Gemini 4 Argon and Elorian's Glimpse as models. Isolation and scoring fixes: the model gateway's key opens only its model routes; the sandbox denies LIBERO's task data, `.env` files and the asset folders later trials load; and only a harness's own final error event makes a trial a harness failure.
 
 ### Security
 

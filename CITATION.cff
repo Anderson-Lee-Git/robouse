@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use Robo Use in your research, please cite it as below, and cite the benchmarks your tasks come from."
 title: "Robo Use: agent as a policy for embodied agents"
-abstract: "Robo Use turns robot benchmarks into tasks that a coding agent, such as Claude Code or Codex, solves by driving a simulated robot from its shell with the robo command. An episode server owns the simulator, enforces the step budget, records a video and scores the final physical state. The package contains 692 tasks in 31 suites, adapted from Meta-World, LIBERO, robosuite, RoboCasa, Gymnasium-Robotics, dm_control, MyoSuite, HumanoidBench, MuJoCo Menagerie and other sources, as BenchFlow task folders."
+abstract: "Robo Use turns robot benchmarks into tasks that a coding agent, such as Claude Code or Codex, solves by driving a simulated robot from its shell with the robo command. An episode server owns the simulator, enforces the step budget, records a video and scores the final physical state. The package contains 790 tasks in 34 suites, adapted from Meta-World, LIBERO, robosuite, RoboCasa, Gymnasium-Robotics, dm_control, MyoSuite, HumanoidBench, MuJoCo Menagerie and other sources, as BenchFlow task folders."
 type: software
 authors:
   - given-names: Xiangyi
@@ -11,8 +11,8 @@ authors:
 repository-code: "https://github.com/benchflow-ai/robouse"
 url: "https://robouse.ai"
 license: Apache-2.0
-version: 0.4.0
-date-released: 2026-10-04
+version: 0.6.0
+date-released: 2026-10-21
 keywords:
   - robotics
   - embodied-agents
