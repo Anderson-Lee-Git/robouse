@@ -154,6 +154,47 @@ def test_the_profile_and_bwrap_deny_credential_and_task_copy_locations(outside_t
     assert ("--bind", real["own"]) in pairs and args.index(real["own"]) > args.index(f"{home}/.cache/robouse")
 
 
+def _libero(base: Path, monkeypatch) -> list[Path]:
+    """A stand-in for hf-libero on the runner's sys.path, and a LIBERO config naming another environment's copy of its
+    task data, as ~/.libero/config.yaml can (LIBERO writes it once, for the environment that first imports it). The
+    task data files, each holding SECRET."""
+    site, other = base / "site", base / "other-env" / "libero" / "libero"
+    (site / "libero").mkdir(parents=True)
+    (site / "libero" / "__init__.py").write_text("")
+    files = []
+    for pkg in (site / "libero" / "libero", other):
+        for rel in ("bddl_files/libero_spatial/task.bddl", "init_files/libero_spatial/task.pruned_init"):
+            (pkg / rel).parent.mkdir(parents=True, exist_ok=True)
+            (pkg / rel).write_text(SECRET)
+            files.append(pkg / rel)
+    (site / "libero" / "libero" / "envs").mkdir()
+    cfg = base / "libero-config"
+    cfg.mkdir()
+    (cfg / "config.yaml").write_text(f"bddl_files: {other / 'bddl_files'}\ninit_states: {other / 'init_files'}\n")
+    monkeypatch.syspath_prepend(str(site))
+    monkeypatch.setenv("LIBERO_CONFIG_PATH", str(cfg))
+    return files
+
+
+def test_libero_s_task_data_is_denied_where_the_runner_finds_it(outside_tmp, monkeypatch) -> None:
+    """hf-libero's scene files (bddl_files) and saved start states (init_files) give a LIBERO task's object layout away,
+    which its vision tasks show only as camera images. They are denied in the hf-libero the runner's Python finds, without
+    importing it, and where LIBERO's config points; the rest of the package is not."""
+    base = outside_tmp
+    _libero(base, monkeypatch)
+    pkg, other = base / "site" / "libero" / "libero", base / "other-env" / "libero" / "libero"
+    want = [os.path.realpath(p / d) for p in (pkg, other) for d in ("bddl_files", "init_files")]
+    assert sorted(sandbox.libero_data()) == sorted(want)
+    assert not [m for m in list(sys.modules.values()) if str(getattr(m, "__file__", "")).startswith(str(base))]
+    prof = sandbox.sandbox_profile(base / "ws", (), [], [])
+    for d in want:
+        assert f'(deny file-read* file-write* (subpath "{d}"))' in prof, d
+    assert os.path.realpath(pkg / "envs") not in prof
+    args = sandbox.bwrap_args(base / "ws", str(base / "sock"), [], [])
+    for d in want:
+        assert args[args.index(d) - 1] == "--tmpfs", d
+
+
 def test_a_source_checkout_s_tasks_runs_and_generators_are_denied(tmp_path, monkeypatch) -> None:
     """Run from a checkout, the agent could read every other task's reference solution in tasks/ (the Oct 13 Linux
     sandbox exposed 1,943 oracle files in /opt/robouse; deep audit, security item 3), other trials in runs/ and the
@@ -331,8 +372,10 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
         listening = [_listen(s) for s in sockets.values()]
         monkeypatch.setattr(sandbox, "SOCKETS", (str(sockets["engine"]),))
         monkeypatch.setenv("SSH_AUTH_SOCK", str(sockets["ssh-agent"]))
+        libero = _libero(base, monkeypatch)  # LIBERO's task data, as the runner's Python finds it
+        assert all(f.read_text() == SECRET for f in libero)  # outside the sandbox (the episode server), readable
         script = PEEK.format(
-            planted=" ".join(str(p["home"] / rel) for rel in PLANTED),
+            planted=" ".join([*(str(p["home"] / rel) for rel in PLANTED), *map(str, libero)]),
             runner=p["runner"],
             secret=SECRET,
             tool=p["tool"],

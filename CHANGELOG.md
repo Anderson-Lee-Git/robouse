@@ -4,6 +4,10 @@ Notable changes to the `robouse` package, newest first. Versions follow [semanti
 
 ## Unreleased
 
+### Security
+
+- The sandbox denies LIBERO's task data, on macOS and Linux: the scene files, saved start states and demonstrations (`bddl_files`, `init_files`, `datasets`) of the hf-libero package in the runner's Python, found at run time, and the folders LIBERO's config names. They gave a LIBERO task's object layout away, which its vision tasks show only as camera images. The episode server and the verifier, outside the sandbox, still read them.
+
 ### Added
 
 - The `libero-pro` suite (73 tasks): LIBERO-PRO's position-swap and new-goal tasks for LIBERO-Goal, -Object, -Spatial and -Long, from LIBERO-PRO at the commit ASPIRE pins, on the LIBERO backend. They are 73 of the 80 (suite, task) pairs NVIDIA's ASPIRE reports its LIBERO-Pro results on; the suite page lists the other seven, which the scripted reference solution does not solve, with the reasons. Each task carries LIBERO-PRO's BDDL file and the first state of its init file; the seed picks a saved state as ASPIRE's `--init-mode saved` does (seed n starts from state n - 1), downloading the init file at first use. Agents see only the cameras and the robot's own state; success is LIBERO's check of the BDDL goal; the budget is ASPIRE's 1000 steps at 20 Hz. The reference solutions are a scripted controller on the privileged scene state ([LIBERO-PRO](docs/suites/libero-pro.md)).

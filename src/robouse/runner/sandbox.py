@@ -11,6 +11,8 @@ In both, an agent cannot read or write:
   - the run folder (trial records, including the episode's result.json) and the task folder (its reference solution);
   - any robouse source or install (a `robouse` package directory) and, in a source checkout, its task folders, run
     folders and task generators (`CHECKOUT_DENIED`);
+  - LIBERO's task data (`libero_data`): the scene files, saved start states and demonstrations of the hf-libero package
+    the runner's Python has, and the folders LIBERO's config names, which give a task's layout away;
   - other trials' workspaces and episode sockets;
   - sockets that act for the user or control the machine (`control_sockets`: container engines, the SSH agent), and
     any Unix socket inside a denied folder.
@@ -91,6 +93,8 @@ CACHE_PROGRAMS = ("dream-venv",)
 MACOS_ESCAPES = ("/usr/bin/open", "/usr/bin/osascript", "/usr/bin/shortcuts", "/usr/bin/security")
 # The variables naming a harness's own config home (the runner's values are denied, the agent's allowed)
 HOME_VARS = ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
+# hf-libero's task data folders (inside its `libero` package folder), which give a LIBERO task's layout away
+LIBERO_DATA = ("bddl_files", "init_files")
 # When robouse runs from a source checkout: its task folders (every task's reference solution and verifier), run
 # folders (other trials' records) and task generators
 CHECKOUT_DENIED = ("tasks", "runs", "adapters")
@@ -153,6 +157,33 @@ def interpreters() -> list[str]:
     return [p for p in _real(paths) if os.path.isdir(p)]
 
 
+def libero_data() -> list[str]:
+    """LIBERO's task data, which gives a LIBERO task's object layout away (vision tasks show only camera images): the
+    scene files (bddl_files), saved start states (init_files) and demonstrations (datasets) of the hf-libero package the
+    runner's Python has, found at run time without importing it, and the folders LIBERO's config file names (the episode
+    server reads them from there; the config may name another environment's copy). The episode server and the verifier
+    run outside the sandbox and keep reading them."""
+    import importlib.util
+
+    import yaml
+
+    found: list[str] = []
+    try:
+        spec = importlib.util.find_spec("libero")
+    except (ImportError, ValueError):
+        spec = None
+    for root in (spec.submodule_search_locations or []) if spec else []:
+        found += [os.path.join(root, "libero", d) for d in LIBERO_DATA] + [os.path.join(root, "datasets")]
+    cfg = Path(config.env("LIBERO_CONFIG_PATH") or Path.home() / ".libero") / "config.yaml"
+    try:
+        named = yaml.safe_load(cfg.read_text()) if cfg.is_file() else None
+    except (OSError, yaml.YAMLError):
+        named = None
+    if isinstance(named, dict):
+        found += [str(named[k]) for k in ("bddl_files", "init_states", "datasets") if isinstance(named.get(k), str)]
+    return [p for p in _real(found) if os.path.exists(p)]
+
+
 def own_homes(env: dict) -> list[str]:
     """The agent's own config homes (its CLAUDE_CONFIG_DIR and CODEX_HOME), which it may read and write wherever they
     are."""
@@ -161,7 +192,7 @@ def own_homes(env: dict) -> list[str]:
 
 def _denied(extra: list[Path]) -> list[str]:
     paths = [*config.sandbox_denied_paths(), *home_denied(), *control_sockets(), *checkout_denied(), *map(str, extra)]
-    return _real([*paths, str(PKG)])
+    return _real([*paths, str(PKG), *libero_data()])
 
 
 def _programs() -> list[str]:
