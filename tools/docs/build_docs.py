@@ -232,7 +232,7 @@ PAGES: list[tuple[str, str, str, str, str]] = [
         "docs/run-agents.md",
         "run-agents",
         "Run agents and VLAs",
-        "Run Claude Code, Codex, Gemini CLI, mini-swe-agent, dimcode, Kinex, Show-Harness, Dream-1, Jev, NVIDIA's ASPIRE workflow or a VLA policy server as the robot's policy on one task.",
+        "Run Claude Code, Codex, Gemini CLI, mini-swe-agent, dimcode, Kinex, ASPIRE, Show-Harness, Dream-1, Jev or a VLA policy server as the robot's policy.",
     ),
     (
         "Guides",
