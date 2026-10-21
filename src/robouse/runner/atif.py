@@ -309,6 +309,7 @@ def _parse_claude(events: list[dict], trial: Path) -> tuple[list[dict], dict]:
                     "total_cost_usd",
                     "stop_reason",
                     "usage",
+                    "modelUsage",
                     "result",
                     "api_error_status",
                 )
@@ -335,9 +336,16 @@ def _claude_final(meta: dict) -> dict | None:
         return None
     cached = int(u.get("cache_read_input_tokens") or 0)
     prompt = int(u.get("input_tokens") or 0) + cached + int(u.get("cache_creation_input_tokens") or 0)
+    completion = u.get("output_tokens")
+    mu = r.get("modelUsage")
+    if isinstance(mu, dict) and mu:  # the whole session, subagents included; `usage` covers the main thread only
+        tot = lambda k: sum(int((m or {}).get(k) or 0) for m in mu.values() if isinstance(m, dict))
+        cached = tot("cacheReadInputTokens")
+        prompt = tot("inputTokens") + cached + tot("cacheCreationInputTokens")
+        completion = tot("outputTokens")
     fm: dict[str, Any] = {
         "total_prompt_tokens": prompt or None,
-        "total_completion_tokens": u.get("output_tokens"),
+        "total_completion_tokens": completion,
         "total_cached_tokens": cached or None,
         "total_cost_usd": r.get("total_cost_usd"),
     }
@@ -1319,9 +1327,14 @@ def _episode_epoch(trial: Path, episode: dict) -> float | None:
 
 # harnesses without an LLM transcript: their steps come from the episode server's trace
 TRACE_HARNESSES = ("oracle", "noop", "molmoact2", "vla")
+# harnesses whose transcript is another harness's agent program's: aspire runs Claude Code, aspire-codex Codex
+TRANSCRIPT_OF = {"aspire": "claude-code", "aspire-codex": "codex"}
 
 
 def _prompt(trial: Path, cfg: dict, harness: str) -> str:
+    own = (cfg.get("harness_config") or {}).get("prompt")
+    if isinstance(own, str) and own:  # a harness that words its own prompt records it (aspire)
+        return own
     instr = ""
     tp = cfg.get("task_path")
     if tp:
@@ -1449,10 +1462,11 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
             # the first user message is mini's rendering of the task; keep it as the prompt
         else:
             events = _read_jsonl(raw)
-            if harness.startswith("codex"):
+            program = TRANSCRIPT_OF.get(harness, harness)
+            if program.startswith("codex"):
                 steps, meta = _parse_codex(events, trial)
                 fm = _codex_final(meta)
-            elif harness.startswith("claude-code"):
+            elif program.startswith("claude-code"):
                 steps, meta = _parse_claude(events, trial)
                 fm = _claude_final(meta)
             elif harness == "gemini-cli":

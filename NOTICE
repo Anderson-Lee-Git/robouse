@@ -30,6 +30,12 @@ inspect-robots
   Ported: the CubePick world in src/robouse/backends/cubepick/ (wheel, sdist)
   License: licenses/inspect-robots-MIT.txt
 
+ASPIRE
+  https://github.com/NVlabs/ASPIRE, commit fa00f0ef2bc1d91d594b9aa502c22133c9f538f7
+  Apache License 2.0, Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES
+  Copied unchanged: ASPIRE's simulation skills (iterative-debugging and evosearch, for Claude Code and Codex) in src/robouse/harnesses/aspire/upstream/ (wheel, sdist)
+  License and ASPIRE's own NOTICE: src/robouse/harnesses/aspire/upstream/LICENSE and NOTICE; VENDORED.md beside them lists the files copied and those left out
+
 Show-Harness
   https://github.com/showlab/Show-Harness, commit 403f068
   Apache License 2.0

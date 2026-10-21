@@ -151,6 +151,23 @@ ENV: dict[str, str] = {
     "ROBOUSE_SHOW_HARNESS_SETTINGS": "the `show-harness` client's mode, task sentence and overrides (set by the runner)",
     "ROBOUSE_TASK_LANGUAGE": "the task's language instruction, which a VLA client sends and the `jev` client gives Jev "
     "as its goal (set by the runner)",
+    "ROBOUSE_ASPIRE_LIBRARY": "a folder that keeps the `aspire` harnesses' ASPIRE skill library, and each task's "
+    "selected program, across trials (created on first use; default: each trial starts from ASPIRE's own library and "
+    "keeps what it promotes in its trial folder only)",
+    "ROBOUSE_ASPIRE_WORKFLOW": "the ASPIRE workflow the `aspire` harnesses run: iterative-debugging (default) or "
+    "evosearch",
+    "ROBOUSE_ASPIRE_DEV_SEEDS": "the `aspire` harnesses' development seeds, e.g. 101-105 (default: ASPIRE's band for "
+    "the task's benchmark, 101-125 on capx)",
+    "ROBOUSE_ASPIRE_UNSEEN_SEEDS": "the `aspire` harnesses' unseen-check seeds, each run once, e.g. 126-127 (default: "
+    "ASPIRE's band, 126-130 on capx)",
+    "ROBOUSE_ASPIRE_PRACTICE_EPISODES": "practice episodes one `aspire` trial may run (default 300, 650 with "
+    "evosearch)",
+    "ROBOUSE_ASPIRE_PRACTICE_WORKERS": "practice episodes an `aspire` trial runs at once (default 4)",
+    "ROBOUSE_ASPIRE_REUSE": "whether an `aspire` trial whose library already holds a selected program for the task "
+    "evaluates it instead of running Stage 1, as ASPIRE evaluates one frozen program on every held-out seed: 1 "
+    "(default) when the same harness and model selected it, any whichever selected it, 0 never",
+    "ROBOUSE_PRACTICE_URL": "the `aspire` harnesses' practice broker, http://127.0.0.1:<port>/<token> (set by the "
+    "runner)",
     "ROBOUSE_GRADER_URL": "OpenAI-compatible endpoint (base URL) of the vision-language model for `robouse grade` and "
     "`real.verdict: vlm` (required by both; no default)",
     "ROBOUSE_GRADER_API_KEY": "API key for that endpoint, sent as a bearer token (required; no default). The runner "
@@ -205,6 +222,13 @@ PUBLIC = frozenset(
         "ROBOUSE_SHOW_HARNESS_URL",
         "ROBOUSE_SHOW_HARNESS_TOKEN",
         "ROBOUSE_SHOW_HARNESS_CONFIG",
+        "ROBOUSE_ASPIRE_LIBRARY",
+        "ROBOUSE_ASPIRE_WORKFLOW",
+        "ROBOUSE_ASPIRE_DEV_SEEDS",
+        "ROBOUSE_ASPIRE_UNSEEN_SEEDS",
+        "ROBOUSE_ASPIRE_PRACTICE_EPISODES",
+        "ROBOUSE_ASPIRE_PRACTICE_WORKERS",
+        "ROBOUSE_ASPIRE_REUSE",
     }
 )
 

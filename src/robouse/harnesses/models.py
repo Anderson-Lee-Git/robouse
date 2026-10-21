@@ -32,7 +32,14 @@ LEGACY_HARNESSES = {
 LEGACY_DEFAULT_MODEL = "zai-org/GLM-5.3"
 
 # First-party providers every harness knows natively (their own subscription or API key), and whose models take images.
-NATIVE_VENDORS = {"claude-code": "anthropic", "codex": "openai", "gemini-cli": "gemini"}
+# (the aspire harnesses run Claude Code and Codex, and take their models as those do)
+NATIVE_VENDORS = {
+    "claude-code": "anthropic",
+    "codex": "openai",
+    "aspire": "anthropic",
+    "aspire-codex": "openai",
+    "gemini-cli": "gemini",
+}
 FIRST_PARTY_IMAGE_PROVIDERS = {"anthropic", "openai", "gemini"}
 
 # GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider: the key in GLM_API_KEY and the plan's
@@ -55,6 +62,8 @@ DEFAULT_MODELS = {
     "gemini-cli": "gemini-4-argon",
     "mini-swe-agent": ZAI_CODING_PLAN_MODEL,
     "dimcode": ZAI_CODING_PLAN_MODEL,
+    "aspire": "claude-sonnet-5",
+    "aspire-codex": "gpt-6-astra",
     "kinex": ZAI_CODING_PLAN_MODEL,
 }
 # History: the defaults when the trial folders that leave config.json's `model` empty were recorded (robouse 0.4.0 and

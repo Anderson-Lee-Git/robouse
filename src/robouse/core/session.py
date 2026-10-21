@@ -37,7 +37,16 @@ from ..backends.base import embodiment_dict
 from ..lib.text import clip
 from .cameras import mujoco_camera
 from .probe import PhysicsProbe
-from .protocol import FINISH_MESSAGES, MOTION_OPS, is_runner_request, read_request, send_reply, sign_result
+from .protocol import (
+    FINISH_MESSAGES,
+    LOCKED_RUNNER_OPS,
+    MOTION_OPS,
+    is_runner_request,
+    read_request,
+    send_reply,
+    sign_result,
+    token_matches,
+)
 from .recording import VideoRecorder, record_size
 
 log = logging.getLogger(__name__)
@@ -90,6 +99,12 @@ class Episode:
         secrets = secrets or {}
         self._oracle_token = str(secrets.get("oracle_token") or config.env("ROBOUSE_ORACLE_TOKEN"))
         self._result_key = str(secrets.get("result_key") or "")
+        # a locked episode, for a harness that practises on other episodes first (aspire): every request must carry
+        # this token, which only the runner and the harness's own last phase hold. Until that phase unlocks it, only
+        # the runner's status check and give-up are served. Every other request is refused and counted in result.json,
+        # which the runner treats as an integrity failure
+        self._unlock_token = str(secrets.get("unlock_token") or "")
+        self.lock: dict | None = {"refused": 0, "unlocked_after_s": None} if self._unlock_token else None
         self.max_repeat = max(
             1, min(MAX_REPEAT, int(spec.get("max_repeat", MAX_REPEAT)))
         )  # `act --repeat`, `grip --steps`
@@ -212,12 +227,14 @@ class Episode:
         if not (self.finished or is_runner_request(req)):
             self.requests += 1
         privileged = bool(self._oracle_token) and req.get("token") == self._oracle_token
-        req = {k: v for k, v in req.items() if k != "token"}  # never write the token to the trace
+        unlock = req.get("unlock")
+        req = {k: v for k, v in req.items() if k not in ("token", "unlock")}  # never write a token to the trace
         op = req.get("op")
         t = round(time.time() - self.t0, 3)
         self._check_halt()
         try:
-            resp = self._dispatch(op, req, privileged)
+            refusal = self._lock_gate(op, unlock) if self.lock is not None else None
+            resp = refusal if refusal is not None else self._dispatch(op, req, privileged)
         except Exception as e:  # noqa: BLE001 - a bounded error goes back to the agent
             resp = {"ok": False, "error": clip(f"{type(e).__name__}: {e}", 500)}
         self._check_halt()
@@ -256,6 +273,34 @@ class Episode:
                 "result": self.finish("done" if op == "done" else "gave_up", str(req.get("text", ""))[:4000]),
             }
         return {"ok": False, "error": f"unknown op {op!r}"}
+
+    def _lock_gate(self, op: Any, token: Any) -> dict | None:
+        """A locked episode's check of one request: None to serve it, else the reply. Every request must carry the
+        episode's token (its `unlock` field). Before the unlock, only the runner's status check and give-up are
+        served, and `unlock` opens the episode. Anything else is refused and counted, before the unlock or after it
+        (an agent process that outlived its phase)."""
+        assert self.lock is not None
+        if not token_matches(token, self._unlock_token):
+            return self._refuse("this episode is locked: the request does not carry the harness's token")
+        if op == "unlock":
+            if self.lock["unlocked_after_s"] is None:
+                self.lock["unlocked_after_s"] = round(time.time() - self.t0, 3)
+            return {"ok": True, "result": {"unlocked": True}}
+        if self.lock["unlocked_after_s"] is None and op not in LOCKED_RUNNER_OPS:
+            return self._refuse("this episode is locked: the harness has not started its scored phase")
+        return None
+
+    def _refuse(self, why: str) -> dict:
+        assert self.lock is not None
+        self.lock["refused"] += 1
+        return {"ok": False, "error": why}
+
+    def may_shutdown(self, token: Any) -> bool:
+        """Whether `serve` honours a `shutdown` now: always on an ordinary episode; on a locked one only with its
+        token (the runner and the harness's last phase). A locked episode's tokenless shutdown goes to `handle`
+        instead, which refuses and counts it like any other request that does not carry the token, so an agent
+        process that outlived its phase cannot end the scored episode uncounted."""
+        return self.lock is None or token_matches(token, self._unlock_token)
 
     def _check_halt(self) -> None:
         """Real robots: an e-stop, over-temperature or hardware fault ends the episode at once (no settle steps)."""
@@ -564,6 +609,7 @@ class Episode:
             **({"judge_error": judge_error} if judge_error else {}),
             **({"placement": placement} if (placement := getattr(b, "placement_record", None)) else {}),
             **({"judge_detail": detail} if (detail := getattr(b, "last_judge", None)) else {}),
+            **({"lock": dict(self.lock)} if self.lock is not None else {}),
         }
         self._add_metrics()
         keep_video = self.steps > 0  # no step ran: no recording (it would be a zero-length video)
@@ -662,7 +708,7 @@ def serve(
                 conn.settimeout(10)
                 try:
                     req = read_request(conn)
-                    if req.get("op") == "shutdown":
+                    if req.get("op") == "shutdown" and ep.may_shutdown(req.get("unlock")):
                         send_reply(conn, {"ok": True})
                         break
                     resp = ep.handle(req)

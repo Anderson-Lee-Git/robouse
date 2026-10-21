@@ -26,3 +26,4 @@ Most contributors need only `gate.py`, `setup/`, `assets/` and the `docs/` gener
 | `ops/backup.sh`, `ops/backup_all.sh` | Back up run data to a Google Cloud Storage bucket named by `ROBOUSE_BACKUP_URI` and `ROBOUSE_BACKUP_PROJECT` (environment, or `~/.config/robouse/ops.env`). |
 | `ops/final_run.sh` | The final evaluation, one stream per model and harness. |
 | `ops/vla_dogfood.sh` | Dogfoods the `vla` harness against mock policy servers. |
+| `aspire/standin_model.py` | A scripted stand-in model (OpenAI chat completions with tool calls) that walks Claude Code through ASPIRE's workflow on a `capx` task, to check the `aspire` harness end to end without model credentials. |

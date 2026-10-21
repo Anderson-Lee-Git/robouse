@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 # MIT: vendored code (CaP-X, PyRoKi, RLE-Bench, the CubePick port) and task data (LIBERO instructions, LIBERO-PRO scenes,
 # DexJoCo);
+# Apache-2.0 also covers the vendored ASPIRE skills (NVIDIA; their LICENSE and NOTICE ship beside them);
 # CC-BY-4.0: the Adroit demonstrations from D4RL. NOTICE lists every source.
 license = "Apache-2.0 AND MIT AND CC-BY-4.0"
 license-files = [
@@ -19,6 +20,8 @@ license-files = [
     "src/robouse/backends/capx/capx_upstream/LICENSE",
     "src/robouse/backends/capx/capx_upstream/capx/integrations/motion/pyroki_snippets/LICENSE",
     "src/robouse/backends/rlebench/rlebench_upstream/LICENSE",
+    "src/robouse/harnesses/aspire/upstream/LICENSE",
+    "src/robouse/harnesses/aspire/upstream/NOTICE",
 ]
 authors = [{ name = "Xiangyi Li", email = "xiangyi@benchflow.ai" }]
 keywords = ["robotics", "embodied-agents", "llm-agents", "benchmark", "mujoco", "benchflow"]
@@ -150,7 +153,7 @@ exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["tasks", "components", "assets", "src/robouse/backends/rlebench/rlebench_upstream", "src/robouse/backends/capx/capx_upstream"]  # vendored upstream code
+extend-exclude = ["tasks", "components", "assets", "src/robouse/backends/rlebench/rlebench_upstream", "src/robouse/backends/capx/capx_upstream", "src/robouse/harnesses/aspire/upstream"]  # vendored upstream code
 per-file-target-version = { "tools/**" = "py312" }  # maintainer tools run on the development environment
 
 [tool.ruff.lint]
@@ -170,6 +173,11 @@ ignore = [
 "src/robouse/backends/*/worker.py" = ["E402", "BLE001", "SIM115"]
 "src/robouse/backends/gpu/worker/*.py" = ["E402", "BLE001", "SIM115"]
 "src/robouse/harnesses/*/client.py" = ["E402"]
+# the aspire harness's scripts for the agent's workspace: standalone, with their sibling module imported after a
+# path setup; a generated program's own failure is its result
+"src/robouse/harnesses/aspire/workspace/*.py" = ["E402", "BLE001"]
+# a generated program: `robo` and the task's API functions are its globals
+"src/robouse/harnesses/aspire/workspace/scene_snapshot.py" = ["F821"]
 # maintainer tools, generators and test servers: best-effort loops over many files are fine
 "tests/*" = ["B011", "BLE001", "SIM115"]
 "tools/**" = ["BLE001", "SIM115", "B023", "B007", "SIM401"]
@@ -201,6 +209,10 @@ files = [
     "src/robouse/harnesses/__init__.py",
     "src/robouse/harnesses/credentials.py",
     "src/robouse/harnesses/jev",
+    "src/robouse/harnesses/aspire/__init__.py",
+    "src/robouse/harnesses/aspire/broker.py",
+    "src/robouse/harnesses/aspire/library.py",
+    "src/robouse/harnesses/aspire/workspace/programs.py",
     "src/robouse/harnesses/kinex/__init__.py",
     "src/robouse/harnesses/kinex/bridge.py",
     "src/robouse/tasks.py",

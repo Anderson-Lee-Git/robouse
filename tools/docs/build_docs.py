@@ -59,6 +59,7 @@ def code_html(text: str) -> str:
     separators (an id such as put-in-container--franka-panda--tabletop--s0), or else where the line needs it, rather
     than run past a phone's column.
     """
+
     def esc(s: str) -> str:
         return html.escape(s, quote=False)
 
@@ -84,8 +85,11 @@ def code_html(text: str) -> str:
         if len(w) <= LONG_WORD:
             return f'<span class="w">{esc(w)}</span>'
         if "/" in w:
-            return "<wbr>".join(f'<span class="w">{esc(p)}</span>' if len(p) <= LONG_WORD else long(p)
-                                for p in re.split(r"(?<=/)", w) if p)
+            return "<wbr>".join(
+                f'<span class="w">{esc(p)}</span>' if len(p) <= LONG_WORD else long(p)
+                for p in re.split(r"(?<=/)", w)
+                if p
+            )
         return long(w)
 
     return '<code class="brk">' + " ".join(word(w) for w in words) + "</code>"
@@ -113,11 +117,11 @@ def image_size(data: bytes) -> tuple[int, int] | None:
                 continue
             marker = data[i + 1]
             if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
-                return int.from_bytes(data[i + 7:i + 9], "big"), int.from_bytes(data[i + 5:i + 7], "big")
+                return int.from_bytes(data[i + 7 : i + 9], "big"), int.from_bytes(data[i + 5 : i + 7], "big")
             if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
                 i += 2
                 continue
-            i += 2 + int.from_bytes(data[i + 2:i + 4], "big")
+            i += 2 + int.from_bytes(data[i + 2 : i + 4], "big")
     return None
 
 
@@ -129,7 +133,7 @@ def wrap_command(line: str) -> list[str]:
     if len(line) <= WRAP_AT or not WRAP_CMD.match(line) or re.search(r"&&|\|\||[|;<>#]|\\$", line):
         return [line]
     prompt = "$ " if line.startswith("$ ") else ""
-    lex = shlex.shlex(line[len(prompt):], posix=False)
+    lex = shlex.shlex(line[len(prompt) :], posix=False)
     lex.whitespace_split, lex.commenters = True, ""
     toks = list(lex)
     first = next((i for i, t in enumerate(toks) if t.startswith("-")), None)
@@ -154,8 +158,12 @@ class Source:
     def __init__(self, ref: str | None):
         self.ref = ref
         if ref:
-            out = subprocess.run(["git", "-C", str(REPO), "ls-tree", "-r", "--name-only", ref], check=True,
-                                 capture_output=True, text=True).stdout
+            out = subprocess.run(
+                ["git", "-C", str(REPO), "ls-tree", "-r", "--name-only", ref],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
             self.paths = set(out.splitlines())
         else:
             self.paths = {str(f.relative_to(REPO)) for f in REPO.rglob("*") if f.is_file() and ".git" not in f.parts}
@@ -168,8 +176,9 @@ class Source:
 
     def read_bytes(self, path: str) -> bytes:
         if self.ref:
-            return subprocess.run(["git", "-C", str(REPO), "show", f"{self.ref}:{path}"], check=True,
-                                  capture_output=True).stdout
+            return subprocess.run(
+                ["git", "-C", str(REPO), "show", f"{self.ref}:{path}"], check=True, capture_output=True
+            ).stdout
         return (REPO / path).read_bytes()
 
     def read(self, path: str) -> str:
@@ -190,32 +199,97 @@ REDIRECTS = {
     "components": "concepts#components",
 }
 PAGES: list[tuple[str, str, str, str, str]] = [
-    ("Get started", "docs/index.md", "", "Overview",
-     "Robo Use turns robot benchmarks into tasks that an agent harness such as Claude Code solves by driving a simulated robot with robo."),
-    ("Get started", "docs/quickstart.md", "quickstart", "Quickstart",
-     "Install robouse and let Claude Code solve arc-gravity, a rule-inference task on a table, in 35 robo calls."),
-    ("Get started", "docs/supported.md", "supported", "Supported",
-     "The models, harnesses, platforms, isolation modes and formats Robo Use 0.5.0 supports, and what each needs."),
-    ("Get started", "docs/concepts.md", "concepts", "Concepts",
-     "Tasks, scoring, episodes, the robo command, harnesses and the trial folder: how one Robo Use trial works."),
-    ("Guides", "docs/run-agents.md", "run-agents", "Run agents and VLAs",
-     "Run Claude Code, Codex, Gemini CLI, mini-swe-agent, dimcode, Kinex, Show-Harness, Dream-1, Jev or a VLA policy server as the robot's policy on one task."),
-    ("Guides", "docs/mcp.md", "mcp", "MCP",
-     "Drive the robot through the robo MCP tools instead of the robo command: the tools, robo mcp and --interface."),
-    ("Guides", "docs/write-a-task.md", "write-a-task", "Write or compose a task",
-     "Copy a tabletop task, change its goal, and check that its reference solution scores 1 and the no-op control 0."),
-    ("Guides", "docs/run-a-suite.md", "run-a-suite", "Run a suite or dataset",
-     "Run many tasks with robouse run-many, or a published dataset in Docker with bench eval run -d."),
-    ("Reference", "docs/cli.md", "cli", "CLIs",
-     "The --help output of every robouse command and of robo, the agent's only way to act."),
-    ("Reference", "docs/task-format.md", "task-format", "task.md",
-     "The fields of a Robo Use task.md: BenchFlow's task fields and the robouse block, with defaults."),
-    ("Reference", "docs/suites.md", "suites", "Suites",
-     "Every suite in the robouse package, with its task count, what it needs and its reference-solution and no-op results."),
-    ("Reference", "docs/configuration.md", "configuration", "Configuration",
-     "The ROBOUSE_* environment variables you can set: cache and asset paths, the sandbox, simulator virtualenvs and policy servers."),
-    ("Reference", "docs/metrics.md", "metrics", "Metrics",
-     "Episode metrics from the physical trace, placement splits, and robouse report with 95% intervals."),
+    (
+        "Get started",
+        "docs/index.md",
+        "",
+        "Overview",
+        "Robo Use turns robot benchmarks into tasks that an agent harness such as Claude Code solves by driving a simulated robot with robo.",
+    ),
+    (
+        "Get started",
+        "docs/quickstart.md",
+        "quickstart",
+        "Quickstart",
+        "Install robouse and let Claude Code solve arc-gravity, a rule-inference task on a table, in 35 robo calls.",
+    ),
+    (
+        "Get started",
+        "docs/supported.md",
+        "supported",
+        "Supported",
+        "The models, harnesses, platforms, isolation modes and formats Robo Use 0.5.0 supports, and what each needs.",
+    ),
+    (
+        "Get started",
+        "docs/concepts.md",
+        "concepts",
+        "Concepts",
+        "Tasks, scoring, episodes, the robo command, harnesses and the trial folder: how one Robo Use trial works.",
+    ),
+    (
+        "Guides",
+        "docs/run-agents.md",
+        "run-agents",
+        "Run agents and VLAs",
+        "Run Claude Code, Codex, Gemini CLI, mini-swe-agent, dimcode, Kinex, Show-Harness, Dream-1, Jev, NVIDIA's ASPIRE workflow or a VLA policy server as the robot's policy on one task.",
+    ),
+    (
+        "Guides",
+        "docs/mcp.md",
+        "mcp",
+        "MCP",
+        "Drive the robot through the robo MCP tools instead of the robo command: the tools, robo mcp and --interface.",
+    ),
+    (
+        "Guides",
+        "docs/write-a-task.md",
+        "write-a-task",
+        "Write or compose a task",
+        "Copy a tabletop task, change its goal, and check that its reference solution scores 1 and the no-op control 0.",
+    ),
+    (
+        "Guides",
+        "docs/run-a-suite.md",
+        "run-a-suite",
+        "Run a suite or dataset",
+        "Run many tasks with robouse run-many, or a published dataset in Docker with bench eval run -d.",
+    ),
+    (
+        "Reference",
+        "docs/cli.md",
+        "cli",
+        "CLIs",
+        "The --help output of every robouse command and of robo, the agent's only way to act.",
+    ),
+    (
+        "Reference",
+        "docs/task-format.md",
+        "task-format",
+        "task.md",
+        "The fields of a Robo Use task.md: BenchFlow's task fields and the robouse block, with defaults.",
+    ),
+    (
+        "Reference",
+        "docs/suites.md",
+        "suites",
+        "Suites",
+        "Every suite in the robouse package, with its task count, what it needs and its reference-solution and no-op results.",
+    ),
+    (
+        "Reference",
+        "docs/configuration.md",
+        "configuration",
+        "Configuration",
+        "The ROBOUSE_* environment variables you can set: cache and asset paths, the sandbox, simulator virtualenvs and policy servers.",
+    ),
+    (
+        "Reference",
+        "docs/metrics.md",
+        "metrics",
+        "Metrics",
+        "Episode metrics from the physical trace, placement splits, and robouse report with 95% intervals.",
+    ),
 ]
 # Docs kept in the repository but not published: internal notes, run logs and machine-specific setup.
 EXCLUDED = {
@@ -234,8 +308,14 @@ EXCLUDED = {
 # appears in the repository either.
 BANNED_WORDS = [codecs.decode(w, "rot13") for w in ["uneobe"]]
 SECRET_PATTERNS = [
-    r"sk-[A-Za-z0-9_-]{16,}", r"sk-ant-[A-Za-z0-9_-]+", r"pypi-[A-Za-z0-9_-]{16,}", r"npm_[A-Za-z0-9]{20,}",
-    r"gh[pousr]_[A-Za-z0-9]{20,}", r"github_pat_[A-Za-z0-9_]{20,}", r"hf_[A-Za-z0-9]{20,}", r"AKIA[0-9A-Z]{16}",
+    r"sk-[A-Za-z0-9_-]{16,}",
+    r"sk-ant-[A-Za-z0-9_-]+",
+    r"pypi-[A-Za-z0-9_-]{16,}",
+    r"npm_[A-Za-z0-9]{20,}",
+    r"gh[pousr]_[A-Za-z0-9]{20,}",
+    r"github_pat_[A-Za-z0-9_]{20,}",
+    r"hf_[A-Za-z0-9]{20,}",
+    r"AKIA[0-9A-Z]{16}",
     r"(?i)(?:api[_-]?key|token|secret|password)\s*[=:]\s*['\"]?[A-Za-z0-9_\-]{16,}",
     r"(?i)bearer\s+[A-Za-z0-9._\-]{20,}",
 ]
@@ -284,14 +364,22 @@ class Converter:
             return f"\x00{len(slots) - 1}\x00"
 
         # code spans (any run of backticks), then <autolinks>
-        text = re.sub(r"(`+)(.+?)\1", lambda m: keep(code_html(m.group(2).strip() if m.group(1) != '`' else m.group(2))), text)
+        text = re.sub(
+            r"(`+)(.+?)\1", lambda m: keep(code_html(m.group(2).strip() if m.group(1) != '`' else m.group(2))), text
+        )
         text = re.sub(r"<(https?://[^>\s]+)>", lambda m: keep(self._a(m.group(1), html.escape(m.group(1)))), text)
         text = html.escape(text, quote=False)
         text = re.sub(r"!\[([^\]]*)\]\(([^)\s]+)\)", lambda m: keep(self._img(m.group(2), m.group(1))), text)
-        text = re.sub(r'\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)\s]+)(?:\s+"[^)]*")?\)',
-                      lambda m: keep(self._link(m.group(2), self.emph(m.group(1)))), text)
-        text = re.sub(r"(?<![\w/\"'=])(https?://[^\s<>()\]]*[^\s<>()\].,;:!?'\"])",
-                      lambda m: keep(self._a(m.group(1), m.group(1))), text)
+        text = re.sub(
+            r'\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)\s]+)(?:\s+"[^)]*")?\)',
+            lambda m: keep(self._link(m.group(2), self.emph(m.group(1)))),
+            text,
+        )
+        text = re.sub(
+            r"(?<![\w/\"'=])(https?://[^\s<>()\]]*[^\s<>()\].,;:!?'\"])",
+            lambda m: keep(self._a(m.group(1), m.group(1))),
+            text,
+        )
         text = self.emph(text)
         text = re.sub(r"  $", "<br>", text)
         while "\x00" in text:
@@ -342,9 +430,14 @@ class Converter:
     SEP_RE = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
 
     def starts_block(self, line: str, lines: list[str], i: int) -> bool:
-        return bool(self.FENCE_RE.match(line) or self.HEAD_RE.match(line) or line.startswith(">")
-                    or self.LIST_RE.match(line) or re.match(r"^\s*(-{3,}|\*{3,}|_{3,})\s*$", line)
-                    or (line.lstrip().startswith("|") and i + 1 < len(lines) and self.SEP_RE.match(lines[i + 1])))
+        return bool(
+            self.FENCE_RE.match(line)
+            or self.HEAD_RE.match(line)
+            or line.startswith(">")
+            or self.LIST_RE.match(line)
+            or re.match(r"^\s*(-{3,}|\*{3,}|_{3,})\s*$", line)
+            or (line.lstrip().startswith("|") and i + 1 < len(lines) and self.SEP_RE.match(lines[i + 1]))
+        )
 
     def blocks(self, lines: list[str]) -> str:
         out: list[str] = []
@@ -358,7 +451,9 @@ class Converter:
             if m:
                 ind, fence, lang = len(m.group(1)), m.group(2), m.group(3)
                 body, i = [], i + 1
-                while i < n and not (lines[i].strip().startswith(fence[0] * len(fence)) and not lines[i].strip().strip(fence[0])):
+                while i < n and not (
+                    lines[i].strip().startswith(fence[0] * len(fence)) and not lines[i].strip().strip(fence[0])
+                ):
                     body.append(lines[i][ind:] if lines[i][:ind].strip() == "" else lines[i])
                     i += 1
                 i += 1
@@ -368,13 +463,17 @@ class Converter:
                         if "|" not in row:
                             continue
                         src, cap = (s.strip() for s in row.split("|", 1))
-                        items.append(f"<figure>{self._img(src, plain(cap))}<figcaption>{self.inline(cap)}</figcaption></figure>")
+                        items.append(
+                            f"<figure>{self._img(src, plain(cap))}<figcaption>{self.inline(cap)}</figcaption></figure>"
+                        )
                     out.append('<div class="gallery">' + "".join(items) + "</div>")
                     continue
                 cls = f' class="language-{lang}"' if lang else ""
                 if lang in ("console", "sh", "bash"):
                     body = [w for row in body for w in wrap_command(row)]
-                out.append(f'<div class="code"><pre><code{cls}>{html.escape(chr(10).join(body), quote=False)}</code></pre></div>')
+                out.append(
+                    f'<div class="code"><pre><code{cls}>{html.escape(chr(10).join(body), quote=False)}</code></pre></div>'
+                )
                 continue
             m = self.HEAD_RE.match(line)
             if m:
@@ -386,8 +485,10 @@ class Converter:
                     out.append(f"<h1 id=\"{hid}\">{inner}</h1>")
                 else:  # the section link sits beside the heading, not in it, so the heading's name is just its text
                     cmd = ' class="cmd"' if re.fullmatch(r"`[^`]+`", text) else ""  # a heading that is one command
-                    out.append(f'<div class="hd hd{level}"><h{level} id="{hid}"{cmd}>{inner}</h{level}>'
-                               f'<a class="hash" href="#{hid}" aria-label="Link to {html.escape(plain(text))}"></a></div>')
+                    out.append(
+                        f'<div class="hd hd{level}"><h{level} id="{hid}"{cmd}>{inner}</h{level}>'
+                        f'<a class="hash" href="#{hid}" aria-label="Link to {html.escape(plain(text))}"></a></div>'
+                    )
                 i += 1
                 continue
             if re.match(r"^\s*(-{3,}|\*{3,}|_{3,})\s*$", line):
@@ -417,7 +518,11 @@ class Converter:
             if fm and (i + 1 >= n or not lines[i + 1].strip()):  # an image alone in its paragraph: a figure
                 cap, src = fm.group(1), fm.group(2)
                 svg = self.svg(src) if self.svg and src.endswith(".svg") else None
-                body = svg.replace("<svg ", f'<svg role="img" aria-label="{html.escape(plain(cap))}" ') if svg else self._img(src, html.escape(plain(cap)))
+                body = (
+                    svg.replace("<svg ", f'<svg role="img" aria-label="{html.escape(plain(cap))}" ')
+                    if svg
+                    else self._img(src, html.escape(plain(cap)))
+                )
                 cls = "figure has-narrow" if svg and "fig-narrow" in svg else "figure"
                 out.append(f'<figure class="{cls}">{body}<figcaption>{self.inline(cap)}</figcaption></figure>')
                 i += 1
@@ -443,7 +548,7 @@ class Converter:
             if not m or len(m.group(1)) != base or m.group(2)[0].isdigit() != ordered:
                 break
             content_ind = len(m.group(0)) if m.group(3) else len(m.group(0)) + 1
-            item = [lines[i][len(m.group(0)):]]
+            item = [lines[i][len(m.group(0)) :]]
             i += 1
             while i < n:
                 ln = lines[i]
@@ -452,8 +557,11 @@ class Converter:
                     j = i
                     while j < n and not lines[j].strip():
                         j += 1
-                    if j < n and len(lines[j]) - len(lines[j].lstrip()) > base and not (
-                            self.LIST_RE.match(lines[j]) and len(self.LIST_RE.match(lines[j]).group(1)) == base):
+                    if (
+                        j < n
+                        and len(lines[j]) - len(lines[j].lstrip()) > base
+                        and not (self.LIST_RE.match(lines[j]) and len(self.LIST_RE.match(lines[j]).group(1)) == base)
+                    ):
                         item.extend([""] * (j - i))
                         i = j
                         loose = loose or not self.LIST_RE.match(lines[j])
@@ -462,7 +570,7 @@ class Converter:
                 indent = len(ln) - len(ln.lstrip())
                 lm = self.LIST_RE.match(ln)
                 if indent > base:
-                    item.append(ln[min(indent, content_ind):])
+                    item.append(ln[min(indent, content_ind) :])
                 elif lm or self.starts_block(ln, lines, i):
                     break
                 else:
@@ -514,7 +622,15 @@ class Converter:
 
         aligns = []
         for s in cells(sep):
-            aligns.append("center" if s.startswith(":") and s.endswith(":") else "right" if s.endswith(":") else "left" if s.startswith(":") else "")
+            aligns.append(
+                "center"
+                if s.startswith(":") and s.endswith(":")
+                else "right"
+                if s.endswith(":")
+                else "left"
+                if s.startswith(":")
+                else ""
+            )
         heads = cells(head)
         ncol = len(heads)
         labels = [plain(h) for h in heads]
@@ -539,10 +655,13 @@ class Converter:
                     inner = f'<span class="v">{inner}</span>'
                 tds.append(f'<td role="cell"{label}{style}>{inner}</td>')
             return '<tr role="row">' + "".join(tds) + "</tr>"
+
         body = "\n".join(row_html(cells(r), "td") for r in rows)
-        return (f'<div class="table" data-cols="{ncol}"><table role="table">\n'
-                f'<thead role="rowgroup">{row_html(heads, "th")}</thead>\n'
-                f'<tbody role="rowgroup">\n{body}\n</tbody>\n</table></div>')
+        return (
+            f'<div class="table" data-cols="{ncol}"><table role="table">\n'
+            f'<thead role="rowgroup">{row_html(heads, "th")}</thead>\n'
+            f'<tbody role="rowgroup">\n{body}\n</tbody>\n</table></div>'
+        )
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -612,8 +731,12 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
             frag = "#" + anchor if anchor else ""
             if target in by_src:
                 return page_url(base, by_src[target].slug) + frag
-            if re.search(r"\.(png|jpe?g|gif|svg|webp)$", target, re.I) and target.startswith("docs/") and source.exists(target):
-                rel = target[len("docs/"):]
+            if (
+                re.search(r"\.(png|jpe?g|gif|svg|webp)$", target, re.I)
+                and target.startswith("docs/")
+                and source.exists(target)
+            ):
+                rel = target[len("docs/") :]
                 copies[target] = rel
                 return base + rel
             if target.endswith(".md") and target.startswith("docs/"):
@@ -622,7 +745,10 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
 
         md = source.read(p.src)
         md = re.sub(r"/Users/(?!<)[^/\s`]+/", "~/", md)  # tidy absolute home paths
-        md = re.sub(r"^<!--.*?-->[ \t]*\n", "", md, flags=re.M)  # whole-line comments (generator markers) are not published
+        md = re.sub(
+            r"^<!--.*?-->[ \t]*\n", "", md, flags=re.M
+        )  # whole-line comments (generator markers) are not published
+
         def svg(href: str, src_dir=src_dir) -> str | None:
             target = posixpath.normpath(posixpath.join(src_dir, href))
             if not (target.startswith("docs/") and source.exists(target)):
@@ -632,13 +758,16 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
             def one(t: str) -> str:
                 s = re.sub(r"<\?xml[^>]*>\s*|<!--.*?-->", "", source.read(t), flags=re.S).strip()
                 uid = posixpath.splitext(posixpath.basename(t))[0]
-                return re.sub(r'id="ah-([\w-]+)"', lambda m: f'id="{uid}-{m.group(1)}"', s).replace("url(#ah-", f"url(#{uid}-")
+                return re.sub(r'id="ah-([\w-]+)"', lambda m: f'id="{uid}-{m.group(1)}"', s).replace(
+                    "url(#ah-", f"url(#{uid}-"
+                )
 
             # X-narrow.svg, when there is one, is the same figure stacked for phones (docs.css shows one of the two)
-            narrow = target[:-len(".svg")] + "-narrow.svg"
+            narrow = target[: -len(".svg")] + "-narrow.svg"
             if source.exists(narrow):
-                return (one(target).replace('class="fig"', 'class="fig fig-wide"', 1)
-                        + one(narrow).replace('class="fig"', 'class="fig fig-narrow"', 1))
+                return one(target).replace('class="fig"', 'class="fig fig-wide"', 1) + one(narrow).replace(
+                    'class="fig"', 'class="fig fig-narrow"', 1
+                )
             return one(target)
 
         def size(href: str, src_dir=src_dir) -> tuple[int, int] | None:
@@ -651,7 +780,11 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
         p.ids = {hid for _, hid, _ in conv.headings}
         h1 = next((t for lvl, _, t in conv.headings if lvl == 1), p.label)
         p.title = plain(h1)
-        paras = [b for b in re.split(r"\n\s*\n", md) if b.strip() and not b.lstrip().startswith(("#", "`", "|", "-", "!", ">"))]
+        paras = [
+            b
+            for b in re.split(r"\n\s*\n", md)
+            if b.strip() and not b.lstrip().startswith(("#", "`", "|", "-", "!", ">"))
+        ]
         desc = re.sub(r"\s+", " ", plain(paras[0])) if paras else p.title
         p.description = p.summary or (desc if len(desc) <= 180 else desc[:177].rsplit(" ", 1)[0] + "...")
 
@@ -679,7 +812,9 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
             sys.exit(f"refusing to clear {out}: not empty and not created by build_docs.py (no {MARKER})")
         shutil.rmtree(out)
     out.mkdir(parents=True)
-    (out / MARKER).write_text("generated by robouse/tools/docs/build_docs.py; the whole directory is replaced on rebuild\n")
+    (out / MARKER).write_text(
+        "generated by robouse/tools/docs/build_docs.py; the whole directory is replaced on rebuild\n"
+    )
     (out / "docs.css").write_text(CSS, encoding="utf-8")
     (out / "docs.js").write_text(JS, encoding="utf-8")
     for src, rel in copies.items():
@@ -699,9 +834,12 @@ def build(out: Path, base: str, source: Source, chrome) -> list[Path]:
         url = page_url(base, slug) + (f"#{anchor}" if anchor else "")
         dst = out / old_slug / "index.html"
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(f'<!doctype html><meta charset="utf-8"><title>Moved</title><link rel="canonical" href="{url}">'
-                       f'<meta http-equiv="refresh" content="0; url={url}"><meta name="robots" content="noindex">'
-                       f'<p><a href="{url}">This page moved.</a></p>\n', encoding="utf-8")
+        dst.write_text(
+            f'<!doctype html><meta charset="utf-8"><title>Moved</title><link rel="canonical" href="{url}">'
+            f'<meta http-equiv="refresh" content="0; url={url}"><meta name="robots" content="noindex">'
+            f'<p><a href="{url}">This page moved.</a></p>\n',
+            encoding="utf-8",
+        )
     return written
 
 
@@ -713,13 +851,15 @@ def toc_items(toc: list[tuple[int, str, str]]) -> str:
     for lvl, hid, text in toc:
         if lvl == 3 and groups:
             parent = groups[-1][1]
-            short = text[len(parent) + 1:] if text.startswith(parent + " ") else text
+            short = text[len(parent) + 1 :] if text.startswith(parent + " ") else text
             name = f' aria-label="{e(text)}"' if short != text else ""
             groups[-1][2].append(f'<li><a href="#{e(hid)}"{name}>{e(short)}</a></li>')
         else:
             groups.append((hid, text, []))
-    return "".join(f'<li><a href="#{e(hid)}">{e(text)}</a>' + (f'<ul>{"".join(subs)}</ul>' if subs else "") + "</li>"
-                   for hid, text, subs in groups)
+    return "".join(
+        f'<li><a href="#{e(hid)}">{e(text)}</a>' + (f'<ul>{"".join(subs)}</ul>' if subs else "") + "</li>"
+        for hid, text, subs in groups
+    )
 
 
 def render(p: Page, pages: list[Page], base: str, prev_p: Page | None, next_p: Page | None, chrome) -> str:
@@ -800,7 +940,7 @@ def title_block(body: str) -> str:
     if not m:
         return body
     lede = f'<p class="lede">{m.group(2)}</p>' if m.group(2) is not None else ""
-    return f'<header class="page-head">{m.group(1)}{lede}</header>\n' + body[m.end():]
+    return f'<header class="page-head">{m.group(1)}{lede}</header>\n' + body[m.end() :]
 
 
 def check_output(out: Path) -> list[str]:
@@ -1149,13 +1289,21 @@ document.querySelectorAll(".code").forEach(function (box) {
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", required=True, type=Path, help="output directory (replaced if it was built by this script)")
+    ap = argparse.ArgumentParser(
+        description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--out", required=True, type=Path, help="output directory (replaced if it was built by this script)"
+    )
     ap.add_argument("--base", default="/docs/", help="URL path the output is served under (default /docs/)")
-    ap.add_argument("--chrome", type=Path, help="the site's tools/chrome.py (default: ../../tools/chrome.py from --out)")
+    ap.add_argument(
+        "--chrome", type=Path, help="the site's tools/chrome.py (default: ../../tools/chrome.py from --out)"
+    )
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--ref", default="HEAD", help="git revision to read docs/ from (default HEAD)")
-    src.add_argument("--worktree", action="store_true", help="read the working tree instead (uncommitted edits included)")
+    src.add_argument(
+        "--worktree", action="store_true", help="read the working tree instead (uncommitted edits included)"
+    )
     args = ap.parse_args()
     base = "/" + args.base.strip("/") + "/" if args.base.strip("/") else "/"
     out = args.out.expanduser().resolve()

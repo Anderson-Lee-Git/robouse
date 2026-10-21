@@ -49,9 +49,9 @@ options:
   --harness HARNESS, --agent HARNESS
                         harness: oracle, noop, claude-code, codex, gemini-cli,
                         mini-swe-agent, dimcode, kinex, show-harness,
-                        molmoact2, vla, dream or jev; --model takes a
-                        provider-prefixed id such as glm/glm-5.3
-                        (https://robouse.ai/docs/harnesses/)
+                        molmoact2, vla, dream, jev, aspire or aspire-codex;
+                        --model takes a provider-prefixed id such as
+                        glm/glm-5.3 (https://robouse.ai/docs/harnesses/)
   --model MODEL         model for the harness (default: the harness's)
   --interface {cli,mcp,both}
                         what the agent drives the robot with: the robo CLI,
@@ -122,9 +122,9 @@ options:
   --harness HARNESS, --agent HARNESS
                         harness: oracle, noop, claude-code, codex, gemini-cli,
                         mini-swe-agent, dimcode, kinex, show-harness,
-                        molmoact2, vla, dream or jev; --model takes a
-                        provider-prefixed id such as glm/glm-5.3
-                        (https://robouse.ai/docs/harnesses/)
+                        molmoact2, vla, dream, jev, aspire or aspire-codex;
+                        --model takes a provider-prefixed id such as
+                        glm/glm-5.3 (https://robouse.ai/docs/harnesses/)
   --model MODEL         model for the harness (default: the harness's)
   --interface {cli,mcp,both}
                         what the agent drives the robot with: the robo CLI,

@@ -16,6 +16,7 @@ Notable changes to the `robouse` package, newest first. Versions follow [semanti
 - No `GEMINI_*`, `GOOGLE_API_KEY`, `GOOGLE_GEMINI_*` or `GOOGLE_GENAI_*` variable reaches an agent, the episode server or the verifier; `gemini-cli` adds back its own key. The sandbox also denies `$GEMINI_CLI_HOME/.gemini` when the runner's environment sets that variable (`~/.gemini` was denied already).
 - The sandbox denies `~/.env`, and a `.env` file in any folder above the trial's run folder, its task folder or the Robo Use install (a project's `.env` next to its virtualenv), on macOS and Linux: Gemini CLI and other programs read keys from them.
 - The sandbox lets agents read, not change, the Python environment that Kinex's tools and drivers share across trials (`~/.cache/robouse/kinex-venv`). The bridge answers only requests carrying its trial's session.
+- The `aspire` harnesses' scored episode is locked: the episode server serves only requests that carry a token which the runner gives the server and the harness's top process on their standard input (a new `unlock_token` secret and `unlock` request). Before the harness's Stage 2 unlocks it, only the runner's status check and give-up are served, with the token. The server records every request it refused in its signed verdict (`lock`), and the runner does not score a trial with any refusal, or with steps on an episode never unlocked (`IntegrityError`).
 
 ### Added
 
@@ -36,11 +37,16 @@ Notable changes to the `robouse` package, newest first. Versions follow [semanti
 - The `kinex` harness: [Kinex](https://github.com/stacx-lab/kinex) 1.0.0, a robotics coding agent on the Pi SDK, headless (`kinex run`), with the robot connected as Kinex devices. A bridge in Robo Use serves them as RoboEnv does (its `roboenv/1` protocol, and the device profiles and drivers in the workspace's `.kinex/`), from inside the agent's sandbox as a client of the episode socket, so every device call becomes `robo` requests: the world clock, an arm whose joints are the hand's position, the gripper and the task's cameras, with camera calibration only where `robo info` gives it. The model goes through the trial's gateway (default `glm/glm-5.3`); each trial gets its own Kinex config and home, with Kinex's web search off.
 - `robouse doctor` reports Kinex and its Python environment (`ROBOUSE_KINEX`, `ROBOUSE_KINEX_NODE`, `ROBOUSE_KINEX_VENV`).
 - Trajectories of Kinex trials come from its Pi session, and each tool call gets the `robo` requests made while it ran.
+- The `aspire` and `aspire-codex` harnesses: NVIDIA's ASPIRE (NVlabs/ASPIRE, Apache-2.0) run by Claude Code or Codex. The agent follows ASPIRE's own `iterative-debugging` or `evosearch` skill (commit `fa00f0e`, shipped unchanged) as the coordinator of a one-task campaign: it runs its programs with a `cap-harness` command on practice episodes, the task's own episode server on ASPIRE's development and unseen-check seeds, never the scored scene, and when it exits Robo Use runs the program it selected once on the scored episode. They run the `capx` and `capx-libero` suites and LIBERO tasks with several saved start states, such as the `libero-pro` suite's. They ran whole trials on `capx` tasks with Claude Code and a scripted stand-in model, and a pilot of five trials with Claude Code and `claude-opus-5-5` on three `capx` tasks and one `libero-pro` task.
+- An opt-in skill library that persists across trials (`ROBOUSE_ASPIRE_LIBRARY`): each trial starts from it, what the trial's coordinator promoted goes back into it, and a task whose selected program it holds is evaluated on its other scenes without a new practice phase. A trial whose scored scene the library has practised on is refused.
+- `config.json` records a harness's own settings (`harness_config`) and `result.json` what it did (`harness_record`).
 
 ### Changed
 
 - The MakerMods Metal arm's kinematic chain is no longer in the package (`robouse/real/data/metal_chain.json`, shipped since 0.2.0): MakerMods' repository states no license. The first use of the Metal profile downloads the arm's URDF from MakerMods' repository at a pinned commit into `<cache>/real/`; every load checks the file against its SHA-256 (a changed or partial file is downloaded again) and builds the chain from it. The chain is the same arm (forward kinematics unchanged), without the gripper's joints, which no check used. Without network access, the error says where to put the URDF by hand.
 - The trajectory names a skill request with its arguments (`robo skill drive forward none turn_left 0.5`), not `robo skill` alone.
+- A harness can name paths its agent may neither read nor write, and the runner gives harness builders the trial's seed, split and agent time.
+- Claude Code trials' token totals (the trajectory's `final_metrics`) come from Claude Code's own `modelUsage`, which counts the subagents it runs; before, they counted its main thread only.
 
 ### Fixed
 

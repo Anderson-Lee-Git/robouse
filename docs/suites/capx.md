@@ -31,6 +31,29 @@ Tasks from [CaP-X](https://github.com/capgym/cap-x) (NVIDIA, UC Berkeley, Stanfo
 - BEHAVIOR tasks (Isaac Sim on a GPU), the LIBERO-PRO tasks named above, and LIBERO-PRO suites whose task files are not in CaP-X's pinned LIBERO-PRO.
 - CaP-X's LIBERO API function `goto_pose_interactive_cartesian`, which takes a Python function as its target and so cannot pass through `robo`.
 
+## Run it without the image
+
+The suites' simulator environment is robohub's `runtimes/capx` image (`runtimes/capx-libero` for LIBERO-PRO). To run the `capx` suite from a checkout instead, build the same CaP-X virtualenv the image builds (Linux, Python 3.12, uv; the pins are the image's `requirements-capx.txt`) and point Robo Use at it:
+
+```sh
+W=~/capx && mkdir -p $W && git init -q $W/robosuite-capx
+git -C $W/robosuite-capx fetch -q --depth 1 https://github.com/uynitsuj/robosuite.git 97292732ed909ac3ae116579fb768607034a4dbd
+git -C $W/robosuite-capx checkout -q FETCH_HEAD
+uv venv -p 3.12 $W/capx-venv
+uv pip install -p $W/capx-venv/bin/python --no-deps -r requirements-capx.txt
+uv pip install -p $W/capx-venv/bin/python --no-deps "pyroki @ git+https://github.com/chungmin99/pyroki.git@95afccc22658c461ab1042a048ae4e9c24bc2a47"
+uv pip install -p $W/capx-venv/bin/python --no-deps -e $W/robosuite-capx
+export ROBOUSE_CAPX_PYTHON=$W/capx-venv/bin/python ROBOT_DESCRIPTIONS_CACHE=$W/robot_descriptions
+export JAX_PLATFORMS=cpu JAX_COMPILATION_CACHE_DIR=$W/jax-cache NUMBA_DISABLE_JIT=1
+robouse run --task tasks/capx/capx-cube-stack-s1 --harness oracle --out runs/capx
+```
+
+The first episode downloads the `panda_description` robot model that PyRoKi loads and compiles its inverse kinematics into the JAX cache. Built this way on Linux x86_64 (2026-10-20), the reference solution solved `capx-cube-stack-s1` in 217 steps and about 40 seconds.
+
+## ASPIRE
+
+The `aspire` and `aspire-codex` harnesses ([Run agents and VLAs](../run-agents.md#aspire)) run NVIDIA's ASPIRE workflow on these suites. ASPIRE's own campaigns use cap-harness's perception API on a GPU; here its programs use the API above, and its practice episodes run on other seeds of the task: development seeds 101 to 125 and unseen-check seeds 126 to 130 on `capx` (ASPIRE's Robosuite bands), and on `capx-libero` saved initial states 35 to 49 and 20 to 34 (seeds 36 to 50 and 21 to 35), since seed n restores state (n - 1) % 50 and ASPIRE's LIBERO bands (51 to 80) would replay the scored state 0. The five tasks of one CaP-X task (`capx-cube-stack-s1` to `-s5`) are five held-out scenes of one ASPIRE task: with a persistent library, the first trial selects a program and the others evaluate it.
+
 ## Licence
 
 CaP-X: MIT (Copyright (c) 2026 Max Fu). CaP-X's robosuite fork: MIT. PyRoKi: MIT. The adaptation is BenchFlow's; the CaP-X authors did not publish or review it.

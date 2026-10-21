@@ -35,6 +35,10 @@ Harnesses
                          `robo` (jev/client.py, standard library only, on the runner's Python); model typesafe/jev-latest
                          (default) or another Jev; key in $TYPESAFE_API_KEY; drives the `nav` suite (Dimensional's "Can
                          Jev Nav?" protocol)
+  aspire                 NVIDIA's ASPIRE workflow (its iterative-debugging and evosearch skills, vendored) run by
+                         Claude Code: practice episodes on other seeds, then the selected program on the scored
+                         episode; model as for claude-code; see aspire/
+  aspire-codex           the same, run by Codex; model as for codex
 Third-party harnesses register a callable with `build`'s signature under the `robouse.harnesses` entry point group.
 """
 
@@ -71,16 +75,23 @@ class Launch:
     stop: Callable[[], None] | None = None  # stops a helper process (the model gateway) after the agent exits
     stop_file: Path | None = None  # written by the model gateway when the trial's spend cap is reached
     notes: dict[str, Any] = field(default_factory=dict)
+    deny: list[Path] = field(default_factory=list)  # more paths the agent may neither read nor write (sandbox)
+    config: dict[str, Any] = field(default_factory=dict)  # the harness's settings, recorded in config.json
+    # what the harness did, recorded in result.json once it has stopped; it is told whether the trial's verdict is a
+    # verified result (signed by the episode server, no integrity failure)
+    record: Callable[[bool], dict] | None = None
 
 
 Builder = Callable[[str, str, Path, Any, dict], Launch]  # (model, prompt, workspace, task, env) -> Launch
 
 
-def _claude_cmd(prompt: str, model: str) -> list[str]:
+def _claude_cmd(
+    prompt: str, model: str, prefix: str = PROMPT_PREFIX, tools: str = CLAUDE_TOOLS, max_turns: int = 400
+) -> list[str]:
     return [
         "claude",
         "-p",
-        PROMPT_PREFIX + prompt,
+        prefix + prompt,
         "--model",
         model,
         "--output-format",
@@ -88,13 +99,19 @@ def _claude_cmd(prompt: str, model: str) -> list[str]:
         "--verbose",
         "--dangerously-skip-permissions",
         "--max-turns",
-        "400",
+        str(max_turns),
         "--tools",
-        CLAUDE_TOOLS,
+        tools,
     ]
 
 
-def _codex_cmd(prompt: str, model: str, workspace: Path, extra: tuple[str, ...] | list[str] = ()) -> list[str]:
+def _codex_cmd(
+    prompt: str,
+    model: str,
+    workspace: Path,
+    extra: tuple[str, ...] | list[str] = (),
+    prefix: str = PROMPT_PREFIX,
+) -> list[str]:
     return [
         "codex",
         "exec",
@@ -108,7 +125,7 @@ def _codex_cmd(prompt: str, model: str, workspace: Path, extra: tuple[str, ...] 
         model,
         "-C",
         str(workspace),
-        PROMPT_PREFIX + prompt,
+        prefix + prompt,
     ]
 
 
@@ -120,7 +137,9 @@ def _noop(model, prompt, workspace, task, env) -> Launch:
     return Launch(["robo", "done", "noop control"], env, notes={"model": "none"})
 
 
-PRIVATE_ENV = ("_ROBOUSE_TRIAL_DIR", "_ROBOUSE_IMAGE_INPUT", "_ROBOUSE_SPEND_CAP_USD")  # runner to builder only
+# runner to builder only: the trial folder, the image-input decision, the spend cap, and the trial's seed, split and
+# agent time (JSON), which a harness that runs more than one episode needs
+PRIVATE_ENV = ("_ROBOUSE_TRIAL_DIR", "_ROBOUSE_IMAGE_INPUT", "_ROBOUSE_SPEND_CAP_USD", "_ROBOUSE_TRIAL")
 # the protocol each harness speaks to its model gateway (claude-code and codex only for a model not of their own vendor)
 GATEWAY_PROTOCOLS = {
     "claude-code": "anthropic-messages",
@@ -129,6 +148,8 @@ GATEWAY_PROTOCOLS = {
     "dimcode": "anthropic-messages",
     "kinex": "anthropic-messages",
     "show-harness": "openai-completions",
+    "aspire": "anthropic-messages",  # Claude Code
+    "aspire-codex": "openai-responses",  # Codex
 }
 
 
@@ -162,7 +183,9 @@ def _via_gateway(harness: str, model: str) -> object | None:
     return None if models.NATIVE_VENDORS.get(harness) == ref.provider else ref
 
 
-def _claude_code(model, prompt, workspace, task, env) -> Launch:
+def _claude_code(
+    model, prompt, workspace, task, env, prefix: str = PROMPT_PREFIX, tools: str = CLAUDE_TOOLS, max_turns: int = 400
+) -> Launch:
     if model and (ref := _via_gateway("claude-code", model)) is not None:
         home = credentials.clean_claude_home(workspace)
         gw = _gateway(ref, env, GATEWAY_PROTOCOLS["claude-code"])
@@ -179,14 +202,14 @@ def _claude_code(model, prompt, workspace, task, env) -> Launch:
                 "CLAUDE_CONFIG_DIR": home,
             }
         )
-        return _gateway_launch(gw, ref, _claude_cmd(prompt, gw.model), env)
+        return _gateway_launch(gw, ref, _claude_cmd(prompt, gw.model, prefix, tools, max_turns), env)
     m = (model or "claude-sonnet-5").removeprefix("anthropic/")
     env.update(credentials.claude_auth())
     env["CLAUDE_CONFIG_DIR"] = credentials.clean_claude_home(workspace)
-    return Launch(_claude_cmd(prompt, m), env, notes={"model": m})
+    return Launch(_claude_cmd(prompt, m, prefix, tools, max_turns), env, notes={"model": m})
 
 
-def _codex(model, prompt, workspace, task, env) -> Launch:
+def _codex(model, prompt, workspace, task, env, prefix: str = PROMPT_PREFIX) -> Launch:
     import os
 
     if model and (ref := _via_gateway("codex", model)) is not None:
@@ -213,7 +236,7 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
         ]
         # the provider's own Responses endpoint, the request passed through unchanged (reasoning effort and earlier
         # reasoning kept); the gateway moves any image out of a tool result into the next user message
-        launch = _gateway_launch(gw, ref, _codex_cmd(prompt, gw.model, workspace, cfg), env)
+        launch = _gateway_launch(gw, ref, _codex_cmd(prompt, gw.model, workspace, cfg, prefix), env)
         launch.stop = _removing(home, launch.stop)
         return launch
     m = (model or "gpt-6-astra").removeprefix("openai/")
@@ -221,7 +244,7 @@ def _codex(model, prompt, workspace, task, env) -> Launch:
     env["CODEX_HOME"] = home = credentials.clean_codex_home(api_key=key)
     if key:
         env["CODEX_API_KEY"] = key
-    return Launch(_codex_cmd(prompt, m, workspace), env, stop=_removing(home), notes={"model": m})
+    return Launch(_codex_cmd(prompt, m, workspace, prefix=prefix), env, stop=_removing(home), notes={"model": m})
 
 
 def _removing(home: str, stop: Callable[[], None] | None = None) -> Callable[[], None]:
@@ -366,6 +389,26 @@ def _show_harness(model, prompt, workspace, task, env) -> Launch:
     return show_harness.build(model, prompt, workspace, task, env)
 
 
+def _aspire(model, prompt, workspace, task, env) -> Launch:
+    from . import aspire
+
+    return aspire.build("aspire", model, prompt, workspace, task, env)
+
+
+def _aspire_codex(model, prompt, workspace, task, env) -> Launch:
+    from . import aspire
+
+    return aspire.build("aspire-codex", model, prompt, workspace, task, env)
+
+
+# harnesses whose trial needs more agent time than a task's own limit when --timeout is not given: an ASPIRE campaign
+# for one task (practice episodes, a verifier, then Stage 2)
+MIN_TIMEOUT_S = {"aspire": 4 * 3600.0, "aspire-codex": 4 * 3600.0}
+# harnesses whose scored episode stays locked until their own last phase unlocks it: they practise on other episodes
+# first, and their top process (aspire's driver) gets the unlock token on its stdin before it starts the agent
+LOCKED_HARNESSES = ("aspire", "aspire-codex")
+
+
 HARNESSES: dict[str, Builder] = {
     "oracle": _oracle,
     "noop": _noop,
@@ -380,6 +423,8 @@ HARNESSES: dict[str, Builder] = {
     "dimcode": _dimcode,
     "kinex": _kinex,
     "show-harness": _show_harness,
+    "aspire": _aspire,
+    "aspire-codex": _aspire_codex,
 }
 
 

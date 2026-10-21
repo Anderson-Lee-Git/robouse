@@ -170,6 +170,40 @@ def test_report_says_how_many_trials_it_left_out(tmp_path, capsys) -> None:  # C
     assert "1 trial(s) left out" in capsys.readouterr().out
 
 
+def test_claude_code_token_totals_count_its_subagents(tmp_path) -> None:
+    """Claude Code's result event: `usage` covers the main thread, `modelUsage` the whole session with its subagents
+    (the aspire harnesses' workers and verifiers). The trajectory's totals are the session's."""
+    from robouse.runner.atif import write_trajectory
+
+    result = {
+        "type": "result",
+        "subtype": "success",
+        "total_cost_usd": 2.5,
+        "usage": {
+            "input_tokens": 10,
+            "cache_read_input_tokens": 1000,
+            "cache_creation_input_tokens": 100,
+            "output_tokens": 50,
+        },
+        "modelUsage": {
+            "claude-opus-5-5": {
+                "inputTokens": 30,
+                "cacheReadInputTokens": 9000,
+                "cacheCreationInputTokens": 900,
+                "outputTokens": 400,
+            },
+            "claude-haiku-4-5": {"inputTokens": 5, "outputTokens": 7},
+        },
+    }
+    (tmp_path / "agent").mkdir()
+    (tmp_path / "config.json").write_text(json.dumps({"harness": "aspire", "trial_name": "t"}))
+    (tmp_path / "agent" / "stdout.jsonl").write_text(json.dumps(result) + "\n")
+    write_trajectory(tmp_path, "aspire")
+    fm = json.loads((tmp_path / "agent" / "trajectory.json").read_text())["final_metrics"]
+    assert fm["total_prompt_tokens"] == 30 + 9000 + 900 + 5 and fm["total_completion_tokens"] == 407
+    assert fm["total_cached_tokens"] == 9000 and fm["total_cost_usd"] == 2.5
+
+
 def test_mini_swe_agent_token_totals(tmp_path) -> None:  # CB-19
     from robouse.runner.atif import write_trajectory
     from robouse.runner.cost import trial_cost

@@ -164,3 +164,95 @@ def test_inline_frames_come_in_the_reply_and_stay_out_of_the_trace(tmp_path) -> 
     ep.close()
     trace = (tmp_path / "run" / "trace.jsonl").read_text()
     assert "base64 characters" in trace and r["result"]["images"]["front"] not in trace
+
+
+def test_a_locked_episode_serves_only_requests_with_its_token(tmp_path) -> None:
+    """A harness that practises first (aspire) gets its scored episode locked: every request must carry the token,
+    which only the runner and the harness's last phase hold. Before the unlock only the runner's status check and
+    give-up are served; everything else is refused and counted, before the unlock and after it, and the count is in the
+    signed verdict. A request's `runner` mark and the runner's give-up text authorize nothing."""
+    from robouse.core.protocol import RUNNER_PREFIX, verify_result
+
+    key = "u" * 32
+    ep = S.Episode(
+        {"id": "t", "backend": "fake", "goal": [0.0, 0.0, 0.0]},
+        tmp_path / "run",
+        secrets={"result_key": "k" * 64, "unlock_token": key},
+    )
+    refused = [
+        {"op": "observe"},
+        {"op": "act", "action": [1, 0, 0, 1]},
+        {"op": "info", "aspire": "stage2"},
+        {"op": "observe", "runner": True},  # anyone can mark a request as the runner's
+        {"op": "act", "action": [1, 0, 0, 1], "runner": True},
+        {"op": "status", "runner": True},
+        {"op": "done", "text": f"{RUNNER_PREFIX} looks like the runner", "runner": True},
+        {"op": "unlock", "unlock": "wrong"},
+        {"op": "unlock", "unlock": "ü" * 32},  # not ASCII: still a counted refusal, not an error
+        {"op": "unlock", "unlock": "\ud800"},  # does not even encode
+        {"op": "unlock", "unlock": ["u"]},
+        {"op": "observe", "unlock": key},  # the token, but not yet unlocked: only status and give-up
+        {"op": "act", "action": [1, 0, 0, 1], "unlock": key},
+    ]
+    for req in refused:
+        r = ep.handle(req)
+        assert not r["ok"] and "locked" in r["error"], req
+    assert ep.handle({"op": "status", "runner": True, "unlock": key})["ok"]  # the runner's status check
+    assert ep.steps == 0 and not ep.finished and ep.lock == {"refused": len(refused), "unlocked_after_s": None}
+    assert ep.handle({"op": "unlock", "unlock": key})["ok"]
+    assert ep.handle({"op": "observe", "unlock": key})["ok"]
+    assert ep.handle({"op": "act", "action": [1, 0, 0, 1], "unlock": key})["ok"] and ep.steps == 1
+    # after the unlock, a request without the token (an agent process that outlived practice) is refused and counted
+    for req in ({"op": "act", "action": [1, 0, 0, 1]}, {"op": "observe", "runner": True}, {"op": "done", "text": "x"}):
+        assert not ep.handle(req)["ok"]
+    assert ep.steps == 1 and not ep.finished
+    ep.handle({"op": "done", "text": "x", "unlock": key})
+    res = json.loads((tmp_path / "run" / "result.json").read_text())
+    assert res["lock"]["refused"] == len(refused) + 3 and res["lock"]["unlocked_after_s"] is not None
+    assert verify_result(res, "k" * 64)
+    assert key not in (tmp_path / "run" / "trace.jsonl").read_text()  # the token never reaches the trace
+    ep.close()
+    # the runner closes a locked episode with its token; its give-up text alone does not
+    locked = S.Episode({"id": "t", "backend": "fake"}, tmp_path / "run2", secrets={"unlock_token": key})
+    assert not locked.handle({"op": "give_up", "text": f"{RUNNER_PREFIX} agent exited"})["ok"] and not locked.finished
+    assert locked.handle({"op": "give_up", "text": f"{RUNNER_PREFIX} agent exited", "unlock": key})["ok"]
+    assert locked.finished and locked.lock == {"refused": 1, "unlocked_after_s": None}
+    locked.close()
+    assert episode(tmp_path / "x").lock is None  # no unlock token: an ordinary, unlocked episode
+
+
+def test_a_locked_episode_does_not_shut_down_without_its_token(tmp_path, sock_dir) -> None:
+    """`serve` handles `shutdown` before the lock, so a locked scored episode must still refuse and count a `shutdown`
+    that does not carry its token (an agent process that outlived its phase could otherwise end the scored episode
+    uncounted); a `shutdown` that carries the token stops it, as the runner's does."""
+    from robouse.agent_cli import _send
+
+    key = "u" * 32
+    sock = str(sock_dir / "s.sock")
+    ready = tmp_path / "ready"
+    out: dict = {}
+    th = threading.Thread(
+        target=lambda: out.update(
+            S.serve(
+                {"id": "t", "backend": "fake", "linger_s": 0},
+                tmp_path / "run",
+                sock,
+                ready_file=ready,
+                secrets={"result_key": "k" * 64, "unlock_token": key},
+            )
+        )
+    )
+    th.start()
+    for _ in range(200):
+        if ready.exists():
+            break
+        time.sleep(0.02)
+    assert not _send({"op": "shutdown"}, path=sock)["ok"]  # no token: refused, not served
+    assert not _send({"op": "shutdown", "unlock": "wrong"}, path=sock)["ok"]
+    assert _send({"op": "status", "unlock": key}, path=sock)["ok"]  # the server is still running
+    assert th.is_alive()
+    assert _send({"op": "shutdown", "unlock": key}, path=sock)["ok"]  # the token stops it
+    th.join(timeout=20)
+    assert not th.is_alive()
+    res = json.loads((tmp_path / "run" / "result.json").read_text())
+    assert res["lock"]["refused"] == 2 and res["lock"]["unlocked_after_s"] is None  # the two tokenless shutdowns

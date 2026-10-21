@@ -168,7 +168,17 @@ def _verify(task: Task, episode: dict, tdir: Path) -> float:
 
 
 # harnesses that drive a language model (the others run scripted code or a VLA policy)
-LLM_HARNESSES = ("claude-code", "codex", "gemini-cli", "mini-swe-agent", "dimcode", "kinex", "show-harness")
+LLM_HARNESSES = (
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "mini-swe-agent",
+    "dimcode",
+    "kinex",
+    "show-harness",
+    "aspire",
+    "aspire-codex",
+)
 # harnesses that may also drive a self-hosted model named without a provider prefix (no gateway; images always sent)
 SELF_HOSTED_HARNESSES = ("show-harness",)
 
@@ -500,10 +510,15 @@ def run_trial(
     tdir = job_dir / trial_name
     for sub in ("agent", "episode", "verifier", "artifacts"):
         (tdir / sub).mkdir(parents=True, exist_ok=True)
-    timeout = float(timeout or task.agent_timeout_s)
+    timeout = float(timeout or max(task.agent_timeout_s, harnesses.MIN_TIMEOUT_S.get(harness, 0.0)))
     ws = _make_workspace(task)
     sock = f"/tmp/robouse-{uuid.uuid4().hex[:10]}.sock"
-    ready = ws / ".robouse" / "ready"
+    # a harness that practises on other episodes first (aspire) gets the scored episode locked until its own last phase
+    # unlocks it: the token goes to the server and to the harness's top process, both on their stdin, and every
+    # request to the episode must carry it (the runner's own included)
+    unlock_token = secrets.token_hex(16) if harness in harnesses.LOCKED_HARNESSES else ""
+    # the server writes its socket's path here once it listens: outside the workspace when the episode is locked
+    ready = (tdir / "episode" / "ready") if unlock_token else (ws / ".robouse" / "ready")
     started = now()
     t0 = time.time()
     cfg: dict[str, Any] = {
@@ -566,7 +581,10 @@ def run_trial(
             server_cmd, env=server_env, stdin=subprocess.PIPE, stdout=server_log, stderr=subprocess.STDOUT
         )
     assert server.stdin is not None
-    server.stdin.write(json.dumps({"oracle_token": oracle_token, "result_key": result_key}).encode() + b"\n")
+    server_secrets = {"oracle_token": oracle_token, "result_key": result_key}
+    server.stdin.write(
+        json.dumps({**server_secrets, **({"unlock_token": unlock_token} if unlock_token else {})}).encode() + b"\n"
+    )
     server.stdin.close()
     exc = None
     launch = None
@@ -578,7 +596,8 @@ def run_trial(
         _wait_ready(
             ready, server, timeout=float(task.spec.get("ready_timeout_s", 300)), log=tdir / "episode" / "server.log"
         )
-        (ws / ".robouse" / "socket").write_text(sock)
+        if not unlock_token:  # `robo` falls back to this file; a locked episode's harness gets the path otherwise
+            (ws / ".robouse" / "socket").write_text(sock)
         # no provider key or other credential reaches an agent: a harness adds its own vendor's login back; others use
         # the gateway. That includes the VLM grader's key (ROBOUSE_GRADER_API_KEY), which the episode server keeps for
         # `real.verdict: vlm`
@@ -594,6 +613,7 @@ def run_trial(
         base_env["_ROBOUSE_TRIAL_DIR"] = str(tdir)  # read and removed by the harness builder (model gateway)
         base_env["_ROBOUSE_IMAGE_INPUT"] = "0" if plan["image_input"] is False else "1"
         base_env["_ROBOUSE_SPEND_CAP_USD"] = str(cap)
+        base_env["_ROBOUSE_TRIAL"] = json.dumps({"seed": seed, "split": split, "timeout_s": timeout})
         base_env["PYTHONPATH"] = str(SRC) if harness == "oracle" else ""
         base_env.pop("ROBOUSE_ORACLE_TOKEN", None)
         if harness == "oracle":  # only the reference solution may see privileged state in vision tasks
@@ -602,6 +622,8 @@ def run_trial(
         launch = harnesses.build(harness, model, task.instruction, ws, task, base_env)
         if launch.stop_file is not None:  # a model gateway: it enforces the spend cap
             cfg["spend_cap_usd"] = cap or None
+        if launch.config:
+            cfg["harness_config"] = launch.config
         iface.apply(harness, launch, interface, ws, sock)
         if harness in ("oracle", "noop"):  # the trusted reference solution and the negative control
             cfg["sandbox"] = "none"
@@ -609,7 +631,7 @@ def run_trial(
             ports = tuple(
                 int(m) for v in launch.env.values() for m in re.findall(r"//(?:127\.0\.0\.1|localhost):(\d+)", str(v))
             )
-            deny = [job_dir, task.path]
+            deny = [job_dir, task.path, *launch.deny]
             own = sandbox.own_homes(launch.env)
             launch.cmd, cfg["sandbox"] = sandbox.wrap(launch.cmd, ws, sock, deny, ports, own)
             if cfg["sandbox"] != "none":  # PATH entries the agent cannot read (e.g. `uvx`'s, in the uv cache)
@@ -624,9 +646,12 @@ def run_trial(
                 env=launch.env,
                 stdout=out,
                 stderr=err,
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.PIPE if unlock_token else subprocess.DEVNULL,
                 start_new_session=True,
             )
+            if agent.stdin is not None:  # read once by the harness's top process, before it starts anything else
+                agent.stdin.write((unlock_token + "\n").encode())
+                agent.stdin.close()
             _ACTIVE_AGENTS.add(agent.pid)
             try:
                 if INTERRUPTED.is_set():  # started just as another trial was interrupted
@@ -652,8 +677,9 @@ def run_trial(
         # close the episode if the agent did not call `robo done`
         from ..agent_cli import _send
 
+        lock_key = {"unlock": unlock_token} if unlock_token else {}  # a locked episode serves only its token's holders
         try:
-            st = _send({"op": "status", "runner": True}, path=sock)
+            st = _send({"op": "status", "runner": True, **lock_key}, path=sock)
         except OSError:  # the server is still busy (e.g. a slow remote simulator step); it ends on its own clock
             st = {}
         if st.get("ok") and not st["result"]["finished"]:
@@ -668,6 +694,7 @@ def run_trial(
                         else f"{RUNNER_PREFIX} agent timed out"
                         if timed_out
                         else f"{RUNNER_PREFIX} agent exited without robo done",
+                        **lock_key,
                     },
                     path=sock,
                 )
@@ -694,6 +721,16 @@ def run_trial(
         exc = INTERRUPT_TEXT
     if not verified and exc is None:
         exc = "VerdictError: the episode's result.json is missing or does not carry the server's signature"
+    lock = (episode.get("lock") or {}) if verified else {}
+    refused = int(lock.get("refused") or 0)
+    if refused and exc is None:  # something without the harness's token reached the locked scored episode
+        exc = (
+            f"IntegrityError: the scored episode refused {refused} request{'s' * (refused != 1)} that did not carry "
+            "the harness's token: something in the trial other than its scored phase reached it"
+        )
+    elif lock and lock.get("unlocked_after_s") is None and int(episode.get("steps_used") or 0) > 0 and exc is None:
+        refused = 1  # steps on an episode its harness never unlocked: not a result either
+        exc = "IntegrityError: the scored episode took steps although its harness never unlocked it"
     if exc is None and not timed_out and not budget_stop:  # a harness stopped at the spend cap did not fail
         exc = _harness_error(tdir, harness, agent_rc, episode)
     if exc is None and not budget_stop and launch is not None:  # also after a timeout: the harness may retry until then
@@ -703,7 +740,7 @@ def run_trial(
     if budget_stop and episode.get("outcome") in ("gave_up", "agent_timeout"):
         # stopped at the spend cap: neither a model failure nor an infrastructure one
         episode["outcome"] = "budget_stop"
-    reward = _verify(task, episode, tdir) if verified else 0.0
+    reward = _verify(task, episode, tdir) if verified and not refused else 0.0
 
     # artifacts: video + observation images the agent saw
     if (tdir / "episode" / "recording.mp4").exists():
@@ -758,6 +795,11 @@ def run_trial(
     }
     if launch and isinstance(launch.helper, dict):
         res["proxy_stats"] = launch.helper
+    if launch is not None and launch.record is not None:
+        try:
+            res["harness_record"] = launch.record(bool(verified and not refused))
+        except Exception as e:  # noqa: BLE001 - a harness's own record never changes the trial's result
+            res["harness_record"] = {"error": f"{type(e).__name__}: {e}"}
     (tdir / "result.json").write_text(json.dumps(res, indent=2))
     shutil.rmtree(ws, ignore_errors=True)
     if interrupted and threading.current_thread() is threading.main_thread():

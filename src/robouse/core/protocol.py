@@ -2,8 +2,11 @@
 
 Requests carry an `op`: info, status, observe (image, camera; or inline, for camera frames in the reply), act (action,
 repeat), move_to (pos, grip, max_steps, tol), grip (value, steps), skill (name, args), done (text), give_up (text), and
-the runner's shutdown. Replies are {"ok": true, "result": ...} or {"ok": false, "error": "..."}. The `robo` client
-(agent_cli.py) is the other end; it is a standalone script, so it keeps its own copy of the client side.
+the runner's shutdown. An episode started locked (the runner's `unlock_token`, for a harness that practises on other
+episodes first) serves only requests that carry that token in their `unlock` field: before an `unlock` request, the
+runner's status check and give-up; after it, the harness's last phase. It refuses and counts every other request.
+Replies are {"ok": true, "result": ...} or {"ok": false, "error": "..."}. The `robo` client (agent_cli.py) is the
+other end; it is a standalone script, so it keeps its own copy of the client side.
 """
 
 from __future__ import annotations
@@ -27,8 +30,24 @@ FINISH_MESSAGES = {
 RUNNER_PREFIX = "[runner]"
 
 
+# what a locked episode serves before its unlock, when the request carries its token: the runner's own requests
+LOCKED_RUNNER_OPS = ("status", "give_up")
+
+
+def token_matches(given: object, token: str) -> bool:
+    """`given` is `token`, compared as bytes in constant time; anything that is not a string, or does not encode, is a
+    mismatch (never an exception: a locked episode counts every refusal)."""
+    if not token or not isinstance(given, str):
+        return False
+    try:
+        return hmac.compare_digest(given.encode("utf-8"), token.encode("utf-8"))
+    except (UnicodeEncodeError, TypeError):
+        return False
+
+
 def is_runner_request(req: dict) -> bool:
-    """A request the runner sent, not the agent: its status check (`"runner": true`) or its give-up."""
+    """A request the runner marks as its own (`"runner": true`, or a give-up whose text starts with RUNNER_PREFIX). The
+    marks only keep the agent's request count honest; anyone can set them, so they authorize nothing."""
     return bool(req.get("runner")) or (
         req.get("op") == "give_up" and str(req.get("text", "")).startswith(RUNNER_PREFIX)
     )
