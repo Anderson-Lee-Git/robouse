@@ -12,6 +12,7 @@ capabilities:
 composable: false
 suites:
 - arc-style
+- chemlab
 - hard
 - libero-style
 - one-demo

@@ -17,6 +17,7 @@ Most contributors need only `gate.py`, `setup/`, `assets/` and the `docs/` gener
 | `site/build_gallery.py` | One local HTML page with every trial under `runs/`. |
 | `site/component_stills.py` | Stills of the composable components for the hub. |
 | `assets/pin_menagerie.py` | Pins the MuJoCo Menagerie robots the embodiment suites use (`assets/menagerie/embodiments.json`). |
+| `assets/pin_chemlab.py` | Pins the ChemLab-Assets files the chemlab suite downloads (`assets/chemlab/provenance.json`). |
 | `assets/make_hil_fixture.py` | Builds a hardware-in-the-loop fixture from a session recorded on a real arm. |
 | `assets/urdf_to_chain.py` | Writes a real arm's kinematic chain from its vendor URDF. |
 | `setup/setup_robocasa.sh` | Sets up the isolated RoboCasa environment. |

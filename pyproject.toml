@@ -96,8 +96,9 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 # The task folders ship inside the wheel as robouse/bundled_tasks, so `robouse tasks` and
 # `robouse run --task <id>` work without a checkout.
 [tool.hatch.build.targets.wheel.force-include]
-# One entry per suite. Left out: behavior, robodojo and gpu-* (their simulators run on remote GPU workers), and
-# real and stationerybench (real robots: not run through Robo Use on live hardware yet).
+# One entry per suite. Left out: behavior, robodojo and gpu-* (their simulators run on remote GPU workers), real and
+# stationerybench (real robots: not run through Robo Use on live hardware yet), and chemlab (it needs ChemLab-Assets'
+# instrument files, which may not be used commercially; it runs from a checkout).
 # Suites whose simulator needs its own virtualenv (dexjoco, driving, dmcontrol, myosuite, humanoidbench, maniskill,
 # robocasa) still need that setup; docs/suites.md says how.
 "tasks/adroit" = "robouse/bundled_tasks/adroit"
@@ -140,9 +141,10 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "assets/menagerie/embodiments.json" = "robouse/assets_provenance/embodiments.json"
 "assets/humanoidbench/provenance.json" = "robouse/assets_provenance/humanoidbench.json"
 "assets/robocasa/provenance.json" = "robouse/assets_provenance/robocasa.json"
+"assets/chemlab/provenance.json" = "robouse/assets_provenance/chemlab.json"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/assets/humanoidbench/provenance.json", "/assets/robocasa/provenance.json", "/README.md", "/LICENSE", "/NOTICE", "/licenses", "/pyproject.toml"]
+include = ["/src/robouse", "/tasks", "/components", "/assets/menagerie/provenance.json", "/assets/menagerie/skydio_x2/PROVENANCE.json", "/assets/menagerie/embodiments.json", "/assets/humanoidbench/provenance.json", "/assets/robocasa/provenance.json", "/assets/chemlab/provenance.json", "/README.md", "/LICENSE", "/NOTICE", "/licenses", "/pyproject.toml"]
 exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]
 
 [tool.ruff]
@@ -204,6 +206,7 @@ files = [
     "src/robouse/assets.py",
     "src/robouse/backends/__init__.py",
     "src/robouse/backends/base.py",
+    "src/robouse/backends/chemlab",
 ]
 
 [tool.pytest.ini_options]

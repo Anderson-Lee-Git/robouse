@@ -4,7 +4,7 @@
   robouse run-many [--tasks ROOT] --harness NAME ... --out JOBDIR         run a set of trials
   robouse tasks [list|init|check] ...                                     list, create and check tasks
   robouse components list|show|check ...                                  the component registry
-  robouse fetch-assets [--robot NAME | --all]                             download robot models (MuJoCo Menagerie)
+  robouse fetch-assets [--robot NAME | --all | --chemlab]                 download robot models or instrument files
   robouse report | summarize | doctor                                     results, learnings, what this machine can run
 
 `run` and `run-many` run on this machine (the agent under a Seatbelt profile on macOS, bubblewrap on Linux).
@@ -94,6 +94,14 @@ def _summarize(a: argparse.Namespace) -> int:
 def _fetch_assets(a: argparse.Namespace) -> int:
     from ..assets import fetch
 
+    if a.chemlab:
+        if a.robot or a.all:
+            print("robouse: --chemlab cannot be combined with --robot or --all", file=sys.stderr)
+            return 2
+        from ..backends.chemlab.assets import fetch as fetch_chemlab
+
+        fetch_chemlab(Path(a.dest) if a.dest else None)
+        return 0
     try:
         fetch(Path(a.dest) if a.dest else None, robots=a.robot, everything=a.all)
     except ValueError as e:
@@ -112,9 +120,13 @@ def parser() -> argparse.ArgumentParser:
     f = sub.add_parser(
         "fetch-assets",
         help="download the MuJoCo Menagerie robot models (menagerie, roboharm, drone; "
-        "--robot or --all for the embodiment suites and composed tasks)",
+        "--robot or --all for the embodiment suites and composed tasks; --chemlab for the chemlab suite's instruments)",
     )
-    f.add_argument("--dest", help="target folder (default: <cache>/menagerie, or $ROBOUSE_MENAGERIE_ASSETS)")
+    f.add_argument(
+        "--dest",
+        help="target folder (default: <cache>/menagerie, or $ROBOUSE_MENAGERIE_ASSETS; with --chemlab, "
+        "<cache>/chemlab, or $ROBOUSE_CHEMLAB_ASSETS)",
+    )
     f.add_argument("--robot", action="append", help="only this Menagerie robot folder (repeatable), e.g. unitree_go2")
     from ..assets import about_mb, download_bytes
 
@@ -122,6 +134,14 @@ def parser() -> argparse.ArgumentParser:
         "--all",
         action="store_true",
         help=f"every robot the bundled suites use ({about_mb(download_bytes(everything=True))})",
+    )
+    from ..backends.chemlab.assets import download_bytes as chemlab_bytes
+
+    f.add_argument(
+        "--chemlab",
+        action="store_true",
+        help=f"instead, the ChemLab-Assets instrument files the chemlab suite uses ({about_mb(chemlab_bytes())}; "
+        "models, contracts and data under CC BY-NC 4.0, for non-commercial use only)",
     )
     f.set_defaults(func=_fetch_assets)
     _analysis(sub)

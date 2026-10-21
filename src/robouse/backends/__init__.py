@@ -14,6 +14,7 @@ BACKENDS: dict[str, tuple[str, str]] = {
     "behavior": ("behavior", "BehaviorBackend"),  # BEHAVIOR-1K; remote GPU worker
     "capx": ("capx", "CapxBackend"),  # CaP-X code-as-policy tasks (privileged API); simulator worker
     "capx_libero": ("capx", "CapxLiberoBackend"),  # CaP-X's LIBERO-PRO tasks (privileged API); simulator worker
+    "chemlab": ("chemlab", "ChemLabBackend"),  # ChemLab-Assets lab instruments (CC BY-NC assets, fetched at run time)
     "components": ("components", "ComposedBackend"),  # tasks composed from components (robouse tasks init)
     "remix": ("components", "ComposedBackend"),  # the name composed tasks had before 0.2
     "crazyflie": ("crazyflie", "CrazyflieBackend"),

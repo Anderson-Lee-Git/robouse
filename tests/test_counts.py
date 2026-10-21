@@ -37,3 +37,10 @@ def test_hub_only_suites_are_listed_separately() -> None:
     hub = counts.hub_only()
     assert all(n > 0 for n in hub.values()) and not set(hub) & set(counts.bundled())
     assert _table("<!-- hub-only-table -->", "<!-- /hub-only-table -->") == hub
+
+
+def test_checkout_only_suites_are_listed_separately() -> None:
+    checkout = counts.checkout_only()
+    assert all(n > 0 for n in checkout.values())
+    assert not set(checkout) & (set(counts.bundled()) | set(counts.hub_only()))
+    assert _table("<!-- checkout-only-table -->", "<!-- /checkout-only-table -->") == checkout

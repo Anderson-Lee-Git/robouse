@@ -119,4 +119,10 @@ MakerMods Metal arm
 
 robouse fetch-assets and the suites download these at pinned revisions, with SHA-256 checks, under their own licenses: MuJoCo Menagerie robot models (BSD-3-Clause, Apache-2.0 or MIT, each with its LICENSE), RoboCasa assets (CC BY 4.0), the HumanoidBench H1 walking policy (unitree_rl_gym, BSD-3-Clause), and Meta-World's scripted policies (MIT), which `robouse export` copies into exported reference solutions together with Meta-World's license.
 
+ChemLab-Assets
+  https://huggingface.co/datasets/MBZUAI/ChemLab-Assets, revision 4ca4a42dab2ca0a884e449d202e9ad96625d5648 (release 1.3.0); code: https://github.com/mbzuai-nlp/ChemLab-Assets
+  Copyright (c) 2026 Zirui Song, Jiadong Zhang, Jiahao Zhang, Xiaosong Ma, Xiaojun Chang, Xiuying Chen
+  3D models, contracts and data: Creative Commons Attribution-NonCommercial 4.0 (CC BY-NC 4.0), non-commercial use only; code, including the behaviour runtimes: MIT License
+  Downloaded by `robouse fetch-assets --chemlab` for the chemlab suite: the files listed in assets/chemlab/provenance.json (repository, sdist; in the wheel as robouse/assets_provenance/chemlab.json), with the release's LICENSE, LICENSE-ASSETS.md and CITATION.cff. None of them is in the repository or the package. The chemlab task folders (tasks/chemlab/, sdist) name the instruments and their parts and give positions, travel and target values taken from the contracts; they hold none of the models, contracts, data or code.
+
 Robo Use's own RoboHarm suite (tasks/roboharm/) was written independently. It cites Robocurve's RoboHarm (https://github.com/robocurve/roboharm, CC BY-NC 4.0) for its design and contains none of its text, code or assets.

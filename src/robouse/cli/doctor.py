@@ -91,6 +91,12 @@ def run() -> int:
             importlib.import_module(f"robouse.backends.{mod}")
             pkg = UPSTREAM_PKGS.get(b)
             ready = pkg is None or importlib.util.find_spec(pkg) is not None
+            if b == "chemlab":  # instrument files downloaded at run time (CC BY-NC 4.0)
+                from ..backends.chemlab import assets as chemlab_assets
+
+                ready = not chemlab_assets.missing()
+                print(f"  {_ok(ready)}{b}" + ("" if ready else " (instrument files: robouse fetch-assets --chemlab)"))
+                continue
             print(f"  {_ok(ready)}{b}" + ("" if ready else f" (missing package {pkg})"))
         except Exception as e:  # noqa: BLE001
             print(f"  -- {b} ({type(e).__name__}: {str(e)[:80]})")

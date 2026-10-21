@@ -278,6 +278,8 @@ SUITES = {
                      capabilities=["pick-and-place"]),
     "yam": dict(embodiments=["dual-yam"], scene="upstream-scenes", scenario="tabletop", track="arm",
                 capabilities=["pick-and-place", "perception"]),
+    "chemlab": dict(embodiments=["floating-gripper"], scene="upstream-scenes", scenario="lab", track="arm",
+                    capabilities=["contact-rich"]),
     "real": dict(embodiments=["real-arm"], scene="upstream-scenes", scenario="tabletop", track="arm",
                  capabilities=["pick-and-place"]),
     "stationerybench": dict(embodiments=["real-arm"], scene="upstream-scenes", scenario="tabletop", track="arm",

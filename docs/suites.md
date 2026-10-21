@@ -169,6 +169,24 @@ These suites run their simulators in environments built from the upstream projec
 | `capx-libero`<br>CaP-X on LIBERO-PRO's object-swap tasks, code as policy with CaP-X's privileged LIBERO API | 8 | 8/8 | 0/8 |
 <!-- /hub-only-table -->
 
+`chemlab` is not in the package either: it runs on MuJoCo in the main environment, but the instrument models, contracts and data it downloads may not be used commercially ([Licences](#licences)). It runs from a checkout of the repository.
+
+<!-- checkout-only-table -->
+| Suite | Tasks | Needs | Reference solution | No-op control |
+|---|---|---|---|---|
+| `chemlab`<br>ChemLab-Assets: fume hood, balance, hotplate, oven, moisture analyzer, shaker | 7 | `robouse fetch-assets --chemlab` (CC BY-NC 4.0) | 7/7 | 0/7 |
+<!-- /checkout-only-table -->
+
+```sh
+git clone https://github.com/benchflow-ai/robouse.git && cd robouse
+python3.12 -m venv .venv && . .venv/bin/activate
+pip install -e '.[sim]'
+robouse fetch-assets --chemlab
+robouse run --task tasks/chemlab/chemlab-fume-hood-sash --harness oracle --out runs/chemlab
+```
+
+`robouse fetch-assets --chemlab` states the licence, then downloads the 493 files the tasks use (about 11 MB: each instrument's URDF, meshes and contract, and its behaviour runtime with its data) from a pinned revision of ChemLab-Assets on Hugging Face into `~/.cache/robouse/chemlab`, checking each file's SHA-256.
+
 ## Licences
 
 Robo Use is licensed under Apache 2.0, and the [NOTICE](https://github.com/benchflow-ai/robouse/blob/main/NOTICE) file lists the third-party code, data and assets in the package, each with its license: MIT for the vendored CaP-X, PyRoKi and RLE-Bench code, the LIBERO instructions, LIBERO-PRO's scene files and the DexJoCo demonstrations, and CC BY 4.0 for the Adroit demonstrations from D4RL. Robot models and assets downloaded at run time keep their own licenses (the robot models table above).
@@ -178,7 +196,8 @@ Some suites need software or data with stricter terms, which Robo Use does not i
 - `robodojo` (not in the package): cuRobo (non-commercial research license) and NVIDIA Isaac Sim (NVIDIA EULA).
 - `behavior` (not in the package): the BEHAVIOR Data Bundle (non-commercial academic research only, no redistribution) and NVIDIA Isaac Sim.
 - `gpu-isaaclab` (not in the package): NVIDIA Isaac Sim.
+- `chemlab` (not in the package): ChemLab-Assets' instrument models, contracts and data (CC BY-NC 4.0), which `robouse fetch-assets --chemlab` downloads together with the release's behaviour runtimes (MIT).
 
-`robodojo` and `behavior` cannot be run for commercial purposes, and all three need you to accept NVIDIA's Isaac Sim EULA. The `llm` and `benchflow` extras install `litellm[proxy]`, which pulls in `litellm-enterprise` under a proprietary license. The `robosuite` extra pulls in GPL and LGPL packages (quadprog, qpsolvers, pynput, python-xlib), and the `sim` extra's `imageio-ffmpeg` wheel bundles a GPL build of ffmpeg; Robo Use does not redistribute them, but an image built with them must carry their licenses.
+`robodojo`, `behavior` and `chemlab` cannot be run for commercial purposes, and `robodojo`, `behavior` and `gpu-isaaclab` need you to accept NVIDIA's Isaac Sim EULA. The `llm` and `benchflow` extras install `litellm[proxy]`, which pulls in `litellm-enterprise` under a proprietary license. The `robosuite` extra pulls in GPL and LGPL packages (quadprog, qpsolvers, pynput, python-xlib), and the `sim` extra's `imageio-ffmpeg` wheel bundles a GPL build of ffmpeg; Robo Use does not redistribute them, but an image built with them must carry their licenses.
 
 The suite images on this page are renders of each simulator's own scenes. The RoboCasa image shows RoboCasa's kitchen assets ([robocasa/robocasa](https://github.com/robocasa/robocasa), CC BY 4.0).

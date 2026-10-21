@@ -6,12 +6,13 @@ no-op columns from the job folders of a sweep.
 
 The bundled table is the text between the `<!-- suites-table -->` and `<!-- /suites-table -->` lines, the hub-only
 suites (tools/docs/counts.py HUB_ONLY, counted from this checkout's task folders) are between `<!-- hub-only-table -->`
-lines, and README.md gets the same "N tasks in M suites"; the rest of the page is hand-written. Bundled counts come from
-the package (`robouse tasks --path`), so they cannot drift from the release; tests/test_counts.py checks all of it. A
-suite's description is the second line of its first cell, so the table fits the docs column; a suite that needs nothing
-beyond robouse[sim] has an empty Needs cell, and one without trials in a job folder shows "not run" (with --keep, the
-cells the page has now: a change that adds or reruns one suite passes only that suite's sweep). Run it against the
-release users install, from its checkout.
+lines and the checkout-only suites (CHECKOUT_ONLY) between `<!-- checkout-only-table -->` lines, and README.md gets the
+same "N tasks in M suites"; the rest of the page is hand-written. Bundled counts come from the package (`robouse tasks
+--path`), so they cannot drift from the release; tests/test_counts.py checks all of it. A suite's description is the
+second line of its first cell, so the table fits the docs column; a suite that needs nothing beyond robouse[sim] has an
+empty Needs cell, and one without trials in a job folder shows "not run" (with --keep, the cells the page has now: a
+change that adds or reruns one suite passes only that suite's sweep). Run it against the release users install, from
+its checkout.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from pathlib import Path
 DOC = Path(__file__).resolve().parents[2] / "docs" / "suites.md"
 BEGIN, END = "<!-- suites-table -->", "<!-- /suites-table -->"
 HUB_BEGIN, HUB_END = "<!-- hub-only-table -->", "<!-- /hub-only-table -->"
+CHECKOUT_BEGIN, CHECKOUT_END = "<!-- checkout-only-table -->", "<!-- /checkout-only-table -->"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import counts  # noqa: E402  (tools/docs/counts.py: the counts README.md and docs say)
 
@@ -36,6 +38,15 @@ HUB_FROM = {
     "rle-bench": "RLE-Bench family 03, tabletop reasoning: tower, cantilever, balance, hidden centre of mass",
     "capx": "CaP-X's robosuite tasks, code as policy with CaP-X's privileged API (simulator object poses, no perception)",
     "capx-libero": "CaP-X on LIBERO-PRO's object-swap tasks, code as policy with CaP-X's privileged LIBERO API",
+}
+
+# The checkout-only suites (not in the wheel: files they need at run time may not be used commercially), and what they
+# need beyond robouse[sim].
+CHECKOUT_FROM = {
+    "chemlab": "ChemLab-Assets: fume hood, balance, hotplate, oven, moisture analyzer, shaker",
+}
+CHECKOUT_NEEDS = {
+    "chemlab": "`robouse fetch-assets --chemlab` (CC BY-NC 4.0)",
 }
 
 # What each suite is, in a few words (the task metadata's source strings are too long for a table).
@@ -208,8 +219,23 @@ def main() -> None:
             ref, no = kept[suite]
         hub_rows.append(f"| `{suite}`<br>{HUB_FROM.get(suite, '')} | {len(ids)} | {ref} | {no} |")
     hub = ["| Suite | Tasks | Reference solution | No-op control |", "|---|---|---|---|", *hub_rows]
+    checkout_rows = []
+    for suite in counts.CHECKOUT_ONLY:  # not in the wheel either: their task folders in this checkout
+        tasks = [frontmatter(t) for t in sorted((counts.REPO / "tasks" / suite).rglob("task.md"))]
+        ids = [t["robouse"]["id"] for t in tasks]
+        ref, no = cell(ids, oracle, 1.0), cell(ids, noop, 0.0)
+        if (ref, no) == ("not run", "not run") and suite in kept:
+            ref, no = kept[suite]
+        checkout_rows.append(
+            f"| `{suite}`<br>{CHECKOUT_FROM.get(suite, '')} | {len(ids)} | {CHECKOUT_NEEDS.get(suite, '')} | {ref} | {no} |"
+        )
+    checkout = [
+        "| Suite | Tasks | Needs | Reference solution | No-op control |",
+        "|---|---|---|---|---|",
+        *checkout_rows,
+    ]
     text = DOC.read_text(encoding="utf-8")
-    for begin, end, lines in ((BEGIN, END, table), (HUB_BEGIN, HUB_END, hub)):
+    for begin, end, lines in ((BEGIN, END, table), (HUB_BEGIN, HUB_END, hub), (CHECKOUT_BEGIN, CHECKOUT_END, checkout)):
         if begin not in text or end not in text:
             sys.exit(f"{DOC} has no {begin} ... {end} block")
         head, rest = text.split(begin, 1)
@@ -219,7 +245,8 @@ def main() -> None:
     changed = counts.rewrite()  # README.md says the same numbers
     print(
         f"wrote the suites tables in {DOC}: {len(rows)} suites, {total} tasks, from {version}; "
-        f"{len(hub_rows)} hub-only suites; rewrote {', '.join(changed) or 'no other file'}"
+        f"{len(hub_rows)} hub-only and {len(checkout_rows)} checkout-only suites; "
+        f"rewrote {', '.join(changed) or 'no other file'}"
     )
 
 

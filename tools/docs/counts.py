@@ -1,6 +1,6 @@
 """Task and suite counts for README.md and the docs, from the package's own data: the suites pyproject.toml puts in the
-wheel ([tool.hatch.build.targets.wheel.force-include]) and their task.md files, plus the hub-only suites, which have
-task folders but are not in the wheel.
+wheel ([tool.hatch.build.targets.wheel.force-include]) and their task.md files, plus the hub-only and checkout-only
+suites, which have task folders but are not in the wheel.
 
     python tools/docs/counts.py           # rewrite every "N tasks in M suites" in README.md and docs/suites.md
     python tools/docs/counts.py --check   # exit 1 and list them if any disagrees with the package
@@ -21,6 +21,9 @@ REPO = Path(__file__).resolve().parents[2]
 # Suites with task folders whose simulators run in their own hub images (the upstream projects' pinned stacks), not in
 # the wheel. The suites page lists them in a table of their own.
 HUB_ONLY = ("rle-bench", "capx", "capx-libero")
+# Suites with task folders that are not in the wheel because files they need at run time may not be used commercially;
+# they run from a checkout. The suites page lists them in a third table.
+CHECKOUT_ONLY = ("chemlab",)
 PHRASE = re.compile(r"\b\d+ tasks in \d+ suites\b")
 FILES = ("README.md", "docs/suites.md")
 
@@ -38,6 +41,10 @@ def bundled(repo: Path = REPO) -> dict[str, int]:
 
 def hub_only(repo: Path = REPO) -> dict[str, int]:
     return {s: _count(repo, s) for s in HUB_ONLY}
+
+
+def checkout_only(repo: Path = REPO) -> dict[str, int]:
+    return {s: _count(repo, s) for s in CHECKOUT_ONLY}
 
 
 def phrase(counts: dict[str, int]) -> str:

@@ -21,7 +21,8 @@ commands:
     components    list, show and check components
     fetch-assets  download the MuJoCo Menagerie robot models (menagerie,
                   roboharm, drone; --robot or --all for the embodiment suites
-                  and composed tasks)
+                  and composed tasks; --chemlab for the chemlab suite's
+                  instruments)
     report        metrics with 95% confidence intervals over run folders,
                   grouped by trial attributes
     summarize     distil a trial into learnings (markdown) for --prior-
@@ -324,14 +325,19 @@ options:
 ```console
 $ robouse fetch-assets --help
 usage: robouse fetch-assets [-h] [--dest DEST] [--robot ROBOT] [--all]
+                            [--chemlab]
 
 options:
   -h, --help     show this help message and exit
   --dest DEST    target folder (default: <cache>/menagerie, or
-                 $ROBOUSE_MENAGERIE_ASSETS)
+                 $ROBOUSE_MENAGERIE_ASSETS; with --chemlab, <cache>/chemlab,
+                 or $ROBOUSE_CHEMLAB_ASSETS)
   --robot ROBOT  only this Menagerie robot folder (repeatable), e.g.
                  unitree_go2
   --all          every robot the bundled suites use (about 390 MB)
+  --chemlab      instead, the ChemLab-Assets instrument files the chemlab
+                 suite uses (about 11 MB; models, contracts and data under CC
+                 BY-NC 4.0, for non-commercial use only)
 ```
 
 ## `robouse report`

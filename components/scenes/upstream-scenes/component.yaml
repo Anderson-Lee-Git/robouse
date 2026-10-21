@@ -10,6 +10,7 @@ suites:
 - behavior
 - capx
 - capx-libero
+- chemlab
 - cubepick
 - dexhand
 - dexjoco

@@ -22,6 +22,8 @@ ENV: dict[str, str] = {
     "ROBOUSE_MENAGERIE_ASSETS": "MuJoCo Menagerie robot models (default: the checkout's assets/menagerie, else "
     "<cache>/menagerie)",
     "ROBOUSE_ROBOHARM_TEX": "generated texture cache for the roboharm scenes (default <cache>/roboharm_tex)",
+    "ROBOUSE_CHEMLAB_ASSETS": "ChemLab-Assets instrument files for the chemlab suite, from `robouse fetch-assets "
+    "--chemlab` (default <cache>/chemlab); agents never see it",
     "ROBOUSE_PRICING": "JSON price table for trial cost and the spend cap, used instead of the packaged pricing.json "
     "(not added to it)",
     # episode server
@@ -157,6 +159,7 @@ PUBLIC = frozenset(
         "ROBOUSE_CACHE_DIR",
         "ROBOUSE_CONFIG_DIR",
         "ROBOUSE_MENAGERIE_ASSETS",
+        "ROBOUSE_CHEMLAB_ASSETS",
         "ROBOUSE_PRICING",
         "ROBOUSE_RECORD_SIZE",
         "ROBOUSE_SANDBOX",
@@ -235,12 +238,18 @@ def remote_endpoints(name: str) -> Path | None:
     return p if p.is_file() else None
 
 
+# Folders that move part of robouse's cache elsewhere and hold files the episode server runs or loads: the chemlab
+# suite's instrument runtimes are Python modules it imports. The cache is denied to agents as a whole; so is a moved part
+MOVED_CACHE = ("ROBOUSE_CHEMLAB_ASSETS",)
+
+
 def sandbox_denied_paths() -> list[str]:
     """Paths agents may neither read nor write: private settings, the operator channel, the optional credential pools
-    (robouse._maintainer), and $ROBOUSE_SANDBOX_DENY."""
+    (robouse._maintainer), cache folders moved out of the cache (MOVED_CACHE), and $ROBOUSE_SANDBOX_DENY."""
     from . import _maintainer
 
     paths = [config_dir(), operator_dir(), *_maintainer.private_dirs()]
     out = [str(p) for p in paths if p.exists()]
+    out += [v for k in MOVED_CACHE if (v := env(k))]
     out += [p for p in env("ROBOUSE_SANDBOX_DENY").split(":") if p]
     return out
