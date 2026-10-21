@@ -17,6 +17,8 @@ Harnesses
                          glm/glm-5.3: GLM-5.3 on the Z.ai Coding Plan)
   dimcode                Dimensional's dimcode (built on Pi); model: a provider-prefixed id, always through the
                          gateway (default glm/glm-5.3); see dimcode.py
+  kinex                  Kinex (built on Pi), with the robot as Kinex devices served by a RoboEnv-compatible bridge;
+                         model: a provider-prefixed id, always through the gateway (default glm/glm-5.3); see kinex/
   show-harness           NUS Show Lab's Show-Harness: a VLM picks one parameter-free action unit at a time
                          (MV_FWD, GRASP, ...) and an interpreter grounds it; model (required): a provider-prefixed id
                          through the gateway (zero-shot mode) or a self-hosted fine-tuned model at
@@ -125,6 +127,7 @@ GATEWAY_PROTOCOLS = {
     "codex": "openai-responses",
     "mini-swe-agent": "openai-completions",
     "dimcode": "anthropic-messages",
+    "kinex": "anthropic-messages",
     "show-harness": "openai-completions",
 }
 
@@ -351,6 +354,12 @@ def _gemini_cli(model, prompt, workspace, task, env) -> Launch:
     return gemini_cli.build(model, prompt, workspace, task, env)
 
 
+def _kinex(model, prompt, workspace, task, env) -> Launch:
+    from . import kinex
+
+    return kinex.build(model, prompt, workspace, task, env)
+
+
 def _show_harness(model, prompt, workspace, task, env) -> Launch:
     from . import show_harness
 
@@ -369,6 +378,7 @@ HARNESSES: dict[str, Builder] = {
     "dream": _dream,
     "jev": _jev,
     "dimcode": _dimcode,
+    "kinex": _kinex,
     "show-harness": _show_harness,
 }
 

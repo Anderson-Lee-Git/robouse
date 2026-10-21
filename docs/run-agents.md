@@ -4,7 +4,7 @@
 
 ## Model harnesses
 
-A provider-prefixed model goes through the trial's model gateway, which needs Python 3.12 or newer and the `llm` extra. `mini-swe-agent` and `dimcode` default to `glm/glm-5.3`: GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider. It needs the plan's API key and endpoint (the one below is for a plan bought on bigmodel.cn) and, because the plan has no per-token price, the spend cap turned off, or a price for `glm-5.3` in `ROBOUSE_PRICING` ([Configuration](configuration.md)). mini-swe-agent is a separate package, installed here with Robo Use:
+A provider-prefixed model goes through the trial's model gateway, which needs Python 3.12 or newer and the `llm` extra. `mini-swe-agent`, `dimcode` and `kinex` default to `glm/glm-5.3`: GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider. It needs the plan's API key and endpoint (the one below is for a plan bought on bigmodel.cn) and, because the plan has no per-token price, the spend cap turned off, or a price for `glm-5.3` in `ROBOUSE_PRICING` ([Configuration](configuration.md)). mini-swe-agent is a separate package, installed here with Robo Use:
 
 ```sh
 pip install 'robouse[sim,llm]' mini-swe-agent
@@ -80,6 +80,59 @@ Gemini CLI 0.64.0 has run whole trials only against a local stand-in for the Gem
 ## Show-Harness
 
 `show-harness` runs NUS Show Lab's [Show-Harness](https://showlab.github.io/Show-Harness/): the model looks at the task's camera images and picks one parameter-free action unit per call (a move in one of six directions, `GRASP`, `RELEASE` or `DONE`), and an interpreter turns each unit into closed-loop hand motion, every control step counting against the step budget. `--model` is required, since the policy is the model's reading of the images: a provider-prefixed model runs Show-Harness's zero-shot loop through the model gateway if BenchFlow's provider registry lists it as reading images (`robouse run` refuses any other before the trial starts, `glm/glm-5.3` included, since the gateway would remove every camera image); a model you serve at `ROBOUSE_SHOW_HARNESS_URL`, such as one of its fine-tuned adapters on vLLM, runs the fine-tuned loop. No provider-prefixed model has been tested with it in Robo Use 0.4.1. It runs only tasks on the `tabletop`, `libero` and `cubepick` backends, and stops before moving any other robot. It sees the images, the hand's height and the gripper's width, not object coordinates, and it does not turn the hand. It has no unit for refusing, so it cannot pass the four `safety: refuse` tasks on these robots. On LIBERO a unit takes 8 to 12 control steps, so the step budgets there (280 to 520 steps) are tight for it.
+
+## Kinex
+
+`kinex` runs [Kinex](https://github.com/stacx-lab/kinex) 1.0.0, a robotics coding agent built on the Pi SDK, headless (`kinex run`), with the trial's robot connected as Kinex devices. Kinex reaches a simulator through [RoboEnv](https://github.com/stacx-lab/RoboEnv), which serves the robot's devices over HTTP on `127.0.0.1` and writes their profiles and drivers into the workspace's `.kinex/` folder. For a Robo Use episode, a bridge in Robo Use does both: it speaks RoboEnv's protocol, runs in the agent's sandbox as a client of the episode socket, and turns every device call into `robo` requests. So the episode server keeps the step budget, the video and the score, and the devices show what `robo` shows and nothing more: on a vision task, the hand and the camera images, never the objects.
+
+The devices:
+
+- `world`: the episode's clock. One control step is the task's step length, or 0.05 s when the task does not declare one. `read` gives the time and the step budget in seconds, and `wait` runs the simulator for that long. The robot moves only while time passes on `world` (Kinex's `servo` tool waits for you), and every step counts against the budget.
+- `arm` and `gripper`, when the robot is one arm driven by end-effector velocity and its observation has `hand_pos`, such as the tabletop and LIBERO robots. `arm` is the hand's position as three prismatic joints x, y and z, in metres in the world frame, with Kinex's own forward and inverse kinematics; the hand frame keeps the world's orientation. `gripper` takes -1 (open) to +1 (closed), as `robo` does. Writes are position references, which the hand follows step by step while the world waits. Rotation and any other action groups hold still; `robo act` drives them.
+- One RGB camera for each camera the task has, such as `front_camera`, whose read is `robo observe --image --camera front`. A camera's calibration is in its profile only on vision tasks, where `robo info` gives it.
+
+`robo` stays on the agent's `PATH`, and the agent ends the episode with `robo done`. If the agent also moves the robot with `robo`, the arm's reference moves to where the hand is, and the gripper keeps the last value a device write gave it.
+
+Kinex needs Node 22.19 or newer and npm. Install release 1.0.0, checked against its checksums, into a folder of its own, then the Python environment that Kinex's tools and drivers run in, which every trial shares and no agent can change:
+
+```sh
+mkdir kinex-1.0.0 && cd kinex-1.0.0
+for f in kinex-core-1.0.0.tgz kinex-setup-1.0.0.tgz kinex-1.0.0.tgz SHA256SUMS; do
+  curl -fsSLO https://github.com/stacx-lab/kinex/releases/download/v1.0.0/$f
+done
+shasum -a 256 -c SHA256SUMS
+npm install --prefix . --ignore-scripts --no-audit --no-fund ./kinex-core-1.0.0.tgz ./kinex-setup-1.0.0.tgz ./kinex-1.0.0.tgz
+export ROBOUSE_KINEX=$PWD/node_modules/kinex/bin/kinex.mjs
+cd ..
+uv venv --python 3.12 ~/.cache/robouse/kinex-venv
+uv pip install --python ~/.cache/robouse/kinex-venv/bin/python numpy scipy Pillow PyYAML 'opencv-python-headless>=4.7,<5'
+```
+
+`robouse doctor` says whether Kinex and its Python environment are in place (`ok kinex`). With the model's settings as in [Model harnesses](#model-harnesses):
+
+```sh
+robouse run --task arc-gravity --harness kinex --model glm/glm-5.3 --out runs/kinex
+```
+
+Run this way against a scripted local stand-in for the plan's endpoint, whose fixed Kinex tool calls move the four blocks through the devices (Kinex 1.0.0 on a clean install, Linux x86_64, 2026-10-20; that machine has no bubblewrap, so with `ROBOUSE_SANDBOX=0`), the command printed:
+
+```console
+$ robouse run --task arc-gravity --harness kinex --model glm/glm-5.3 --out runs/kinex
+{
+  "trial": "arc-gravity__kinex__14124f",
+  "reward": 1.0,
+  "outcome": "done",
+  "steps": 742,
+  "wall_s": 34.8,
+  "exception": null
+}
+```
+
+No trial with a real model has run yet ([Supported](supported.md)).
+
+Each trial's Kinex gets a configuration folder and a home folder of its own inside the workspace (`.robouse/kinex`), so your Kinex settings and sessions, Pi packages, extensions, skills and MCP servers are not loaded. Kinex's bundled web search is turned off, and so is Pi's network activity other than model requests. Kinex runs with `--yolo`: it approves its own tool permissions, and its questions get no answer. The bridge answers only requests that carry the trial's session, which only that trial's workspace and environment hold, so another trial's agent that finds its port cannot drive this robot. The shared Python environment is linked into each workspace as Kinex's managed Python; the sandbox lets agents read it but not change it while it is in `~/.cache/robouse`, the default (`ROBOUSE_KINEX_VENV` names another, which the sandbox does not protect).
+
+In the trial folder, `agent/stderr.txt` starts with the devices the bridge offered, `agent/pi_session.jsonl` is Kinex's session, and `agent/trajectory.json` gives each Kinex tool call the `robo` requests it made.
 
 ## Isolation
 

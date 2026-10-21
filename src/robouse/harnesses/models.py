@@ -55,6 +55,7 @@ DEFAULT_MODELS = {
     "gemini-cli": "gemini-4-argon",
     "mini-swe-agent": ZAI_CODING_PLAN_MODEL,
     "dimcode": ZAI_CODING_PLAN_MODEL,
+    "kinex": ZAI_CODING_PLAN_MODEL,
 }
 # History: the defaults when the trial folders that leave config.json's `model` empty were recorded (robouse 0.4.0 and
 # earlier, served by Baseten). canonical() reads an empty model with these, never with DEFAULT_MODELS, so those

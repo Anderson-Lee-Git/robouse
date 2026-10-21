@@ -22,9 +22,9 @@ In both, an agent cannot read or write:
 On macOS it also cannot start `open`, `osascript`, `shortcuts` or `security` (`MACOS_ESCAPES`) or send Apple events,
 which act outside the sandbox.
 Program folders inside a denied folder that a harness runs from (`HOME_PROGRAMS`, e.g. Codex's standalone install in
-~/.codex/packages, and `CACHE_PROGRAMS`, e.g. the `dream` client's virtualenv) stay readable, never writable, and so
-does the runner's Python (`interpreters`), which the episode server and the verifier run on. The agent keeps its own workspace, the episode socket and the network
-(model APIs). On macOS, TCP connections to this machine are refused except to `local_ports` (a harness's own local
+~/.codex/packages, and `CACHE_PROGRAMS`, e.g. the `dream` client's virtualenv and Kinex's Python) stay readable, never
+writable, and so does the runner's Python (`interpreters`), which the episode server and the verifier run on. The agent
+keeps its own workspace, the episode socket and the network (model APIs). On macOS, TCP connections to this machine are refused except to `local_ports` (a harness's own local
 proxy); on Linux the agent runs in its own PID namespace, so it cannot see the episode server's process. Set
 ROBOUSE_SANDBOX=0 to run without a sandbox (unsafe: the agent can then read the reference solution).
 """
@@ -92,8 +92,9 @@ DOTENV = ".env"
 # Program folders inside those that a harness may run from: readable, never writable
 HOME_PROGRAMS = (".codex/packages", ".claude/local")
 # Harness interpreters in robouse's cache, which is denied as a whole: the `dream` client's virtualenv (Dream's public
-# client library only; no task files, no keys). Readable, never writable
-CACHE_PROGRAMS = ("dream-venv",)
+# client library only; no task files, no keys) and the `kinex` harness's shared Python environment (Kinex's runtime
+# packages, linked as each trial's .kinex/python/.venv). Readable, never writable, so no trial changes another's tools
+CACHE_PROGRAMS = ("dream-venv", "kinex-venv")
 # macOS programs that act outside the sandbox: `open` hands a file or URL to LaunchServices, `osascript` and `shortcuts`
 # drive other applications, and `security` queries the login keychain through securityd, where Claude Code and the
 # GitHub CLI keep their logins (file rules do not cover the keychain). The Security framework itself stays available:

@@ -58,6 +58,7 @@ Leaving `robo` off the `PATH` states what the agent is offered; it is not a secu
 | `oracle`, `noop` | every request goes through a `robo mcp` server |
 | `gemini-cli` | not wired yet: `cli` only |
 | `mini-swe-agent`, `show-harness`, `vla`, `molmoact2` | no MCP client: `cli` only |
+| `kinex` | `cli` only: the robot is also its Kinex devices ([Run agents and VLAs](run-agents.md#kinex)) |
 
 The trajectory converter treats a call of a `robo` MCP tool as the equivalent `robo` command, so trajectories and video indexes line up as they do for the CLI.
 

@@ -48,9 +48,9 @@ options:
                         OUT/<task>__<harness>__<id>/
   --harness HARNESS, --agent HARNESS
                         harness: oracle, noop, claude-code, codex, gemini-cli,
-                        mini-swe-agent, dimcode, show-harness, molmoact2, vla,
-                        dream or jev; --model takes a provider-prefixed id
-                        such as glm/glm-5.3
+                        mini-swe-agent, dimcode, kinex, show-harness,
+                        molmoact2, vla, dream or jev; --model takes a
+                        provider-prefixed id such as glm/glm-5.3
                         (https://robouse.ai/docs/harnesses/)
   --model MODEL         model for the harness (default: the harness's)
   --interface {cli,mcp,both}
@@ -121,9 +121,9 @@ options:
   --dry-run             print the resolved trial plan and exit
   --harness HARNESS, --agent HARNESS
                         harness: oracle, noop, claude-code, codex, gemini-cli,
-                        mini-swe-agent, dimcode, show-harness, molmoact2, vla,
-                        dream or jev; --model takes a provider-prefixed id
-                        such as glm/glm-5.3
+                        mini-swe-agent, dimcode, kinex, show-harness,
+                        molmoact2, vla, dream or jev; --model takes a
+                        provider-prefixed id such as glm/glm-5.3
                         (https://robouse.ai/docs/harnesses/)
   --model MODEL         model for the harness (default: the harness's)
   --interface {cli,mcp,both}

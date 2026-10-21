@@ -138,6 +138,11 @@ ENV: dict[str, str] = {
     "ROBOUSE_MOLMOACT2_TOKEN": "bearer token for the MolmoAct2 server",
     "ROBOUSE_DIMCODE": "the dimcode executable for the `dimcode` harness (default: `dimcode` on PATH)",
     "ROBOUSE_DIMCODE_NODE": "Node 24 or 26 that runs dimcode (default: `node` on PATH)",
+    "ROBOUSE_KINEX": "the Kinex launcher for the `kinex` harness (default: `kinex` on PATH), or bin/kinex.mjs of an npm "
+    "install",
+    "ROBOUSE_KINEX_NODE": "Node 22.19 or newer that runs a bin/kinex.mjs launcher (default: `node` on PATH)",
+    "ROBOUSE_KINEX_VENV": "the Python environment Kinex's tools and drivers run in, with Kinex's runtime packages "
+    "(default <cache>/kinex-venv, which agents can read but not change)",
     "ROBOUSE_SHOW_HARNESS_URL": "OpenAI-compatible server (base URL ending in /v1) of a self-hosted model for the "
     "`show-harness` harness, e.g. vLLM serving a Show-Harness adapter",
     "ROBOUSE_SHOW_HARNESS_TOKEN": "token for that server: a bearer token, or sent under the overrides' `token_header`",
@@ -194,6 +199,9 @@ PUBLIC = frozenset(
         "ROBOUSE_MOLMOACT2_TOKEN",
         "ROBOUSE_DIMCODE",
         "ROBOUSE_DIMCODE_NODE",
+        "ROBOUSE_KINEX",
+        "ROBOUSE_KINEX_NODE",
+        "ROBOUSE_KINEX_VENV",
         "ROBOUSE_SHOW_HARNESS_URL",
         "ROBOUSE_SHOW_HARNESS_TOKEN",
         "ROBOUSE_SHOW_HARNESS_CONFIG",

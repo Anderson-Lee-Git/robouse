@@ -15,6 +15,7 @@ Notable changes to the `robouse` package, newest first. Versions follow [semanti
 - The model gateway's per-trial key opens only its model routes (Anthropic Messages, chat completions, Responses and the model list). LiteLLM's provider pass-through routes, such as `/gemini/...`, forwarded any request to the provider with your key, outside the spend cap and the trial's image setting; they are refused now, as are its file, batch and other routes.
 - No `GEMINI_*`, `GOOGLE_API_KEY`, `GOOGLE_GEMINI_*` or `GOOGLE_GENAI_*` variable reaches an agent, the episode server or the verifier; `gemini-cli` adds back its own key. The sandbox also denies `$GEMINI_CLI_HOME/.gemini` when the runner's environment sets that variable (`~/.gemini` was denied already).
 - The sandbox denies `~/.env`, and a `.env` file in any folder above the trial's run folder, its task folder or the Robo Use install (a project's `.env` next to its virtualenv), on macOS and Linux: Gemini CLI and other programs read keys from them.
+- The sandbox lets agents read, not change, the Python environment that Kinex's tools and drivers share across trials (`~/.cache/robouse/kinex-venv`). The bridge answers only requests carrying its trial's session.
 
 ### Added
 
@@ -32,6 +33,9 @@ Notable changes to the `robouse` package, newest first. Versions follow [semanti
 - Model metadata (image input) and prices for `gemini/gemini-4-argon`, `openrouter/google/gemini-4-argon` and `openrouter/elorian/glimpse`.
 - A price in the price table can change on a known date: Gemini 4 Argon's introductory price ($2 and $10 per million input and output tokens) applies through 2026-11-30, then $4 and $20.
 - `robouse doctor` checks for Gemini CLI and `GEMINI_API_KEY`.
+- The `kinex` harness: [Kinex](https://github.com/stacx-lab/kinex) 1.0.0, a robotics coding agent on the Pi SDK, headless (`kinex run`), with the robot connected as Kinex devices. A bridge in Robo Use serves them as RoboEnv does (its `roboenv/1` protocol, and the device profiles and drivers in the workspace's `.kinex/`), from inside the agent's sandbox as a client of the episode socket, so every device call becomes `robo` requests: the world clock, an arm whose joints are the hand's position, the gripper and the task's cameras, with camera calibration only where `robo info` gives it. The model goes through the trial's gateway (default `glm/glm-5.3`); each trial gets its own Kinex config and home, with Kinex's web search off.
+- `robouse doctor` reports Kinex and its Python environment (`ROBOUSE_KINEX`, `ROBOUSE_KINEX_NODE`, `ROBOUSE_KINEX_VENV`).
+- Trajectories of Kinex trials come from its Pi session, and each tool call gets the `robo` requests made while it ran.
 
 ### Changed
 

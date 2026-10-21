@@ -4,7 +4,7 @@
 Inputs (all optional; missing or malformed files degrade to fewer steps, never to an exception):
   agent/stdout.jsonl       Claude Code stream-json, `codex exec --json` events, Gemini CLI stream-json, or plain text
   agent/mini_traj.json     mini-swe-agent trajectory
-  agent/pi_session.jsonl   Pi session file (dimcode)
+  agent/pi_session.jsonl   Pi session file (dimcode, kinex)
   agent/stdout.jsonl       show-harness client events (start, plan, decision, end), each with the robo requests it made
   agent/stdout.jsonl       jev client events (start, decision, end): Jev's answers to each decision's questions
   episode/trace.jsonl      every robo request the episode server handled: {t, steps, req, resp}
@@ -30,12 +30,18 @@ itself (status, the closing give_up) are not the agent's and become a final syst
 tool (Claude Code `mcp__robo__act`, Codex `robo.act`, dimcode `dimos_robo_act_<hash>`) is treated as the equivalent
 `robo` command: it made exactly one request, and its text result is what that command prints.
 
+Kinex (a Pi session) timestamps every tool call and its result, and most of its robo requests come from its device
+bridge, not from commands it wrote: each request goes to the tool call that was running when the episode server got it
+(between the end of the previous call and the call's own result). Requests outside every call, such as the bridge's
+first `robo info` and observation before Kinex starts, go to the final system step.
+
   python -m robouse.runner.atif TRIAL_DIR [TRIAL_DIR ...]     (re)build both files for existing trials
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -595,7 +601,9 @@ def _parse_mini(data: dict) -> tuple[list[dict], dict]:
 
 
 # ---------------------------------------------------------------------------------------------
-# Pi session file (dimcode): {"type": "session"} header, then {"type": "message", "message": AgentMessage} entries
+# Pi session file (dimcode, kinex): {"type": "session"} header, then {"type": "message", "message": AgentMessage} entries
+
+PI_HARNESSES = ("dimcode", "kinex")
 
 
 def _parse_pi(entries: list[dict], trial: Path) -> tuple[list[dict], dict]:
@@ -1219,6 +1227,42 @@ def _align(steps: list[dict], agent_entries: list[int], trace: list[dict]) -> li
     return rest
 
 
+def _finite(x: Any) -> bool:
+    return isinstance(x, int | float) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def _align_by_time(steps: list[dict], agent_entries: list[int], trace: list[dict], epoch0: float) -> list[int]:
+    """Assign agent trace entries to the tool calls running when the episode server got them, for transcripts that
+    timestamp each call's result (Pi sessions): a call owns the entries after the previous call's result (or after its
+    own message, for the first call) up to its own result. A call without a result (the harness was stopped) owns the
+    entries after it to the end. Returns the entries outside every call.
+
+    The episode's clock starts at `epoch0`, estimated from result.json's time, which is late by the time the server
+    spent on the episode's metrics; requests that carry the time they were sent (`sent`, the Kinex device bridge's)
+    give the offset exactly, and are used instead when there are any."""
+    sent = [
+        float(e["req"]["sent"]) - float(e.get("t") or 0.0) for e in trace if _finite((e.get("req") or {}).get("sent"))
+    ]
+    if sent:
+        epoch0 = sorted(sent)[len(sent) // 2]
+    when = {j: epoch0 + float(trace[j].get("t") or 0.0) for j in agent_entries}
+    rest = list(agent_entries)
+    after: float | None = None
+    for st in steps:
+        for c in st["calls"]:
+            start = after if after is not None else st.get("epoch")
+            end = c.get("epoch_end")
+            if start is None:
+                continue
+            mine = [j for j in rest if start < when[j] and (end is None or when[j] <= end)]
+            if mine:
+                c["trace"] = (c.get("trace") or []) + mine
+                taken = set(mine)
+                rest = [j for j in rest if j not in taken]
+            after = end if end is not None else after
+    return rest
+
+
 # ---------------------------------------------------------------------------------------------
 # video time
 
@@ -1289,6 +1333,10 @@ def _prompt(trial: Path, cfg: dict, harness: str) -> str:
             instr = ""
     if harness in TRACE_HARNESSES or harness in CLIENT_EVENTS:  # no robo CLI prefix: the client words its own prompt
         return instr or f"task {cfg.get('task')}"
+    if harness == "kinex":
+        from ..harnesses.kinex import PROMPT_PREFIX
+
+        return PROMPT_PREFIX + instr if instr else f"(prompt not recorded) task {cfg.get('task')}"
     from ..harnesses.interface import prompt_prefix
 
     return (
@@ -1390,7 +1438,7 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
         if leftover:
             notes.append(f"{len(leftover)} robo request(s) in the trace were not reported by the client")
     else:
-        if harness == "dimcode" and (trial / "agent" / "pi_session.jsonl").is_file():
+        if harness in PI_HARNESSES and (trial / "agent" / "pi_session.jsonl").is_file():
             steps, meta = _parse_pi(_read_jsonl(trial / "agent" / "pi_session.jsonl"), trial)
             fm = _pi_final(meta)
         elif harness.startswith("mini-swe-agent") and (trial / "agent" / "mini_traj.json").is_file():
@@ -1432,7 +1480,10 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
             if n_bad > 0:
                 notes.append(f"{n_bad} malformed JSON line(s) in agent/stdout.jsonl skipped")
         _mcp_commands(steps, trial)
-        leftover = _align(steps, agent_entries, trace)
+        if harness == "kinex" and epoch0 is not None:
+            leftover = _align_by_time(steps, agent_entries, trace, epoch0)
+        else:
+            leftover = _align(steps, agent_entries, trace)
         if leftover:
             notes.append(
                 f"{len(leftover)} robo request(s) in the trace could not be matched to a tool call; "
@@ -1646,7 +1697,7 @@ def _source_name(trial: Path, harness: str) -> str:
         return "episode/trace.jsonl"
     if harness.startswith("mini-swe-agent") and (trial / "agent" / "mini_traj.json").is_file():
         return "agent/mini_traj.json"
-    if harness == "dimcode" and (trial / "agent" / "pi_session.jsonl").is_file():
+    if harness in PI_HARNESSES and (trial / "agent" / "pi_session.jsonl").is_file():
         return "agent/pi_session.jsonl (Pi session)"
     if harness in CLIENT_EVENTS:
         return f"agent/stdout.jsonl ({harness} client events)"

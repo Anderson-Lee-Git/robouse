@@ -3,7 +3,7 @@
 **Agent as a policy for embodied agents.** Robo Use turns robot benchmarks into tasks that a coding agent, such as Claude Code or Codex, solves by driving a simulated robot from its shell, one `robo` command at a time. An episode server owns the simulator, enforces the step budget, records a video and scores the final physical state; the agent acts only by sending `robo` requests to that server.
 
 - 790 tasks in 34 suites ship in the package: rule puzzles on a table, Meta-World, LIBERO, robosuite, RoboCasa, Gymnasium-Robotics, dm_control, MyoSuite, HumanoidBench, quadrupeds, humanoids, drones and more.
-- Harnesses for Claude Code, Codex, Gemini CLI, mini-swe-agent, dimcode and Show-Harness, and a client for vision-language-action (VLA) policies served elsewhere.
+- Harnesses for Claude Code, Codex, Gemini CLI, mini-swe-agent, dimcode, Kinex and Show-Harness, and a client for vision-language-action (VLA) policies served elsewhere.
 - Every task is a BenchFlow task folder (`task.md`) with a reference solution that scores 1 and a no-op control that scores 0. Every trial is a folder with the video, the agent's trajectory and the reward.
 
 Status: alpha. Interfaces can change between minor versions; see [CHANGELOG.md](https://github.com/benchflow-ai/robouse/blob/main/CHANGELOG.md).
@@ -62,7 +62,7 @@ export CLAUDE_CODE_OAUTH_TOKEN=...
 robouse run --task arc-gravity --harness claude-code --out runs/quickstart
 ```
 
-The agent reads the task, observes the scene with `robo observe`, moves with `robo move-to` and ends with `robo done`. Model trials use your provider quota or credits. `mini-swe-agent` and `dimcode` default to GLM-5.3 on the Z.ai Coding Plan (`glm/glm-5.3`, with `GLM_API_KEY` and `GLM_BASE_URL` set). Other harnesses, models and VLA policies: [Run agents and VLAs](https://robouse.ai/docs/run-agents/).
+The agent reads the task, observes the scene with `robo observe`, moves with `robo move-to` and ends with `robo done`. Model trials use your provider quota or credits. `mini-swe-agent`, `dimcode` and `kinex` default to GLM-5.3 on the Z.ai Coding Plan (`glm/glm-5.3`, with `GLM_API_KEY` and `GLM_BASE_URL` set). Other harnesses, models and VLA policies: [Run agents and VLAs](https://robouse.ai/docs/run-agents/).
 
 ## Isolation, and its limits
 

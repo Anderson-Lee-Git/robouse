@@ -10,6 +10,7 @@ Robo Use 0.5.0.
 | `gemini-4-argon` (Gemini 4 Argon on the Gemini API) · `gemini-cli` | `GEMINI_API_KEY` (a Gemini API key from Google AI Studio); Gemini CLI on `PATH` (`npm install -g @google/gemini-cli`) |
 | `gemini/gemini-4-argon` · `claude-code`, `mini-swe-agent`, `dimcode` | `GEMINI_API_KEY`; Python 3.12 or newer and `pip install 'robouse[llm]'` (the model gateway) |
 | `openrouter/elorian/glimpse` (Elorian's Glimpse), `openrouter/google/gemini-4-argon` · `claude-code`, `mini-swe-agent`, `dimcode` | `OPENROUTER_API_KEY`; Python 3.12 or newer and `pip install 'robouse[llm]'` |
+| `glm/glm-5.3` · `kinex` | Kinex 1.0.0 with Node 22.19 or newer, and Kinex's Python environment ([Run agents and VLAs](run-agents.md#kinex)); the plan's settings and the model gateway, as above |
 | `claude-sonnet-5` · `claude-code` | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` |
 | `gpt-6-astra` · `codex` | `OPENAI_API_KEY` or a `codex login` |
 | VLA presets · `vla` | a policy server, usually on a GPU |
@@ -22,6 +23,8 @@ How the `glm/glm-5.3` row was checked (2026-10-14): each of its three harnesses 
 How the `jev` row was checked (2026-10-20): whole trials on nav tasks, on macOS (Apple silicon) under Seatbelt and on Linux x86_64 without a sandbox, against a scripted local stand-in for TypeSafe's System One endpoint that answers by applying the questions' criteria literally. No trial has run on Jev itself yet, so how Jev does on the nav suite is untested.
 
 How the Gemini 4 Argon and Glimpse rows were checked (2026-10-20): each pair ran a whole trial (`arc-gravity-vision`) on Linux x86_64 without the sandbox (`ROBOUSE_SANDBOX=0`), against scripted local stand-ins for the Gemini API and for OpenRouter's chat completions endpoint (`tests/model_standin.py`), with Gemini CLI 0.64.0, Claude Code 2.1.304, mini-swe-agent 2.4.6 and dimcode 0.1.0-next.7; Claude Code on `gemini/gemini-4-argon` also ran under Seatbelt on macOS. The stand-ins check the plumbing: the routes, the signatures Gemini puts on tool calls, images in tool results, token counts and costs. No request has reached Google or OpenRouter, so how these pairs do on a task is untested, and Gemini CLI has not run under the sandbox.
+
+How the `kinex` row was checked (2026-10-20): Kinex 1.0.0 ran whole trials through the model gateway against a scripted local stand-in for the plan's endpoint, which answered with fixed Kinex tool calls, on Linux x86_64 without the sandbox (that machine has no bubblewrap). Through the Kinex devices, those calls solved `arc-gravity` and `libero-spatial-0`, and on `arc-gravity-vision` moved the hand with Kinex's `servo` to a pose and placed it in the front camera's frame from the camera's calibration. Robo Use's side of the harness (the bridge, the device drivers and Kinex's Python environment, with a stand-in for Kinex itself) ran under the macOS sandbox. No trial with a real model has run yet, so how Kinex does on a task is untested.
 
 ## Platforms
 

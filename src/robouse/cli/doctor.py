@@ -120,6 +120,15 @@ def run() -> int:
     print(f"  {_ok(bool(mini))}mini-swe-agent (" + (mini if mini else "`mini`: pip install mini-swe-agent") + ")")
     dim = config.env("ROBOUSE_DIMCODE") or shutil.which("dimcode")
     print(f"  {_ok(bool(dim))}dimcode (" + (dim if dim else "`dimcode` on PATH, or ROBOUSE_DIMCODE") + ")")
+    from ..harnesses import kinex
+
+    kx = config.env("ROBOUSE_KINEX") or shutil.which("kinex")
+    kv = kinex.venv()
+    print(
+        f"  {_ok(bool(kx) and (kv / 'bin' / 'python3').exists())}kinex ("
+        + (kx if kx else "`kinex` on PATH, or ROBOUSE_KINEX")
+        + f"; Kinex's Python environment {kv})"
+    )
     print(
         f"  {_ok(shutil.which('python3') is not None)}show-harness (`python3` on PATH; a provider-prefixed model that "
         "reads images, through the model gateway, or a self-hosted one at ROBOUSE_SHOW_HARNESS_URL)"

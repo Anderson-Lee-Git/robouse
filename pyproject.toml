@@ -201,6 +201,8 @@ files = [
     "src/robouse/harnesses/__init__.py",
     "src/robouse/harnesses/credentials.py",
     "src/robouse/harnesses/jev",
+    "src/robouse/harnesses/kinex/__init__.py",
+    "src/robouse/harnesses/kinex/bridge.py",
     "src/robouse/tasks.py",
     "src/robouse/oracle.py",
     "src/robouse/session.py",

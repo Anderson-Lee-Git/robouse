@@ -168,7 +168,7 @@ def _verify(task: Task, episode: dict, tdir: Path) -> float:
 
 
 # harnesses that drive a language model (the others run scripted code or a VLA policy)
-LLM_HARNESSES = ("claude-code", "codex", "gemini-cli", "mini-swe-agent", "dimcode", "show-harness")
+LLM_HARNESSES = ("claude-code", "codex", "gemini-cli", "mini-swe-agent", "dimcode", "kinex", "show-harness")
 # harnesses that may also drive a self-hosted model named without a provider prefix (no gateway; images always sent)
 SELF_HOSTED_HARNESSES = ("show-harness",)
 
