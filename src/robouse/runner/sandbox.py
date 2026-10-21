@@ -5,8 +5,10 @@ In both, an agent cannot read or write:
     robouse's cache moved elsewhere (robot models, textures, instrument files, a walking policy: `config.MOVED_CACHE`)
     and $ROBOUSE_SANDBOX_DENY (`config.sandbox_denied_paths`);
   - credential and task-copy locations in the home folder (`HOME_DENIED`): other programs' logins, the user's own
-    Claude Code, Codex and mini-swe-agent settings, and package caches holding copies of the tasks with their reference
-    solutions or simulator sources; also the runner's own $CLAUDE_CONFIG_DIR and $CODEX_HOME;
+    Claude Code, Codex, Gemini CLI and mini-swe-agent settings, ~/.env, and package caches holding copies of the tasks
+    with their reference solutions or simulator sources; also the runner's own $CLAUDE_CONFIG_DIR, $CODEX_HOME and
+    $GEMINI_CLI_HOME/.gemini;
+  - a .env file in any folder above the run folder, the task folder or robouse itself (`dotenv_files`);
   - robouse's cache (simulator virtualenvs and sources, downloaded demonstrations, other trials' harness homes), except
     the agent's own harness home (`own`: its CLAUDE_CONFIG_DIR or CODEX_HOME);
   - the run folder (trial records, including the episode's result.json) and the task folder (its reference solution);
@@ -59,6 +61,7 @@ HOME_DENIED = (
     ".config/mini-swe-agent",  # mini-swe-agent's global .env, which may hold provider keys (Linux)
     "Library/Application Support/mini-swe-agent",  # (macOS)
     ".gemini",  # Gemini CLI's login
+    ".env",  # a home folder's .env: Gemini CLI and other dotenv loaders read keys from it
     ".dreamlabs",  # Dream Labs' credentials file (DreamAPI key)
     ".config/dream-yam-sim",  # Dream's MuJoCo example's saved key
     ".config/gh",  # GitHub CLI's token
@@ -82,6 +85,10 @@ HOME_DENIED = (
     ".cache/huggingface/token",
     ".cache/huggingface/stored_tokens",
 )
+# Files that hold secrets wherever they are: a project keeps its keys in a .env, which dotenv loaders (Gemini CLI's
+# among them) look for in every folder above the current one. One in a folder above the trial's run folder, its task
+# folder or this robouse (a project's .env next to its virtualenv) is denied (`dotenv_files`)
+DOTENV = ".env"
 # Program folders inside those that a harness may run from: readable, never writable
 HOME_PROGRAMS = (".codex/packages", ".claude/local")
 # Harness interpreters in robouse's cache, which is denied as a whole: the `dream` client's virtualenv (Dream's public
@@ -94,6 +101,9 @@ CACHE_PROGRAMS = ("dream-venv",)
 MACOS_ESCAPES = ("/usr/bin/open", "/usr/bin/osascript", "/usr/bin/shortcuts", "/usr/bin/security")
 # The variables naming a harness's own config home (the runner's values are denied, the agent's allowed)
 HOME_VARS = ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
+# Gemini CLI's home root, which holds its config folder: the runner's <GEMINI_CLI_HOME>/.gemini (settings, logins,
+# sessions) is denied as ~/.gemini is. The gemini-cli harness gives the agent its own, inside the workspace
+GEMINI_HOME_VAR = "GEMINI_CLI_HOME"
 # hf-libero's task data folders (inside its `libero` package folder), which give a LIBERO task's layout away
 LIBERO_DATA = ("bddl_files", "init_files")
 # When robouse runs from a source checkout: its task folders (every task's reference solution and verifier), run
@@ -120,13 +130,14 @@ def _real(paths: Iterable[str | Path]) -> list[str]:
 
 
 def home_denied() -> list[str]:
-    """HOME_DENIED under this user's home folder (globs expanded), the runner's own Claude Code and Codex homes, and
-    robouse's cache."""
+    """HOME_DENIED under this user's home folder (globs expanded), the runner's own Claude Code, Codex and Gemini CLI
+    homes, and robouse's cache."""
     home = Path.home()
     out: list[str] = []
     for rel in HOME_DENIED:
         out += sorted(glob.glob(str(home / rel))) if any(c in rel for c in "*?[") else [str(home / rel)]
     out += [v for k in HOME_VARS if (v := config.env(k))]
+    out += [str(Path(v) / ".gemini")] if (v := config.env(GEMINI_HOME_VAR)) else []
     return [*out, str(config.cache_dir())]
 
 
@@ -191,9 +202,14 @@ def own_homes(env: dict) -> list[str]:
     return _real(v for k in HOME_VARS if (v := env.get(k)))
 
 
+def dotenv_files(paths: Iterable[str | Path]) -> list[str]:
+    """The .env files (DOTENV) that exist in the folders above each path, up to the root."""
+    return [f for p in _real(paths) for a in _ancestors(p) if os.path.isfile(f := os.path.join(a, DOTENV))]
+
+
 def _denied(extra: list[Path]) -> list[str]:
     paths = [*config.sandbox_denied_paths(), *home_denied(), *control_sockets(), *checkout_denied(), *map(str, extra)]
-    return _real([*paths, str(PKG), *libero_data()])
+    return _real([*paths, str(PKG), *libero_data(), *dotenv_files([*extra, PKG])])
 
 
 def _programs() -> list[str]:

@@ -2,7 +2,7 @@
 (artifacts/recording_index.json). See docs/viewer.md.
 
 Inputs (all optional; missing or malformed files degrade to fewer steps, never to an exception):
-  agent/stdout.jsonl       Claude Code stream-json, `codex exec --json` events, or plain text
+  agent/stdout.jsonl       Claude Code stream-json, `codex exec --json` events, Gemini CLI stream-json, or plain text
   agent/mini_traj.json     mini-swe-agent trajectory
   agent/pi_session.jsonl   Pi session file (dimcode)
   agent/stdout.jsonl       show-harness client events (start, plan, decision, end), each with the robo requests it made
@@ -14,8 +14,8 @@ Inputs (all optional; missing or malformed files degrade to fewer steps, never t
 Outputs
   agent/trajectory.json    ATIF-v1.7 (the agent trajectory format the BenchFlow viewer and trainer read). One user step with the
                            prompt, then one step per assistant message (Claude Code), per item (Codex), per
-                           assistant turn (mini-swe-agent), per decision (show-harness, jev) or per group of robo
-                           requests (oracle, noop).
+                           assistant turn (mini-swe-agent, Gemini CLI), per decision (show-harness, jev) or per group
+                           of robo requests (oracle, noop).
   artifacts/recording_index.json
                            the BenchFlow viewer's recording index: for every trajectory step, the video
                            time span of the robo requests it made ({index, action, t_video_start_s,
@@ -436,6 +436,91 @@ def _codex_final(meta: dict) -> dict | None:
     }
     fm["extra"] = {"reasoning_output_tokens": tot("reasoning_output_tokens"), "turns": len(us)}
     return fm
+
+
+# ---------------------------------------------------------------------------------------------
+# Gemini CLI stream-json (`gemini --output-format stream-json`): init, message (the user's prompt, then the
+# assistant's text in deltas), tool_use and tool_result (matched by tool_id), error, and a final result with the
+# session's token totals. One agent step per model turn: its text and the tool calls it made before their results.
+
+
+def _parse_gemini(events: list[dict], trial: Path) -> tuple[list[dict], dict]:
+    steps: list[dict] = []
+    by_call: dict[str, dict] = {}
+    meta: dict[str, Any] = {"events": len(events)}
+    cur: dict | None = None  # the current model turn's step
+
+    def turn(epoch: float | None, after_results: bool) -> dict:
+        """The current turn's step, or a new one when there is none or (after_results) its calls have results."""
+        nonlocal cur
+        if cur is None or (after_results and any(c["output"] is not None for c in cur["calls"])):
+            cur = _step("agent", epoch=epoch)
+            steps.append(cur)
+        return cur
+
+    for ev in events:
+        et = ev.get("type")
+        epoch = _parse_iso(ev.get("timestamp"))
+        if et == "init":
+            meta.update({k: ev.get(k) for k in ("session_id", "model") if ev.get(k)})
+        elif et == "message" and ev.get("role") == "user":
+            steps.append(_step("user", _clip(str(ev.get("content") or ""), MSG_LIMIT), epoch=epoch))
+            cur = None
+        elif et == "message":
+            st = turn(epoch, after_results=bool(cur and cur["calls"]))  # text after tool calls is the next turn
+            st["message"] += str(ev.get("content") or "")
+        elif et == "tool_use":
+            args = ev.get("parameters") if isinstance(ev.get("parameters"), dict) else {"input": ev.get("parameters")}
+            name = str(ev.get("tool_name") or "tool")
+            cmd = args.get("command") if name == "run_shell_command" and isinstance(args.get("command"), str) else None
+            c = _call(str(ev.get("tool_id") or f"call-{len(by_call)}"), name, args, cmd)
+            turn(epoch, after_results=True)["calls"].append(c)
+            by_call[c["id"]] = c
+        elif et == "tool_result":
+            c = by_call.get(str(ev.get("tool_id")))
+            err = ev.get("error") if isinstance(ev.get("error"), dict) else {}
+            text = str(ev.get("output") or err.get("message") or "")
+            if c is None:
+                steps.append(_step("system", _clip(f"[tool result without a matching call] {text}"), epoch=epoch))
+                continue
+            c["output"] = text
+            c["is_error"] = ev.get("status") == "error"
+            c["epoch_end"] = epoch
+            name = os.path.basename(str(c["args"].get("file_path") or ""))
+            if c["name"] == "read_file" and name and (trial / "artifacts" / "observations" / name).is_file():
+                c["image_paths"] = [f"../artifacts/observations/{name}"]
+        elif et == "error":
+            steps.append(
+                _step("system", _clip(f"[{ev.get('severity') or 'error'}] {ev.get('message', '')}"), epoch=epoch)
+            )
+        elif et == "result":
+            meta["result"] = {k: ev.get(k) for k in ("status", "error", "stats") if ev.get(k) is not None}
+            if ev.get("status") == "error":
+                err = ev.get("error")
+                text = err.get("message") if isinstance(err, dict) else err
+                steps.append(_step("system", _clip(f"[result: error] {text or ''}".strip()), epoch=epoch))
+    for st in steps:
+        if st["source"] == "agent":
+            st["message"] = _clip(st["message"], MSG_LIMIT)
+    return steps, meta
+
+
+def _gemini_final(meta: dict) -> dict | None:
+    stats = (meta.get("result") or {}).get("stats") or {}
+    if not stats:
+        return None
+    prompt, total, out = (int(stats.get(k) or 0) for k in ("input_tokens", "total_tokens", "output_tokens"))
+    return {
+        "total_prompt_tokens": prompt,
+        # output_tokens counts the answer only; the total adds the thinking tokens, which Google bills as output
+        "total_completion_tokens": max(total - prompt, out),
+        "total_cached_tokens": int(stats.get("cached") or 0),
+        "extra": {
+            "output_tokens": out,
+            "thinking_tokens": max(total - prompt - out, 0),
+            **{k: stats[k] for k in ("duration_ms", "tool_calls", "models") if k in stats},
+        },
+    }
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1322,6 +1407,9 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
             elif harness.startswith("claude-code"):
                 steps, meta = _parse_claude(events, trial)
                 fm = _claude_final(meta)
+            elif harness == "gemini-cli":
+                steps, meta = _parse_gemini(events, trial)
+                fm = _gemini_final(meta)
             else:
                 steps, meta = [], {}
             if not events:
@@ -1569,6 +1657,8 @@ def _source_name(trial: Path, harness: str) -> str:
             if harness.startswith("codex")
             else "Claude Code stream-json"
             if harness.startswith("claude-code")
+            else "Gemini CLI stream-json"
+            if harness == "gemini-cli"
             else "raw output"
         )
         + ")"

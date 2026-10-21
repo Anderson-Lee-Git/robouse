@@ -47,6 +47,10 @@ ENV: dict[str, str] = {
     "ROBOUSE_GATEWAY_BEARER_ENV": "gateway process only: the provider key variable sent as a Bearer token",
     "ROBOUSE_GATEWAY_DROP_THINKING": "gateway process only: 1 removes `thinking` from Anthropic Messages requests (a "
     "provider without a Responses API, where LiteLLM would send such a request)",
+    "ROBOUSE_GATEWAY_MOVE_TOOL_IMAGES": "gateway process only: 1 moves the images of Anthropic tool_result blocks into "
+    "their user message (Messages translated to chat completions)",
+    "ROBOUSE_GATEWAY_KEEP_SIGNATURES": "gateway process only: 1 keeps Gemini's thought signatures for Anthropic "
+    "Messages clients (LiteLLM's Gemini route)",
     "ROBOUSE_GATEWAY_SPEND_CAP": "gateway process only: the trial's spend cap in USD (0: none)",
     "ROBOUSE_GATEWAY_PRICE": "gateway process only: the model's price, USD per 1M tokens (JSON, from pricing.json)",
     "ROBOUSE_GATEWAY_STOP_FILE": "gateway process only: the file it writes when the spend cap is reached",

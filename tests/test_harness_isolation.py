@@ -77,6 +77,7 @@ PLANTED = [
     ".codex/auth.json",
     ".codex/sessions/rollout.jsonl",
     ".config/mini-swe-agent/.env",
+    ".env",
     ".config/gh/hosts.yml",
     ".ssh/id_ed25519",
     ".netrc",
@@ -130,7 +131,13 @@ def test_the_profile_and_bwrap_deny_credential_and_task_copy_locations(outside_t
     real = {k: os.path.realpath(v) for k, v in p.items()}
     home = real["home"]
     denied = [f"{home}/{d}" for d in (".cache/uv", ".cache/benchflow", ".config/benchflow", ".claude", ".codex")]
-    denied += [f"{home}/.claude-second", f"{home}/.claude.json", f"{home}/.cache/robouse", real["runner"]]
+    denied += [
+        f"{home}/.claude-second",
+        f"{home}/.claude.json",
+        f"{home}/.env",
+        f"{home}/.cache/robouse",
+        real["runner"],
+    ]
     own = sandbox.own_homes({"CODEX_HOME": str(p["own"]), "PATH": "/usr/bin"})
     assert own == [real["own"]]
 
@@ -150,8 +157,33 @@ def test_the_profile_and_bwrap_deny_credential_and_task_copy_locations(outside_t
             assert ("--tmpfs", d) in pairs, d
     assert args[args.index(f"{home}/.claude.json") - 1] == "/dev/null"  # a file: /dev/null over it
     assert args[args.index(f"{home}/.netrc") - 2 : args.index(f"{home}/.netrc")] == ["--ro-bind", "/dev/null"]
+    assert args[args.index(f"{home}/.env") - 2 : args.index(f"{home}/.env")] == ["--ro-bind", "/dev/null"]
     assert args.index(programs) > args.index(f"{home}/.codex") and ("--ro-bind", programs) in pairs
     assert ("--bind", real["own"]) in pairs and args.index(real["own"]) > args.index(f"{home}/.cache/robouse")
+
+
+def test_a_dotenv_file_above_the_trial_s_folders_is_denied(outside_tmp, monkeypatch) -> None:
+    """A project keeps its keys in a .env, and dotenv loaders (Gemini CLI's among them) look for one in every folder
+    above the current one. A .env above the trial's run folder, its task folder or robouse's install (a project's .env
+    next to its virtualenv) is denied on macOS and Linux; one anywhere else is not this list's business."""
+    base = outside_tmp
+    _isolate(monkeypatch, _home(base))
+    project = base / "project"
+    job, task = project / "runs" / "job", project / "tasks" / "suite" / "task"
+    for d in (job, task, base / "elsewhere"):
+        d.mkdir(parents=True)
+    for d in (project, project / "runs", base / "elsewhere"):
+        (d / ".env").write_text(SECRET)
+    near, runs, far = (os.path.realpath(d / ".env") for d in (project, project / "runs", base / "elsewhere"))
+    monkeypatch.setattr(sandbox, "PKG", base / "venv" / "lib" / "site-packages" / "robouse")
+    denied = sandbox._denied([job, task])
+    assert near in denied and runs in denied and far not in denied
+    prof = sandbox.sandbox_profile(base / "ws", (), [job, task], [])
+    assert f'(deny file-read* file-write* (subpath "{near}"))' in prof and far not in prof
+    args = sandbox.bwrap_args(base / "ws", str(base / "sock"), [job, task], [])
+    assert args[args.index(near) - 2 : args.index(near)] == ["--ro-bind", "/dev/null"] and far not in args
+    monkeypatch.setattr(sandbox, "PKG", project / ".venv" / "lib" / "python3.12" / "site-packages" / "robouse")
+    assert near in sandbox._denied([])  # robouse installed in the project's virtualenv
 
 
 def _libero(base: Path, monkeypatch) -> list[Path]:
@@ -373,10 +405,11 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
         listening = [_listen(s) for s in sockets.values()]
         monkeypatch.setattr(sandbox, "SOCKETS", (str(sockets["engine"]),))
         monkeypatch.setenv("SSH_AUTH_SOCK", str(sockets["ssh-agent"]))
+        (tmp_path / ".env").write_text(SECRET)  # a .env above the trial's run folder (tmp_path / "job")
         libero = _libero(base, monkeypatch)  # LIBERO's task data, as the runner's Python finds it
         assert all(f.read_text() == SECRET for f in libero)  # outside the sandbox (the episode server), readable
         script = PEEK.format(
-            planted=" ".join([*(str(p["home"] / rel) for rel in PLANTED), *map(str, libero)]),
+            planted=" ".join([*(str(p["home"] / rel) for rel in PLANTED), str(tmp_path / ".env"), *map(str, libero)]),
             runner=p["runner"],
             secret=SECRET,
             tool=p["tool"],

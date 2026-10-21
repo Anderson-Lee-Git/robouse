@@ -15,7 +15,8 @@ from .. import config
 from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_task_path
 
 HARNESS_HELP = (
-    "harness: oracle, noop, claude-code, codex, mini-swe-agent, dimcode, show-harness, molmoact2, vla, dream or jev; "
+    "harness: oracle, noop, claude-code, codex, gemini-cli, mini-swe-agent, dimcode, show-harness, molmoact2, vla, "
+    "dream or jev; "
     "--model takes a provider-prefixed id such as glm/glm-5.3 (https://robouse.ai/docs/harnesses/)"
 )
 RECORD_SIZE_HELP = (

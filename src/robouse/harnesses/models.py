@@ -1,15 +1,17 @@
 """Model ids, providers and model capabilities, in BenchFlow's conventions.
 
 A model id is provider-prefixed, as in BenchFlow: `glm/glm-5.3` (GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's
-`glm` provider), `openrouter/<org>/<model>`, `anthropic/claude-opus-5-5`, `openai/gpt-6-astra`. The provider part
-names an entry in BenchFlow's provider registry (`benchflow.agents.providers.PROVIDERS`); Robo Use keeps no registry of
-its own. `PENDING_PROVIDERS` holds the one entry BenchFlow does not ship, `baseten`, in BenchFlow's own
-`ProviderConfig` shape: it served the earlier GLM-5.3 and Kimi K3 runs (and robouse 0.4.0's defaults), and their
-trial folders still name it. A new run refuses a `baseten/` id (`history_refusal()`).
+`glm` provider), `gemini/gemini-4-argon` (the Gemini API), `openrouter/<org>/<model>`, `anthropic/claude-opus-5-5`,
+`openai/gpt-6-astra`. The provider part names an entry in BenchFlow's provider registry
+(`benchflow.agents.providers.PROVIDERS`); Robo Use keeps no registry of its own. `PENDING_PROVIDERS` holds the entries
+BenchFlow does not ship, in BenchFlow's own `ProviderConfig` shape: `gemini` (the Gemini API with an AI Studio key), and
+`baseten`, which served the earlier GLM-5.3 and Kimi K3 runs (and robouse 0.4.0's defaults) and which their trial
+folders still name. A new run refuses a `baseten/` id (`history_refusal()`). `PENDING_MODELS` adds model metadata to a
+provider BenchFlow ships without it (`openrouter`).
 
-A bare id keeps working for a harness's own vendor: `claude-*` is Anthropic's, `gpt-*`/`o<n>` OpenAI's. The legacy
-`-glm` harness names of the September runs read as Baseten's (`legacy()`, `canonical()`); a new run refuses them
-(`legacy_refusal()`).
+A bare id keeps working for a harness's own vendor: `claude-*` is Anthropic's, `gpt-*`/`o<n>` OpenAI's and `gemini-*`
+Google's (Gemini CLI). The legacy `-glm` harness names of the September runs read as Baseten's (`legacy()`,
+`canonical()`); a new run refuses them (`legacy_refusal()`).
 
 Capabilities come from the registry's model metadata (`models[].input`, BenchFlow's field: ["text"] or
 ["text", "image"]). `accepts_images()` answers True, False or None (unknown).
@@ -30,8 +32,8 @@ LEGACY_HARNESSES = {
 LEGACY_DEFAULT_MODEL = "zai-org/GLM-5.3"
 
 # First-party providers every harness knows natively (their own subscription or API key), and whose models take images.
-NATIVE_VENDORS = {"claude-code": "anthropic", "codex": "openai"}
-FIRST_PARTY_IMAGE_PROVIDERS = {"anthropic", "openai"}
+NATIVE_VENDORS = {"claude-code": "anthropic", "codex": "openai", "gemini-cli": "gemini"}
+FIRST_PARTY_IMAGE_PROVIDERS = {"anthropic", "openai", "gemini"}
 
 # GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider: the key in GLM_API_KEY and the plan's
 # OpenAI-compatible endpoint in GLM_BASE_URL (BenchFlow has no default for it; ZAI_CODING_PLAN_URL is the endpoint of a
@@ -42,13 +44,15 @@ ZAI_CODING_PLAN_URL = "https://open.bigmodel.cn/api/coding/paas/v4"
 # what an error about a provider's missing settings adds, per provider: how the default setup sets them
 SETUP_HINTS = {
     "glm": f"the Z.ai Coding Plan's settings, as for the default {ZAI_CODING_PLAN_MODEL}: GLM_API_KEY=<the plan's API "
-    f"key>, GLM_BASE_URL={ZAI_CODING_PLAN_URL} and ROBOUSE_SPEND_CAP_USD=0, since the plan has no per-token price"
+    f"key>, GLM_BASE_URL={ZAI_CODING_PLAN_URL} and ROBOUSE_SPEND_CAP_USD=0, since the plan has no per-token price",
+    "gemini": "GEMINI_API_KEY is a Gemini API key from Google AI Studio",
 }
 
 # the model a harness runs when none is given; show-harness has none, since its model must read the camera images
 DEFAULT_MODELS = {
     "claude-code": "claude-sonnet-5",
     "codex": "gpt-6-astra",
+    "gemini-cli": "gemini-4-argon",
     "mini-swe-agent": ZAI_CODING_PLAN_MODEL,
     "dimcode": ZAI_CODING_PLAN_MODEL,
 }
@@ -66,6 +70,35 @@ RECORDED_DEFAULT_MODELS = {
 # files with code)
 NO_IMAGE_HARNESSES = {"mini-swe-agent"}
 
+# The Gemini API with an AI Studio key (GEMINI_API_KEY). BenchFlow 0.7.9.dev2354 has no entry for it (its google-vertex
+# entry needs Application Default Credentials). The entry describes the API's OpenAI-compatible endpoint, the surface
+# BenchFlow's generic route speaks; the model gateway reaches the API through LiteLLM's own Gemini integration instead
+# (gateway.gemini_route says why), and Gemini CLI, on its own vendor, with no gateway at all. The API serves no Responses
+# API, so Codex has no route to it.
+# gemini-4-argon, from ai.google.dev/gemini-api/docs/models/gemini-4-argon (read 2026-10-20): the stable id since
+# 2026-10-13; text, image, video, audio and PDF in, text out; 1,048,576 tokens in and out together, 65,536 out by default;
+# thinking levels low, medium (the default) and high. maxImages: "Gemini models support a maximum of 3,600 image files
+# per request" (docs/image-understanding); the same page limits a request's inline data, images included, to 20 MB.
+GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+GEMINI = {
+    "name": "gemini",
+    "base_url": GEMINI_OPENAI_URL,
+    "api_protocol": "openai-completions",
+    "auth_type": "api_key",
+    "auth_env": "GEMINI_API_KEY",
+    "models": [
+        {
+            "id": "gemini-4-argon",
+            "name": "Gemini 4 Argon",
+            "reasoning": True,
+            "input": ["text", "image"],
+            "contextWindow": 1048576,
+            "maxTokens": 65536,
+            "maxImages": 3600,
+        }
+    ],
+}
+
 # Baseten served the earlier GLM-5.3 and Kimi K3 runs (the legacy -glm names, then baseten/ ids). The entry stays so
 # those trial folders resolve (split(), the image metadata below); a new run refuses a baseten/ id (history_refusal()),
 # and no default, help text or key file uses it. Verified on 2026-09-30 against inference.baseten.co: all three
@@ -75,6 +108,7 @@ NO_IMAGE_HARNESSES = {"mini-swe-agent"}
 # `gateway.py` for how the gateway routes Codex around it.
 BASETEN_URL = "https://inference.baseten.co/v1"
 PENDING_PROVIDERS: dict[str, dict] = {
+    "gemini": GEMINI,
     "baseten": {
         "name": "baseten",
         "base_url": BASETEN_URL,
@@ -107,7 +141,35 @@ PENDING_PROVIDERS: dict[str, dict] = {
                 "maxImages": 8,
             },
         ],
-    }
+    },
+}
+
+# Model metadata for providers BenchFlow ships without it, by provider. A model BenchFlow's own entry lists keeps
+# BenchFlow's metadata. OpenRouter, from openrouter.ai/api/v1/models and each model's /endpoints (read 2026-10-20): both
+# models take images and offer tools and tool_choice on every endpoint OpenRouter lists for them. google/gemini-4-argon
+# is Google's model (on Google AI Studio and Vertex), so the Gemini API's image limit applies. elorian/glimpse is
+# Elorian's "visual thinking" model, in research preview since 2026-10-16 and served by Together alone; Elorian
+# documents no image limit.
+PENDING_MODELS: dict[str, list[dict]] = {
+    "openrouter": [
+        {
+            "id": "google/gemini-4-argon",
+            "name": "Gemini 4 Argon",
+            "reasoning": True,
+            "input": ["text", "image"],
+            "contextWindow": 1048576,
+            "maxTokens": 65536,
+            "maxImages": 3600,
+        },
+        {
+            "id": "elorian/glimpse",
+            "name": "Glimpse",
+            "reasoning": True,
+            "input": ["text", "image"],
+            "contextWindow": 262144,
+            "maxTokens": 256000,
+        },
+    ],
 }
 
 
@@ -137,7 +199,7 @@ def provider_registry() -> dict:
 class ModelRef:
     """One resolved model: `provider/bare` (the id recorded in config.json), and its registry metadata."""
 
-    provider: str  # registry name, or "anthropic"/"openai" for first-party ids
+    provider: str  # registry name, or "anthropic"/"openai"/"gemini" for first-party ids
     bare: str  # the id the provider knows, e.g. zai-org/GLM-5.3
     meta: dict
 
@@ -176,10 +238,11 @@ def resolve(harness: str, model: str) -> ModelRef:
             )
         else:
             raise ValueError(f"model {model!r} needs a provider prefix, e.g. {ZAI_CODING_PLAN_MODEL}")
-    meta: dict = {}
-    if provider not in FIRST_PARTY_IMAGE_PROVIDERS:
-        cfg = provider_registry()[provider]
-        meta = next((m for m in cfg.models if str(m.get("id", "")).lower() == bare.lower()), {})
+    if provider in FIRST_PARTY_IMAGE_PROVIDERS:  # known without BenchFlow: metadata from a pending entry only (gemini)
+        listed = PENDING_PROVIDERS.get(provider, {}).get("models", [])
+    else:
+        listed = [*provider_registry()[provider].models, *PENDING_MODELS.get(provider, [])]
+    meta = next((m for m in listed if str(m.get("id", "")).lower() == bare.lower()), {})
     return ModelRef(provider, bare, meta)
 
 

@@ -56,6 +56,7 @@ Leaving `robo` off the `PATH` states what the agent is offered; it is not a secu
 | `codex` | `-c mcp_servers.robo.*` on the command line |
 | `dimcode` | the HTTP transport at a random path, listed as dimcode's only MCP endpoint |
 | `oracle`, `noop` | every request goes through a `robo mcp` server |
+| `gemini-cli` | not wired yet: `cli` only |
 | `mini-swe-agent`, `show-harness`, `vla`, `molmoact2` | no MCP client: `cli` only |
 
 The trajectory converter treats a call of a `robo` MCP tool as the equivalent `robo` command, so trajectories and video indexes line up as they do for the CLI.

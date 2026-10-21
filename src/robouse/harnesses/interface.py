@@ -11,8 +11,9 @@ agent is offered, not a security boundary: authority is the socket, which both i
 
 Harnesses: claude-code and codex (and their -glm variants) get a stdio MCP server in a per-trial config (Claude Code:
 `--mcp-config` with `--strict-mcp-config`; Codex: `-c mcp_servers.robo.*`). dimcode gets a streamable HTTP endpoint
-(harnesses/dimcode.py). oracle and noop send every request through a `robo mcp` server ($ROBOUSE_SEND_VIA=mcp). Other
-harnesses have no MCP client and take cli only.
+(harnesses/dimcode.py). oracle and noop send every request through a `robo mcp` server ($ROBOUSE_SEND_VIA=mcp).
+gemini-cli has an MCP client that Robo Use does not configure yet, and the other harnesses have none: they take cli
+only.
 """
 
 from __future__ import annotations
@@ -56,6 +57,8 @@ def resolve(task, requested: str | None) -> str:
 
 
 def check(harness: str, interface: str) -> None:
+    if interface != "cli" and harness == "gemini-cli":
+        raise ValueError("Robo Use does not give gemini-cli the robo MCP server yet; use --interface cli")
     if interface != "cli" and harness not in MCP_HARNESSES:
         raise ValueError(f"harness {harness!r} has no MCP client; use --interface cli")
 

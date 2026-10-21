@@ -11,6 +11,8 @@ Harnesses
                          id, e.g. glm/glm-5.3, reached through the trial's model gateway (gateway.py)
   codex                  Codex CLI; model: a bare OpenAI id (own credentials or the account pool) or a provider-prefixed
                          id through the gateway (a provider with a Responses endpoint)
+  gemini-cli             Gemini CLI; model: a Gemini API model, bare or gemini/<id> (default gemini-4-argon), on its own
+                         vendor with GEMINI_API_KEY, never through the gateway; see gemini_cli.py
   mini-swe-agent         mini-swe-agent; model: a provider-prefixed id, always through the gateway (default
                          glm/glm-5.3: GLM-5.3 on the Z.ai Coding Plan)
   dimcode                Dimensional's dimcode (built on Pi); model: a provider-prefixed id, always through the
@@ -343,6 +345,12 @@ def _dimcode(model, prompt, workspace, task, env) -> Launch:
     return dimcode.build(model, prompt, workspace, task, env)
 
 
+def _gemini_cli(model, prompt, workspace, task, env) -> Launch:
+    from . import gemini_cli
+
+    return gemini_cli.build(model, prompt, workspace, task, env)
+
+
 def _show_harness(model, prompt, workspace, task, env) -> Launch:
     from . import show_harness
 
@@ -354,6 +362,7 @@ HARNESSES: dict[str, Builder] = {
     "noop": _noop,
     "claude-code": _claude_code,
     "codex": _codex,
+    "gemini-cli": _gemini_cli,
     "mini-swe-agent": _mini_swe_agent,
     "molmoact2": _molmoact2,
     "vla": _vla,

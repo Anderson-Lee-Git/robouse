@@ -104,7 +104,7 @@ def run() -> int:
         py = config.sim_python(venv)
         print(f"  {_ok(py.exists())}{b} (worker virtualenv {py})")
     print("Harnesses")
-    for h, exe in (("claude-code", "claude"), ("codex", "codex")):
+    for h, exe in (("claude-code", "claude"), ("codex", "codex"), ("gemini-cli", "gemini")):
         print(f"  {_ok(shutil.which(exe) is not None)}{h} (`{exe}` on PATH)")
     from ..harnesses.gateway import litellm_exe
 
@@ -145,6 +145,7 @@ def run() -> int:
     creds = {
         "ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN": credentials.have_claude(),
         "OPENAI_API_KEY or ~/.codex/auth.json": credentials.have_codex(),
+        "GEMINI_API_KEY (gemini-cli, and gemini/ models through the model gateway)": credentials.have_gemini(),
     }
     for k, v in creds.items():
         print(f"  {_ok(v)}{k}")

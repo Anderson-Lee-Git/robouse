@@ -168,7 +168,7 @@ def _verify(task: Task, episode: dict, tdir: Path) -> float:
 
 
 # harnesses that drive a language model (the others run scripted code or a VLA policy)
-LLM_HARNESSES = ("claude-code", "codex", "mini-swe-agent", "dimcode", "show-harness")
+LLM_HARNESSES = ("claude-code", "codex", "gemini-cli", "mini-swe-agent", "dimcode", "show-harness")
 # harnesses that may also drive a self-hosted model named without a provider prefix (no gateway; images always sent)
 SELF_HOSTED_HARNESSES = ("show-harness",)
 
@@ -184,9 +184,10 @@ def image_input_plan(harness: str, model: str) -> dict:
     vision task never falls back to the object state it hides. Harnesses without a language model record None, and
     jev records False: its client sends TypeSafe's Jev the text state only.
 
-    Refused (ValueError): a legacy -glm harness name or a baseten/ model (recorded trials only), and show-harness
+    Refused (ValueError): a legacy -glm harness name or a baseten/ model (recorded trials only), show-harness
     through the gateway with a model the registry does not list as reading images (its policy is the model's reading
-    of the camera images, which the gateway would remove)."""
+    of the camera images, which the gateway would remove), and gemini-cli with a model that is not a Gemini API model
+    (it does not use the gateway)."""
     from .. import config
     from ..harnesses import models
 
@@ -220,6 +221,11 @@ def image_input_plan(harness: str, model: str) -> dict:
             "image_input_reason": "a self-hosted model: images are always sent",
         }
     ref = models.resolve(canon, mid)
+    if canon == "gemini-cli":
+        from ..harnesses.gemini_cli import refusal
+
+        if why := refusal(ref):
+            raise ValueError(why)
     accepts = models.accepts_images(ref)
     plan = {"harness": canon, "model": ref.id if models.split(mid)[0] else mid, "accepts_images": accepts}
     if canon in models.NO_IMAGE_HARNESSES:
@@ -293,6 +299,12 @@ PROVIDER_KEY_PREFIXES = (
     "OPENROUTER",
     "GLM_",
     "ZAI_",
+    # the Gemini API: its key (GEMINI_API_KEY, or GOOGLE_API_KEY), endpoints (GEMINI_API_BASE, LiteLLM's;
+    # GOOGLE_GEMINI_BASE_URL, Gemini CLI's) and Gemini CLI's other settings; the gemini-cli harness adds back what it uses
+    "GEMINI_",
+    "GOOGLE_API_KEY",
+    "GOOGLE_GEMINI_",
+    "GOOGLE_GENAI_",
     "DREAM_",  # Dream Labs (DreamAPI): the `dream` harness adds back what its client needs
     "TYPESAFE_",  # TypeSafe (Jev): the `jev` harness adds back what its client needs
 )
@@ -370,17 +382,18 @@ def interrupt_all() -> None:
             pass
 
 
-# Harnesses whose program ends its output with a result event of its own when it stops by itself: Claude Code's
-# stream-json. Only their output is read for an error result.
-RESULT_EVENT_HARNESSES = ("claude-code",)
+# Harnesses whose program ends its output with a result event of its own when it stops by itself (Claude Code's and
+# Gemini CLI's stream-json): the (type, subtype) of the init event that starts that stream, and whether the result
+# names the init event's session (Claude Code's does). Only their output is read for an error result.
+RESULT_EVENT_HARNESSES = {"claude-code": (("system", "init"), True), "gemini-cli": (("init", None), False)}
 
 
 def _final_result(tdir: Path, harness: str) -> dict | None:
     """The harness program's own final result event, when its output has one that can be trusted: the last line of the
-    stream, the only result event in it, of the session the stream's init event started. An agent's command output never
-    forms a line of its own in Claude Code's stream-json (it is quoted inside a JSON string), but a process that writes
-    to the harness's output directly (on Linux, through /proc/<pid>/fd/1 of the harness) can add lines: a stream with
-    another result event, or one that does not end with its result event, is not trusted."""
+    stream, the only result event in it, after the stream's init event (and, for Claude Code, of the session it started).
+    An agent's command output never forms a line of its own in this stream-json (it is quoted inside a JSON string), but
+    a process that writes to the harness's output directly (on Linux, through /proc/<pid>/fd/1 of the harness) can add
+    lines: a stream with another result event, or one that does not end with its result event, is not trusted."""
     if harness not in RESULT_EVENT_HARNESSES:
         return None
     try:
@@ -397,26 +410,38 @@ def _final_result(tdir: Path, harness: str) -> dict | None:
     results = [ev for ev in events if ev is not None and ev.get("type") == "result"]
     if len(results) != 1 or events[-1] is not results[0]:
         return None
-    init = next(
-        (ev for ev in events if ev is not None and (ev.get("type"), ev.get("subtype")) == ("system", "init")), None
-    )
-    if init is None or not init.get("session_id") or init.get("session_id") != results[0].get("session_id"):
+    kind, same_session = RESULT_EVENT_HARNESSES[harness]
+    init = next((ev for ev in events if ev is not None and (ev.get("type"), ev.get("subtype")) == kind), None)
+    if init is None:
+        return None
+    if same_session and (not init.get("session_id") or init.get("session_id") != results[0].get("session_id")):
         return None
     return results[0]
 
 
+def _result_error(harness: str, final: dict) -> str:
+    """The error a harness's own final result event reports (_final_result), or "": Claude Code's is_error, Gemini CLI's
+    status "error"."""
+    if harness == "gemini-cli":
+        if final.get("status") != "error":
+            return ""
+        err = final.get("error")
+        return clip(str((err.get("message") if isinstance(err, dict) else err) or "error result"), 300)
+    if final.get("is_error"):
+        return clip(final.get("result") or final.get("subtype") or "error result", 300)
+    return ""
+
+
 def _harness_error(tdir: Path, harness: str, agent_rc: int | None, episode: dict) -> str | None:
     """An agent that never ended the episode itself (no `robo done` or `robo give-up`) and whose harness reported an
-    error: a non-zero exit, or Claude Code's own final error result event (an API or credential failure; _final_result).
-    That is a failed run of the harness, not a result of the model."""
+    error: a non-zero exit, or Claude Code's or Gemini CLI's own final error result event (an API or credential
+    failure; _final_result). That is a failed run of the harness, not a result of the model."""
     if harness == "noop" or not (
         episode.get("outcome") == "gave_up" and str(episode.get("agent_text", "")).startswith(RUNNER_PREFIX)
     ):
         return None
     final = _final_result(tdir, harness)
-    detail = ""
-    if final is not None and final.get("is_error"):
-        detail = clip(final.get("result") or final.get("subtype") or "error result", 300)
+    detail = _result_error(harness, final) if final is not None else ""
     if agent_rc not in (0, None):
         return f"AgentError: the {harness} harness exited with code {agent_rc} without ending the episode" + (
             f" ({detail})" if detail else ""

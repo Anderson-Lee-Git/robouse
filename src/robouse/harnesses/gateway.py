@@ -44,6 +44,23 @@ RATE_LIMITED = re.compile(r"RateLimitError|\b429\b")
 # A provider's rate limit (HTTP 429) is shared by everyone on the account: the gateway waits and retries (LiteLLM's
 # backoff, about 40 s for eight retries) instead of passing it to the harness, whose own few retries end the trial
 RETRY_POLICY = {"RateLimitErrorRetries": 8, "InternalServerErrorRetries": 2}
+# The only routes the per-trial key opens (LiteLLM's general_settings.allowed_routes, checked on every authenticated
+# request): the model APIs the harnesses speak (Anthropic Messages, chat completions, Responses) and the model list,
+# all served by the trial's one model alias, under the hook and the spend cap. LiteLLM's proxy also serves provider
+# pass-through routes (/gemini/..., /anthropic/..., /openai/..., /vertex_ai/... and others) and file, batch and
+# fine-tuning routes, which send any request to a provider with the runner's own key: another model, a search tool,
+# images the trial does not allow, none of it counted against the cap. The proxy refuses them with HTTP 403. (LiteLLM
+# 1.91 logs allowed_routes as an Enterprise feature on each request, and enforces it all the same.)
+MODEL_ROUTES = (
+    "/v1/messages",
+    "/v1/messages/count_tokens",
+    "/v1/chat/completions",
+    "/chat/completions",
+    "/v1/responses",
+    "/responses",
+    "/v1/models",
+    "/models",
+)
 
 
 @dataclass
@@ -86,6 +103,7 @@ def summarize(log: Path) -> dict:
         "spent_usd": 0.0,
         "images_moved": 0,
         "thinking_dropped": 0,
+        "signatures_restored": 0,  # tool_use blocks given back their Gemini thought signature (gateway_hook.py)
     }
     if not log.exists():
         return out
@@ -97,6 +115,7 @@ def summarize(log: Path) -> dict:
             out["images_removed"] += r["images_removed"]
             out["images_moved"] += r.get("images_moved", 0)
             out["thinking_dropped"] += bool(r.get("thinking_dropped"))
+            out["signatures_restored"] += r.get("signatures_restored", 0)
         elif r["event"] == "upstream":
             out["upstream_calls"] += 1
             out["upstream_image_parts"] += r["image_parts"]
@@ -156,16 +175,64 @@ def _same_protocol_route(route, cfg, protocol: str | None, env: dict):
     return dataclasses.replace(route, upstream_model=params["model"], litellm_params=params)
 
 
+def gemini_route(route, cfg):
+    """The `gemini` provider through LiteLLM's own Gemini integration (`gemini/<model>`, the API's generateContent),
+    instead of the OpenAI-compatible endpoint its registry entry describes and BenchFlow's generic route would use.
+    Checked with LiteLLM 1.91.0 and real harnesses against a scripted stand-in for the API (tests/model_standin.py),
+    and once against a stand-in for the OpenAI-compatible endpoint:
+
+    - Tool calls: Gemini 3 signs each function call (a thought signature) and refuses a request whose function calls in
+      the current turn come back unsigned (HTTP 400). The OpenAI-compatible endpoint returns the signature in a field
+      of its own (tool_calls[].extra_content.google.thought_signature), which an Anthropic tool_use block has no place
+      for: through LiteLLM's Messages translation, Claude Code's and dimcode's second request went back unsigned. On
+      this route LiteLLM keeps the signature in the tool call id for chat completions clients, which send ids back,
+      and on the tool_use block for Messages clients, where the gateway hook puts it back when the client drops it
+      (keeps_signatures).
+    - Images in tool results (an agent reading a camera image with its file tool) go to the model as images inside the
+      function response, Gemini's multimodal function response, the lone image of a Claude Code tool_result included:
+      LiteLLM's Messages translation turns that one into a data URI string, and this route turns it back into image
+      data.
+    - Usage: LiteLLM counts Gemini's thinking tokens (usageMetadata.thoughtsTokenCount) as output, as Google bills
+      them, so the spend cap counts them.
+
+    The key stays in the gateway's environment. GEMINI_API_BASE, if set, is LiteLLM's own setting for another endpoint
+    (the stand-in, in tests)."""
+    import dataclasses
+
+    if route.provider_name != "gemini":
+        return route
+    params = {"model": f"gemini/{models.split(route.requested_model)[1]}", "api_key": f"os.environ/{cfg.auth_env}"}
+    return dataclasses.replace(route, upstream_model=params["model"], litellm_params=params)
+
+
 def drops_thinking(route, cfg, protocol: str | None) -> bool:
     """True when the gateway must remove `thinking` from the agent's Anthropic Messages requests: the provider is
-    reached over chat completions and serves no Responses API. LiteLLM sends a Messages request with thinking enabled
-    to an OpenAI-compatible provider's Responses API instead (to return reasoning text), and such a provider answers
-    404: dimcode on glm/glm-5.3 (the Z.ai Coding Plan) stopped at its first request."""
+    reached over chat completions or LiteLLM's Gemini route, and serves no Responses API. LiteLLM sends a Messages
+    request with thinking enabled to an OpenAI-compatible provider's Responses API instead (to return reasoning text),
+    and such a provider answers 404: dimcode on glm/glm-5.3 (the Z.ai Coding Plan) stopped at its first request. On the
+    Gemini route LiteLLM 1.91.0 would turn the thinking budget into Gemini 2.5's thinkingBudget, since it knows only ids
+    with "gemini-3" as Gemini 3 or later, while Gemini 4 Argon documents thinking levels; without it the model thinks at
+    its default level."""
     return (
         protocol == "anthropic-messages"
         and not route.upstream_model.startswith("anthropic/")
         and "openai-responses" not in cfg.all_endpoints
     )
+
+
+def moves_tool_result_images(route, protocol: str | None) -> bool:
+    """True when the gateway hook must move images out of the agent's Anthropic tool_result blocks: LiteLLM translates
+    the Messages request to chat completions for an OpenAI-compatible provider (its `openai/` route, e.g. openrouter).
+    LiteLLM sends the lone image of a tool_result as its data URI in a text tool message, and OpenAI-compatible
+    providers take images in user messages, not tool messages. The Gemini route needs no move (gemini_route)."""
+    return protocol == "anthropic-messages" and route.upstream_model.startswith("openai/")
+
+
+def keeps_signatures(route, protocol: str | None) -> bool:
+    """True when the gateway hook must keep Gemini's thought signatures for the agent: an Anthropic Messages client on
+    LiteLLM's Gemini route. LiteLLM sends each signature on the tool_use block's provider_specific_fields, a field an
+    Anthropic client need not send back (dimcode rebuilds its blocks), and without it the next request fails."""
+    return protocol == "anthropic-messages" and route.upstream_model.startswith("gemini/")
 
 
 def prices(ref: models.ModelRef) -> dict | None:
@@ -196,9 +263,11 @@ def check_settings(ref: models.ModelRef, protocol: str | None, spend_cap_usd: fl
         )
     cfg = registry[ref.provider]
     if protocol == "openai-responses" and protocol not in cfg.all_endpoints:
+        others = "gemini-cli, claude-code, mini-swe-agent or dimcode" if ref.provider == "gemini" else None
         raise RuntimeError(
             f"Codex needs a provider that serves the Responses API; {ref.provider} does not ({ref.id} runs on "
-            f"claude-code, mini-swe-agent or dimcode; Codex runs on its own model, {models.DEFAULT_MODELS['codex']})"
+            f"{others or 'claude-code, mini-swe-agent or dimcode'}; Codex runs on its own model, "
+            f"{models.DEFAULT_MODELS['codex']})"
         )
     problems = []
     if need := [v for v in models.required_env(cfg) if not env.get(v)]:
@@ -227,12 +296,13 @@ def start(
     env = provider_environ()
     check_settings(ref, protocol, spend_cap_usd, env)
     cfg = models.provider_registry()[ref.provider]
-    route = _same_protocol_route(resolve_litellm_route(ref.id, env), cfg, protocol, env)
+    route = gemini_route(_same_protocol_route(resolve_litellm_route(ref.id, env), cfg, protocol, env), cfg)
     key = "sk-robouse-" + secrets.token_hex(16)
     # the trial folder keeps config.yaml: it names the master key's variable, and the key itself goes only into the
     # proxy's environment (penv), as the provider key does
     conf = litellm_proxy_config(route, master_key=f"os.environ/{MASTER_KEY_ENV}", callback_module="gateway_hook")
     conf.setdefault("router_settings", {})["retry_policy"] = dict(RETRY_POLICY)
+    conf.setdefault("general_settings", {})["allowed_routes"] = list(MODEL_ROUTES)
     d = Path(run_dir).resolve() / "gateway"  # absolute: the proxy runs in this folder and is given paths inside it
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(HOOK, d / "gateway_hook.py")
@@ -254,6 +324,8 @@ def start(
         "PYTHONPATH": str(d),
         **({"ROBOUSE_GATEWAY_BEARER_ENV": cfg.auth_env} if route.upstream_model.startswith("anthropic/") else {}),
         **({"ROBOUSE_GATEWAY_DROP_THINKING": "1"} if drop_thinking else {}),
+        **({"ROBOUSE_GATEWAY_MOVE_TOOL_IMAGES": "1"} if moves_tool_result_images(route, protocol) else {}),
+        **({"ROBOUSE_GATEWAY_KEEP_SIGNATURES": "1"} if keeps_signatures(route, protocol) else {}),
         "DOCS_URL": "",
         "NO_DOCS": "true",
     }

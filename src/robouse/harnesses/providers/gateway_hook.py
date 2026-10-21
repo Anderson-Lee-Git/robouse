@@ -9,8 +9,12 @@ capability, read from ROBOUSE_GATEWAY_MAX_IMAGES:
   -1  no limit
 In a Responses request (Codex) it then moves every image left in a tool result (function_call_output) into a user
 message right after it: Baseten's Responses endpoint rejects an image inside a tool result and takes it in a user
-message. With $ROBOUSE_GATEWAY_DROP_THINKING=1 (a provider without a Responses API, such as glm) it removes `thinking`
-from an Anthropic Messages request, which LiteLLM would otherwise send to the provider's missing Responses endpoint.
+message. With $ROBOUSE_GATEWAY_MOVE_TOOL_IMAGES=1 (an Anthropic Messages request that LiteLLM translates to chat
+completions, e.g. for openrouter) it does the same for the images of every tool_result: LiteLLM would send a lone image
+there as its data URI in text. With $ROBOUSE_GATEWAY_DROP_THINKING=1 (a provider without a Responses API, such as glm)
+it removes `thinking` from an Anthropic Messages request, which LiteLLM would otherwise send to the provider's missing
+Responses endpoint. With $ROBOUSE_GATEWAY_KEEP_SIGNATURES=1 (Anthropic Messages on LiteLLM's Gemini route) it notes the
+thought signature of every tool_use block it sends the agent, and puts it back on a block that comes back without it.
 Nothing else in the request changes (reasoning effort and earlier reasoning items pass through as sent).
 Right before the upstream call it counts the image parts that actually leave the gateway, and appends one line per
 request to $ROBOUSE_GATEWAY_LOG (JSON: call type, images in, removed, sent upstream). No request content is logged.
@@ -59,9 +63,12 @@ def _image_refs(node, out: list, seen: set | None = None) -> list:
 
 
 def _data_uris(node) -> int:
-    """Base64 images anywhere in the payload, whatever part type carries them (a second, type-blind count)."""
+    """Base64 images anywhere in the payload, whatever part type carries them (a second, type-blind count): data URIs,
+    Anthropic image sources and Gemini inline data."""
     s = json.dumps(node, default=str)
-    return s.count("data:image/") + s.count('"media_type": "image/')
+    return sum(
+        s.count(m) for m in ("data:image/", '"media_type": "image/', '"mime_type": "image/', '"mimeType": "image/')
+    )
 
 
 def removed_count(n: int, cap: int) -> int:
@@ -112,6 +119,89 @@ def move_tool_images(body: dict) -> int:
     return moved
 
 
+def move_tool_result_images(body: dict) -> int:
+    """Anthropic Messages, translated to chat completions: LiteLLM sends the lone image of a tool_result as its data URI
+    in a text tool message, and a tool_result's images beside text as image parts of a tool message, which
+    OpenAI-compatible providers do not take. Each tool_result's images move to the end of its user message, after the
+    tool results, which LiteLLM sends as a user message right after the tool messages; the tool result says so. The
+    lists are changed in place (LiteLLM may hold them twice)."""
+    msgs = body.get("messages")
+    if not isinstance(msgs, list):
+        return 0
+    moved = 0
+    for m in msgs:
+        if not (isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), list)):
+            continue
+        extra: list = []
+        for block in m["content"]:
+            inner = block.get("content") if isinstance(block, dict) and block.get("type") == "tool_result" else None
+            if not isinstance(inner, list):
+                continue
+            imgs = [c for c in inner if isinstance(c, dict) and c.get("type") == "image"]
+            if not imgs:
+                continue
+            inner[:] = [c for c in inner if c not in imgs] + [{"type": "text", "text": NOTE_MOVED}]
+            intro = {"type": "text", "text": f"The image returned by tool call {block.get('tool_use_id', '')}:"}
+            extra += [intro, *imgs]
+            moved += len(imgs)
+        m["content"].extend(extra)
+    return moved
+
+
+def stream_events(chunk) -> list[dict]:
+    """The Anthropic stream events in one chunk of a streamed response, in whichever form LiteLLM passes it on (an
+    event, SSE text or bytes)."""
+    if isinstance(chunk, dict):
+        return [chunk]
+    if hasattr(chunk, "model_dump"):
+        return [chunk.model_dump()]
+    if isinstance(chunk, bytes | bytearray):
+        chunk = chunk.decode("utf-8", "replace")
+    out = []
+    for line in chunk.splitlines() if isinstance(chunk, str) else []:
+        try:
+            ev = json.loads(line[5:]) if line.startswith("data:") else None
+        except ValueError:
+            continue
+        if isinstance(ev, dict):
+            out.append(ev)
+    return out
+
+
+def signed_tool_uses(events: list[dict]) -> dict[str, str]:
+    """{tool_use id: thought signature} of the tool_use blocks in these events (content_block_start events, or the
+    content blocks of a whole response), as LiteLLM's Gemini route sends them: the signature on the block's
+    provider_specific_fields."""
+    out = {}
+    for ev in events:
+        blocks = [ev.get("content_block")] if ev.get("type") == "content_block_start" else ev.get("content")
+        for b in blocks if isinstance(blocks, list) else []:
+            if not (isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")):
+                continue
+            if sig := (b.get("provider_specific_fields") or {}).get("signature"):
+                out[str(b["id"])] = str(sig)
+    return out
+
+
+def restore_signatures(body: dict, signatures: dict[str, str]) -> int:
+    """Anthropic Messages on the Gemini route: Gemini 3 refuses a request whose function calls in the current turn come
+    back without the thought signature they were sent with (HTTP 400), and an Anthropic client may keep only the fields
+    it knows (dimcode rebuilds each tool_use block). Each tool_use block without a signature gets back the one this
+    gateway sent with it, on the block's provider_specific_fields, where LiteLLM reads it."""
+    restored = 0
+    for m in body.get("messages") or []:
+        if not (isinstance(m, dict) and m.get("role") == "assistant" and isinstance(m.get("content"), list)):
+            continue
+        for b in m["content"]:
+            if not (isinstance(b, dict) and b.get("type") == "tool_use"):
+                continue
+            fields = b.get("provider_specific_fields") or {}
+            if not fields.get("signature") and (sig := signatures.get(str(b.get("id")))):
+                b["provider_specific_fields"] = {**fields, "signature": sig}
+                restored += 1
+    return restored
+
+
 def _dump(name: str, obj) -> None:
     """Debugging only (ROBOUSE_GATEWAY_DUMP=<folder>): the request bodies, which hold the trial's content. Never on
     for published runs. Headers and keys are left out."""
@@ -153,6 +243,9 @@ class RobouseGateway(CustomLogger):
         self.price = json.loads(os.environ.get("ROBOUSE_GATEWAY_PRICE") or "{}")
         self.stop_file = os.environ.get("ROBOUSE_GATEWAY_STOP_FILE", "")
         self.drop_thinking = os.environ.get("ROBOUSE_GATEWAY_DROP_THINKING") == "1"
+        self.move_tool_result_images = os.environ.get("ROBOUSE_GATEWAY_MOVE_TOOL_IMAGES") == "1"
+        self.keep_signatures = os.environ.get("ROBOUSE_GATEWAY_KEEP_SIGNATURES") == "1"
+        self.signatures: dict[str, str] = {}  # tool_use id -> the thought signature sent with it (keep_signatures)
         self.spent = 0.0
 
     def over_cap(self) -> bool:
@@ -176,8 +269,11 @@ class RobouseGateway(CustomLogger):
         _dump("in", data)
         n, k = apply_cap(data, self.cap)
         moved = move_tool_images(data)  # Responses bodies only: images out of tool results into the next user message
+        if self.move_tool_result_images and "anthropic" in str(call_type):  # Messages translated to chat completions
+            moved += move_tool_result_images(data)
         # a provider without a Responses API: LiteLLM would send a Messages request with thinking enabled there
         dropped = self.drop_thinking and "anthropic" in str(call_type) and data.pop("thinking", None) is not None
+        restored = restore_signatures(data, self.signatures) if self.keep_signatures else 0
         bearer = os.environ.get("ROBOUSE_GATEWAY_BEARER_ENV")
         if bearer and os.environ.get(bearer):  # providers whose Anthropic endpoint wants a Bearer token, not x-api-key
             data["extra_headers"] = {
@@ -193,6 +289,7 @@ class RobouseGateway(CustomLogger):
                 "images_removed": k,
                 "images_moved": moved,
                 **({"thinking_dropped": True} if dropped else {}),
+                **({"signatures_restored": restored} if restored else {}),
                 "tool_types": sorted({str(t.get("type")) for t in tools if isinstance(t, dict)})
                 if isinstance(tools, list)
                 else [],
@@ -226,6 +323,20 @@ class RobouseGateway(CustomLogger):
                 "data_uris": max(_data_uris(payload), _data_uris(extra) if extra else 0),
             }
         )
+
+    async def async_post_call_streaming_iterator_hook(self, user_api_key_dict, response, request_data):
+        """Every streamed response passes through unchanged; on the Gemini route the gateway notes the signatures of
+        its tool_use blocks before the client sees them (restore_signatures)."""
+        async for chunk in response:
+            if self.keep_signatures:
+                self.signatures.update(signed_tool_uses(stream_events(chunk)))
+            yield chunk
+
+    async def async_post_call_success_hook(self, data, user_api_key_dict, response):
+        """A whole (unstreamed) response: the same notes as for a streamed one. The response is not changed."""
+        if self.keep_signatures:
+            body = response.model_dump() if hasattr(response, "model_dump") else response
+            self.signatures.update(signed_tool_uses([body] if isinstance(body, dict) else []))
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         usage = getattr(response_obj, "usage", None)

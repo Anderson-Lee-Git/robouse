@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,9 +12,14 @@ from .. import config
 PRICING = Path(__file__).with_name("pricing.json")
 
 
-def price_of(model: str) -> dict | None:
-    """USD per 1M tokens for a model id as the provider knows it (e.g. zai-org/GLM-5.3), from pricing.json."""
+def price_of(model: str, day: date | None = None) -> dict | None:
+    """USD per 1M tokens for a model id as the provider knows it (e.g. zai-org/GLM-5.3), from pricing.json, on `day`
+    (default: today, UTC). A model whose price changes on a known date, such as Gemini 4 Argon's introductory price,
+    lists its prices in date order, each but the last with `until`, the last day it applies."""
     price = json.loads(config.path("ROBOUSE_PRICING", PRICING).read_text()).get(model)
+    if isinstance(price, list):
+        today = (day or datetime.now(UTC).date()).isoformat()
+        price = next((p for p in price if isinstance(p, dict) and str(p.get("until") or "9999-12-31") >= today), None)
     return price if isinstance(price, dict) else None
 
 

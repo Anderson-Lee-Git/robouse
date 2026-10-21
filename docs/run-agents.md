@@ -25,13 +25,65 @@ Options:
 - `--extra-instruction TEXT`: text appended to the instruction.
 - `--prior-learnings FILE`: markdown appended to the instruction, for example from `robouse summarize TRIAL`.
 
+## Gemini 4 Argon
+
+Gemini 4 Argon (`gemini-4-argon`), generally available in the Gemini API since 2026-10-13, reads text and images and has a 1,048,576-token context. Robo Use reaches it with a Gemini API key from Google AI Studio in `GEMINI_API_KEY`: directly with Gemini CLI, its default model there ([below](#gemini-cli)), or as `gemini/gemini-4-argon` through the model gateway with Claude Code, mini-swe-agent and dimcode:
+
+```sh
+pip install 'robouse[sim,llm]'
+export GEMINI_API_KEY=...
+robouse run --task arc-gravity-vision --harness claude-code --model gemini/gemini-4-argon --out runs/argon
+```
+
+The gateway reaches the Gemini API through LiteLLM's own Gemini integration rather than the API's OpenAI-compatible endpoint. Gemini signs each tool call it makes, and Gemini 3 refuses the next request when a signature does not come back with its call (Robo Use assumes Gemini 4 Argon does too); the OpenAI-compatible endpoint returns the signature in a field that an Anthropic tool call has no place for. dimcode drops the signatures from the tool calls it sends back, and the gateway puts them back (`signatures_restored` in `proxy_stats`). Images that an agent reads with its file tool reach the model as images. Claude Code's and dimcode's extended-thinking setting is removed (`thinking_dropped`), so the model thinks at its default level, medium. Codex cannot use the model: the Gemini API has no Responses API, and `robouse run` says so without starting a trial:
+
+```console
+$ robouse run --task arc-gravity --harness codex --model gemini/gemini-4-argon --out runs/try
+robouse: Codex needs a provider that serves the Responses API; gemini does not (gemini/gemini-4-argon runs on gemini-cli, claude-code, mini-swe-agent or dimcode; Codex runs on its own model, gpt-6-astra)
+```
+
+Robo Use's price table has Google's price: $2 per million input tokens and $10 per million output tokens, thinking included, through 2026-11-30, then $4 and $20. The spend cap and the trial's cost use the price of the day. The model is also on OpenRouter, as `openrouter/google/gemini-4-argon`, reached over chat completions like [Glimpse](#glimpse); OpenRouter carries Gemini's signatures in reasoning details that its documentation asks clients to send back with tool calls, and the gateway does not send them, so `gemini/gemini-4-argon` is the route to prefer. These pairs have run whole trials only against a local stand-in for the Gemini API and for OpenRouter, not against the model itself ([Supported](supported.md)).
+
+## Glimpse
+
+Elorian's Glimpse, a visual reasoning model in research preview since 2026-10-16, reads text, images and video. Robo Use reaches it through OpenRouter, as `openrouter/elorian/glimpse` (served by Together there), with an OpenRouter key and the model gateway:
+
+```sh
+pip install 'robouse[sim,llm]'
+export OPENROUTER_API_KEY=...
+robouse run --task arc-gravity-vision --harness claude-code --model openrouter/elorian/glimpse --out runs/glimpse
+```
+
+OpenRouter lists tool calling for it, which Claude Code and dimcode need, so it runs on Claude Code, dimcode and mini-swe-agent (which sends its model no images). Codex cannot use it, since BenchFlow's OpenRouter entry has no Responses API, and neither can Gemini CLI, which runs only Gemini API models. The gateway reaches OpenRouter over chat completions, and an image that an agent reads with its file tool moves from the tool result into a user message (`images_moved` in `proxy_stats`), where chat completions providers take images. Its price, $0.60 per million input tokens and $3 per million output tokens, is in Robo Use's price table. Like Gemini 4 Argon, it has run whole trials only against a local stand-in for OpenRouter.
+
+## Gemini CLI
+
+`gemini-cli` runs Google's [Gemini CLI](https://github.com/google-gemini/gemini-cli) headless (`gemini --prompt ... --output-format stream-json --approval-mode yolo`) on its own vendor: a Gemini API model, `gemini-4-argon` by default, with the key in `GEMINI_API_KEY`. It does not use the model gateway, so it has no spend cap, as Claude Code and Codex on their own vendors have none.
+
+```sh
+npm install -g @google/gemini-cli
+export GEMINI_API_KEY=...
+robouse run --task arc-gravity-vision --harness gemini-cli --out runs/gemini-cli
+```
+
+Each trial gets a Gemini CLI home of its own in its workspace (`.robouse/gemini-home`, as `GEMINI_CLI_HOME` and `HOME`): your `~/.gemini` settings, `GEMINI.md`, MCP servers, extensions, skills and `~/.env` are not loaded, the machine's system settings are not read, and nothing one trial writes there reaches another. Gemini CLI is offered only its shell, file and search tools (`run_shell_command`, `read_file`, `write_file`, `replace`, `glob`, `grep_search` and `list_directory`): no web search or fetch, subagents or skills. Its shell commands run without the variables whose names mark a credential, so `GEMINI_API_KEY` is not in their environment; Gemini CLI's own process still holds the key, and an agent can read it from there, as it can Claude Code's login. Its loop detection is off, since it ends a session when the same tool call repeats five times in a row, and a robot is often driven by repeating one command. Its stream-json output becomes the trial's trajectory, and the trial's cost comes from Robo Use's price table, thinking tokens included. `GOOGLE_GEMINI_BASE_URL`, Gemini CLI's own setting for another endpoint, is passed on when you set it.
+
+Gemini CLI runs only Gemini API models (a bare id, or `gemini/<id>`) and only the `cli` interface; `robouse run` refuses anything else before the trial starts:
+
+```console
+$ robouse run --task arc-gravity --harness gemini-cli --model openrouter/elorian/glimpse --out runs/try
+robouse: gemini-cli runs only Gemini API models (a bare id such as gemini-4-argon, or gemini/<id>): it speaks the Gemini API's own protocol, and Robo Use does not route it through the model gateway. Run openrouter/elorian/glimpse on claude-code, mini-swe-agent or dimcode
+```
+
+Gemini CLI 0.64.0 has run whole trials only against a local stand-in for the Gemini API, and not yet under the sandbox ([Supported](supported.md)).
+
 ## Show-Harness
 
 `show-harness` runs NUS Show Lab's [Show-Harness](https://showlab.github.io/Show-Harness/): the model looks at the task's camera images and picks one parameter-free action unit per call (a move in one of six directions, `GRASP`, `RELEASE` or `DONE`), and an interpreter turns each unit into closed-loop hand motion, every control step counting against the step budget. `--model` is required, since the policy is the model's reading of the images: a provider-prefixed model runs Show-Harness's zero-shot loop through the model gateway if BenchFlow's provider registry lists it as reading images (`robouse run` refuses any other before the trial starts, `glm/glm-5.3` included, since the gateway would remove every camera image); a model you serve at `ROBOUSE_SHOW_HARNESS_URL`, such as one of its fine-tuned adapters on vLLM, runs the fine-tuned loop. No provider-prefixed model has been tested with it in Robo Use 0.4.1. It runs only tasks on the `tabletop`, `libero` and `cubepick` backends, and stops before moving any other robot. It sees the images, the hand's height and the gripper's width, not object coordinates, and it does not turn the hand. It has no unit for refusing, so it cannot pass the four `safety: refuse` tasks on these robots. On LIBERO a unit takes 8 to 12 control steps, so the step budgets there (280 to 520 steps) are tight for it.
 
 ## Isolation
 
-Model harnesses run in a sandbox that hides the trial's run folder, the task folder with its reference solution, the installed package and other trials' workspaces from the agent. Its environment carries no model provider key and no other variable whose name marks a credential (a token, key, secret, password or login, such as `GITHUB_TOKEN`, `HF_TOKEN`, `AWS_SECRET_ACCESS_KEY` or `SSH_AUTH_SOCK`); a harness adds back only what its program needs, such as its own vendor's login. Nor can it read or write credential and task-copy locations in your home folder: other programs' logins (such as `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.config/gh`, `~/.netrc` and `~/.docker`), your own Claude Code, Codex and mini-swe-agent settings (`~/.claude`, `~/.claude.json`, `~/.codex`, mini-swe-agent's global `.env`), BenchFlow's settings and task cache (`~/.config/benchflow`, `~/.cache/benchflow`), package caches that hold copies of the tasks with their reference solutions (`~/.cache/uv`, pip's cache), and Robo Use's own cache (`~/.cache/robouse`: simulator environments and other trials' harness folders). The full list is `HOME_DENIED` in [`src/robouse/runner/sandbox.py`](../src/robouse/runner/sandbox.py). The agent keeps its own harness folder, and Codex's own install in `~/.codex/packages` stays readable so Codex can run. When Robo Use runs from a source checkout, the checkout's `tasks/`, `runs/`, `adapters/` and `assets/` folders are out of reach too, and so are robot models and other files later trials load wherever `ROBOUSE_MENAGERIE_ASSETS` and the like put them, and so, on LIBERO tasks, are the scene files and saved start states of hf-libero in Robo Use's environment and where LIBERO's config points. The agent can read but not change the Python that Robo Use runs on (the episode server and the verifier run on it), and it cannot connect to the Docker, Podman or LXD socket, to your SSH agent or to other trials' episode sockets. On macOS it cannot start `open`, `osascript`, `shortcuts` or `security`, which act outside the sandbox (`security` reads the login keychain, where Claude Code and the GitHub CLI keep their logins). The reference solution and the no-op control run without the sandbox.
+Model harnesses run in a sandbox that hides the trial's run folder, the task folder with its reference solution, the installed package and other trials' workspaces from the agent. Its environment carries no model provider key and no other variable whose name marks a credential (a token, key, secret, password or login, such as `GITHUB_TOKEN`, `HF_TOKEN`, `AWS_SECRET_ACCESS_KEY` or `SSH_AUTH_SOCK`); a harness adds back only what its program needs, such as its own vendor's login. Nor can it read or write credential and task-copy locations in your home folder: other programs' logins (such as `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.config/gh`, `~/.netrc` and `~/.docker`), your own Claude Code, Codex, Gemini CLI and mini-swe-agent settings (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.gemini`, mini-swe-agent's global `.env`), `~/.env`, BenchFlow's settings and task cache (`~/.config/benchflow`, `~/.cache/benchflow`), package caches that hold copies of the tasks with their reference solutions (`~/.cache/uv`, pip's cache), and Robo Use's own cache (`~/.cache/robouse`: simulator environments and other trials' harness folders). The full list is `HOME_DENIED` in [`src/robouse/runner/sandbox.py`](../src/robouse/runner/sandbox.py). A `.env` file in any folder above the run folder, the task folder or the Robo Use install, such as a project's `.env` next to its virtualenv, is out of reach too. The agent keeps its own harness folder, and Codex's own install in `~/.codex/packages` stays readable so Codex can run. When Robo Use runs from a source checkout, the checkout's `tasks/`, `runs/`, `adapters/` and `assets/` folders are out of reach too, and so are robot models and other files later trials load wherever `ROBOUSE_MENAGERIE_ASSETS` and the like put them, and so, on LIBERO tasks, are the scene files and saved start states of hf-libero in Robo Use's environment and where LIBERO's config points. The agent can read but not change the Python that Robo Use runs on (the episode server and the verifier run on it), and it cannot connect to the Docker, Podman or LXD socket, to your SSH agent or to other trials' episode sockets. On macOS it cannot start `open`, `osascript`, `shortcuts` or `security`, which act outside the sandbox (`security` reads the login keychain, where Claude Code and the GitHub CLI keep their logins). The reference solution and the no-op control run without the sandbox.
 
 The sandbox is a deny list, not a container. It keeps an agent from stumbling on the answer, not one that looks for it:
 
