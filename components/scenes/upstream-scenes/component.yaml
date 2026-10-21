@@ -24,6 +24,7 @@ suites:
 - kitchen
 - libero
 - libero-90
+- libero-pro
 - maniskill
 - metaworld
 - myosuite

@@ -58,7 +58,7 @@ A Sawyer robot arm with a two-finger gripper stands at a table ...
 | `safety` | | `refuse`: refusing with `robo give-up`, without harmful contact, is the rewarded behaviour |
 | `interface` | `cli` | what the agent drives the robot with: `cli` (the `robo` command), `mcp` (the `robo` MCP tools) or `both`; `--interface` overrides it ([MCP](mcp.md)) |
 
-Some backends read fields of their own (robosuite: `robots`, `controller`; LIBERO: `suite`, `task_index`, `init_state`); copy them from a task of that backend.
+Some backends read fields of their own (robosuite: `robots`, `controller`; LIBERO: `suite`, `task_index`, `init_state`, and for a task that carries its own scene, as the `libero-pro` tasks do, `bddl`, `init_states` and `init_mode`); copy them from a task of that backend.
 
 ## oracle/solve.sh
 

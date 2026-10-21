@@ -9,7 +9,8 @@ suites (tools/docs/counts.py HUB_ONLY, counted from this checkout's task folders
 lines, and README.md gets the same "N tasks in M suites"; the rest of the page is hand-written. Bundled counts come from
 the package (`robouse tasks --path`), so they cannot drift from the release; tests/test_counts.py checks all of it. A
 suite's description is the second line of its first cell, so the table fits the docs column; a suite that needs nothing
-beyond robouse[sim] has an empty Needs cell, and one without trials in a job folder shows "not run". Run it against the
+beyond robouse[sim] has an empty Needs cell, and one without trials in a job folder shows "not run" (with --keep, the
+cells the page has now: a change that adds or reruns one suite passes only that suite's sweep). Run it against the
 release users install, from its checkout.
 """
 
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -44,6 +46,7 @@ FROM = {
     "adroit": "Adroit hand",
     "libero": "LIBERO: Spatial, Object, Goal, Long",
     "libero-90": "LIBERO-90",
+    "libero-pro": "LIBERO-PRO: 73 of ASPIRE's 80 swap and task pairs",
     "robosuite": "robosuite 1.5, five arms",
     "libero-style": "LIBERO-like tabletop scenes",
     "arc-style": "ARC-style rules on a table",
@@ -136,6 +139,17 @@ def cell(ids: list[str], res: dict[str, list[float]], want: float) -> str:
     return f"{sum(1 for t in ran if any(x == 1.0 for x in res[t]))}/{len(ran)}"
 
 
+def kept_cells(text: str) -> dict[str, tuple[str, str]]:
+    """suite -> (reference solution, no-op control) cells of the tables on the page now."""
+    out = {}
+    for line in text.splitlines():
+        cols = [c.strip() for c in line.strip().strip("|").split("|")]
+        m = re.match(r"`([\w-]+)`", cols[0]) if line.startswith("| `") else None
+        if m and len(cols) >= 4:
+            out[m.group(1)] = (cols[-2], cols[-1])
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--robouse", default=shutil.which("robouse", path=str(Path(sys.executable).parent)) or "robouse")
@@ -143,7 +157,14 @@ def main() -> None:
         "--oracle", type=Path, action="append", default=[], help="job folder(s) of a reference-solution sweep"
     )
     ap.add_argument("--noop", type=Path, action="append", default=[], help="job folder(s) of a no-op sweep")
+    ap.add_argument(
+        "--keep",
+        action="store_true",
+        help="for a suite the job folders have no trials of, keep the result cells the page has now (a change that "
+        "adds or reruns one suite)",
+    )
     a = ap.parse_args()
+    kept = kept_cells(DOC.read_text(encoding="utf-8")) if a.keep else {}
     root = Path(
         subprocess.run([a.robouse, "tasks", "--path"], capture_output=True, text=True, check=True).stdout.strip()
     )
@@ -163,10 +184,10 @@ def main() -> None:
         ids = [t["robouse"]["id"] for t in tasks]
         backends = Counter(t["robouse"]["backend"] for t in tasks)
         needs = sorted({NEEDS.get(b, "?") for b in backends} - {""})
-        rows.append(
-            f"| `{d.name}`<br>{FROM.get(d.name, '')} | {len(ids)} | {', '.join(needs)} | "
-            f"{cell(ids, oracle, 1.0)} | {cell(ids, noop, 0.0)} |"
-        )
+        ref, no = cell(ids, oracle, 1.0), cell(ids, noop, 0.0)
+        if (ref, no) == ("not run", "not run") and d.name in kept:
+            ref, no = kept[d.name]
+        rows.append(f"| `{d.name}`<br>{FROM.get(d.name, '')} | {len(ids)} | {', '.join(needs)} | {ref} | {no} |")
         total += len(ids)
     table = [
         f"{version} bundles {total} tasks in {len(rows)} suites. \"Needs\" is what a suite needs beyond "
@@ -181,9 +202,10 @@ def main() -> None:
     for suite in counts.HUB_ONLY:  # not in the wheel: their task folders in this checkout
         tasks = [frontmatter(t) for t in sorted((counts.REPO / "tasks" / suite).rglob("task.md"))]
         ids = [t["robouse"]["id"] for t in tasks]
-        hub_rows.append(
-            f"| `{suite}`<br>{HUB_FROM.get(suite, '')} | {len(ids)} | {cell(ids, oracle, 1.0)} | {cell(ids, noop, 0.0)} |"
-        )
+        ref, no = cell(ids, oracle, 1.0), cell(ids, noop, 0.0)
+        if (ref, no) == ("not run", "not run") and suite in kept:
+            ref, no = kept[suite]
+        hub_rows.append(f"| `{suite}`<br>{HUB_FROM.get(suite, '')} | {len(ids)} | {ref} | {no} |")
     hub = ["| Suite | Tasks | Reference solution | No-op control |", "|---|---|---|---|", *hub_rows]
     text = DOC.read_text(encoding="utf-8")
     for begin, end, lines in ((BEGIN, END, table), (HUB_BEGIN, HUB_END, hub)):

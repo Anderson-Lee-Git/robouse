@@ -9,7 +9,10 @@ import importlib
 import sys
 
 # oracle kinds whose reference solutions live outside the backend package's __init__
-ORACLE_MODULES = {"tabletop_hard": "robouse.backends.tabletop.hard"}
+ORACLE_MODULES = {
+    "tabletop_hard": "robouse.backends.tabletop.hard",
+    "libero_scripted": "robouse.backends.libero.solver",  # LIBERO tasks no demonstration fits (the libero-pro suite)
+}
 
 
 def oracle_module(kind: str) -> str:

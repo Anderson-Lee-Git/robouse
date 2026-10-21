@@ -8,7 +8,8 @@ dynamic = ["version"]
 description = "Agent as a policy for embodied agents"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
-# MIT: vendored code (CaP-X, PyRoKi, RLE-Bench, the CubePick port) and task data (LIBERO instructions, DexJoCo);
+# MIT: vendored code (CaP-X, PyRoKi, RLE-Bench, the CubePick port) and task data (LIBERO instructions, LIBERO-PRO scenes,
+# DexJoCo);
 # CC-BY-4.0: the Adroit demonstrations from D4RL. NOTICE lists every source.
 license = "Apache-2.0 AND MIT AND CC-BY-4.0"
 license-files = [
@@ -116,6 +117,7 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "tasks/kitchen" = "robouse/bundled_tasks/kitchen"
 "tasks/libero" = "robouse/bundled_tasks/libero"
 "tasks/libero-90" = "robouse/bundled_tasks/libero-90"
+"tasks/libero-pro" = "robouse/bundled_tasks/libero-pro"
 "tasks/libero-style" = "robouse/bundled_tasks/libero-style"
 "tasks/maniskill" = "robouse/bundled_tasks/maniskill"
 "tasks/menagerie" = "robouse/bundled_tasks/menagerie"

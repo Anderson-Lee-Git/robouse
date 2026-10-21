@@ -35,6 +35,7 @@ CPU_SUITES = [
     "kitchen",
     "libero",
     "libero-90",
+    "libero-pro",
     "libero-style",
     "maniskill",
     "menagerie",

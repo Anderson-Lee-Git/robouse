@@ -249,6 +249,8 @@ SUITES = {
                     capabilities=["pick-and-place", "long-horizon"]),
     "libero-90": dict(embodiments=["franka-panda-upstream"], scene="upstream-scenes", scenario="household-kitchen", track="arm",
                       capabilities=["pick-and-place", "long-horizon"]),
+    "libero-pro": dict(embodiments=["franka-panda-upstream"], scene="upstream-scenes", scenario="household-kitchen", track="arm",
+                       capabilities=["pick-and-place", "long-horizon", "perception"]),
     "maniskill": dict(embodiments=["franka-panda-upstream"], scene="upstream-scenes", scenario="tabletop", track="arm",
                       capabilities=["pick-and-place", "contact-rich"]),
     "dmcontrol": dict(embodiments=["upstream-bodies"], scene="upstream-scenes", scenario="tabletop", track="arm",

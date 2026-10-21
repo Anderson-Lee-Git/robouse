@@ -49,6 +49,12 @@ LIBERO
   Files: tasks/libero/ and tasks/libero-90/ (wheel, sdist): the oracle/demo_actions.json files and the task instructions
   License: licenses/LIBERO-MIT.txt (MIT); LICENSE (Apache 2.0)
 
+LIBERO-PRO
+  https://github.com/uynitsuj/LIBERO-PRO, commit 47aaa8038930bcdc84ab9ea2867e2ffc8039ab4a (the fork of https://github.com/Zxy-MLlab/LIBERO-PRO that NVIDIA's ASPIRE pins)
+  MIT License, Copyright (c) 2023 Lifelong Robot Learning (LIBERO's license file, which LIBERO-PRO keeps)
+  Files: tasks/libero-pro/ (wheel, sdist): LIBERO-PRO's BDDL files (libero/libero/bddl_files/), verbatim in each task.md, its language instructions in the task instructions, and the first state of each task's init file (libero/libero/init_files/); the other states are downloaded at run time from the pinned commit and checked by SHA-256
+  License: licenses/LIBERO-PRO-MIT.txt
+
 DexJoCo
   https://huggingface.co/datasets/DexJoCo/DexJoCo-Datasets-Raw (code: https://github.com/brave-eai/dexjoco)
   MIT License, Copyright (c) 2026 Dexjoco contributors

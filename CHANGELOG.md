@@ -4,6 +4,11 @@ Notable changes to the `robouse` package, newest first. Versions follow [semanti
 
 ## Unreleased
 
+### Added
+
+- The `libero-pro` suite (73 tasks): LIBERO-PRO's position-swap and new-goal tasks for LIBERO-Goal, -Object, -Spatial and -Long, from LIBERO-PRO at the commit ASPIRE pins, on the LIBERO backend. They are 73 of the 80 (suite, task) pairs NVIDIA's ASPIRE reports its LIBERO-Pro results on; the suite page lists the other seven, which the scripted reference solution does not solve, with the reasons. Each task carries LIBERO-PRO's BDDL file and the first state of its init file; the seed picks a saved state as ASPIRE's `--init-mode saved` does (seed n starts from state n - 1), downloading the init file at first use. Agents see only the cameras and the robot's own state; success is LIBERO's check of the BDDL goal; the budget is ASPIRE's 1000 steps at 20 Hz. The reference solutions are a scripted controller on the privileged scene state ([LIBERO-PRO](docs/suites/libero-pro.md)).
+- The LIBERO backend takes a task's own BDDL file (`bddl`), an init file to pick start states from (`init_states`, with `init_mode` `saved` or `seeded`), and gives the reference solution the goal predicates, the geometry of every object, fixture, region and joint, and the arm's joint angles (`privileged_state`). LIBERO init files load without torch, and only as a numpy array.
+
 ### Changed
 
 - The MakerMods Metal arm's kinematic chain is no longer in the package (`robouse/real/data/metal_chain.json`, shipped since 0.2.0): MakerMods' repository states no license. The first use of the Metal profile downloads the arm's URDF from MakerMods' repository at a pinned commit into `<cache>/real/`; every load checks the file against its SHA-256 (a changed or partial file is downloaded again) and builds the chain from it. The chain is the same arm (forward kinematics unchanged), without the gripper's joints, which no check used. Without network access, the error says where to put the URDF by hand.

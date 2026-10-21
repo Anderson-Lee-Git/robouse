@@ -35,7 +35,7 @@ img/suites/yam.webp | `yam`
 ```
 
 <!-- suites-table -->
-robouse 0.5.0 bundles 701 tasks in 32 suites. "Needs" is what a suite needs beyond `pip install 'robouse[sim]'`, if anything. The last two columns count the tasks that scored 1 with the reference solution and with the no-op control.
+robouse 0.5.0 bundles 774 tasks in 33 suites. "Needs" is what a suite needs beyond `pip install 'robouse[sim]'`, if anything. The last two columns count the tasks that scored 1 with the reference solution and with the no-op control.
 
 | Suite | Tasks | Needs | Reference solution | No-op control |
 |---|---|---|---|---|
@@ -56,6 +56,7 @@ robouse 0.5.0 bundles 701 tasks in 32 suites. "Needs" is what a suite needs beyo
 | `kitchen`<br>Franka Kitchen | 10 | `[gymrobotics]` | 10/10 | 0/10 |
 | `libero`<br>LIBERO: Spatial, Object, Goal, Long | 40 | [LIBERO setup](#libero) | 40/40 | 0/40 |
 | `libero-90`<br>LIBERO-90 | 90 | [LIBERO setup](#libero) | 90/90 | 0/90 |
+| `libero-pro`<br>LIBERO-PRO: 73 of ASPIRE's 80 swap and task pairs | 73 | [LIBERO setup](#libero) | 73/73 | 0/73 |
 | `libero-style`<br>LIBERO-like tabletop scenes | 12 |  | 12/12 | 0/12 |
 | `maniskill`<br>ManiSkill3 on the CPU | 12 | [the hub](run-a-suite.md#a-dataset) only | 12/12 | 0/12 |
 | `menagerie`<br>Dual Franka Panda, ALOHA 2 | 15 | `robouse fetch-assets` | 15/15 | 0/15 |
@@ -90,6 +91,8 @@ robouse run --task libero-object-0 --harness oracle --out runs/try
 ```
 
 The first episode downloads LIBERO's scene assets (about 400 MB) into `~/.cache/libero/assets`. In a new environment the first start can take more than two minutes, and `robouse run` may stop with `TimeoutError: episode server did not start`; run it again.
+
+The `libero-pro` suite runs in the same environment. Its tasks carry LIBERO-PRO's scene files; a seed other than a task's own (1) downloads LIBERO-PRO's init file for that task (a few kB) at first use.
 
 ## Suites with their own virtualenv
 
@@ -166,7 +169,7 @@ These suites run their simulators in environments built from the upstream projec
 
 ## Licences
 
-Robo Use is licensed under Apache 2.0, and the [NOTICE](https://github.com/benchflow-ai/robouse/blob/main/NOTICE) file lists the third-party code, data and assets in the package, each with its license: MIT for the vendored CaP-X, PyRoKi and RLE-Bench code, the LIBERO instructions and the DexJoCo demonstrations, and CC BY 4.0 for the Adroit demonstrations from D4RL. Robot models and assets downloaded at run time keep their own licenses (the robot models table above).
+Robo Use is licensed under Apache 2.0, and the [NOTICE](https://github.com/benchflow-ai/robouse/blob/main/NOTICE) file lists the third-party code, data and assets in the package, each with its license: MIT for the vendored CaP-X, PyRoKi and RLE-Bench code, the LIBERO instructions, LIBERO-PRO's scene files and the DexJoCo demonstrations, and CC BY 4.0 for the Adroit demonstrations from D4RL. Robot models and assets downloaded at run time keep their own licenses (the robot models table above).
 
 Some suites need software or data with stricter terms, which Robo Use does not include:
 
