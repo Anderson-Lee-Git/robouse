@@ -6,7 +6,7 @@ Notable changes to the `robouse` package, newest first. Versions follow [semanti
 
 ### Changed
 
-- The MakerMods Metal arm's kinematic chain is no longer in the package (`robouse/real/data/metal_chain.json`, shipped since 0.2.0): MakerMods' repository states no license. The first use of the Metal profile downloads the arm's URDF from MakerMods' repository at a pinned commit, checks its SHA-256 and builds the chain in `<cache>/real/`. The chain is the same arm (forward kinematics unchanged), without the gripper's joints, which no check used. Without network access, the error says where to put the URDF by hand.
+- The MakerMods Metal arm's kinematic chain is no longer in the package (`robouse/real/data/metal_chain.json`, shipped since 0.2.0): MakerMods' repository states no license. The first use of the Metal profile downloads the arm's URDF from MakerMods' repository at a pinned commit into `<cache>/real/`; every load checks the file against its SHA-256 (a changed or partial file is downloaded again) and builds the chain from it. The chain is the same arm (forward kinematics unchanged), without the gripper's joints, which no check used. Without network access, the error says where to put the URDF by hand.
 
 ## 0.5.0 (2026-10-20)
 

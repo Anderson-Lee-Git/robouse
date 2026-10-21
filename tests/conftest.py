@@ -19,12 +19,29 @@ def pytest_configure(config) -> None:
 
 
 @pytest.fixture(scope="session")
-def metal_chain() -> dict:
-    """The MakerMods Metal arm's kinematic chain. Robo Use does not ship it: the first use downloads the vendor's URDF
-    into the cache and builds the chain there (robouse.real.kinematics.VENDOR_CHAINS). Without network access and
-    without a cached copy, the tests that need it skip with the reason, except in CI (CI is set), where they fail."""
+def session_cache(tmp_path_factory) -> Path:
+    """The session's own cache folder for vendor URDFs (robouse.real.kinematics.VENDOR_CHAINS): tests never read or
+    write the user's cache (~/.cache/robouse). The first test that loads a vendor chain downloads its URDF here."""
+    return tmp_path_factory.mktemp("robouse-cache")
+
+
+@pytest.fixture(autouse=True)
+def _vendor_urdfs_in_the_session_cache(session_cache: Path, monkeypatch) -> None:
+    """Every test, in this process, keeps vendor URDFs in the session's cache folder."""
+    from robouse.real import kinematics
+
+    monkeypatch.setattr(kinematics, "chain_cache", lambda: session_cache / "real")
+
+
+@pytest.fixture
+def metal_chain(session_cache: Path, monkeypatch) -> dict:
+    """The MakerMods Metal arm's kinematic chain. Robo Use does not ship it: it is built from the vendor's URDF, which the
+    first test that needs it downloads into the session's cache folder. ROBOUSE_CACHE_DIR points there as well, for the
+    episode servers a test starts as subprocesses. Without network access, the tests that need the chain skip with the
+    reason, except in CI (CI is set), where they fail."""
     from robouse.real.kinematics import load_chain_file
 
+    monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(session_cache))
     try:
         return load_chain_file("metal_chain.json")
     except FileNotFoundError as e:

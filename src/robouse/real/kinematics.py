@@ -5,8 +5,8 @@ A chain file (`data/<robot>_chain.json`, written by `tools/assets/urdf_to_chain.
 the driver's joint values map onto the URDF joints (degrees -> radians, identity for the Metal arm and the SO-101 with
 LeRobot's calibration) and where the tool point is (a link plus an offset in that link's frame).
 
-A chain whose URDF Robo Use may not redistribute is not shipped (VENDOR_CHAINS): it is built on first use from the
-vendor's URDF, downloaded at a pinned commit and checked against its SHA-256, and kept in <cache>/real/.
+A chain whose URDF Robo Use may not redistribute is not shipped (VENDOR_CHAINS): it is built from the vendor's URDF,
+downloaded at a pinned commit into <cache>/real/ and checked against its SHA-256 every time the chain is loaded.
 
 Used by the safety envelope (points on the arm checked against the table and the workspace box before any command) and
 by the backend's `move_to` skill (damped-least-squares IK on the tool point).
@@ -14,15 +14,15 @@ by the backend's `move_to` skill (damped-least-squares IK on the tool point).
 
 from __future__ import annotations
 
+import hashlib
 import json
-import os
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
 import numpy as np
 
-# Chains built on first use from a vendor URDF instead of shipped. The MakerMods Metal arm's repository states no license
+# Chains built from a vendor URDF instead of shipped. The MakerMods Metal arm's repository states no license
 # (see NOTICE), so neither its URDF nor the chain taken from it is in the package. Its URDF names the joints JOINT1..JOINT6
 # and the links Link1..Link6; the Metal profile uses joint1..joint6 and link1..link6, so the names are lower-cased.
 VENDOR_CHAINS: dict[str, dict[str, str]] = {
@@ -67,55 +67,53 @@ class _Joint:
 
 
 def chain_cache() -> Path:
-    """Where chains built from a vendor URDF are kept: <cache>/real ($ROBOUSE_CACHE_DIR/real)."""
+    """Where vendor URDFs are kept: <cache>/real ($ROBOUSE_CACHE_DIR/real)."""
     from .. import config
 
     return config.cache_dir() / "real"
 
 
-def build_vendor_chain(name: str) -> Path:
-    """Download the vendor URDF of a chain in VENDOR_CHAINS (unless the cache already holds it with the pinned hash), and
-    write the chain JSON next to it. Raises FileNotFoundError, saying how to place the URDF by hand, if the download fails."""
-    from ..lib.download import fetch
+def build_vendor_chain(name: str) -> dict:
+    """The chain of a VENDOR_CHAINS entry, built from the vendor's URDF in <cache>/real/ each time it is loaded. The URDF
+    is checked against the pinned SHA-256 every time, and the chain is built from the bytes that were checked: a missing,
+    partial or changed file is downloaded again, and nothing else in the cache is trusted. Raises FileNotFoundError,
+    saying how to place the URDF by hand, if the download fails."""
+    from ..lib.download import ChecksumError, fetch
 
     spec = VENDOR_CHAINS[name]
-    folder = chain_cache()
-    urdf = folder / spec["urdf"]
+    urdf = chain_cache() / spec["urdf"]
     try:
-        fetch(spec["url"], urdf, spec["sha256"], timeout=60)
+        fetch(spec["url"], urdf, spec["sha256"], timeout=60)  # keeps a file with the pinned hash, else downloads it
     except OSError as e:  # no network, DNS, HTTP errors (urllib's URLError is an OSError)
         raise FileNotFoundError(
             f"the {spec['display']}'s kinematic chain is built from its vendor's URDF, which Robo Use does not ship, "
             f"and downloading it failed ({e}). Download {spec['url']} to {urdf} (SHA-256 {spec['sha256']}) and run again."
         ) from e
-    chain = urdf_to_chain(urdf, spec["robot"], spec["source"])
+    data = urdf.read_bytes()
+    if hashlib.sha256(data).hexdigest() != spec["sha256"]:  # replaced after fetch checked it
+        raise ChecksumError(f"{urdf} changed while it was read: its SHA-256 is not the pinned {spec['sha256']}")
+    chain = urdf_to_chain(data, spec["robot"], spec["source"])
     for j in chain["joints"]:
         j.update(name=j["name"].lower(), parent=j["parent"].lower(), child=j["child"].lower())
     chain["links"] = [{"name": link["name"].lower()} for link in chain["links"]]
     chain["sources"]["sha256"] = spec["sha256"]
     chain["joint_mapping"] = "identity: degrees -> radians; the URDF's joint and link names lower-cased"
-    out = folder / name
-    tmp = out.with_name(f".{out.name}.{os.getpid()}.part")
-    tmp.write_text(json.dumps(chain, indent=1) + "\n")
-    tmp.replace(out)
-    return out
+    return chain
 
 
 def load_chain_file(name: str) -> dict:
-    """A chain JSON by path, shipped in robouse/real/data (by file name), or, for a chain in VENDOR_CHAINS, built on first
-    use from the vendor's URDF and read from <cache>/real/ afterwards."""
+    """A kinematic chain. A name in VENDOR_CHAINS is always the chain built from the vendor's checked URDF
+    (build_vendor_chain): no file of that name, in the working folder or the cache, stands in for it. Any other name is a
+    chain JSON by path, or one shipped in robouse/real/data."""
+    if name in VENDOR_CHAINS:
+        return build_vendor_chain(name)
     p = Path(name)
     if p.exists():
         return json.loads(p.read_text())
     shipped = resources.files("robouse.real.data").joinpath(name)
-    if shipped.is_file():
-        return json.loads(shipped.read_text())
-    if name not in VENDOR_CHAINS:
+    if not shipped.is_file():
         raise FileNotFoundError(f"no kinematic chain {name!r} in robouse/real/data")
-    cached = chain_cache() / name
-    if not cached.is_file():
-        build_vendor_chain(name)
-    return json.loads(cached.read_text())
+    return json.loads(shipped.read_text())
 
 
 class Chain:
@@ -246,11 +244,11 @@ class Chain:
         return best_q, best_e
 
 
-def urdf_to_chain(urdf_path: str | Path, robot: str, source: str = "") -> dict:
-    """Parse a URDF into the chain JSON layout (joints in parent-to-child order)."""
+def urdf_to_chain(urdf: str | Path | bytes, robot: str, source: str = "") -> dict:
+    """Parse a URDF (a path, or the file's bytes) into the chain JSON layout (joints in parent-to-child order)."""
     import xml.etree.ElementTree as ET
 
-    root = ET.parse(str(urdf_path)).getroot()
+    root = ET.fromstring(urdf) if isinstance(urdf, bytes) else ET.parse(str(urdf)).getroot()
     joints = []
     for j in root.findall("joint"):
         o, a, lim = j.find("origin"), j.find("axis"), j.find("limit")
@@ -286,7 +284,7 @@ def urdf_to_chain(urdf_path: str | Path, robot: str, source: str = "") -> dict:
             stack.append(j["child"])
     return {
         "robot": robot,
-        "sources": {"urdf": source or Path(urdf_path).name},
+        "sources": {"urdf": source or ("" if isinstance(urdf, bytes) else Path(urdf).name)},
         "joint_mapping": "identity: degrees -> radians",
         "joints": ordered,
         "links": [{"name": l.get("name")} for l in root.findall("link")],

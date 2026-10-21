@@ -74,18 +74,86 @@ def test_without_network_the_metal_chain_says_where_to_put_the_urdf(tmp_path, mo
     import urllib.error
     import urllib.request
 
-    from robouse.real.kinematics import VENDOR_CHAINS, load_chain_file
+    from robouse.real import kinematics
 
     def offline(*a, **k):
         raise urllib.error.URLError("no network")
 
-    monkeypatch.setenv("ROBOUSE_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(kinematics, "chain_cache", lambda: tmp_path / "real")
     monkeypatch.setattr(urllib.request, "urlopen", offline)
     with pytest.raises(FileNotFoundError) as e:
-        load_chain_file("metal_chain.json")
-    spec = VENDOR_CHAINS["metal_chain.json"]
+        kinematics.load_chain_file("metal_chain.json")
+    spec = kinematics.VENDOR_CHAINS["metal_chain.json"]
     assert spec["url"] in str(e.value) and str(tmp_path / "real" / spec["urdf"]) in str(e.value)
     assert not [p for p in (tmp_path / "real").glob("*") if p.is_file()]  # nothing half-written
+
+
+@pytest.mark.parametrize("damage", ["changed", "cut short"])
+def test_a_changed_or_partial_cached_urdf_is_never_used(damage, metal_chain, tmp_path, monkeypatch):
+    """Every load checks the cached URDF against the pinned SHA-256, not only the first. A file changed after an earlier
+    load (here, the shoulder 5 cm higher) or cut short is not used: without network access the load fails, and with it
+    the file is downloaded again and the chain built from the checked bytes."""
+    import io
+    import urllib.error
+    import urllib.request
+
+    from robouse.real import kinematics
+
+    spec = kinematics.VENDOR_CHAINS["metal_chain.json"]
+    genuine = (kinematics.chain_cache() / spec["urdf"]).read_bytes()  # the session's checked copy (metal_chain)
+    assert genuine.count(b'xyz="0 0 0.06675"') == 1
+    bad = genuine.replace(b'xyz="0 0 0.06675"', b'xyz="0 0 0.11675"') if damage == "changed" else genuine[:4000]
+    cached = tmp_path / "real" / spec["urdf"]
+    cached.parent.mkdir()
+    cached.write_bytes(genuine)
+    monkeypatch.setattr(kinematics, "chain_cache", lambda: tmp_path / "real")
+    downloads: list[str] = []
+
+    def offline(url, timeout=None):
+        raise urllib.error.URLError("no network")
+
+    def online(url, timeout=None):
+        downloads.append(url)
+        return io.BytesIO(genuine)
+
+    monkeypatch.setattr(urllib.request, "urlopen", offline)
+    assert kinematics.load_chain_file("metal_chain.json") == metal_chain  # the file has the pinned hash: no download
+    cached.write_bytes(bad)
+    with pytest.raises(FileNotFoundError):
+        kinematics.load_chain_file("metal_chain.json")
+    monkeypatch.setattr(urllib.request, "urlopen", online)
+    assert kinematics.load_chain_file("metal_chain.json") == metal_chain
+    assert cached.read_bytes() == genuine and downloads == [spec["url"]]
+
+
+def test_no_chain_file_stands_in_for_the_metal_chain(metal_chain, tmp_path, monkeypatch):
+    """A file named metal_chain.json in the working folder or in the cache is never read for the Metal arm: its chain
+    always comes from the checked URDF."""
+    import shutil
+
+    from robouse.real import kinematics
+
+    spec = kinematics.VENDOR_CHAINS["metal_chain.json"]
+    (tmp_path / "real").mkdir()
+    shutil.copy(kinematics.chain_cache() / spec["urdf"], tmp_path / "real" / spec["urdf"])
+    bogus = json.dumps({**metal_chain, "joints": [{**j, "xyz": [0.0, 0.0, 9.0]} for j in metal_chain["joints"]]})
+    for folder in (tmp_path, tmp_path / "real"):
+        (folder / "metal_chain.json").write_text(bogus)
+    monkeypatch.setattr(kinematics, "chain_cache", lambda: tmp_path / "real")
+    monkeypatch.chdir(tmp_path)
+    assert kinematics.load_chain_file("metal_chain.json") == metal_chain
+
+
+def test_tests_keep_the_metal_urdf_out_of_the_users_cache(session_cache):
+    """The tests download the Metal arm's URDF into the session's cache folder, for this process and for the episode
+    servers they start as subprocesses, never into ~/.cache/robouse."""
+    import os
+
+    from robouse.real import kinematics
+
+    assert kinematics.chain_cache() == session_cache / "real"
+    assert os.environ["ROBOUSE_CACHE_DIR"] == str(session_cache)
+    assert (session_cache / "real" / kinematics.VENDOR_CHAINS["metal_chain.json"]["urdf"]).is_file()
 
 
 def test_metal_fk_matches_recorded_hardware_poses():
