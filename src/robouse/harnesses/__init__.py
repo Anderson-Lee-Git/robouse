@@ -27,6 +27,10 @@ Harnesses
                          $ROBOUSE_VLA_URL; overrides from $ROBOUSE_VLA_POLICY_CONFIG (JSON file)
   dream                  Dream Labs' Dream-1 through DreamAPI (dream/client.py, Dream's own client library); model
                          dreamlabs/dream-1-beta (default) or dreamlabs/dream-1-beta-flash; drives the `yam` suite
+  jev                    TypeSafe's Jev, a System One model: typed decisions over each observation, executed through
+                         `robo` (jev/client.py, standard library only, on the runner's Python); model typesafe/jev-latest
+                         (default) or another Jev; key in $TYPESAFE_API_KEY; drives the `nav` suite (Dimensional's "Can
+                         Jev Nav?" protocol)
 Third-party harnesses register a callable with `build`'s signature under the `robouse.harnesses` entry point group.
 """
 
@@ -327,6 +331,12 @@ def _dream(model, prompt, workspace, task, env) -> Launch:
     return dream.build(model, prompt, workspace, task, env)
 
 
+def _jev(model, prompt, workspace, task, env) -> Launch:
+    from . import jev
+
+    return jev.build(model, prompt, workspace, task, env)
+
+
 def _dimcode(model, prompt, workspace, task, env) -> Launch:
     from . import dimcode
 
@@ -348,6 +358,7 @@ HARNESSES: dict[str, Builder] = {
     "molmoact2": _molmoact2,
     "vla": _vla,
     "dream": _dream,
+    "jev": _jev,
     "dimcode": _dimcode,
     "show-harness": _show_harness,
 }

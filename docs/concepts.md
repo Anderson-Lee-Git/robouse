@@ -98,6 +98,7 @@ A harness is the agent program that acts as the robot's policy; the model is wha
 | `vla`<br>A VLA client ([Run agents and VLAs](run-agents.md#vlas)) | none: `--model` names a preset | `ROBOUSE_VLA_URL` |
 | `molmoact2`<br>The MolmoAct2 client | `allenai/MolmoAct2-LIBERO-LeRobot` | `ROBOUSE_MOLMOACT2_URL` |
 | `dream`<br>Dream Labs' Dream-1 through DreamAPI ([Run agents and VLAs](run-agents.md#dream-1)) | `dreamlabs/dream-1-beta` | Dream's client library (`pip install dreamlabs-client`, or `ROBOUSE_DREAM_PYTHON`); `DREAM_API_KEY` or `~/.dreamlabs/credentials`; the `yam` suite |
+| `jev`<br>TypeSafe's Jev, a System One model: typed decisions over each observation ([Run agents and VLAs](run-agents.md#jev)) | `typesafe/jev-latest` | `TYPESAFE_API_KEY`; the `nav` suite |
 
 A model is a provider-prefixed id, as in BenchFlow, such as `glm/glm-5.3`: GLM-5.3 on the Z.ai Coding Plan, through BenchFlow's `glm` provider, whose settings are `GLM_API_KEY` (the plan's API key) and `GLM_BASE_URL` (`https://open.bigmodel.cn/api/coding/paas/v4` for a plan bought on bigmodel.cn). A bare id is the harness's own vendor's: `claude-sonnet-5` for Claude Code is Anthropic's, `gpt-6-astra` for Codex OpenAI's. The earlier names `claude-code-glm`, `codex-glm` and `mini-swe-agent-glm` (the September runs' names) are kept only to read those trials; `robouse run` refuses them and names the harness to use instead.
 

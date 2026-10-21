@@ -6,6 +6,7 @@ Inputs (all optional; missing or malformed files degrade to fewer steps, never t
   agent/mini_traj.json     mini-swe-agent trajectory
   agent/pi_session.jsonl   Pi session file (dimcode)
   agent/stdout.jsonl       show-harness client events (start, plan, decision, end), each with the robo requests it made
+  agent/stdout.jsonl       jev client events (start, decision, end): Jev's answers to each decision's questions
   episode/trace.jsonl      every robo request the episode server handled: {t, steps, req, resp}
   episode/frames.jsonl     one line per video frame: {i, t, step}; the video plays them at FPS
   episode/result.json      outcome, agent_text, wall_time_s
@@ -13,7 +14,8 @@ Inputs (all optional; missing or malformed files degrade to fewer steps, never t
 Outputs
   agent/trajectory.json    ATIF-v1.7 (the agent trajectory format the BenchFlow viewer and trainer read). One user step with the
                            prompt, then one step per assistant message (Claude Code), per item (Codex), per
-                           assistant turn (mini-swe-agent) or per group of robo requests (oracle, noop).
+                           assistant turn (mini-swe-agent), per decision (show-harness, jev) or per group of robo
+                           requests (oracle, noop).
   artifacts/recording_index.json
                            the BenchFlow viewer's recording index: for every trajectory step, the video
                            time span of the robo requests it made ({index, action, t_video_start_s,
@@ -609,6 +611,17 @@ def _pi_final(meta: dict) -> dict | None:
 # requests it made in order, so its step owns the next that many agent entries of the trace, one to one.
 
 
+def _trace_call(prefix: str, j: int, trace: list[dict]) -> dict:
+    """The tool call for agent entry `j` of the trace: the robo request and what the episode server answered."""
+    e = trace[j]
+    req = e.get("req") or {}
+    c = _call(f"{prefix}-{j}", "robo", req, _req_label(req))
+    c["output"] = _resp_text(e.get("resp") or {})
+    c["is_error"] = not (e.get("resp") or {}).get("ok", False)
+    c["trace"] = [j]
+    return c
+
+
 def _sh_usage(calls: list[dict]) -> dict:
     tot = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0}
     for c in calls:
@@ -653,15 +666,8 @@ def _parse_show_harness(
         for _ in ev.get("requests") or []:
             if pos >= len(agent_entries):
                 break
-            j = agent_entries[pos]
+            st["calls"].append(_trace_call("sh", agent_entries[pos], trace))
             pos += 1
-            e = trace[j]
-            req = e.get("req") or {}
-            c = _call(f"sh-{j}", "robo", req, _req_label(req))
-            c["output"] = _resp_text(e.get("resp") or {})
-            c["is_error"] = not (e.get("resp") or {}).get("ok", False)
-            c["trace"] = [j]
-            st["calls"].append(c)
         imgs = [str(n) for n in ev.get("images") or []]
         first_obs = next((c for c in st["calls"] if (c["args"] or {}).get("op") == "observe"), None)
         if imgs and first_obs is not None:  # the pictures the model was shown (the camera contract's views)
@@ -744,6 +750,126 @@ def _show_harness_final(meta: dict) -> dict | None:
 
 
 # ---------------------------------------------------------------------------------------------
+# jev client events (agent/stdout.jsonl): start (the questions asked at every decision), decision (the state Jev saw,
+# its answers with their probabilities and confidence, usage and cost), retry, end, error. Like show-harness's, each
+# event lists the robo requests it made, so its step owns the next that many agent entries of the trace.
+
+
+def _jev_head(ev: dict) -> str:
+    """One line on a decision: the command it made, then each answer with its probability."""
+    bits = []
+    for qid, a in (ev.get("answers") or {}).items():
+        if not isinstance(a, dict):
+            continue
+        if a.get("type") == "noul":
+            bits.append(f"{qid} {float(a.get('noul') or 0):.2f}")
+            continue
+        p = (a.get("probabilities") or {}).get(a.get("choice"))
+        bits.append(f"{qid} {a.get('choice')}" + (f" {float(p):.2f}" if isinstance(p, (int, float)) else ""))
+    return f"{ev.get('command') or 'no command'} ({'; '.join(bits) or 'no answers'})"
+
+
+def _parse_jev(events: list[dict], agent_entries: list[int], trace: list[dict]) -> tuple[list[dict], dict, list[int]]:
+    steps: list[dict] = []
+    meta: dict[str, Any] = {"model_calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0.0}
+    priced = True
+    pos = 0
+
+    def own(st: dict, ev: dict) -> None:
+        nonlocal pos
+        for _ in ev.get("requests") or []:
+            if pos >= len(agent_entries):
+                break
+            st["calls"].append(_trace_call("jev", agent_entries[pos], trace))
+            pos += 1
+
+    for ev in events:
+        typ = ev.get("type")
+        if typ == "start":
+            meta.update({k: ev.get(k) for k in ("model", "profile", "server")})
+            if ev.get("goal"):
+                steps.append(_step("user", _clip(str(ev["goal"]), MSG_LIMIT), epoch=ev.get("t")))
+            qs = ev.get("questions") or {}
+            st = _step(
+                "agent",
+                f"jev, {ev.get('profile')} profile: TypeSafe's Jev ({ev.get('model')}) answers {len(qs)} questions per "
+                f"decision ({', '.join(qs)}) about the state built from `robo observe`, one decision per "
+                f"{ev.get('seconds_per_decision')} s of simulated time. Each step's extra.jev has the state Jev saw and "
+                "its answers; the questions are in this step's extra.",
+                epoch=ev.get("t"),
+            )
+            st["llm_call_count"] = 0
+            st["extra"] = {"jev": {"questions": qs, "model": ev.get("model"), "server": ev.get("server")}}
+        elif typ == "decision":
+            st = _step("agent", _clip(_jev_head(ev), MSG_LIMIT), epoch=ev.get("t"))
+            usage = ev.get("usage") or {}
+            st["llm_call_count"] = 1
+            st["model"] = ev.get("model") or None
+            st["metrics"] = {
+                "prompt_tokens": usage.get("input_tokens"),
+                "completion_tokens": usage.get("output_tokens"),
+                "cost_usd": ev.get("cost_usd"),
+            }
+            st["extra"] = {
+                "jev": {
+                    k: ev.get(k)
+                    for k in ("i", "model", "answers", "command", "latency_s", "attempts", "usage", "cost_usd", "state")
+                    if ev.get(k) is not None
+                }
+            }
+            meta["model_calls"] += 1
+            meta["prompt_tokens"] += int(usage.get("input_tokens") or 0)
+            meta["completion_tokens"] += int(usage.get("output_tokens") or 0)
+            if ev.get("cost_usd") is None:
+                priced = False
+            else:
+                meta["cost_usd"] += float(ev["cost_usd"])
+        elif typ in ("end", "error"):
+            text = ev.get("reason") if typ == "end" else ev.get("error")
+            if ev.get("claimed_done") is True:
+                text = f"{text} (robo done: Jev answered finished)"
+            elif typ == "end" and not ev.get("episode"):
+                text = f"{text} (no robo done: the runner closes the episode)"
+            st = _step("agent", _clip(f"jev {typ}: {text}", MSG_LIMIT), epoch=ev.get("t"))
+            st["llm_call_count"] = 0
+        else:  # retry: a request TypeSafe will answer later; the decision that follows records the attempts
+            continue
+        own(st, ev)
+        steps.append(st)
+    meta["priced"] = priced
+    return steps, meta, agent_entries[pos:]
+
+
+def _jev_final(meta: dict) -> dict | None:
+    if not meta.get("model_calls"):
+        return None
+    return {
+        "total_prompt_tokens": meta["prompt_tokens"],
+        "total_completion_tokens": meta["completion_tokens"],
+        "total_cached_tokens": 0,
+        "total_cost_usd": round(meta["cost_usd"], 10) if meta.get("priced") else None,
+        "extra": {"model_calls": meta["model_calls"]},
+    }
+
+
+# Harnesses whose client reports its own events on stdout, each listing the robo requests it made: the parser, the
+# final metrics, and the trajectory's note
+CLIENT_EVENTS = {
+    "show-harness": (
+        _parse_show_harness,
+        _show_harness_final,
+        "show-harness: one step per decision; each owns the robo requests the client made for it.",
+    ),
+    "jev": (
+        _parse_jev,
+        _jev_final,
+        "jev: one step per decision, with Jev's answers and their probabilities; each owns the robo requests the client "
+        "made for it.",
+    ),
+}
+
+
+# ---------------------------------------------------------------------------------------------
 # robo MCP tool calls, as the equivalent `robo` command
 
 MCP_TOOL_RES = (
@@ -809,6 +935,9 @@ def _req_label(req: dict) -> str:
         return f"robo grip {req.get('value')}"
     if op == "observe":
         return "robo observe" + (" --image" if req.get("image") else "")
+    if op == "skill":
+        args = req.get("args")
+        return " ".join(["robo skill", str(req.get("name")), *map(str, args if isinstance(args, list) else [])])
     if op in ("done", "give_up"):
         return (
             f"robo {op.replace('_', '-')} {json.dumps(req.get('text', ''))}"
@@ -1073,7 +1202,7 @@ def _prompt(trial: Path, cfg: dict, harness: str) -> str:
             instr = load_task(tp).instruction
         except (OSError, ValueError, KeyError):  # the task folder moved or changed since the trial
             instr = ""
-    if harness in TRACE_HARNESSES or harness == "show-harness":  # no robo CLI prefix: the client words its own prompt
+    if harness in TRACE_HARNESSES or harness in CLIENT_EVENTS:  # no robo CLI prefix: the client words its own prompt
         return instr or f"task {cfg.get('task')}"
     from ..harnesses.interface import prompt_prefix
 
@@ -1166,10 +1295,11 @@ def build(trial: Path, harness: str | None = None) -> tuple[dict, dict]:
             f"{harness} harness: no LLM; steps are the episode server's trace of robo requests "
             f"(up to {ORACLE_ACTS_PER_STEP} motion requests per step)."
         )
-    elif harness == "show-harness":
-        steps, meta, leftover = _parse_show_harness(_read_jsonl(raw), agent_entries, trace)
-        fm = _show_harness_final(meta)
-        notes.append("show-harness: one step per decision; each owns the robo requests the client made for it.")
+    elif harness in CLIENT_EVENTS:
+        parse, final, note = CLIENT_EVENTS[harness]
+        steps, meta, leftover = parse(_read_jsonl(raw), agent_entries, trace)
+        fm = final(meta)
+        notes.append(note)
         if not steps:
             notes.append("agent/stdout.jsonl is empty or missing")
         if leftover:
@@ -1430,8 +1560,8 @@ def _source_name(trial: Path, harness: str) -> str:
         return "agent/mini_traj.json"
     if harness == "dimcode" and (trial / "agent" / "pi_session.jsonl").is_file():
         return "agent/pi_session.jsonl (Pi session)"
-    if harness == "show-harness":
-        return "agent/stdout.jsonl (show-harness client events)"
+    if harness in CLIENT_EVENTS:
+        return f"agent/stdout.jsonl ({harness} client events)"
     return (
         "agent/stdout.jsonl ("
         + (

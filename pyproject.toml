@@ -200,6 +200,7 @@ files = [
     "src/robouse/runner/cost.py",
     "src/robouse/harnesses/__init__.py",
     "src/robouse/harnesses/credentials.py",
+    "src/robouse/harnesses/jev",
     "src/robouse/tasks.py",
     "src/robouse/oracle.py",
     "src/robouse/session.py",

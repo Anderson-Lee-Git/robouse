@@ -135,6 +135,13 @@ def run() -> int:
         f"  {_ok(Path(dream_py).exists() and dream_key)}dream (Dream Labs' client in {dream_py}; DREAM_API_KEY or "
         "~/.dreamlabs/credentials)"
     )
+    from ..harnesses import jev
+
+    try:
+        jev_key = bool(jev.credentials())
+    except RuntimeError:
+        jev_key = False
+    print(f"  {_ok(jev_key)}jev (TypeSafe's key in TYPESAFE_API_KEY; runs the nav suite)")
     creds = {
         "ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN": credentials.have_claude(),
         "OPENAI_API_KEY or ~/.codex/auth.json": credentials.have_codex(),

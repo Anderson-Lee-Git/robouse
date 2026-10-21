@@ -199,7 +199,7 @@ PAGES: list[tuple[str, str, str, str, str]] = [
     ("Get started", "docs/concepts.md", "concepts", "Concepts",
      "Tasks, scoring, episodes, the robo command, harnesses and the trial folder: how one Robo Use trial works."),
     ("Guides", "docs/run-agents.md", "run-agents", "Run agents and VLAs",
-     "Run Claude Code, Codex, mini-swe-agent, dimcode, Show-Harness or a VLA policy server as the robot's policy on one task."),
+     "Run Claude Code, Codex, mini-swe-agent, dimcode, Show-Harness, Dream-1, Jev or a VLA policy server as the robot's policy on one task."),
     ("Guides", "docs/mcp.md", "mcp", "MCP",
      "Drive the robot through the robo MCP tools instead of the robo command: the tools, robo mcp and --interface."),
     ("Guides", "docs/write-a-task.md", "write-a-task", "Write or compose a task",

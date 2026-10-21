@@ -181,7 +181,8 @@ def image_input_plan(harness: str, model: str) -> dict:
     model as text-only or does not describe it (harnesses/models.py), or ROBOUSE_AGENT_IMAGES=0 turns images off for
     the run. The trial's model gateway then replaces every image part before it reaches the provider. The task itself
     is unchanged: the agent's workspace still holds the camera images as files (code may read their pixels), and a
-    vision task never falls back to the object state it hides. Harnesses without a language model record None.
+    vision task never falls back to the object state it hides. Harnesses without a language model record None, and
+    jev records False: its client sends TypeSafe's Jev the text state only.
 
     Refused (ValueError): a legacy -glm harness name or a baseten/ model (recorded trials only), and show-harness
     through the gateway with a model the registry does not list as reading images (its policy is the model's reading
@@ -194,6 +195,15 @@ def image_input_plan(harness: str, model: str) -> dict:
     if why := models.history_refusal(model):  # baseten/...: the models of recorded trials only
         raise ValueError(why)
     canon, mid = harness, model
+    if canon == "jev":  # TypeSafe's Jev: a decision model, called by its own client, never through the gateway
+        from ..harnesses.jev import model_id
+
+        return {
+            "harness": canon,
+            "model": model_id(mid),
+            "image_input": False,
+            "image_input_reason": "the jev client sends Jev text only",
+        }
     if canon not in LLM_HARNESSES:
         return {"harness": canon, "model": mid, "image_input": None, "image_input_reason": "no language model"}
     mid = mid or models.DEFAULT_MODELS.get(canon, "")
@@ -241,12 +251,17 @@ def image_input_plan(harness: str, model: str) -> dict:
 def check_model(harness: str, model: str) -> dict:
     """image_input_plan(harness, model), after checking that the harness can start with this model: a model behind the
     model gateway has its provider's settings (its key, a base URL without a default) and, with the spend cap on, a
-    price. Raises ValueError or RuntimeError naming what is missing; sends no request and creates nothing. `robouse
-    run`/`run-many` and tools that start trials themselves call it before any trial folder exists."""
+    price; jev has TypeSafe's key. Raises ValueError or RuntimeError naming what is missing; sends no request and
+    creates nothing. `robouse run`/`run-many` and tools that start trials themselves call it before any trial folder
+    exists."""
     from ..harnesses import GATEWAY_PROTOCOLS, gateway, models
 
     plan = image_input_plan(harness, model)
     h, m = plan["harness"], plan["model"] or ""
+    if h == "jev":  # TypeSafe's key, which only the jev client gets
+        from ..harnesses import jev
+
+        jev.credentials()
     if h in GATEWAY_PROTOCOLS and models.split(m)[0] is not None:
         ref = models.resolve(h, m)
         if models.NATIVE_VENDORS.get(h) != ref.provider:
@@ -279,6 +294,7 @@ PROVIDER_KEY_PREFIXES = (
     "GLM_",
     "ZAI_",
     "DREAM_",  # Dream Labs (DreamAPI): the `dream` harness adds back what its client needs
+    "TYPESAFE_",  # TypeSafe (Jev): the `jev` harness adds back what its client needs
 )
 # A variable whose name has one of these parts holds a credential: a token, key, secret, password or login
 SECRET_NAME = re.compile(r"SECRET|PASSWORD|PASSWD|APIKEY|(?:^|_)(?:TOKEN|KEY|PASS|AUTH|CREDENTIALS?)(?:_|$)", re.I)

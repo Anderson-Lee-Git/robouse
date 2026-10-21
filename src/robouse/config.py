@@ -129,6 +129,7 @@ ENV: dict[str, str] = {
     "ROBOUSE_DREAM_ACTIONS": "rows of each Dream-1 action chunk the `dream` client executes before asking again "
     "(1-48, default 48)",
     "ROBOUSE_DREAM_CONFIG": "the `dream` client's model and rows per chunk (set by the runner)",
+    "ROBOUSE_JEV_CONFIG": "the `jev` client's model, decision profile and prices (set by the runner)",
     "ROBOUSE_MOLMOACT2_URL": "MolmoAct2 policy server for the `molmoact2` harness",
     "ROBOUSE_MOLMOACT2_TOKEN": "bearer token for the MolmoAct2 server",
     "ROBOUSE_DIMCODE": "the dimcode executable for the `dimcode` harness (default: `dimcode` on PATH)",
@@ -139,7 +140,8 @@ ENV: dict[str, str] = {
     "ROBOUSE_SHOW_HARNESS_CONFIG": "JSON file of `show-harness` overrides (mode zs or ft, step sizes, plugins)",
     "ROBOUSE_SHOW_HARNESS_MODEL": "the model name the `show-harness` client sends (set by the runner)",
     "ROBOUSE_SHOW_HARNESS_SETTINGS": "the `show-harness` client's mode, task sentence and overrides (set by the runner)",
-    "ROBOUSE_TASK_LANGUAGE": "the language instruction a VLA client sends (set by the runner)",
+    "ROBOUSE_TASK_LANGUAGE": "the task's language instruction, which a VLA client sends and the `jev` client gives Jev "
+    "as its goal (set by the runner)",
     "ROBOUSE_GRADER_URL": "OpenAI-compatible endpoint (base URL) of the vision-language model for `robouse grade` and "
     "`real.verdict: vlm` (required by both; no default)",
     "ROBOUSE_GRADER_API_KEY": "API key for that endpoint, sent as a bearer token (required; no default). The runner "

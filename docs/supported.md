@@ -12,8 +12,11 @@ Robo Use 0.5.0.
 | VLA presets · `vla` | a policy server, usually on a GPU |
 | `allenai/MolmoAct2-LIBERO-LeRobot` · `molmoact2` | a policy server on a GPU |
 | `dreamlabs/dream-1-beta`, `dreamlabs/dream-1-beta-flash` · `dream` | a Dream Labs API key and Dream's client library; runs the `yam` suite, which needs its own virtualenv ([Suites](suites.md)) |
+| `typesafe/jev-latest`, `typesafe/jev-preview` · `jev` | a TypeSafe API key in `TYPESAFE_API_KEY`; runs the `nav` suite |
 
 How the `glm/glm-5.3` row was checked (2026-10-14): each of its three harnesses (mini-swe-agent 2.4.6, Claude Code 2.1.285, dimcode 0.1.0-next.7) ran whole trials through the model gateway, on Linux arm64 under bubblewrap, against a scripted local stand-in for the plan's endpoint. With GLM-5.3 itself they were checked only up to the plan's usage-limit error (HTTP 429), so no trial on the plan has reached a result yet, and how these pairs do on a task is untested.
+
+How the `jev` row was checked (2026-10-20): whole trials on nav tasks, on macOS (Apple silicon) under Seatbelt and on Linux x86_64 without a sandbox, against a scripted local stand-in for TypeSafe's System One endpoint that answers by applying the questions' criteria literally. No trial has run on Jev itself yet, so how Jev does on the nav suite is untested.
 
 ## Platforms
 
