@@ -20,8 +20,9 @@ ENV: dict[str, str] = {
     "ROBOUSE_CONFIG_DIR": "private settings such as remote worker endpoints (default ~/.config/robouse); agents never "
     "see it",
     "ROBOUSE_MENAGERIE_ASSETS": "MuJoCo Menagerie robot models (default: the checkout's assets/menagerie, else "
-    "<cache>/menagerie)",
-    "ROBOUSE_ROBOHARM_TEX": "generated texture cache for the roboharm scenes (default <cache>/roboharm_tex)",
+    "<cache>/menagerie); agents never see it",
+    "ROBOUSE_ROBOHARM_TEX": "generated texture cache for the roboharm scenes (default <cache>/roboharm_tex); agents "
+    "never see it",
     "ROBOUSE_CHEMLAB_ASSETS": "ChemLab-Assets instrument files for the chemlab suite, from `robouse fetch-assets "
     "--chemlab` (default <cache>/chemlab); agents never see it",
     "ROBOUSE_PRICING": "JSON price table for trial cost and the spend cap, used instead of the packaged pricing.json "
@@ -92,7 +93,8 @@ ENV: dict[str, str] = {
         )
     },
     "ROBOUSE_MANISKILL_DEBUG": "1: the ManiSkill worker logs each request",
-    "ROBOUSE_HUMANOIDBENCH_POLICY": "HumanoidBench low-level walking policy (default <cache>/humanoidbench/h1_motion.pt)",
+    "ROBOUSE_HUMANOIDBENCH_POLICY": "HumanoidBench low-level walking policy (default "
+    "<cache>/humanoidbench/h1_motion.pt); agents never see it",
     "ROBOUSE_ROBOSUITE_PATH": "isolated robosuite 1.5 install for the robosuite suite (default <venv>/robosuite-1.5)",
     # remote GPU workers
     "ROBOUSE_BEHAVIOR_REMOTE": "BEHAVIOR worker endpoints file (default <config>/remote/behavior.json)",
@@ -238,9 +240,16 @@ def remote_endpoints(name: str) -> Path | None:
     return p if p.is_file() else None
 
 
-# Folders that move part of robouse's cache elsewhere and hold files the episode server runs or loads: the chemlab
-# suite's instrument runtimes are Python modules it imports. The cache is denied to agents as a whole; so is a moved part
-MOVED_CACHE = ("ROBOUSE_CHEMLAB_ASSETS",)
+# Folders and files that move part of robouse's cache elsewhere and that the episode server loads in later trials:
+# robot models, generated textures, the chemlab suite's instrument runtimes (Python modules it imports) and the
+# HumanoidBench walking policy (a torch file, which it unpickles). The cache is denied to agents as a whole, so that no
+# trial can change what a later one loads; so is a moved part
+MOVED_CACHE = (
+    "ROBOUSE_MENAGERIE_ASSETS",
+    "ROBOUSE_ROBOHARM_TEX",
+    "ROBOUSE_CHEMLAB_ASSETS",
+    "ROBOUSE_HUMANOIDBENCH_POLICY",
+)
 
 
 def sandbox_denied_paths() -> list[str]:

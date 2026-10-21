@@ -242,7 +242,7 @@ def test_a_harness_error_is_an_infrastructure_failure(tmp_path, monkeypatch, cap
     )
     job = tmp_path / "job"
     (r,) = run_many(ARC.parent, "apierr", "", job, include=["arc-gravity"])
-    assert r["exception"] and r["exception"].startswith("AgentError") and "HTTP 503" in r["exception"]
+    assert r["exception"] and r["exception"].startswith("AgentError") and "exited with code 1" in r["exception"]
     (res,) = [json.loads(p.read_text()) for p in job.glob("*/result.json")]
     assert res["exception_info"]["exception_type"] == "AgentError"
     # --resume reruns it (it has no result), and the CLI says the run failed on infrastructure
@@ -261,10 +261,50 @@ def test_a_harness_error_is_an_infrastructure_failure(tmp_path, monkeypatch, cap
         ]
     )
     assert rc == 1 and len(list(job.glob("*/result.json"))) == 2
-    # a zero exit with Claude Code's error result event is the same failure
-    _scripted(monkeypatch, "autherr", 'echo \'{"type":"result","is_error":true,"result":"Invalid API key"}\'\n')
-    (r,) = run_many(ARC.parent, "autherr", "", tmp_path / "job2", include=["arc-gravity"])
-    assert r["exception"] and "Invalid API key" in r["exception"]
+
+
+def _claude_stream(tdir: Path, events: list[dict], session: str = "s-1") -> None:
+    """agent/stdout.jsonl as Claude Code writes it in stream-json: its init event, the conversation, its final result."""
+    init = {"type": "system", "subtype": "init", "session_id": session}
+    lines = [json.dumps(e) for e in (init, *events)]
+    (tdir / "agent").mkdir(parents=True, exist_ok=True)
+    (tdir / "agent" / "stdout.jsonl").write_text("\n".join(lines) + "\n")
+
+
+def test_only_the_harness_s_own_final_result_marks_a_harness_failure(tmp_path) -> None:
+    """A zero exit whose stream ends with Claude Code's own error result (an API or credential failure) is a harness
+    failure, not a score. An agent must not be able to fake one and turn its unfinished, scored trial into an unscored
+    one that --retries and --resume run again. Its command output cannot: Claude Code quotes it inside a JSON string.
+    A line written to the harness's output directly (on Linux, through /proc/<pid>/fd/1) can, so only a stream whose
+    one result event is its last line, of the session it started, counts, and only for Claude Code."""
+    from robouse.core.protocol import RUNNER_PREFIX
+    from robouse.runner.trial import _harness_error
+
+    episode = {"outcome": "gave_up", "agent_text": f"{RUNNER_PREFIX} agent exited without robo done"}
+    fake = {"type": "result", "subtype": "success", "is_error": True, "result": "Invalid API key", "session_id": "s-1"}
+    own_ok = {"type": "result", "subtype": "success", "is_error": False, "result": "done", "session_id": "s-1"}
+    tool = {"type": "tool_result", "tool_use_id": "t1", "content": json.dumps(fake) + "\n" + json.dumps(fake)}
+    turn = [{"type": "user", "message": {"role": "user", "content": [tool]}}]
+
+    _claude_stream(tmp_path / "own-error", [*turn, {**fake, "result": "API Error: 401"}])
+    assert _harness_error(tmp_path / "own-error", "claude-code", 0, episode) == (
+        "AgentError: the claude-code harness reported an error without ending the episode (API Error: 401)"
+    )
+    _claude_stream(tmp_path / "in-tool-output", [*turn, own_ok])  # the fake result is only text in a tool's output
+    assert _harness_error(tmp_path / "in-tool-output", "claude-code", 0, episode) is None
+    _claude_stream(tmp_path / "written-after", [*turn, own_ok, fake])  # added after Claude Code's own final result
+    assert _harness_error(tmp_path / "written-after", "claude-code", 0, episode) is None
+    _claude_stream(tmp_path / "other-session", [*turn, {**fake, "session_id": "s-2"}])
+    assert _harness_error(tmp_path / "other-session", "claude-code", 0, episode) is None
+    _claude_stream(tmp_path / "other-harness", [fake])  # another harness's stdout carries what its commands print
+    assert _harness_error(tmp_path / "other-harness", "mini-swe-agent", 0, episode) is None
+    # a non-zero exit is a harness failure whatever the stream says, with Claude Code's own error as the detail
+    assert _harness_error(tmp_path / "own-error", "claude-code", 1, episode) == (
+        "AgentError: the claude-code harness exited with code 1 without ending the episode (API Error: 401)"
+    )
+    assert _harness_error(tmp_path / "written-after", "claude-code", 1, episode) == (
+        "AgentError: the claude-code harness exited with code 1 without ending the episode"
+    )
 
 
 def test_resume_does_not_fill_a_job_with_another_pair(tmp_path, monkeypatch, capsys) -> None:

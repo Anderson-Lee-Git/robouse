@@ -198,13 +198,14 @@ def test_libero_s_task_data_is_denied_where_the_runner_finds_it(outside_tmp, mon
 def test_a_source_checkout_s_tasks_runs_and_generators_are_denied(tmp_path, monkeypatch) -> None:
     """Run from a checkout, the agent could read every other task's reference solution in tasks/ (the Oct 13 Linux
     sandbox exposed 1,943 oracle files in /opt/robouse; deep audit, security item 3), other trials in runs/ and the
-    generators in adapters/. An installed package is denied whole."""
+    generators in adapters/, and change the robot models in assets/ that later trials load. An installed package is
+    denied whole."""
     repo = tmp_path / "repo"
     (repo / "src" / "robouse").mkdir(parents=True)
     (repo / "pyproject.toml").write_text("")
     monkeypatch.setattr(sandbox, "PKG", repo / "src" / "robouse")
-    assert sandbox.checkout_denied() == [str(repo / d) for d in ("tasks", "runs", "adapters")]
-    for d in ("tasks", "runs", "adapters"):
+    assert sandbox.checkout_denied() == [str(repo / d) for d in ("tasks", "runs", "adapters", "assets")]
+    for d in ("tasks", "runs", "adapters", "assets"):
         assert os.path.realpath(repo / d) in sandbox._denied([])
     monkeypatch.setattr(sandbox, "PKG", tmp_path / "venv" / "lib" / "site-packages" / "robouse")
     assert sandbox.checkout_denied() == []
@@ -413,6 +414,51 @@ def test_a_sandboxed_agent_reads_no_credential_or_task_copy(tmp_path, outside_tm
             s.close()
         other.unlink(missing_ok=True)
         Path(sys.prefix, ".robouse-write-probe").unlink(missing_ok=True)
+
+
+def test_an_agent_cannot_change_a_robot_model_a_later_trial_loads(tmp_path, outside_tmp, monkeypatch) -> None:
+    """The episode server loads robot models from the checkout's assets/ or $ROBOUSE_MENAGERIE_ASSETS, outside the
+    sandbox, in every later trial, so an agent that changed one would change later trials' robots. A sandboxed agent
+    tries to break the Panda's model where $ROBOUSE_MENAGERIE_ASSETS puts it, and to read the checkout's copy (only read,
+    so that a failure cannot damage this checkout). Neither works, the model is unchanged, and the next trial on a task
+    with that robot loads it and runs."""
+    pytest.importorskip("mujoco")
+    from robouse.runner import run_trial
+    from robouse.tasks import load_task
+
+    if not (sys.platform == "darwin" or (sys.platform.startswith("linux") and sandbox.bwrap_works())):
+        pytest.skip("needs the macOS Seatbelt sandbox or working bubblewrap on Linux")
+    panda = ROOT / "assets" / "menagerie" / "franka_emika_panda"
+    if not (panda / "panda.xml").is_file():
+        pytest.skip("this checkout has no MuJoCo Menagerie Panda (assets/menagerie)")
+    models = outside_tmp / "menagerie"
+    shutil.copytree(panda, models / "franka_emika_panda")
+    xml = models / "franka_emika_panda" / "panda.xml"
+    original = xml.read_bytes()
+    monkeypatch.setenv("ROBOUSE_MENAGERIE_ASSETS", str(models))
+    monkeypatch.delenv("ROBOUSE_SANDBOX", raising=False)
+    script = (
+        f'printf "not a model" >> "{xml}" 2>/dev/null && echo "CHANGED {xml}"\n'
+        f'cat "{panda / "panda.xml"}" >/dev/null 2>&1 && echo "READ {panda}"\n'
+        "robo done tamper\n"
+    )
+
+    def tamper(model, prompt, workspace, task, env) -> harnesses.Launch:
+        (workspace / ".robouse" / "tamper.sh").write_text(script)
+        return harnesses.Launch(["bash", str(workspace / ".robouse" / "tamper.sh")], env, notes={"model": "none"})
+
+    monkeypatch.setitem(harnesses.HARNESSES, "tamper", tamper)
+    res = run_trial(load_task(ROOT / "tasks" / "arc-style" / "arc-gravity"), "tamper", "", tmp_path / "job")
+    trial = tmp_path / "job" / res["trial"]
+    out = (trial / "agent" / "stdout.jsonl").read_text()
+    assert '"sandbox": "none"' not in (trial / "config.json").read_text()
+    assert "CHANGED" not in out and xml.read_bytes() == original, out
+    if sandbox.checkout_denied():  # robouse runs from this checkout: its assets/ is out of reach too
+        assert "READ" not in out, out
+    nxt = run_trial(
+        load_task(ROOT / "tasks" / "menagerie" / "menagerie-panda-precise-landing"), "noop", "", tmp_path / "n"
+    )
+    assert nxt["exception"] is None and nxt["reward"] == 0.0, nxt
 
 
 def test_mini_swe_agent_loads_no_global_env_of_the_user(tmp_path, monkeypatch) -> None:

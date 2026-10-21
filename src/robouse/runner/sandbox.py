@@ -1,8 +1,9 @@
 """The sandbox the local runner puts around agent processes: a Seatbelt profile on macOS, bubblewrap on Linux.
 
 In both, an agent cannot read or write:
-  - private settings, the real-robot operator channel, the optional credential pools (robouse._maintainer) and $ROBOUSE_SANDBOX_DENY
-    (`config.sandbox_denied_paths`);
+  - private settings, the real-robot operator channel, the optional credential pools (robouse._maintainer), parts of
+    robouse's cache moved elsewhere (robot models, textures, instrument files, a walking policy: `config.MOVED_CACHE`)
+    and $ROBOUSE_SANDBOX_DENY (`config.sandbox_denied_paths`);
   - credential and task-copy locations in the home folder (`HOME_DENIED`): other programs' logins, the user's own
     Claude Code, Codex and mini-swe-agent settings, and package caches holding copies of the tasks with their reference
     solutions or simulator sources; also the runner's own $CLAUDE_CONFIG_DIR and $CODEX_HOME;
@@ -10,7 +11,7 @@ In both, an agent cannot read or write:
     the agent's own harness home (`own`: its CLAUDE_CONFIG_DIR or CODEX_HOME);
   - the run folder (trial records, including the episode's result.json) and the task folder (its reference solution);
   - any robouse source or install (a `robouse` package directory) and, in a source checkout, its task folders, run
-    folders and task generators (`CHECKOUT_DENIED`);
+    folders, task generators and assets (`CHECKOUT_DENIED`);
   - LIBERO's task data (`libero_data`): the scene files, saved start states and demonstrations of the hf-libero package
     the runner's Python has, and the folders LIBERO's config names, which give a task's layout away;
   - other trials' workspaces and episode sockets;
@@ -96,8 +97,8 @@ HOME_VARS = ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
 # hf-libero's task data folders (inside its `libero` package folder), which give a LIBERO task's layout away
 LIBERO_DATA = ("bddl_files", "init_files")
 # When robouse runs from a source checkout: its task folders (every task's reference solution and verifier), run
-# folders (other trials' records) and task generators
-CHECKOUT_DENIED = ("tasks", "runs", "adapters")
+# folders (other trials' records), task generators and assets (robot models and pins, which later trials load)
+CHECKOUT_DENIED = ("tasks", "runs", "adapters", "assets")
 # Sockets that act for the user or control this machine: container engines (root on the host for a member of their
 # group) and, from the environment, the SSH agent
 SOCKETS = (

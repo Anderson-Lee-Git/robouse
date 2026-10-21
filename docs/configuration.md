@@ -6,7 +6,7 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 |---|---|
 | `ROBOUSE_CACHE_DIR` | cache for simulator virtualenvs, downloaded assets and harness homes (default ~/.cache/robouse) |
 | `ROBOUSE_CONFIG_DIR` | private settings such as remote worker endpoints (default ~/.config/robouse); agents never see it |
-| `ROBOUSE_MENAGERIE_ASSETS` | MuJoCo Menagerie robot models (default: the checkout's assets/menagerie, else <cache>/menagerie) |
+| `ROBOUSE_MENAGERIE_ASSETS` | MuJoCo Menagerie robot models (default: the checkout's assets/menagerie, else <cache>/menagerie); agents never see it |
 | `ROBOUSE_CHEMLAB_ASSETS` | ChemLab-Assets instrument files for the chemlab suite, from `robouse fetch-assets --chemlab` (default <cache>/chemlab); agents never see it |
 | `ROBOUSE_PRICING` | JSON price table for trial cost and the spend cap, used instead of the packaged pricing.json (not added to it) |
 | `ROBOUSE_RECORD_SIZE` | episode video size WIDTHxHEIGHT (default: the backend's native size) |

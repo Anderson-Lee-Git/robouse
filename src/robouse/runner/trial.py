@@ -354,24 +354,53 @@ def interrupt_all() -> None:
             pass
 
 
+# Harnesses whose program ends its output with a result event of its own when it stops by itself: Claude Code's
+# stream-json. Only their output is read for an error result.
+RESULT_EVENT_HARNESSES = ("claude-code",)
+
+
+def _final_result(tdir: Path, harness: str) -> dict | None:
+    """The harness program's own final result event, when its output has one that can be trusted: the last line of the
+    stream, the only result event in it, of the session the stream's init event started. An agent's command output never
+    forms a line of its own in Claude Code's stream-json (it is quoted inside a JSON string), but a process that writes
+    to the harness's output directly (on Linux, through /proc/<pid>/fd/1 of the harness) can add lines: a stream with
+    another result event, or one that does not end with its result event, is not trusted."""
+    if harness not in RESULT_EVENT_HARNESSES:
+        return None
+    try:
+        lines = (tdir / "agent" / "stdout.jsonl").read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    events: list[dict | None] = []
+    for line in filter(str.strip, lines):
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            ev = None
+        events.append(ev if isinstance(ev, dict) else None)
+    results = [ev for ev in events if ev is not None and ev.get("type") == "result"]
+    if len(results) != 1 or events[-1] is not results[0]:
+        return None
+    init = next(
+        (ev for ev in events if ev is not None and (ev.get("type"), ev.get("subtype")) == ("system", "init")), None
+    )
+    if init is None or not init.get("session_id") or init.get("session_id") != results[0].get("session_id"):
+        return None
+    return results[0]
+
+
 def _harness_error(tdir: Path, harness: str, agent_rc: int | None, episode: dict) -> str | None:
     """An agent that never ended the episode itself (no `robo done` or `robo give-up`) and whose harness reported an
-    error: a non-zero exit, or Claude Code's error result event (an API or credential failure). That is a failed run of
-    the harness, not a result of the model."""
+    error: a non-zero exit, or Claude Code's own final error result event (an API or credential failure; _final_result).
+    That is a failed run of the harness, not a result of the model."""
     if harness == "noop" or not (
         episode.get("outcome") == "gave_up" and str(episode.get("agent_text", "")).startswith(RUNNER_PREFIX)
     ):
         return None
+    final = _final_result(tdir, harness)
     detail = ""
-    try:
-        for line in (tdir / "agent" / "stdout.jsonl").read_text(errors="replace").splitlines()[::-1]:
-            ev = json.loads(line) if line.startswith("{") else None
-            if isinstance(ev, dict) and ev.get("type") == "result":
-                if ev.get("is_error"):
-                    detail = clip(ev.get("result") or ev.get("subtype") or "error result", 300)
-                break
-    except (OSError, ValueError):
-        pass
+    if final is not None and final.get("is_error"):
+        detail = clip(final.get("result") or final.get("subtype") or "error result", 300)
     if agent_rc not in (0, None):
         return f"AgentError: the {harness} harness exited with code {agent_rc} without ending the episode" + (
             f" ({detail})" if detail else ""
