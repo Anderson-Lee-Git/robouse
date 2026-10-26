@@ -429,6 +429,28 @@ HARNESSES: dict[str, Builder] = {
 }
 
 
+def plugin(harness: str) -> Callable | None:
+    """The builder a `robouse.harnesses` entry point registers under `harness`, or None."""
+    from importlib.metadata import entry_points
+
+    return next((ep.load() for ep in entry_points(group="robouse.harnesses") if ep.name == harness), None)
+
+
+def base_of(harness: str) -> str:
+    """The built-in harness that `harness` runs: itself when built in; for a plugin, the harness its builder names in a
+    `robouse_base` attribute (e.g. claude-code, for a plugin that extends claude-code's launch), else the plugin's own
+    name. The trial's model and image input are planned as for that harness (runner/trial.py image_input_plan). Raises
+    ValueError when a plugin names a harness that is not built in."""
+    if harness in HARNESSES:
+        return harness
+    base = getattr(plugin(harness), "robouse_base", None)
+    if base is None:
+        return harness
+    if base not in HARNESSES:
+        raise ValueError(f"harness {harness!r} names robouse_base {base!r}, which is not a built-in harness")
+    return base
+
+
 def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env: dict) -> Launch:
     """The launch for one trial. Raises KeyError for an unknown harness, ValueError for a legacy name or a missing
     model, and RuntimeError for missing credentials."""
@@ -439,9 +461,7 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
     env = dict(base_env)
     fn = HARNESSES.get(harness)
     if fn is None:
-        from importlib.metadata import entry_points
-
-        fn = next((ep.load() for ep in entry_points(group="robouse.harnesses") if ep.name == harness), None)
+        fn = plugin(harness)
         if fn is None:
             raise KeyError(f"unknown harness {harness!r}; harnesses: {', '.join(HARNESSES)}")
         for k in PRIVATE_ENV:

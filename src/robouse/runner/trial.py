@@ -197,7 +197,10 @@ def image_input_plan(harness: str, model: str) -> dict:
     Refused (ValueError): a legacy -glm harness name or a baseten/ model (recorded trials only), show-harness
     through the gateway with a model the registry does not list as reading images (its policy is the model's reading
     of the camera images, which the gateway would remove), and gemini-cli with a model that is not a Gemini API model
-    (it does not use the gateway)."""
+    (it does not use the gateway).
+
+    A plugin harness that names a built-in harness as its `robouse_base` (harnesses.base_of) is planned as that harness
+    and recorded under its own name, with `harness_base`."""
     from .. import config
     from ..harnesses import models
 
@@ -205,18 +208,20 @@ def image_input_plan(harness: str, model: str) -> dict:
         raise ValueError(why)
     if why := models.history_refusal(model):  # baseten/...: the models of recorded trials only
         raise ValueError(why)
-    canon, mid = harness, model
+    from ..harnesses import base_of
+
+    name, canon, mid = harness, base_of(harness), model
     if canon == "jev":  # TypeSafe's Jev: a decision model, called by its own client, never through the gateway
         from ..harnesses.jev import model_id
 
         return {
-            "harness": canon,
+            "harness": name,
             "model": model_id(mid),
             "image_input": False,
             "image_input_reason": "the jev client sends Jev text only",
         }
     if canon not in LLM_HARNESSES:
-        return {"harness": canon, "model": mid, "image_input": None, "image_input_reason": "no language model"}
+        return {"harness": name, "model": mid, "image_input": None, "image_input_reason": "no language model"}
     mid = mid or models.DEFAULT_MODELS.get(canon, "")
     if not mid:  # show-harness: no default model
         from ..harnesses.show_harness import NO_MODEL
@@ -225,7 +230,7 @@ def image_input_plan(harness: str, model: str) -> dict:
     if canon in SELF_HOSTED_HARNESSES and models.split(mid)[0] is None:
         # a model served by the user (e.g. a fine-tuned VLM on vLLM): no gateway, so nothing removes images
         return {
-            "harness": canon,
+            "harness": name,
             "model": mid,
             "image_input": True,
             "image_input_reason": "a self-hosted model: images are always sent",
@@ -237,7 +242,7 @@ def image_input_plan(harness: str, model: str) -> dict:
         if why := refusal(ref):
             raise ValueError(why)
     accepts = models.accepts_images(ref)
-    plan = {"harness": canon, "model": ref.id if models.split(mid)[0] else mid, "accepts_images": accepts}
+    plan = {"harness": name, "model": ref.id if models.split(mid)[0] else mid, "accepts_images": accepts}
     if canon in models.NO_IMAGE_HARNESSES:
         plan.update(image_input=False, image_input_reason=f"{canon} passes no images to its model")
     elif accepts is not True and canon == "show-harness":  # its policy is the model's reading of the camera images
@@ -261,6 +266,8 @@ def image_input_plan(harness: str, model: str) -> dict:
     if not plan["image_input"] and models.NATIVE_VENDORS.get(canon) == ref.provider:
         # a harness on its own vendor has no gateway, so nothing could remove the images
         raise ValueError(f"{canon} with {ref.id} cannot run without image input: it does not use the model gateway")
+    if name != canon:
+        plan["harness_base"] = canon
     return plan
 
 
@@ -445,13 +452,17 @@ def _result_error(harness: str, final: dict) -> str:
 def _harness_error(tdir: Path, harness: str, agent_rc: int | None, episode: dict) -> str | None:
     """An agent that never ended the episode itself (no `robo done` or `robo give-up`) and whose harness reported an
     error: a non-zero exit, or Claude Code's or Gemini CLI's own final error result event (an API or credential
-    failure; _final_result). That is a failed run of the harness, not a result of the model."""
+    failure; _final_result). That is a failed run of the harness, not a result of the model. A plugin is read as the
+    built-in harness it names as its base (harnesses.base_of), whose program writes its output."""
+    from ..harnesses import base_of
+
     if harness == "noop" or not (
         episode.get("outcome") == "gave_up" and str(episode.get("agent_text", "")).startswith(RUNNER_PREFIX)
     ):
         return None
-    final = _final_result(tdir, harness)
-    detail = _result_error(harness, final) if final is not None else ""
+    base = base_of(harness)
+    final = _final_result(tdir, base)
+    detail = _result_error(base, final) if final is not None else ""
     if agent_rc not in (0, None):
         return f"AgentError: the {harness} harness exited with code {agent_rc} without ending the episode" + (
             f" ({detail})" if detail else ""
@@ -542,6 +553,7 @@ def run_trial(
         "image_input": plan["image_input"],
         "image_input_reason": plan["image_input_reason"],
         **({"accepts_images": plan["accepts_images"]} if "accepts_images" in plan else {}),
+        **({"harness_base": plan["harness_base"]} if "harness_base" in plan else {}),
         "spend_cap_usd": None,  # set once the model gateway is up (harnesses on their own vendor are not capped)
         "provenance": provenance(),
     }

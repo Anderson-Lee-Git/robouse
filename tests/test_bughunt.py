@@ -341,6 +341,27 @@ def test_only_the_harness_s_own_final_result_marks_a_harness_failure(tmp_path) -
     )
 
 
+def test_a_plugin_s_final_result_is_read_as_its_base_harness_s(tmp_path, monkeypatch) -> None:
+    """A plugin that runs Claude Code (robouse_base claude-code) reports Claude Code's own error result like
+    claude-code does; a plugin that names no base has no stream Robo Use can trust."""
+    from robouse import harnesses
+    from robouse.core.protocol import RUNNER_PREFIX
+    from robouse.runner.trial import _harness_error
+
+    def extends(*a):
+        pass
+
+    extends.robouse_base = "claude-code"
+    monkeypatch.setattr(harnesses, "plugin", {"claude-code-plus": extends, "scripted": lambda *a: None}.get)
+    episode = {"outcome": "gave_up", "agent_text": f"{RUNNER_PREFIX} agent exited without robo done"}
+    error = {"type": "result", "subtype": "success", "is_error": True, "result": "API Error: 401", "session_id": "s-1"}
+    _claude_stream(tmp_path, [error])
+    assert _harness_error(tmp_path, "claude-code-plus", 0, episode) == (
+        "AgentError: the claude-code-plus harness reported an error without ending the episode (API Error: 401)"
+    )
+    assert _harness_error(tmp_path, "scripted", 0, episode) is None
+
+
 def test_resume_does_not_fill_a_job_with_another_pair(tmp_path, monkeypatch, capsys) -> None:
     """--resume counted a finished trial as done whatever harness and model ran it, so resuming a job started with
     another pair (such as robouse 0.4.0's default for mini-swe-agent, Baseten's GLM-5.3) filled the rest with the new
