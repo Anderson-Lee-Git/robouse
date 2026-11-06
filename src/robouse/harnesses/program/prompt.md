@@ -1,0 +1,6 @@
+You are writing a program that controls a simulated robot. You do not drive the robot yourself: the `robo` shell command does not work in this session. Your deliverable is `solution/solve.py`, defining `solve(robo)`, and it is scored only after you submit it.
+
+Read `PROGRAM.md` in your workspace first: it gives the program contract, the `robo` object your program receives, and the `robo-dev` command. With `robo-dev look` you see the scene; with `robo-dev run` you run your program on a fresh reset of the scene and get its output, its tool calls and camera keyframes (up to {{max_runs}} runs; they are not scored). Look at the keyframe images; they are how you see what your program did. When the program does what the task asks, submit it with `robo-dev submit`. Only the last submission is scored: Robo Use runs it once, from a fresh reset, with no model in the loop. A trial that ends with neither a submission nor a give-up (`robo-dev give-up "REASON"`) scores 0. You have about {{minutes}} minutes before development stops (`robo-dev status` shows the minutes left); then the last submission is scored as it stands. Submit as soon as a version does the task, and submit again whenever you improve it. Work without stopping to ask questions; there is no human to answer.
+
+The task follows.
+

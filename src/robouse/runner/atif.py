@@ -1425,7 +1425,7 @@ def _episode_epoch(trial: Path, episode: dict) -> float | None:
 # harnesses without an LLM transcript: their steps come from the episode server's trace
 TRACE_HARNESSES = ("oracle", "noop", "molmoact2", "vla")
 # harnesses whose transcript is another harness's agent program's: aspire runs Claude Code, aspire-codex Codex
-TRANSCRIPT_OF = {"aspire": "claude-code", "aspire-codex": "codex"}
+TRANSCRIPT_OF = {"aspire": "claude-code", "aspire-codex": "codex", "program": "claude-code", "program-codex": "codex"}
 
 
 def _prompt(trial: Path, cfg: dict, harness: str) -> str:
@@ -1449,8 +1449,10 @@ def _prompt(trial: Path, cfg: dict, harness: str) -> str:
         return PROMPT_PREFIX + instr if instr else f"(prompt not recorded) task {cfg.get('task')}"
     from ..harnesses.interface import prompt_prefix
 
+    if instr and cfg.get("extra_instruction"):
+        instr += "\n\n" + cfg["extra_instruction"].strip() + "\n"
     return (
-        prompt_prefix(cfg.get("interface") or "cli") + instr
+        prompt_prefix(cfg.get("interface") or "cli", cfg.get("robot_framing", "simulated")) + instr
         if instr
         else f"(prompt not recorded) task {cfg.get('task')}"
     )

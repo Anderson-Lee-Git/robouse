@@ -22,6 +22,9 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 | `ROBOUSE_METADRIVE_PYTHON` | Python of the MetaDrive virtualenv (default <cache>/metadrive-venv/bin/python) |
 | `ROBOUSE_MYOSUITE_PYTHON` | Python of the MyoSuite virtualenv (default <cache>/myosuite-venv/bin/python) |
 | `ROBOUSE_ROBOCASA_PYTHON` | Python of the RoboCasa virtualenv (default <cache>/robocasa-venv/bin/python) |
+| `ROBOUSE_ROBOCASA_OBJECT_ROOT` | Directory of authored RoboCasa object bundles (needed for custom/... objects) |
+| `ROBOUSE_ROBOCASA_PLUGINS` | comma-separated importable modules that register scene-specific RoboCasa scenario predicates and liquid container kinds (each has register(scenario); robocasa_scenario backend and worker) |
+| `ROBOUSE_LIQUID_WORK_ROOT` | host-side scratch folder for the SPH liquid's solver files (robocasa_scenario scenes with a liquid; default: a temporary folder) |
 | `ROBOUSE_RLEBENCH_PYTHON` | Python of the RLE-Bench virtualenv (default <cache>/rlebench-venv/bin/python) |
 | `ROBOUSE_CAPX_PYTHON` | Python of the CaP-X virtualenv (default <cache>/capx-venv/bin/python) |
 | `ROBOUSE_CAPX_LIBERO_PYTHON` | Python of the CaP-X LIBERO virtualenv (default <cache>/capx-libero-venv/bin/python) |
@@ -49,3 +52,25 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 | `ROBOUSE_ASPIRE_PRACTICE_EPISODES` | practice episodes one `aspire` trial may run (default 300, 650 with evosearch) |
 | `ROBOUSE_ASPIRE_PRACTICE_WORKERS` | practice episodes an `aspire` trial runs at once (default 4) |
 | `ROBOUSE_ASPIRE_REUSE` | whether an `aspire` trial whose library already holds a selected program for the task evaluates it instead of running Stage 1, as ASPIRE evaluates one frozen program on every held-out seed: 1 (default) when the same harness and model selected it, any whichever selected it, 0 never |
+
+
+## Robot prompt framing
+
+`run` and `run-many` accept `--robot-framing {simulated,real}`. The default,
+`simulated`, preserves existing prompts byte for byte. `real` changes
+"You are controlling a simulated robot." to "You are controlling a real robot."
+(including MCP/both prefixes), or "a program that controls a simulated robot."
+to "a program that controls a real robot." in the program preamble. In `PROGRAM.md`,
+it also changes "Runs take simulated time and real time" to "Runs take robot time
+and real time", and "Every simulated step counts" to "Every step counts"; each
+expected phrase must be present. Development
+still uses "a fresh reset of the scene". This option changes prompt framing,
+not the simulator or hardware backend.
+
+Supported harnesses are `claude-code`, `codex`, `program`, `program-codex` and
+plugins whose `base_of()` is one of those. Others refuse `real`, as does the
+BenchFlow engine. A missing expected phrase raises rather than silently using an
+unchanged prompt. `config.json` and `job.json` record `robot_framing`; resume
+refuses another framing (older configs without the field mean `simulated`).
+ATIF preserves the framed prompt. The private runner-to-builder variable
+`_ROBOUSE_ROBOT_FRAMING` never reaches the agent environment.

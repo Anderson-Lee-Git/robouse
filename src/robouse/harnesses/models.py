@@ -38,6 +38,8 @@ NATIVE_VENDORS = {
     "codex": "openai",
     "aspire": "anthropic",
     "aspire-codex": "openai",
+    "program": "anthropic",
+    "program-codex": "openai",
     "gemini-cli": "gemini",
 }
 FIRST_PARTY_IMAGE_PROVIDERS = {"anthropic", "openai", "gemini"}
@@ -64,6 +66,8 @@ DEFAULT_MODELS = {
     "dimcode": ZAI_CODING_PLAN_MODEL,
     "aspire": "claude-sonnet-5",
     "aspire-codex": "gpt-6-astra",
+    "program": "claude-sonnet-5",
+    "program-codex": "gpt-6-astra",
     "kinex": ZAI_CODING_PLAN_MODEL,
 }
 # History: the defaults when the trial folders that leave config.json's `model` empty were recorded (robouse 0.4.0 and

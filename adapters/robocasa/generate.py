@@ -1,10 +1,16 @@
-"""RoboCasa (RoboCasa365 kitchens on robosuite 1.5) -> robouse tasks (suite "robocasa").
+"""RoboCasa (RoboCasa365 kitchens on robosuite 1.5) -> robouse tasks (suite "robocasa", or "robocasa-vision" with --vision).
 
 The task list, kitchen layouts and recorded episode layouts live in src/robouse/backends/robocasa.py (TASKS) and
 src/robouse/backends/robocasa_episodes/; the simulation runs in a separate virtualenv (see docs/suites/robocasa.md).
 Reference solutions (robocasa_oracles.py) drive the robot only through the robo socket.
 
-Usage: python adapters/robocasa/generate.py [--out tasks/robocasa]
+`--vision` writes the image-only variant (suite "robocasa-vision", version VISION_VERSION): the same scenes, budgets,
+success checks and reference solutions, but `robo observe` gives only the robot's own state and the instruction
+(`obs_mode: vision`), never the task fields; the policy sees the kitchen through RoboCasa's two shoulder cameras and its
+wrist camera (the views RoboCasa's own policies use), each with its projection matrix in `robo info`. The reference
+solutions keep the task fields (the oracle's privileged view).
+
+Usage: python adapters/robocasa/generate.py [--vision] [--out tasks/robocasa]
 """
 
 from __future__ import annotations
@@ -53,6 +59,25 @@ FIELDS = (
     "available)."
 )
 
+VISION_VERSION = "1.0.0"
+VISION_CAMERAS = ["robot0_agentview_left", "robot0_agentview_right", "robot0_eye_in_hand"]
+VISION_FIELDS = ["hand_pos", "hand_target", "gripper_open", "robot_base_pos", "robot_forward", "task_instruction"]
+# the counter top's height in every shipped kitchen (measured on each task's recorded layout)
+COUNTER_Z = 0.92
+
+FIELDS_VISION = (
+    "**Observation.** You see the kitchen only through the cameras. `robo observe` gives the robot's own state and the "
+    "instruction: `hand_pos` (the point between the fingertips), `hand_target` (the commanded target), `gripper_open` "
+    "(0 closed .. 1 open), `robot_base_pos`, `robot_forward` and `task_instruction` (RoboCasa's own language "
+    "instruction). It does not say where the objects, handles, knobs or other fixtures are, or what state they are in. "
+    "Each `robo observe` also saves a {w}x{h} image from each camera and prints their paths; open them to look: "
+    "`robot0_agentview_left` and `robot0_agentview_right` (on the robot's left and right shoulders, looking forward and "
+    "down) and `robot0_eye_in_hand` (on the wrist, moving with the hand). The counter top is at about z = {counter:g}.\n\n"
+    "`robo info` lists each camera with a 3x4 `projection` matrix P: for a world point (x, y, z), `[u*w, v*w, w] = "
+    "P @ [x, y, z, 1]` gives its pixel (u, v) in that camera's saved image (u to the right, v down, origin at the "
+    "top-left). The wrist camera moves with the hand: its matrix is for the hand's pose when you call `robo info`."
+)
+
 TXT = {
     "CloseDrawer": dict(
         title="Close the drawer",
@@ -62,6 +87,10 @@ TXT = {
         success=(
             "RoboCasa's own check for CloseDrawer: the drawer is at most 5 % open (`drawer_open_fraction` <= 0.05, where 1 "
             "means pulled out by 55 % of the drawer's depth, as far as RoboCasa opens drawers)."
+        ),
+        success_vision=(
+            "RoboCasa's own check for CloseDrawer: the drawer is at most 5 % open, where 100 % means pulled out by 55 % "
+            "of the drawer's depth, as far as RoboCasa opens drawers."
         ),
         fields=(
             "`drawer_handle_pos` (centre of the drawer handle; it moves with the drawer), `drawer_open_fraction` (0 closed .. 1 "
@@ -128,6 +157,11 @@ TXT = {
             "(`kettle_lid_open` <= 0.01). The lid is sprung: while it is more than 90 % open it swings back to fully open, "
             "so it has to be pushed past that point."
         ),
+        success_vision=(
+            "RoboCasa's own check for CloseElectricKettleLid: the lid is at most 1 % of its travel (90 degrees) from "
+            "closed. The lid is sprung: while it is more than 90 % open it swings back to fully open, so it has to be "
+            "pushed past that point."
+        ),
         fields=(
             "`kettle_pos` (the kettle's centre), `kettle_lid_pos` and `kettle_lid_size` (centre and bounding-box size of the "
             "lid), `kettle_lid_hinge_pos` and `kettle_lid_hinge_axis` (the lid's hinge; positive rotation about the axis by "
@@ -191,19 +225,21 @@ TXT = {
 }
 
 
-def build(tid: str) -> tuple[dict, str]:
+def build(tid: str, vision: bool = False) -> tuple[dict, str]:
     t = TASKS[tid]
     x = TXT[t["env"]]
+    success = x.get("success_vision", x["success"]) if vision else x["success"]
+    w, h = 384, 288  # the backend's render size
     body = (
         f"# {x['title']} (RoboCasa kitchen {t['layout']})\n\n"
         + SCENE.format(layout=t["layout"], style=t["style"])
         + "\n\n"
-        f"**Goal:** {x['goal']}\n\n**Success:** {x['success']} Success is judged by the episode server after you call "
+        f"**Goal:** {x['goal']}\n\n**Success:** {success} Success is judged by the episode server after you call "
         "`robo done` and the robot has held still for about 10 steps.\n\n"
-        f"**Task fields in `robo observe`:** {x['fields']}\n\n"
+        + ("" if vision else f"**Task fields in `robo observe`:** {x['fields']}\n\n")
         + CONTROL.format(tool="pointing straight down" if t.get("tool", "down") == "down" else "pointing forward")
         + "\n\n"
-        + FIELDS
+        + (FIELDS_VISION.format(w=w, h=h, counter=COUNTER_Z) if vision else FIELDS)
         + f"\n\nThe step budget is {t['max_steps']} steps ({t['max_steps'] * 0.05:.0f} s of simulated time).\n\n"
         + ROBO_USAGE
     )
@@ -240,24 +276,38 @@ def build(tid: str) -> tuple[dict, str]:
             "success_mode": "final",
         },
     }
+    if vision:
+        vid = tid.replace("robocasa-", "robocasa-vision-", 1)
+        meta["task"]["name"] = f"robouse/{vid}"
+        meta["metadata"].update(suite="robocasa-vision", suite_version=VISION_VERSION)
+        meta["metadata"]["tags"].append("vision")
+        meta["agent"]["timeout_sec"] = 2400
+        meta["robouse"].update(
+            id=vid,
+            camera=VISION_CAMERAS[0],
+            cameras=list(VISION_CAMERAS),
+            obs_mode="vision",
+            visible_fields=list(VISION_FIELDS),
+        )
     return meta, body
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "tasks" / "robocasa"))
+    ap.add_argument("--vision", action="store_true", help="the image-only variant (suite robocasa-vision)")
+    ap.add_argument("--out", default=None)
     a = ap.parse_args()
-    out = Path(a.out)
+    out = Path(a.out or ROOT / "tasks" / ("robocasa-vision" if a.vision else "robocasa"))
     if out.exists():
         shutil.rmtree(out)
     verify = _verify()
     for tid in TASKS:
-        meta, body = build(tid)
+        meta, body = build(tid, a.vision)
         oracle = (
             "#!/bin/bash\n# Reference solution: scripted controller that uses only the robo socket (robocasa_oracles.py).\n"
             f"set -euo pipefail\npython -m robouse.oracle --backend robocasa --env {tid}\n"
         )
-        write_task(out / tid, meta, body, oracle, verify)
+        write_task(out / meta["robouse"]["id"], meta, body, oracle, verify)
     print(f"wrote {len(TASKS)} tasks to {out}")
 
 

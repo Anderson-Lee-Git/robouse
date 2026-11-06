@@ -62,34 +62,40 @@ def select_tasks(
     return tasks
 
 
-def resume_refusal(job_dir: Path, harness: str, model: str) -> str | None:
+def resume_refusal(
+    job_dir: Path, harness: str, model: str, reasoning_effort: str | None = None,
+    robot_framing: str = "simulated",
+) -> str | None:
     """Why `--resume` cannot add trials of (harness, model) to this job folder, or None. A job holds one pair: when its
     trials recorded another (models.canonical; robouse 0.4.0 left the model empty for its default, which reads as
-    baseten/zai-org/GLM-5.3), resuming would fill the rest of the job with a different pair."""
+    baseten/zai-org/GLM-5.3), resuming would fill the rest of the job with a different pair. A pair at another
+    reasoning effort is another pair."""
     from ..harnesses import models
     from .trial import image_input_plan
 
     plan = image_input_plan(harness, model)
-    want = models.canonical(plan["harness"], plan["model"] or "")
-    other: dict[tuple[str, str], int] = {}
+    want = (*models.canonical(plan["harness"], plan["model"] or ""), reasoning_effort or None)
+    other: dict[tuple[str, str, str | None], int] = {}
     for cj in job_dir.glob("*/config.json"):
         try:
             c = json.loads(cj.read_text())
         except (OSError, ValueError):  # a trial folder that is still being written, or broken
             continue
         if isinstance(c, dict) and c.get("harness"):
-            pair = models.canonical(str(c["harness"]), str(c.get("model") or ""))
+            if c.get("robot_framing", "simulated") != robot_framing:
+                return f"--resume: {job_dir} holds another robot_framing condition; use a new --out"
+            pair = (*models.canonical(str(c["harness"]), str(c.get("model") or "")), c.get("reasoning_effort") or None)
             if pair != want:
                 other[pair] = other.get(pair, 0) + 1
     if not other:
         return None
 
-    def name(pair: tuple[str, str]) -> str:
-        return f"{pair[0]} with {pair[1]}" if pair[1] else pair[0]
+    def name(pair: tuple[str, str, str | None]) -> str:
+        return (f"{pair[0]} with {pair[1]}" if pair[1] else pair[0]) + (f" at {pair[2]} effort" if pair[2] else "")
 
-    found = ", ".join(f"{name(p)} ({n} trial{'s' * (n != 1)})" for p, n in sorted(other.items()))
+    found = ", ".join(f"{name(p)} ({n} trial{'s' * (n != 1)})" for p, n in sorted(other.items(), key=str))
     return (
-        f"--resume: {job_dir} holds trials of {found}, not of {name(want)}; a job holds one harness and model, so run "
+        f"--resume: {job_dir} holds trials of {found}, not of {name(want)}; a job holds one harness, model and reasoning effort, so run "
         "this pair into a new --out"
     )
 
@@ -117,7 +123,13 @@ def run_many(
     extra_instruction: str = "",
     prior_learnings: str | None = None,
     interface: str | None = None,
+    reasoning_effort: str | None = None,
+    robot_framing: str = "simulated",
 ) -> list[dict]:
+    from ..harnesses import robot_framing_refusal
+
+    if why := robot_framing_refusal(harness, robot_framing):
+        raise ValueError(why)
     tasks = select_tasks(root, filt, ids, include, exclude, limit, sample, sample_seed, mode)
     if concurrency > 1 and any(t.spec.get("backend") == "real" and _live(t.spec) for t in tasks):
         # one live robot, one trial at a time (a rig from --rig or ROBOUSE_RIG): a stop must hold every later trial
@@ -127,7 +139,7 @@ def run_many(
     if (
         resume
     ):  # skip (task, seed, epoch) already finished in this job (an unfinished trial dir is left as evidence and rerun)
-        if why := resume_refusal(job_dir, harness, model):  # only trials of the same pair count as done
+        if why := resume_refusal(job_dir, harness, model, reasoning_effort, robot_framing):  # only the same pair's trials count
             raise ValueError(why)
         done = set()
         for rj in job_dir.glob("*/result.json"):
@@ -159,8 +171,10 @@ def run_many(
                 "sample_seed": sample_seed,
                 "retries": retries,
                 "extra_instruction": extra_instruction,
+                "robot_framing": robot_framing,
                 "prior_learnings": prior_learnings,
                 "interface": interface,
+                "reasoning_effort": reasoning_effort,
                 "started_at": now(),
             },
             indent=2,
@@ -199,6 +213,8 @@ def run_many(
                     prior_learnings=prior_learnings,
                     attempt=attempt,
                     interface=interface,
+                    reasoning_effort=reasoning_effort,
+                    robot_framing=robot_framing,
                 )
                 if not r["exception"] or live:  # a live robot is never retried blind: a failed trial holds the batch
                     break

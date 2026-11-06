@@ -167,6 +167,18 @@ class RobocasaBackend(Backend):
         w, h = (width, height) if width and height else self.render_size
         return self._call("render", camera=self.camera, width=int(w), height=int(h))
 
+    def camera_info(self, cameras: list[str]) -> list[dict]:
+        """Per camera, the 3x4 projection in the rendered image's pixels (render() returns upright images), from the
+        camera's pose now: a camera on the arm (robot0_eye_in_hand) moves with it."""
+        from ...core.cameras import pinhole_camera
+
+        w, h = self.render_size
+        out = []
+        for name in cameras:
+            c = self._call("camera", name=name)
+            out.append(pinhole_camera(name, c["pos"], c["xmat"], c["fovy"], int(w), int(h)))
+        return out
+
     def close(self) -> None:
         self.worker.close()
 

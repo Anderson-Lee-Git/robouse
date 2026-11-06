@@ -41,6 +41,7 @@ BACKENDS: dict[str, tuple[str, str]] = {
     "real": ("real", "RealArmBackend"),  # real arms: live hardware or the hardware-in-the-loop mock
     "rlebench": ("rlebench", "RLEBenchBackend"),  # RLE-Bench interactive-control tasks; simulator worker
     "robocasa": ("robocasa", "RobocasaBackend"),  # simulator worker
+    "robocasa_scenario": ("robocasa", "RobocasaScenarioBackend"),  # kitchens from a scenario spec; simulator worker
     "robodojo": ("robodojo", "RoboDojoBackend"),  # RoboDojo on Isaac Sim; remote GPU worker
     "roboharm": ("roboharm", "RoboHarmBackend"),
     "robosuite": ("robosuite", "RobosuiteBackend"),

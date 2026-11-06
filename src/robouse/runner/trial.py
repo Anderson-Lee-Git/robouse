@@ -178,6 +178,8 @@ LLM_HARNESSES = (
     "show-harness",
     "aspire",
     "aspire-codex",
+    "program",
+    "program-codex",
 )
 # harnesses that may also drive a self-hosted model named without a provider prefix (no gateway; images always sent)
 SELF_HOSTED_HARNESSES = ("show-harness",)
@@ -492,6 +494,23 @@ def _provider_error(stats: object, episode: dict) -> str | None:
     )
 
 
+INFRA_OUTCOME = "infrastructure_error"
+
+
+def _mark_infrastructure_error(episode: dict, exc: str) -> None:
+    """A trial that failed on infrastructure (the scene never reset, the harness or provider failed, an integrity
+    check tripped) has no result. Say so explicitly in the episode instead of leaving the runner's own `gave_up`
+    and its derived metrics (`safe_failure: 1`), which read as a model that chose to stop without a safety event.
+    Missing evidence is never a safe outcome; the episode's original outcome is kept for diagnosis."""
+    if episode.get("outcome") != INFRA_OUTCOME:
+        episode["outcome_before_error"] = episode.get("outcome")
+        episode["outcome"] = INFRA_OUTCOME
+    episode["infrastructure_error"] = exc.split(":")[0]
+    if isinstance(episode.get("metrics"), dict):
+        # not a scored episode: no success, safety or quality measurement exists
+        episode["metrics"] = {k: None for k in episode["metrics"]} | {"scored": False}
+
+
 def run_trial(
     task: Task,
     harness: str,
@@ -506,7 +525,13 @@ def run_trial(
     prior_learnings: str | None = None,
     attempt: int = 0,
     interface: str | None = None,
+    reasoning_effort: str | None = None,
+    robot_framing: str = "simulated",
 ) -> dict:
+    if why := harnesses.effort_refusal(harness, reasoning_effort):
+        raise ValueError(why)
+    if why := harnesses.robot_framing_refusal(harness, robot_framing):
+        raise ValueError(why)
     plan = image_input_plan(harness, model)
     cap = spend_cap_usd()
     # recorded and launched under the canonical names: harness = the agent program, model = provider-prefixed id
@@ -548,7 +573,9 @@ def run_trial(
         "split": split,
         "attempt": attempt,
         "extra_instruction": extra_instruction or None,
+        "robot_framing": robot_framing,
         "prior_learnings": prior_learnings,
+        "reasoning_effort": reasoning_effort or None,  # None: the harness's default
         "requested": {"harness": requested[0], "model": requested[1]} if requested != (harness, model) else None,
         "image_input": plan["image_input"],
         "image_input_reason": plan["image_input_reason"],
@@ -631,6 +658,9 @@ def run_trial(
         if harness == "oracle":  # only the reference solution may see privileged state in vision tasks
             base_env["ROBOUSE_ORACLE_TOKEN"] = oracle_token
         base_env["ROBOUSE_INTERFACE"] = interface
+        if reasoning_effort:
+            base_env[harnesses.EFFORT_ENV] = reasoning_effort
+        base_env[harnesses.ROBOT_FRAMING_ENV] = robot_framing
         launch = harnesses.build(harness, model, task.instruction, ws, task, base_env)
         if launch.stop_file is not None:  # a model gateway: it enforces the spend cap
             cfg["spend_cap_usd"] = cap or None
@@ -753,6 +783,8 @@ def run_trial(
         # stopped at the spend cap: neither a model failure nor an infrastructure one
         episode["outcome"] = "budget_stop"
     reward = _verify(task, episode, tdir) if verified and not refused else 0.0
+    if exc and not interrupted:
+        _mark_infrastructure_error(episode, exc)
 
     # artifacts: video + observation images the agent saw
     if (tdir / "episode" / "recording.mp4").exists():

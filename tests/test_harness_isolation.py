@@ -538,6 +538,57 @@ def test_each_claude_code_trial_gets_its_own_config_home(tmp_path, monkeypatch) 
     assert launch.env["CLAUDE_CONFIG_DIR"] == str(ws / ".robouse" / "claude-home")
 
 
+def test_claude_code_runs_at_the_recorded_reasoning_effort_only(tmp_path, monkeypatch) -> None:
+    """`--reasoning-effort` reaches Claude Code as `--effort`, and nothing else sets its effort or thinking: variables
+    in the runner's shell that would (CLAUDE_CODE_EFFORT_LEVEL, MAX_THINKING_TOKENS, ...) are dropped, so a trial runs
+    at the effort its config.json records, or at Claude Code's default when that is None."""
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-key")
+    monkeypatch.setattr(harnesses, "_via_gateway", lambda h, m: None)
+    shell = {"PATH": "/usr/bin", **{k: "high" for k in harnesses.CLAUDE_THINKING_VARS}}
+    for effort in ("medium", ""):
+        ws = tmp_path / (effort or "default")
+        (ws / ".robouse").mkdir(parents=True)
+        env = {**shell, **({harnesses.EFFORT_ENV: effort} if effort else {})}
+        launch = harnesses.build("claude-code", "claude-opus-5-5", "TASK", ws, None, env)
+        assert harnesses._flag(launch.cmd, "--effort") == (effort or None)
+        assert not set(launch.env) & {harnesses.EFFORT_ENV, *harnesses.CLAUDE_THINKING_VARS}
+
+    # a plugin that does not pass the effort on is refused, rather than recorded as having run at it
+    monkeypatch.setattr(harnesses, "plugin", lambda name: lambda *a: harnesses.Launch(["agent"], {}))
+    with pytest.raises(RuntimeError, match="did not pass reasoning effort 'medium'"):
+        harnesses.build("other", "m", "TASK", tmp_path, None, {harnesses.EFFORT_ENV: "medium"})
+
+    gw = SimpleNamespace(url="http://127.0.0.1:1", key="k", model="m", stats={}, stop=lambda: None, stop_file=None)
+    monkeypatch.setattr(harnesses, "_via_gateway", lambda h, m: SimpleNamespace(bare="m", id="p/m", provider="p"))
+    monkeypatch.setattr(harnesses, "_gateway", lambda ref, env, protocol: gw)
+    with pytest.raises(ValueError, match="Claude Code's own login only"):
+        harnesses.HARNESSES["claude-code"]("p/m", "TASK", tmp_path, None, {harnesses.EFFORT_ENV: "medium"})
+
+
+def test_reasoning_effort_is_refused_where_it_would_not_apply() -> None:
+    assert harnesses.effort_refusal("claude-code", None) is None
+    assert harnesses.effort_refusal("claude-code", "medium") is None
+    assert "must be one of low, medium, high, xhigh, max" in harnesses.effort_refusal("claude-code", "huge")
+    assert "not codex" in harnesses.effort_refusal("codex", "medium")
+
+
+def test_a_job_at_another_reasoning_effort_is_not_resumed(tmp_path) -> None:
+    import json
+
+    from robouse.runner.jobs import resume_refusal
+
+    trial = tmp_path / "arc-gravity__claude-code__a1b2c3"
+    trial.mkdir()
+    cfg = {"harness": "claude-code", "model": "claude-opus-5-5", "reasoning_effort": "medium"}
+    (trial / "config.json").write_text(json.dumps(cfg))
+    assert resume_refusal(tmp_path, "claude-code", "claude-opus-5-5", "medium") is None
+    why = resume_refusal(tmp_path, "claude-code", "claude-opus-5-5", "high")
+    assert why and "holds trials of claude-code with claude-opus-5-5 at medium effort (1 trial)" in why
+    assert resume_refusal(tmp_path, "claude-code", "claude-opus-5-5")
+
+
 def test_each_codex_trial_gets_its_own_home(tmp_path, monkeypatch) -> None:
     """Codex trials shared one CODEX_HOME in robouse's cache (codex-home, or codex-home-gateway), with the sessions and
     memories Codex keeps there, so a trial could read what an earlier one left (as with Claude Code; deep audit,

@@ -63,10 +63,10 @@ def check(harness: str, interface: str) -> None:
         raise ValueError(f"harness {harness!r} has no MCP client; use --interface cli")
 
 
-def prompt_prefix(interface: str) -> str:
-    from . import PROMPT_PREFIX
+def prompt_prefix(interface: str, robot_framing: str = "simulated") -> str:
+    from . import PROMPT_PREFIX, frame_prompt
 
-    return PROMPTS.get(interface, PROMPT_PREFIX)
+    return frame_prompt(PROMPTS.get(interface, PROMPT_PREFIX), robot_framing)
 
 
 def robo_mcp_cmd(workspace: Path, path: str | None = None) -> list[str]:
@@ -96,11 +96,11 @@ def stdio_config(workspace: Path, sock: str, env: dict) -> dict:
 
 
 def _swap_prompt(cmd: list[str], interface: str) -> None:
-    from . import PROMPT_PREFIX
-
-    for i, a in enumerate(cmd):
-        if isinstance(a, str) and a.startswith(PROMPT_PREFIX):
-            cmd[i] = prompt_prefix(interface) + a[len(PROMPT_PREFIX) :]
+    for framing in ("simulated", "real"):
+        prefix = prompt_prefix("cli", framing)
+        for i, a in enumerate(cmd):
+            if isinstance(a, str) and a.startswith(prefix):
+                cmd[i] = prompt_prefix(interface, framing) + a[len(prefix) :]
 
 
 def apply(harness: str, launch, interface: str, workspace: Path, sock: str) -> None:

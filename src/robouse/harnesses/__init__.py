@@ -39,6 +39,10 @@ Harnesses
                          Claude Code: practice episodes on other seeds, then the selected program on the scored
                          episode; model as for claude-code; see aspire/
   aspire-codex           the same, run by Codex; model as for codex
+  program                code as policy, run by Claude Code: the agent develops solution/solve.py:solve(robo) on fresh
+                         resets of the task's scene (robo-dev) and submits it; the last submission runs once on the
+                         scored episode, with no model in the loop; model as for claude-code; see program/
+  program-codex          the same, run by Codex; model as for codex
 Third-party harnesses register a callable with `build`'s signature under the `robouse.harnesses` entry point group.
 """
 
@@ -59,6 +63,23 @@ from . import credentials
 CLAUDE_TOOLS = "Bash,Read,Write,Edit,Glob,Grep"
 # Codex offers its model a web search tool unless told not to (0.155 and later: on by default)
 CODEX_WEB_SEARCH = 'web_search="disabled"'
+# reasoning effort (`--reasoning-effort`): Claude Code's `--effort` levels; only claude-code (and plugins that extend its
+# launch) take it, since a setting a harness ignored would be recorded as if it had applied
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+EFFORT_HARNESSES = ("claude-code", "program")
+ROBOT_FRAMING_ENV = "_ROBOUSE_ROBOT_FRAMING"  # runner to builder only
+ROBOT_FRAMINGS = ("simulated", "real")
+ROBOT_FRAMING_HARNESSES = ("claude-code", "codex", "program", "program-codex")
+EFFORT_ENV = "_ROBOUSE_REASONING_EFFORT"  # runner to builder; never in the agent's environment
+# what else sets Claude Code's effort or thinking: never inherited from the runner's shell, so a trial's effort is the
+# one its config.json records (Claude Code's default when none is given)
+CLAUDE_THINKING_VARS = (
+    "CLAUDE_CODE_EFFORT_LEVEL",
+    "CLAUDE_CODE_ALWAYS_ENABLE_EFFORT",
+    "CLAUDE_CODE_DISABLE_THINKING",
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
+    "MAX_THINKING_TOKENS",
+)
 
 PROMPT_PREFIX = (
     "You are controlling a simulated robot. Read the task below, then solve it by running the `robo` command "
@@ -87,7 +108,12 @@ Builder = Callable[[str, str, Path, Any, dict], Launch]  # (model, prompt, works
 
 
 def _claude_cmd(
-    prompt: str, model: str, prefix: str = PROMPT_PREFIX, tools: str = CLAUDE_TOOLS, max_turns: int = 400
+    prompt: str,
+    model: str,
+    prefix: str = PROMPT_PREFIX,
+    tools: str = CLAUDE_TOOLS,
+    max_turns: int = 400,
+    effort: str = "",
 ) -> list[str]:
     return [
         "claude",
@@ -103,6 +129,7 @@ def _claude_cmd(
         str(max_turns),
         "--tools",
         tools,
+        *(["--effort", effort] if effort else []),
     ]
 
 
@@ -151,6 +178,8 @@ GATEWAY_PROTOCOLS = {
     "show-harness": "openai-completions",
     "aspire": "anthropic-messages",  # Claude Code
     "aspire-codex": "openai-responses",  # Codex
+    "program": "anthropic-messages",  # Claude Code
+    "program-codex": "openai-responses",  # Codex
 }
 
 
@@ -187,7 +216,13 @@ def _via_gateway(harness: str, model: str) -> object | None:
 def _claude_code(
     model, prompt, workspace, task, env, prefix: str = PROMPT_PREFIX, tools: str = CLAUDE_TOOLS, max_turns: int = 400
 ) -> Launch:
+    prefix = frame_prompt(prefix, env.pop(ROBOT_FRAMING_ENV, "simulated"))
+    effort = env.pop(EFFORT_ENV, "")
+    for k in CLAUDE_THINKING_VARS:
+        env.pop(k, None)
     if model and (ref := _via_gateway("claude-code", model)) is not None:
+        if effort:
+            raise ValueError("--reasoning-effort applies to Claude models on Claude Code's own login only")
         home = credentials.clean_claude_home(workspace)
         gw = _gateway(ref, env, GATEWAY_PROTOCOLS["claude-code"])
         env.update(
@@ -207,12 +242,13 @@ def _claude_code(
     m = (model or "claude-sonnet-5").removeprefix("anthropic/")
     env.update(credentials.claude_auth())
     env["CLAUDE_CONFIG_DIR"] = credentials.clean_claude_home(workspace)
-    return Launch(_claude_cmd(prompt, m, prefix, tools, max_turns), env, notes={"model": m})
+    return Launch(_claude_cmd(prompt, m, prefix, tools, max_turns, effort), env, notes={"model": m})
 
 
 def _codex(model, prompt, workspace, task, env, prefix: str = PROMPT_PREFIX) -> Launch:
     import os
 
+    prefix = frame_prompt(prefix, env.pop(ROBOT_FRAMING_ENV, "simulated"))
     if model and (ref := _via_gateway("codex", model)) is not None:
         home = credentials.clean_codex_home("# model provider: the trial's gateway, set on the command line\n")
         try:
@@ -402,12 +438,25 @@ def _aspire_codex(model, prompt, workspace, task, env) -> Launch:
     return aspire.build("aspire-codex", model, prompt, workspace, task, env)
 
 
+def _program(model, prompt, workspace, task, env) -> Launch:
+    from . import program
+
+    return program.build("program", model, prompt, workspace, task, env)
+
+
+def _program_codex(model, prompt, workspace, task, env) -> Launch:
+    from . import program
+
+    return program.build("program-codex", model, prompt, workspace, task, env)
+
+
 # harnesses whose trial needs more agent time than a task's own limit when --timeout is not given: an ASPIRE campaign
 # for one task (practice episodes, a verifier, then Stage 2)
-MIN_TIMEOUT_S = {"aspire": 4 * 3600.0, "aspire-codex": 4 * 3600.0}
+MIN_TIMEOUT_S = {"aspire": 4 * 3600.0, "aspire-codex": 4 * 3600.0, "program": 2 * 3600.0, "program-codex": 2 * 3600.0}
 # harnesses whose scored episode stays locked until their own last phase unlocks it: they practise on other episodes
-# first, and their top process (aspire's driver) gets the unlock token on its stdin before it starts the agent
-LOCKED_HARNESSES = ("aspire", "aspire-codex")
+# first, and their top process (the driver of aspire and program) gets the unlock token on its stdin before it starts
+# the agent
+LOCKED_HARNESSES = ("aspire", "aspire-codex", "program", "program-codex")
 
 
 HARNESSES: dict[str, Builder] = {
@@ -426,6 +475,8 @@ HARNESSES: dict[str, Builder] = {
     "show-harness": _show_harness,
     "aspire": _aspire,
     "aspire-codex": _aspire_codex,
+    "program": _program,
+    "program-codex": _program_codex,
 }
 
 
@@ -458,6 +509,9 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
 
     if why := models.legacy_refusal(harness):  # claude-code-glm etc.: names of recorded trials only
         raise ValueError(why)
+    framing = base_env.get(ROBOT_FRAMING_ENV, "simulated")
+    if why := robot_framing_refusal(harness, framing):
+        raise ValueError(why)
     env = dict(base_env)
     fn = HARNESSES.get(harness)
     if fn is None:
@@ -466,8 +520,83 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
             raise KeyError(f"unknown harness {harness!r}; harnesses: {', '.join(HARNESSES)}")
         for k in PRIVATE_ENV:
             env.pop(k, None)
-        return fn(harness, model, prompt, workspace, task, env)
-    launch = fn(model, prompt, workspace, task, env)
-    for k in PRIVATE_ENV:  # never in the agent's environment
+        launch = fn(harness, model, prompt, workspace, task, env)
+    else:
+        launch = fn(model, prompt, workspace, task, env)
+    if framing == "real":
+        if base_of(harness) in ("program", "program-codex"):
+            # The driver already persisted its inner command; program.build frames it before writing.
+            text = launch.config.get("prompt", "")
+            if not text.startswith("You are writing a program that controls a real robot."):
+                raise RuntimeError(f"{harness} did not apply real robot framing to its program prompt")
+        else:
+            found = False
+            for i, arg in enumerate(launch.cmd):
+                if arg.startswith("You are controlling a simulated robot."):
+                    launch.cmd[i] = frame_prompt(arg, framing)
+                    found = True
+                elif arg.startswith("You are controlling a real robot."):
+                    found = True  # a base builder (possibly through a plugin) already framed it
+            if not found:
+                raise RuntimeError(f"{harness}: expected simulated robot prompt phrase not found")
+            if isinstance(launch.config.get("prompt"), str):
+                if not launch.config["prompt"].startswith("You are controlling a real robot."):
+                    launch.config["prompt"] = frame_prompt(launch.config["prompt"], framing)
+    for k in (*PRIVATE_ENV, EFFORT_ENV, ROBOT_FRAMING_ENV):  # never in the agent's environment
         launch.env.pop(k, None)
+    # a harness whose top process is a driver (program) records the effort it passed to its agent in its config
+    passed = _flag(launch.cmd, "--effort") or launch.config.get("effort")
+    if (effort := base_env.get(EFFORT_ENV)) and passed != effort:
+        raise RuntimeError(f"{harness} did not pass reasoning effort {effort!r} to its agent")
     return launch
+
+
+def _flag(cmd: list[str], name: str) -> str | None:
+    """The value after the last `name` in a command, or None."""
+    i = max((j for j, a in enumerate(cmd[:-1]) if a == name), default=None)
+    return None if i is None else cmd[i + 1]
+
+
+def effort_refusal(harness: str, effort: str | None) -> str | None:
+    """Why `harness` cannot run at reasoning effort `effort`, or None (also None when no effort is asked for)."""
+    if not effort:
+        return None
+    if effort not in EFFORT_LEVELS:
+        return f"--reasoning-effort must be one of {', '.join(EFFORT_LEVELS)}, not {effort!r}"
+    try:
+        base = base_of(harness)
+    except ValueError as e:
+        return str(e)
+    if base not in EFFORT_HARNESSES:
+        return (
+            f"--reasoning-effort applies to {', '.join(EFFORT_HARNESSES)} (and plugins that extend it), not {harness}"
+        )
+    return None
+
+
+def robot_framing_refusal(harness: str, framing: str = "simulated") -> str | None:
+    """Refuse a recorded framing that the harness cannot apply."""
+    if framing not in ROBOT_FRAMINGS:
+        return f"--robot-framing must be one of {', '.join(ROBOT_FRAMINGS)}, not {framing!r}"
+    if framing == "simulated":
+        return None
+    try:
+        base = base_of(harness)
+    except ValueError as e:
+        return str(e)
+    if base not in ROBOT_FRAMING_HARNESSES:
+        return f"--robot-framing real applies to {', '.join(ROBOT_FRAMING_HARNESSES)} (and plugins that extend them), not {harness}"
+    return None
+
+
+def frame_prompt(text: str, framing: str = "simulated", *, program: bool = False) -> str:
+    """Change exactly the opening robot phrase; the default is byte-identical."""
+    if framing == "simulated":
+        return text
+    if framing != "real":
+        raise ValueError(f"unknown robot framing {framing!r}")
+    old = "a program that controls a simulated robot." if program else "You are controlling a simulated robot."
+    new = old.replace("simulated", "real")
+    if old not in text:
+        raise ValueError(f"expected prompt phrase {old!r} not found for real robot framing")
+    return text.replace(old, new, 1)

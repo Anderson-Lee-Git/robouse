@@ -235,6 +235,9 @@ SUITES = {
                    capabilities=["pick-and-place", "long-horizon"]),
     "robocasa": dict(embodiments=["franka-panda-upstream"], scene="upstream-scenes", scenario="household-kitchen",
                      track="mobile-manipulation", capabilities=["pick-and-place", "long-horizon"]),
+    # the same RoboCasa tasks with image-only observations (adapters/robocasa/generate.py --vision)
+    "robocasa-vision": dict(embodiments=["franka-panda-upstream"], scene="upstream-scenes", scenario="household-kitchen",
+                            track="mobile-manipulation", capabilities=["pick-and-place", "long-horizon"]),
     "behavior": dict(embodiments=["behavior-r1"], scene="upstream-scenes", scenario="household", track="mobile-manipulation",
                      capabilities=["long-horizon", "navigation"]),
     "composed": dict(embodiments=["franka-panda", "aloha-2", "pal-tiago", "google-robot", "unitree-go2", "crazyflie-2"],
