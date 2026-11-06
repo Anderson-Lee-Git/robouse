@@ -7,6 +7,8 @@ request.
   robo observe [--image] [--camera C] robot and object state; --image also saves a camera PNG and prints its path
   robo act A1 A2 ... [--repeat N]    apply one low-level action N times (N <= 50)
   robo move-to X Y Z [--grip G]      move the hand toward a point (skill; may be disabled per task)
+  robo move-joints-to Q1 ... Q7 [--grip G]  move the arm's joints to angles in rad (skill of joint-control tasks)
+  robo move-to-pose X Y Z ROLL PITCH YAW [--grip G]  move the hand to a position and orientation (skill; some tasks)
   robo grip G [--steps N]            hold position and set the gripper (+1 close, -1 open)
   robo skill NAME [ARG ...]          run a named high-level skill listed by `robo info` (only some tasks have them)
   robo done ["message"]              end the episode and ask for scoring
@@ -139,6 +141,14 @@ def build_request(cmd: str, rest: list[str]) -> dict:
         ms = opt("--max-steps", 100, int)
         tol = opt("--tol", 0.01, float)
         return {"op": "move_to", "pos": [float(x) for x in args[:3]], "grip": grip, "max_steps": ms, "tol": tol}
+    if cmd in ("move-joints-to", "move_joints_to"):
+        grip = opt("--grip", None, float)
+        q = [str(float(x)) for x in args]
+        return {"op": "skill", "name": "move_joints_to", "args": q + ([str(grip)] if grip is not None else [])}
+    if cmd in ("move-to-pose", "move_to_pose"):
+        grip = opt("--grip", None, float)
+        v = [str(float(x)) for x in args]
+        return {"op": "skill", "name": "move_to_pose", "args": v + ([str(grip)] if grip is not None else [])}
     if cmd == "grip":
         steps = opt("--steps", 15, int)
         return {"op": "grip", "value": float(args[0]), "steps": steps}

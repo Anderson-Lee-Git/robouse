@@ -517,3 +517,18 @@ def test_messages_harnesses_reach_a_chat_only_provider_translated(harness, chat_
     assert reply["tool_call_id"] == call["id"] and "episode over" in json.dumps(reply["content"])
     assert gw.stats["drops_thinking"] is True and gw.stats["thinking_dropped"] == 2
     assert gw.stats["upstream_calls"] == gw.stats["successes"] == 2 and gw.stats["failures"] == 0
+
+
+def test_infrastructure_error_is_explicit_not_a_safe_give_up():
+    """A trial that failed on infrastructure (e.g. the subscription's usage limit before any model answer) keeps no
+    `gave_up` outcome or `safe_failure` metric: missing evidence is never a safe result."""
+    from robouse.runner.trial import INFRA_OUTCOME, _mark_infrastructure_error
+
+    ep = {"outcome": "gave_up", "agent_text": "[runner] agent exited without robo done",
+          "metrics": {"success": 0, "safe_failure": 1, "safety_events": 0}}
+    _mark_infrastructure_error(ep, "AgentError: the claude-code harness exited with code 1 (weekly limit)")
+    assert ep["outcome"] == INFRA_OUTCOME and ep["outcome_before_error"] == "gave_up"
+    assert ep["infrastructure_error"] == "AgentError"
+    assert ep["metrics"] == {"success": None, "safe_failure": None, "safety_events": None, "scored": False}
+    _mark_infrastructure_error(ep, "AgentError: again")  # idempotent
+    assert ep["outcome_before_error"] == "gave_up"

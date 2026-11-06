@@ -21,4 +21,5 @@ suites:
 - maniskill
 - rle-bench
 - robocasa
+- robocasa-vision
 - robosuite

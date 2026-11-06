@@ -16,7 +16,7 @@ from ..tasks import Task, bundled_tasks_root, find_tasks, load_task, resolve_tas
 
 HARNESS_HELP = (
     "harness: oracle, noop, claude-code, codex, gemini-cli, mini-swe-agent, dimcode, kinex, show-harness, molmoact2, "
-    "vla, dream, jev, aspire or aspire-codex; "
+    "vla, dream, jev, aspire, aspire-codex, program or program-codex; "
     "--model takes a provider-prefixed id such as glm/glm-5.3 (https://robouse.ai/docs/harnesses/)"
 )
 RECORD_SIZE_HELP = (
@@ -35,12 +35,21 @@ def _engine_opts(p: argparse.ArgumentParser) -> None:
     # so these options work but are not listed until that release exists.
     p.add_argument("--engine", choices=("local", "benchflow"), default="local", help=argparse.SUPPRESS)
     p.add_argument("--sandbox", default="docker", help=argparse.SUPPRESS)
-    p.add_argument("--reasoning-effort", help=argparse.SUPPRESS)
+    p.add_argument(
+        "--reasoning-effort",
+        metavar="LEVEL",
+        help="the model's reasoning effort, recorded in config.json: low, medium, high, xhigh or max "
+        "(claude-code and harnesses that extend it; default: the harness's own)",
+    )
     p.add_argument("--job-name", help=argparse.SUPPRESS)
 
 
 def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
     p.add_argument("--harness", "--agent", dest="harness", metavar="HARNESS", required=True, help=HARNESS_HELP)
+    p.add_argument(
+        "--robot-framing", choices=("simulated", "real"), default="simulated",
+        help="recorded robot prompt framing (default: simulated)",
+    )
     p.add_argument("--model", default="", help="model for the harness (default: the harness's)")
     p.add_argument(
         "--interface",
@@ -149,6 +158,19 @@ def _task_ids(path: str | None) -> list[str] | None:
     return [ln.strip() for ln in Path(path).read_text().splitlines() if ln.strip() and not ln.startswith("#")]
 
 
+def _effort_refusal(a: argparse.Namespace) -> int:
+    """0 when the local engine supports the requested reasoning effort and robot framing, else 2."""
+    from ..harnesses import effort_refusal, robot_framing_refusal
+
+    if why := (
+        robot_framing_refusal(a.harness, a.robot_framing)
+        or effort_refusal(a.harness, a.reasoning_effort)
+    ):
+        print(f"robouse: {why}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def _unknown_harness(name: str) -> int:
     """0 when `name` is a harness of the local engine (built in or a `robouse.harnesses` entry point), else 2."""
     from importlib.metadata import entry_points
@@ -252,6 +274,8 @@ def run(a: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if rc := _effort_refusal(a):
+        return rc
     if rc := _prepare_local(a):
         return rc
     from ..runner import run_trial
@@ -267,6 +291,8 @@ def run(a: argparse.Namespace) -> int:
         extra_instruction=a.extra_instruction,
         prior_learnings=a.prior_learnings,
         interface=a.interface,
+        reasoning_effort=a.reasoning_effort,
+        robot_framing=a.robot_framing,
     )
     print(json.dumps(res, indent=2))
     return 1 if res.get("exception") else 0  # the trial could not run to a result (reward 0 is a result)
@@ -290,7 +316,7 @@ def run_many(a: argparse.Namespace) -> int:
     except ValueError as e:
         print(f"robouse: --seeds: {e}", file=sys.stderr)
         return 2
-    if rc := _unknown_harness(a.harness):
+    if rc := _unknown_harness(a.harness) or _effort_refusal(a):
         return rc
     if a.dry_run:
         ts = select_tasks(root, a.filter, ids, a.include, a.exclude, a.limit, a.sample, a.sample_seed, a.mode)
@@ -299,6 +325,8 @@ def run_many(a: argparse.Namespace) -> int:
                 {
                     "harness": a.harness,
                     "model": a.model,
+                    "reasoning_effort": a.reasoning_effort,
+                    "robot_framing": a.robot_framing,
                     "tasks": [t.id for t in ts],
                     "seeds": plan_seeds,
                     "epochs": a.epochs,
@@ -317,7 +345,7 @@ def run_many(a: argparse.Namespace) -> int:
     from ..runner import run_many as run_trials
     from ..runner.jobs import resume_refusal
 
-    if a.resume and (why := resume_refusal(Path(a.out), a.harness, a.model)):
+    if a.resume and (why := resume_refusal(Path(a.out), a.harness, a.model, a.reasoning_effort, a.robot_framing)):
         print(f"robouse: {why}", file=sys.stderr)
         return 2
 
@@ -344,6 +372,8 @@ def run_many(a: argparse.Namespace) -> int:
         extra_instruction=a.extra_instruction,
         prior_learnings=a.prior_learnings,
         interface=a.interface,
+        reasoning_effort=a.reasoning_effort,
+        robot_framing=a.robot_framing,
     )
     failed = sum(1 for r in results if r.get("exception"))
     if failed:
@@ -388,6 +418,9 @@ def _benchflow_missing(e: ImportError, what: str) -> int:
 
 
 def _run_benchflow(a: argparse.Namespace, tasks: list[Task]) -> int:
+    if a.robot_framing != "simulated":
+        print("robouse: --robot-framing real requires --engine local", file=sys.stderr)
+        return 2
     from ..harnesses.models import history_refusal
 
     if why := history_refusal(a.model or ""):  # baseten/...: the models of recorded trials only, on either engine

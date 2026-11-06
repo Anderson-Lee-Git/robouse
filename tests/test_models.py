@@ -152,6 +152,39 @@ def test_every_model_gets_every_task_and_the_trial_records_its_image_input(monke
         image_input_plan("codex", "gpt-6-astra")
 
 
+def test_a_plugin_harness_is_planned_as_the_built_in_harness_it_names(monkeypatch) -> None:
+    """A plugin that names a built-in harness as its robouse_base gets that harness's model and image-input plan under
+    its own name; one that names none has no language model as far as Robo Use knows."""
+    from robouse import harnesses
+    from robouse.runner.trial import image_input_plan
+
+    def extends(*a):
+        pass
+
+    extends.robouse_base = "claude-code"
+    plugins = {"claude-code-plus": extends, "scripted": lambda *a: None, "broken": type("B", (), {"robouse_base": "x"})}
+    monkeypatch.setattr(harnesses, "plugin", plugins.get)
+    p = image_input_plan("claude-code-plus", "claude-opus-5-5")
+    assert (p["harness"], p["harness_base"], p["model"], p["image_input"]) == (
+        "claude-code-plus",
+        "claude-code",
+        "claude-opus-5-5",
+        True,
+    )
+    assert image_input_plan("claude-code-plus", "")["model"] == models.DEFAULT_MODELS["claude-code"]
+    monkeypatch.setenv("ROBOUSE_AGENT_IMAGES", "0")  # claude-code on its own vendor has no gateway to remove images
+    with pytest.raises(ValueError, match="model gateway"):
+        image_input_plan("claude-code-plus", "claude-opus-5-5")
+    assert image_input_plan("scripted", "") == {
+        "harness": "scripted",
+        "model": "",
+        "image_input": None,
+        "image_input_reason": "no language model",
+    }
+    with pytest.raises(ValueError, match="not a built-in harness"):
+        image_input_plan("broken", "")
+
+
 def test_old_trials_record_what_their_model_could_see() -> None:
     assert models.recorded_image_input("codex-glm", {}) is False  # images were turned off for Baseten's endpoint
     assert models.recorded_image_input("mini-swe-agent-glm", {}) is False

@@ -3,11 +3,13 @@ because RoboCasa's pinned dependencies conflict with the main robouse environmen
 
 The robouse `robocasa` backend (robocasa.py) starts this script as a subprocess and talks to it over stdin/stdout:
 one JSON request per line, one JSON response per line; a `render` response is followed by the raw RGB bytes.
-Only numpy, robosuite and robocasa are imported here (never the robouse package).
+Only numpy, robosuite and robocasa are imported here (never the robouse package). A scenario with a `liquid` entry
+loads physics/liquid/ by path (scenario.load_liquid); scenario plugins come from $ROBOUSE_ROBOCASA_PLUGINS.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 
@@ -16,6 +18,24 @@ import numpy as np
 STEP_M = 0.02  # metres per action unit per step (world frame)
 OSC_MAX = 0.05  # robosuite OSC_POSE output_max for position (m per step at input 1)
 LEAD_M = 0.05
+ROT_STEP = 0.1  # rad of hand rotation per action unit per step (scenario EEF control)
+LEAD_RAD = 0.3  # the orientation target stays within this angle of the hand
+JOINT_STEP = 0.2  # rad that 1.0 on a joint delta asks for (scenario joint control; robosuite's default is 0.05)
+JOINT_KP = 150.0  # joint stiffness: OSC_POSE's kp (robosuite's JOINT_POSITION default is 50)
+
+
+def _load_scenario():
+    """scenario.py next to this file (the worker runs without its folder on sys.path)."""
+    import importlib.util
+    import sys
+
+    name = "robouse_robocasa_scenario"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, os.path.join(os.path.dirname(__file__), "scenario.py"))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules[name]
 
 
 def _rotvec(R):
@@ -24,6 +44,13 @@ def _rotvec(R):
     a = np.arccos(c)
     if a < 1e-6:
         return np.zeros(3)
+    if np.pi - a < 1e-4:  # a half turn: the antisymmetric part vanishes; take the axis from the symmetric part
+        axis = np.sqrt(np.clip((np.diag(R) + 1) / 2, 0.0, None))
+        i = int(np.argmax(axis))
+        for j in range(3):
+            if j != i and R[i, j] < 0:
+                axis[j] = -axis[j]
+        return axis / np.linalg.norm(axis) * a
     v = np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]]) / (2 * np.sin(a))
     return v * a
 
@@ -55,10 +82,19 @@ def _relative_paths(ep_meta: dict) -> dict:
     """Object model paths in an ep_meta, made relative to RoboCasa's asset root (objects/lightwheel/<cat>/<model>/model.xml),
     so a recorded layout does not depend on where RoboCasa is installed."""
     root = _assets_root()
+    S = _load_scenario()
     for c in ep_meta.get("object_cfgs", []):
         info = c.get("info") or {}
         p = info.get("mjcf_path")
         if isinstance(p, str):
+            custom = S.custom_model_id(p)
+            if custom:
+                info["mjcf_path"] = custom
+                if info.get("groups") == p:
+                    info["groups"] = custom
+                c["obj_groups"] = custom
+                ep_meta["robouse_custom_object_version"] = S.CUSTOM_OBJECT_VERSION
+                continue
             p = p.replace("\\", "/")
             if os.path.isabs(p):
                 p = os.path.relpath(p, root) if p.startswith(root + os.sep) else "objects/" + p.split("/objects/")[-1]
@@ -72,6 +108,10 @@ def _resolve_paths(ep_meta: dict) -> dict:
     for c in ep_meta.get("object_cfgs", []):
         info = c.get("info") or {}
         p = info.get("mjcf_path")
+        if isinstance(p, str) and p.startswith("custom/"):
+            info["mjcf_path"] = _load_scenario().model_path(p)
+            c["obj_groups"] = info["mjcf_path"]
+            continue
         if isinstance(p, str) and not os.path.isabs(p):
             full = os.path.join(root, p)
             if not os.path.exists(full):
@@ -83,6 +123,10 @@ def _resolve_paths(ep_meta: dict) -> dict:
 class Worker:
     def __init__(self):
         self.env = None
+        self.scenario = None  # the spec, in scenario mode
+        self.control = "eef"
+        self.monitors = None
+        self.nstep = 0
 
     # ---- setup ---------------------------------------------------------------------------------------------------
     def make(
@@ -170,10 +214,199 @@ class Worker:
         self.target_p = np.asarray(self.obs["robot0_eef_pos"], dtype=float).copy()
         return {"lang": self.env.get_ep_meta().get("lang", ""), "cameras": list(self.env.sim.model.camera_names)}
 
+    def make_scenario(
+        self, spec: dict, seed: int, control: str = "eef", ep_meta: dict | None = None, settle_steps: int = 60
+    ) -> dict:
+        """A kitchen built from a scenario spec (scenario.py). `control`: "eef" (hand target servo, position and
+        orientation) or "joint" (robosuite JOINT_POSITION on the arm, delta targets). The objects settle for
+        `settle_steps` with the arm holding still; the result reports how far each object moved over the last 10."""
+        import random
+
+        import robocasa  # noqa: F401
+        import robosuite
+        from robosuite.controllers import load_composite_controller_config
+
+        if control not in ("eef", "joint"):
+            raise ValueError(f"control must be eef or joint, not {control!r}")
+        S = _load_scenario()
+        S.load_plugins()  # scene-specific predicates and liquid containers ($ROBOUSE_ROBOCASA_PLUGINS)
+        compute_api = S.load_liquid("compute")
+        compute = compute_api.validate_runtime(spec)
+        random.seed(int(seed))
+        np.random.seed(int(seed))
+        if spec.get("liquid"):
+            liquid_scene = S.load_liquid("scene")
+
+            previous = getattr(getattr(self, "env", None), "_liquid_scene", None)
+            if previous is not None:
+                previous.coupling.uninstall()
+                previous.fluid.close()
+                self.env._liquid_scene = None
+            liquid_scene.enable_surface(S, configured_only=True)
+        name = S.make_class(spec)
+        cfg = load_composite_controller_config(controller=None, robot="PandaOmron")
+        if control == "joint":
+            cfg["body_parts"]["right"] = dict(
+                type="JOINT_POSITION",
+                input_type="delta",
+                input_max=1,
+                input_min=-1,
+                output_max=JOINT_STEP,
+                output_min=-JOINT_STEP,
+                kp=JOINT_KP,
+                damping_ratio=1,
+                impedance_mode="fixed",
+                kp_limits=[0, 300],
+                damping_ratio_limits=[0, 10],
+                qpos_limits=None,
+                interpolation=None,
+                ramp_ratio=0.2,
+                gripper={"type": "GRIP"},
+            )
+        k = spec["kitchen"]
+        self.env = robosuite.make(
+            name,
+            robots="PandaOmron",
+            controller_configs=cfg,
+            has_renderer=False,
+            has_offscreen_renderer=True,
+            use_camera_obs=False,
+            ignore_done=True,
+            layout_ids=[S.layout_id(k)],
+            style_ids=[int(k["style"])],
+            # the on-screen viewer's camera presets are keyed by stock layout number; images are rendered offscreen
+            **({"renderer": "mujoco"} if k.get("blueprint") else {}),
+            obj_registries=tuple(spec.get("obj_registries") or ("lightwheel",)),
+            seed=int(seed),
+            translucent_robot=False,
+        )
+        setattr(self.env, S.CUSTOM_ATTR, {})
+        if ep_meta:
+            resolved = _resolve_paths(copy.deepcopy(ep_meta))
+            for obj_cfg in resolved.get("object_cfgs", []):
+                path = (obj_cfg.get("info") or {}).get("mjcf_path")
+                custom = S.custom_model_id(path) if isinstance(path, str) else None
+                if custom:
+                    # Upstream rebases info.mjcf_path onto its own assets tree.
+                    # An explicit model draw preserves the external bundle path; RoboCasa reverse-looks it up in
+                    # OBJ_CATEGORIES (a bare ValueError otherwise), so register it as a fresh build does.
+                    S.register_custom_model(custom, path, self.env.obj_registries)
+                    # re-applied before every placement attempt (scenario.py _create_objects)
+                    getattr(self.env, S.CUSTOM_ATTR).setdefault(obj_cfg.get("name"), path)
+                    obj_cfg.pop("info")
+                    obj_cfg["obj_groups"] = path
+                    obj_cfg.pop("exclude_obj_groups", None)
+            self.env.set_ep_meta(resolved)
+        self.obs = self.env.reset()
+        # RoboCasa's ep_meta fixes the kitchen, the object models and the robot base but samples object placements anew
+        # on every load; a recorded scene also pins each object's pose after reset (and the fixture placements, in
+        # scenario.py), so every reset of a frozen scenario is the same scene
+        sim = self.env.sim
+        poses = (ep_meta or {}).get("robouse_object_poses") or {}
+        for n, q in poses.items():
+            if n in self.env.objects:
+                sim.data.set_joint_qpos(self.env.objects[n].joints[0], np.asarray(q, dtype=float))
+                sim.data.set_joint_qvel(self.env.objects[n].joints[0], np.zeros(6))
+        if poses:
+            sim.forward()
+        self.reset_poses = {
+            n: [float(v) for v in sim.data.get_joint_qpos(o.joints[0])] for n, o in self.env.objects.items()
+        }
+        self.scenario, self.control = spec, control
+        self.base0 = S.base_pose(self.env)  # the parked base, for the drift evidence (ROBOT_BASE_VERSION)
+        self.base_drift = {"xy_m": 0.0, "z_m": 0.0, "yaw_deg": 0.0}
+        self.split = dict(self.env.robots[0].composite_controller._action_split_indexes)
+        self.adim = self.env.action_spec[0].shape[0]
+        self.grip = -1.0
+        self.target_p = np.asarray(self.obs["robot0_eef_pos"], dtype=float).copy()
+        self.target_R = self._eef_R()
+        names = list(self.env.objects)
+        before = None
+        for i in range(int(settle_steps)):
+            if i == int(settle_steps) - 10:
+                before = {n: self._body_pos(n) for n in names}
+            self._hold()
+        moved = {n: round(float(np.linalg.norm(self._body_pos(n) - before[n])), 4) for n in names} if before else {}
+        cam = S.after_reset(self.env, spec)
+        if spec.get("liquid"):
+            liquid_scene.attach_worker(self.env, spec["liquid"])
+            compute_api.validate_solver(compute, self.env._liquid_scene.fluid)
+        self.monitors = S.Monitors(spec)
+        self.env.robouse_monitors = self.monitors  # history for the `fired` predicate
+        self.nstep = 0
+        self._track_base()  # settling included
+        return {
+            "lang": self.env.get_ep_meta().get("lang", ""),
+            "cameras": list(self.env.sim.model.camera_names),
+            "camera_2": cam,
+            "settle_motion": moved,
+            **({"compute": compute} if compute else {}),
+            "robot_base": self.robot_base(),
+            "objects": {n: [round(float(v), 4) for v in self._body_pos(n)] for n in names},
+        }
+
+    def _track_base(self) -> None:
+        p, yaw = _load_scenario().base_pose(self.env)
+        p0, yaw0 = self.base0
+        dyaw = abs((yaw - yaw0 + np.pi) % (2 * np.pi) - np.pi)
+        bd = self.base_drift
+        bd["xy_m"] = max(bd["xy_m"], float(np.linalg.norm(p[:2] - p0[:2])))
+        bd["z_m"] = max(bd["z_m"], float(abs(p[2] - p0[2])))
+        bd["yaw_deg"] = max(bd["yaw_deg"], float(np.degrees(dyaw)))
+
+    def robot_base(self) -> dict:
+        """How the base was held (scenario.py ROBOT_BASE_VERSION) and the largest drift of its pose from where it
+        was parked, over settling and every step since (private evidence; the agent sees robot_base_pos only)."""
+        S = _load_scenario()
+        return {"version": S.ROBOT_BASE_VERSION if S.robot_base_mode(self.scenario) == "locked" else "1.0.0",
+                "mode": S.robot_base_mode(self.scenario),
+                "max_drift": {k: round(v, 5) for k, v in self.base_drift.items()}}
+
+    def _body_pos(self, name: str) -> np.ndarray:
+        return np.array(self.env.sim.data.body_xpos[self.env.obj_body_id[name]], dtype=float)
+
+    def _hold(self) -> None:
+        if self.control == "joint":
+            self._send_joint(np.zeros(7))
+        else:
+            self._send()
+
+    def _send_joint(self, dq) -> None:
+        full = np.zeros(self.adim)
+        a, b = self.split["right"]
+        full[a:b] = np.clip(np.asarray(dq, dtype=float), -1, 1)
+        full[self.split["right_gripper"][0]] = self.grip
+        full[-1] = -1.0  # arm mode (base does not move)
+        self.obs, _, _, _ = self.env.step(full)
+
+    def joint_pos(self) -> list[float]:
+        return [float(v) for v in self.env.robots[0]._joint_positions]
+
+    def joint_limits(self) -> list[list[float]]:
+        m = self.env.sim.model
+        return [[float(a), float(b)] for a, b in (m.jnt_range[m.joint_name2id(j)] for j in self.env.robots[0].robot_joints)]
+
+    def monitor_events(self) -> dict:
+        """The scenario's monitors (hidden from the agent) and whether the goal holds now."""
+        out = {"events": self.monitors.events(self.env, self.nstep) if self.monitors else [], "steps": self.nstep}
+        try:
+            out["goal"] = bool(self.env._check_success())
+        except Exception as e:  # recorded, never read as "goal not met"
+            out["goal_error"] = f"{type(e).__name__}: {e}"[:300]
+        if self.scenario is not None:
+            out["robot_base"] = self.robot_base()
+        return out
+
     def ep_meta(self) -> dict:
         meta = json.loads(
             json.dumps(self.env.get_ep_meta(), default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o))
         )
+        if self.scenario is not None:
+            meta["robouse_object_poses"] = self.reset_poses
+            meta["robouse_fixture_placements"] = {
+                name: [[float(v) for v in pos], [float(v) for v in quat]]
+                for name, (pos, quat, _) in self.env.fxtr_placements.items()
+            }
         return _relative_paths(meta)
 
     # ---- helpers -------------------------------------------------------------------------------------------------
@@ -261,23 +494,58 @@ class Worker:
         return _quat_to_mat(self.obs["robot0_base_quat"])  # robosuite quats are xyzw
 
     # ---- stepping ------------------------------------------------------------------------------------------------
-    def step(self, action) -> dict:
-        a = np.asarray(action, dtype=float)
-        d_world = np.clip(a[:3], -1, 1) * STEP_M
-        g = float(a[3]) if len(a) > 3 else 0.0
+    def _set_grip(self, g: float) -> None:
+        """0 keeps the fingers, > 0 closes, -f opens to fraction f."""
         if g > 1e-3:
             self.grip = 1.0
         elif g < -1e-3:
             self.grip = float(1.0 - 2.0 * min(1.0, -g))
-        hand = np.asarray(self.obs["robot0_eef_pos"], dtype=float)
-        tgt = self.target_p + d_world
-        off = tgt - hand
-        n = float(np.linalg.norm(off))
-        if n > LEAD_M:  # the target stays within 5 cm of the hand so a blocked arm does not wind up
-            tgt = hand + off * (LEAD_M / n)
-        self.target_p = tgt
-        self._send()
-        return {"success": bool(self.env._check_success())}
+
+    def step(self, action=None, pose: dict | None = None) -> dict:
+        """One control step. Task mode: [DX, DY, DZ, GRIP]. Scenario EEF: [DX, DY, DZ, DROLL, DPITCH, DYAW, GRIP] (a 4-entry
+        action from a skill has no rotation); `pose` {pos, R} instead moves the targets one full unit toward that pose.
+        Scenario joint: [DQ1..DQ7, GRIP] (a 4-entry action from a skill only sets the gripper)."""
+        a = np.asarray(action if action is not None else [], dtype=float)
+        if len(a) in (4, 7, 8):
+            self._set_grip(float(a[-1]))
+        if self.control == "joint":
+            self._send_joint(a[:7] if len(a) == 8 else np.zeros(7))
+        else:
+            hand = np.asarray(self.obs["robot0_eef_pos"], dtype=float)
+            R = self._eef_R()
+            if pose is not None:
+                d = np.asarray(pose["pos"], dtype=float) - self.target_p
+                n = float(np.linalg.norm(d))
+                tgt = self.target_p + (d if n <= STEP_M else d * (STEP_M / n))
+                w = _rotvec(np.asarray(pose["R"], dtype=float).reshape(3, 3) @ self.target_R.T)
+                ang = float(np.linalg.norm(w))
+                if ang > ROT_STEP:
+                    w = w * (ROT_STEP / ang)
+            else:
+                tgt = self.target_p + np.clip(a[:3], -1, 1) * STEP_M
+                w = np.clip(a[3:6], -1, 1) * ROT_STEP if len(a) == 7 else np.zeros(3)
+            off = tgt - hand
+            n = float(np.linalg.norm(off))
+            if n > LEAD_M:  # the target stays within 5 cm of the hand so a blocked arm does not wind up
+                tgt = hand + off * (LEAD_M / n)
+            self.target_p = tgt
+            if float(np.linalg.norm(w)) > 0:
+                tR = _rot(w, float(np.linalg.norm(w))) @ self.target_R
+                lead = _rotvec(tR @ R.T)
+                ang = float(np.linalg.norm(lead))
+                if ang > LEAD_RAD:  # same for the orientation target
+                    tR = _rot(lead, LEAD_RAD) @ R
+                self.target_R = tR
+            self._send()
+        out = {"success": bool(self.env._check_success())}
+        if self.monitors is not None:
+            self.nstep += 1
+            self._track_base()
+            self.monitors.update(self.env, self.nstep)
+            out["hand_pos"] = [float(v) for v in self.obs["robot0_eef_pos"]]
+            out["eef_quat"] = [float(v) for v in self.obs["robot0_eef_quat"]]
+            out["joint_pos"] = self.joint_pos()
+        return out
 
     def success(self) -> dict:
         return {"success": bool(self.env._check_success())}
@@ -292,6 +560,11 @@ class Worker:
             "robot_base_pos": [round(float(v), 4) for v in o["robot0_base_pos"]],
             "robot_forward": [round(float(v), 4) for v in self._base_R()[:, 0]],
         }
+        if self.scenario is not None:  # the same robot state in both control modes
+            st["eef_quat"] = [round(float(v), 5) for v in o["robot0_eef_quat"]]  # x, y, z, w
+            st["joint_pos"] = [round(v, 4) for v in self.joint_pos()]
+            if self.control == "joint":
+                st.pop("hand_target")
         r = lambda v: None if v is None else [round(float(x), 4) for x in v]
         for f in features:
             if f == "object":

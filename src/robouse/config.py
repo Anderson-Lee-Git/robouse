@@ -77,6 +77,11 @@ ENV: dict[str, str] = {
     "ROBOUSE_METADRIVE_PYTHON": "Python of the MetaDrive virtualenv (default <cache>/metadrive-venv/bin/python)",
     "ROBOUSE_MYOSUITE_PYTHON": "Python of the MyoSuite virtualenv (default <cache>/myosuite-venv/bin/python)",
     "ROBOUSE_ROBOCASA_PYTHON": "Python of the RoboCasa virtualenv (default <cache>/robocasa-venv/bin/python)",
+    "ROBOUSE_ROBOCASA_OBJECT_ROOT": "Directory of authored RoboCasa object bundles (needed for custom/... objects)",
+    "ROBOUSE_ROBOCASA_PLUGINS": "comma-separated importable modules that register scene-specific RoboCasa scenario "
+    "predicates and liquid container kinds (each has register(scenario); robocasa_scenario backend and worker)",
+    "ROBOUSE_LIQUID_WORK_ROOT": "host-side scratch folder for the SPH liquid's solver files (robocasa_scenario scenes "
+    "with a liquid; default: a temporary folder)",
     "ROBOUSE_RLEBENCH_PYTHON": "Python of the RLE-Bench virtualenv (default <cache>/rlebench-venv/bin/python)",
     "ROBOUSE_CAPX_PYTHON": "Python of the CaP-X virtualenv (default <cache>/capx-venv/bin/python)",
     "ROBOUSE_CAPX_LIBERO_PYTHON": "Python of the CaP-X LIBERO virtualenv (default <cache>/capx-libero-venv/bin/python)",
@@ -171,7 +176,9 @@ ENV: dict[str, str] = {
     "ROBOUSE_ASPIRE_REUSE": "whether an `aspire` trial whose library already holds a selected program for the task "
     "evaluates it instead of running Stage 1, as ASPIRE evaluates one frozen program on every held-out seed: 1 "
     "(default) when the same harness and model selected it, any whichever selected it, 0 never",
-    "ROBOUSE_PRACTICE_URL": "the `aspire` harnesses' practice broker, http://127.0.0.1:<port>/<token> (set by the "
+    "ROBOUSE_PROGRAM_DEV_RUNS": "development runs one `program` trial may make with robo-dev (default 40)",
+    "ROBOUSE_PROGRAM_DEV_WORKERS": "development runs a `program` trial runs at once (default 2)",
+    "ROBOUSE_PRACTICE_URL": "the `aspire` and `program` harnesses' practice broker, http://127.0.0.1:<port>/<token> (set by the "
     "runner)",
     "ROBOUSE_GRADER_URL": "OpenAI-compatible endpoint (base URL) of the vision-language model for `robouse grade` and "
     "`real.verdict: vlm` (required by both; no default)",
@@ -209,6 +216,9 @@ PUBLIC = frozenset(
         "ROBOUSE_METADRIVE_PYTHON",
         "ROBOUSE_MYOSUITE_PYTHON",
         "ROBOUSE_ROBOCASA_PYTHON",
+        "ROBOUSE_ROBOCASA_OBJECT_ROOT",
+        "ROBOUSE_ROBOCASA_PLUGINS",
+        "ROBOUSE_LIQUID_WORK_ROOT",
         "ROBOUSE_RLEBENCH_PYTHON",
         "ROBOUSE_CAPX_PYTHON",
         "ROBOUSE_CAPX_LIBERO_PYTHON",

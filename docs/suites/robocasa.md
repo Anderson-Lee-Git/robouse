@@ -128,3 +128,24 @@ Found by surveying 24 RoboCasa atomic tasks in all ten layouts (scene creation, 
 ## On the hub
 
 The hub dataset `robocasa/robocasa@0.1` has 23 of these tasks. It leaves out `robocasa-close-kettle-lid-kitchen6`: its reference solution passes on macOS and in Colima on an M2 Max, but on a c4a (Arm Neoverse V2) linux/arm64 cloud VM the lid did not close within the 400-step budget, in two separate runs.
+
+## Scenario kitchens: SPH liquid and plugins
+
+The `robocasa_scenario` backend (`backends/robocasa/scenario_backend.py`, worker `scenario.py`) builds a kitchen from a JSON spec. A spec with a `liquid` entry adds a DFSPH liquid (SPlisHSPlasH) that is one-way coupled to MuJoCo. The code is in `backends/robocasa/physics/liquid/` (liquid contract 0.3.0):
+
+- `solver`: the SPlisHSPlasH bridge. It loads a pinned native backend (checking path, SHA-256 and Python ABI) and keeps our own float64 clock. With one thread, runs are bit-exact.
+- `coupling`: advances the fluid after every MuJoCo step.
+- `meshes`: boundary meshes and particle lattices.
+- `contact`: absorbers (an irreversible per-object ledger) and the sleep modes for initial puddles and still containers.
+- `queries`, `scene`: per-region volumes, puddle, wetting near a boundary, and the host-only `liquid` predicate.
+- `surface`: the rendered liquid surface. It is drawn in the policy cameras only as pixels.
+- `gpu/`: an NVIDIA Warp prototype of the same solver. No scene uses it.
+
+The package always has one module name, `robouse_robocasa_liquid`, so a process holds one native solver. Load it with `robouse.backends.robocasa.physics.load_liquid()` or, in the worker, `scenario.load_liquid()`. Importing it as `robouse.backends.robocasa.physics.liquid` raises an error. Setup: `pysplishsplash==2.19.0` and `pysplashsurf==0.14.1.0` in the RoboCasa virtualenv. `ROBOUSE_LIQUID_WORK_ROOT` holds the solver's scratch files.
+
+Scene-specific definitions come from scenario plugins. robouse never imports a benchmark's package. `ROBOUSE_ROBOCASA_PLUGINS` names importable modules, separated by commas. Each module has a `register(scenario)` function, which can call:
+
+- `scenario.register_predicate(name, fn)`: adds a predicate. Built-in predicates cannot be replaced.
+- `scenario.load_liquid().register_container(kind, profile, fill, visual_geom)`: adds a liquid container kind, with its inside profile, fill recipe and the visual mesh used as its SPH boundary.
+
+The worker and the host-side `check_spec` load the same plugins. A named plugin that cannot be imported, or an unregistered container kind in a spec, is an error, never a default. Liquid state, monitors and predicates stay in the host. Policies see the two camera images and the robot state only.
