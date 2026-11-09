@@ -437,6 +437,8 @@ def make_class(spec: dict):
         add_attach_welds(self, spec)  # breakable parts (object key `attach`), switched off by the AttachTracker
         add_burner_flames(self, spec)  # opt-in visible gas flames (a stove fixture entry's `flames`)
         add_base_lock(self, spec)  # the parked base and torso, locked at reset (ROBOT_BASE_VERSION)
+        if "contact_pairs_v1" in spec:
+            load_contact_pairs().add(self.model, spec)  # explicit compiled names and parameters
 
     def _reset_internal(self):
         if any("timer_indicator_v1" in f for f in spec["fixtures"].values()):
@@ -2072,6 +2074,20 @@ def install_residue_trackers(env, spec):
         _wrap_steps(env)
     env.robouse_adhere = AdhereTracker(env, spec) if adhesions(spec) else None
     env.robouse_streams = StreamTracker(env, spec) if spec.get("streams") else None
+
+
+def load_contact_pairs():
+    """The standalone worker loads scenario.py without a robouse package import."""
+    import importlib.util
+
+    name = "robouse_contact_pairs"
+    if name not in sys.modules:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "contact_pairs.py")
+        module_spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(module)
+        sys.modules[name] = module
+    return sys.modules[name]
 
 
 def load_liquid(submodule: str | None = None):

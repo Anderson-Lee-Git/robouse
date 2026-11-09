@@ -55,6 +55,8 @@ def check_spec(spec: dict) -> None:
 
     S.load_plugins()  # scene-specific predicates, as in the worker
     S.load_liquid("compute").requirement(spec)
+    from .contact_pairs import validate as validate_contact_pairs
+    validate_contact_pairs(spec)
     for k in ("id", "kitchen", "instruction", "robot_anchor", "fixtures", "objects"):
         if k not in spec:
             raise ValueError(f"scenario spec has no {k!r}")
