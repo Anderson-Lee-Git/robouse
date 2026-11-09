@@ -31,6 +31,7 @@ development episodes, whose files a broker may serve). A trace that fails is rep
 from __future__ import annotations
 
 import json
+import os
 
 import numpy as np
 
@@ -129,6 +130,11 @@ class RobocasaScenarioBackend(Backend):
 
     def __init__(self, spec: dict):
         self.spec = spec
+        self.condition_requirement = spec.get("physics_condition")
+        self.condition = None
+        if self.condition_requirement is not None:
+            from .physics_condition import requirement
+            requirement(self.condition_requirement)
         sc = spec.get("scenario")
         if isinstance(sc, str):
             sc = json.loads(sc)
@@ -284,6 +290,26 @@ class RobocasaScenarioBackend(Backend):
         self._joint_limits = self._call("joint_limits")
         self._state, self._last = None, {}
         self._success = False
+        if self.condition_requirement is not None:
+            from pathlib import Path
+            from .physics_condition import FILENAME, record_or_check, require_equal
+
+            actual = self._call(
+                "physics_condition", requirement=self.condition_requirement,
+                render_size=list(self.render_size),
+                reset={"seed": seed, "settle_steps": self.settle_steps},
+            )
+            if self.condition is not None:
+                require_equal(self.condition, actual)
+            # The configured group receipt is shared by development and final resets.
+            # It stays outside any policy workspace or broker-served directory.
+            group = os.environ.get("ROBOUSE_PHYSICS_CONDITION_FILE")
+            if group:
+                record_or_check(Path(group), actual,
+                                must_exist=os.environ.get("ROBOUSE_PHYSICS_CONDITION_RESUME") == "1")
+            if self._run_dir is not None:
+                record_or_check(self._run_dir / FILENAME, actual)
+            self.condition = actual
         self._start_trace()
 
     def step(self, action) -> StepInfo:

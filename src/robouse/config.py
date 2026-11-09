@@ -76,8 +76,10 @@ ENV: dict[str, str] = {
     "ROBOUSE_MANISKILL_PYTHON": "Python of the ManiSkill virtualenv (default <cache>/maniskill-venv/bin/python)",
     "ROBOUSE_METADRIVE_PYTHON": "Python of the MetaDrive virtualenv (default <cache>/metadrive-venv/bin/python)",
     "ROBOUSE_MYOSUITE_PYTHON": "Python of the MyoSuite virtualenv (default <cache>/myosuite-venv/bin/python)",
-    "ROBOUSE_ROBOCASA_PYTHON": "Python of the RoboCasa virtualenv (default <cache>/robocasa-venv/bin/python)",
+    "ROBOUSE_ROBOCASA_PYTHON": "Python of the RoboCasa virtualenv (default <cache>/mujoco4/robocasa-venv/bin/python)",
     "ROBOUSE_ROBOCASA_OBJECT_ROOT": "Directory of authored RoboCasa object bundles (needed for custom/... objects)",
+    "ROBOUSE_PHYSICS_CONDITION_FILE": "Private group receipt checked on every migrated scenario reset; never passed to policies",
+    "ROBOUSE_PHYSICS_CONDITION_RESUME": "1: require an existing group receipt and exact actual-condition match",
     "ROBOUSE_ROBOCASA_PLUGINS": "comma-separated importable modules that register scene-specific RoboCasa scenario "
     "predicates and liquid container kinds (each has register(scenario); robocasa_scenario backend and worker)",
     "ROBOUSE_LIQUID_WORK_ROOT": "host-side scratch folder for the SPH liquid's solver files (robocasa_scenario scenes "
@@ -287,7 +289,8 @@ def operator_dir() -> Path:
 
 def sim_python(backend: str, venv: str | None = None) -> Path:
     """Interpreter of a simulator's own virtualenv: $ROBOUSE_<BACKEND>_PYTHON, else <cache>/<venv>-venv/bin/python."""
-    return path(f"ROBOUSE_{backend.upper()}_PYTHON", cache_dir() / f"{venv or backend}-venv" / "bin" / "python")
+    root = cache_dir() / "mujoco4" if backend == "robocasa" else cache_dir()
+    return path(f"ROBOUSE_{backend.upper()}_PYTHON", root / f"{venv or backend}-venv" / "bin" / "python")
 
 
 def remote_endpoints(name: str) -> Path | None:

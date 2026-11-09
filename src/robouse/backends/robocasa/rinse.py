@@ -24,7 +24,7 @@ def finite_stream_metrics(env, a, scenario):
     fx = _fx(env, a["fixture"])
     m, d = env.sim.model._model, env.sim.data._data
     sid = m.site(f"{fx.naming_prefix}water").id
-    if m.site_type[sid] not in (mujoco.mjtGeom.mjGEOM_CYLINDER, mujoco.mjtGeom.mjGEOM_CAPSULE):
+    if int(m.site_type[sid]) not in (mujoco.mjtGeom.mjGEOM_CYLINDER, mujoco.mjtGeom.mjGEOM_CAPSULE):
         raise ValueError("finite_stream_v1 requires a cylindrical water site")
     half = float(m.site_size[sid][1])
     axis = d.site_xmat[sid].reshape(3, 3)[:, 2].copy()

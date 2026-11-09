@@ -245,6 +245,13 @@ class Worker:
 
         if control not in ("eef", "joint"):
             raise ValueError(f"control must be eef or joint, not {control!r}")
+        # Load by path: the simulator environment does not import the robouse package.
+        import importlib.util
+        from pathlib import Path
+        resource_spec = importlib.util.spec_from_file_location("_mjcf_resources", Path(__file__).with_name("mjcf_resources.py"))
+        resource_module = importlib.util.module_from_spec(resource_spec)
+        resource_spec.loader.exec_module(resource_module)
+        resource_module.install()
         self.trace_finish()  # a trace belongs to one episode
         S = _load_scenario()
         S.load_plugins()  # scene-specific predicates and liquid containers ($ROBOUSE_ROBOCASA_PLUGINS)
@@ -281,6 +288,7 @@ class Worker:
                 ramp_ratio=0.2,
                 gripper={"type": "GRIP"},
             )
+        self._condition_controller_config = copy.deepcopy(cfg)
         k = spec["kitchen"]
         self.env = robosuite.make(
             name,
@@ -625,6 +633,16 @@ class Worker:
     def physics_digest(self) -> dict:
         """The fingerprint every trace record carries (qpos and qvel), for checking that tracing changes nothing."""
         return {"digest": _load_state_trace().digest(self.env.sim.data._data), "steps": self.nstep}
+
+    def physics_condition(self, requirement: dict, render_size: list, reset: dict) -> dict:
+        """Trusted host only: actual engine/renderer/source/compiled-reset receipt."""
+        import importlib.util
+        from pathlib import Path
+
+        spec = importlib.util.spec_from_file_location("_physics_condition", Path(__file__).with_name("physics_condition.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.capture(self, requirement, render_size, reset)
 
     def close(self) -> None:
         self.trace_finish()

@@ -124,8 +124,13 @@ def _wait_ready(p: Path, proc: subprocess.Popen, timeout: float = 120, log: Path
             if (
                 log is not None and log.exists()
             ):  # the server's last line usually names the cause (e.g. a missing simulator)
-                lines = [l for l in log.read_text(errors="replace").splitlines() if l.strip()]
+                from ..core.gl import explain
+
+                content = log.read_text(errors="replace")
+                lines = [l for l in content.splitlines() if l.strip()]
                 last = f": {clip(lines[-1], 1000)}" if lines else ""
+                if rendering_error := explain(content):
+                    last = f": {rendering_error}"
             raise RuntimeError(f"episode server exited early ({proc.returncode}){last}")
         time.sleep(0.2)
     raise TimeoutError("episode server did not start")
@@ -342,7 +347,8 @@ def agent_env(environ) -> dict[str, str]:
     name marks a credential (`SECRET_NAME`, e.g. GITHUB_TOKEN, HF_TOKEN, AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, or the
     session token of an agent that launched the runner), whatever set it. A harness adds back what its program needs:
     its vendor's login, a gateway key, a policy server's token."""
-    return {k: v for k, v in without_provider_keys(environ).items() if not SECRET_NAME.search(k)}
+    return {k: v for k, v in without_provider_keys(environ).items()
+            if not SECRET_NAME.search(k) and not k.startswith("ROBOUSE_PHYSICS_CONDITION_")}
 
 
 def _wait_agent(agent: subprocess.Popen, timeout: float, stop_file: Path | None) -> tuple[int | None, bool]:

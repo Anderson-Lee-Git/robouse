@@ -91,7 +91,7 @@ class Driver:
         o.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
         o.impratio = 10
         o.noslip_iterations = 3
-        o.enableflags |= mujoco.mjtEnableBit.mjENBL_MULTICCD
+        o.disableflags &= ~int(mujoco.mjtDisableBit.mjDSBL_MULTICCD)
 
     def attach(self, s) -> None:
         raise NotImplementedError

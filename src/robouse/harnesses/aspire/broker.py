@@ -45,6 +45,7 @@ from ...lib.text import clip
 
 # the researcher-only physical-state trace (backends/robocasa/state_trace.py FILENAME): never served to an agent
 STATE_TRACE_FILE = "state-trace.jsonl.gz"
+PRIVATE_CONDITION_FILES = {"physics-condition.json", "physics-condition.json.lock"}
 
 AGENT_OPS = ("info", "status", "observe", "act", "move_to", "grip", "skill")  # what a program may send
 MAX_FILE_BYTES = 512 * 1024  # a library file or a program copied out of the workspace
@@ -503,7 +504,8 @@ class PracticeBroker:
         return sorted(
             str(p.relative_to(ep.run_dir))
             for p in ep.run_dir.rglob("*")
-            if p.is_file() and p.name not in ("ready", "server.log", STATE_TRACE_FILE)
+            if p.is_file() and not p.name.startswith(".condition-")
+            and p.name not in {"ready", "server.log", STATE_TRACE_FILE, *PRIVATE_CONDITION_FILES}
         )
 
     def file(self, eid: str, rel: str) -> tuple[int, bytes | dict]:
@@ -515,7 +517,8 @@ class PracticeBroker:
             ".." in Path(rel).parts
             or not inside(p, ep.run_dir)
             or not p.is_file()
-            or p.name in ("ready", STATE_TRACE_FILE)
+            or p.name in {"ready", STATE_TRACE_FILE, *PRIVATE_CONDITION_FILES}
+            or p.name.startswith(".condition-")
         ):
             return 404, {"error": f"no file {rel!r} in practice episode {eid}"}
         return 200, p.read_bytes()
