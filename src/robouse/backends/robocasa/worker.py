@@ -5,6 +5,8 @@ The robouse `robocasa` backend (robocasa.py) starts this script as a subprocess 
 one JSON request per line, one JSON response per line; a `render` response is followed by the raw RGB bytes.
 Only numpy, robosuite and robocasa are imported here (never the robouse package). A scenario with a `liquid` entry
 loads physics/liquid/ by path (scenario.load_liquid); scenario plugins come from $ROBOUSE_ROBOCASA_PLUGINS.
+A scenario episode may also write a researcher-only physical-state trace (state_trace.py, `trace_start`) into its run
+folder; it only reads simulator state and never reaches a reply the policy sees.
 """
 
 from __future__ import annotations
@@ -32,6 +34,20 @@ def _load_scenario():
     name = "robouse_robocasa_scenario"
     if name not in sys.modules:
         spec = importlib.util.spec_from_file_location(name, os.path.join(os.path.dirname(__file__), "scenario.py"))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules[name]
+
+
+def _load_state_trace():
+    """state_trace.py next to this file (the physical-state trace writer), loaded by path like scenario.py."""
+    import importlib.util
+    import sys
+
+    name = "robouse_robocasa_state_trace"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, os.path.join(os.path.dirname(__file__), "state_trace.py"))
         mod = importlib.util.module_from_spec(spec)
         sys.modules[name] = mod
         spec.loader.exec_module(mod)
@@ -127,6 +143,7 @@ class Worker:
         self.control = "eef"
         self.monitors = None
         self.nstep = 0
+        self.tracer = None  # the physical-state trace, when the backend started one (trace_start)
 
     # ---- setup ---------------------------------------------------------------------------------------------------
     def make(
@@ -228,6 +245,7 @@ class Worker:
 
         if control not in ("eef", "joint"):
             raise ValueError(f"control must be eef or joint, not {control!r}")
+        self.trace_finish()  # a trace belongs to one episode
         S = _load_scenario()
         S.load_plugins()  # scene-specific predicates and liquid containers ($ROBOUSE_ROBOCASA_PLUGINS)
         compute_api = S.load_liquid("compute")
@@ -542,6 +560,8 @@ class Worker:
             self.nstep += 1
             self._track_base()
             self.monitors.update(self.env, self.nstep)
+            if self.tracer is not None:  # reads the state this control produced; changes nothing
+                self.tracer.record(self.nstep)
             out["hand_pos"] = [float(v) for v in self.obs["robot0_eef_pos"]]
             out["eef_quat"] = [float(v) for v in self.obs["robot0_eef_quat"]]
             out["joint_pos"] = self.joint_pos()
@@ -549,6 +569,65 @@ class Worker:
 
     def success(self) -> dict:
         return {"success": bool(self.env._check_success())}
+
+    # ---- physical-state trace (researcher-only; state_trace.py) -----------------------------------------------------
+    def trace_start(self, path: str, stride: int = 1, source: dict | None = None) -> dict:
+        """Start the episode's physical-state trace at `path` (in the run folder) with the current state (the reset
+        state when called right after make_scenario). A trace that cannot start is reported, never raised: tracing
+        never stops an episode."""
+        self.trace_finish()
+        if self.scenario is None:
+            return {"ok": False, "error": "a state trace needs a scenario episode"}
+        T, S = _load_state_trace(), _load_scenario()
+        env = self.env
+
+        def burners(key):
+            fx = env.refs[key]
+            if not hasattr(fx, "is_burner_on"):
+                return None
+            return {loc: bool(fx.is_burner_on(env=env, burner_loc=loc))
+                    for loc, j in fx.knob_joints.items() if j is not None}
+
+        def robot():
+            o = self.obs
+            return {"eef": [round(float(v), T.PRECISION) for v in o["robot0_eef_pos"]],
+                    "grip": round(float(np.clip(np.mean(np.abs(o["robot0_gripper_qpos"])) / 0.04, 0, 1)), 3)}
+
+        hooks = {
+            "power": lambda key: bool(S.p_fixture_on(env, {"fixture": key})),
+            "burners": burners,
+            "grasped": lambda name: bool(S.p_grasped(env, {"obj": name})),
+            "robot": robot,
+            "goal": lambda: bool(env._check_success()),
+        }
+        try:
+            self.tracer = T.Tracer(env, self.scenario, path, self.control, hooks, stride=stride, source=source)
+            self.tracer.record(self.nstep, "reset" if self.nstep == 0 else "control")
+        except Exception as e:  # reported to the backend; the episode runs untraced
+            self.tracer = None
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"[:300]}
+        if self.tracer.failed:
+            err, self.tracer = self.tracer.failed, None
+            return {"ok": False, "error": err}
+        return {"ok": True, "format": T.FORMAT, "version": T.VERSION, "file": os.path.basename(path)}
+
+    def trace_phase(self, phase: str) -> bool:
+        """Label the following records (`settle`: the still steps after `robo done`)."""
+        if self.tracer is not None:
+            self.tracer.phase = str(phase)
+        return self.tracer is not None
+
+    def trace_finish(self) -> dict | None:
+        """Write the final state and close the trace (idempotent)."""
+        tracer, self.tracer = getattr(self, "tracer", None), None
+        return tracer.finish() if tracer is not None else None
+
+    def physics_digest(self) -> dict:
+        """The fingerprint every trace record carries (qpos and qvel), for checking that tracing changes nothing."""
+        return {"digest": _load_state_trace().digest(self.env.sim.data._data), "steps": self.nstep}
+
+    def close(self) -> None:
+        self.trace_finish()
 
     # ---- observation ---------------------------------------------------------------------------------------------
     def observe(self, features: list[str]) -> dict:

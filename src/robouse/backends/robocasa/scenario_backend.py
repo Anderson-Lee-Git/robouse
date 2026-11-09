@@ -21,6 +21,11 @@ behind and beside the parked robot, looking at its work area.
 
 Monitors are evaluated by the worker after every step and reach the result only as `safety_events`; they are never part
 of an observation. A monitor that could not be evaluated is reported as an error, never as "did not happen".
+
+Physical-state trace: an episode with motion (eef, joint) writes `state-trace.jsonl.gz` into its run folder
+(state_trace.py: object poses, fixture joints and power, grasps, contacts, liquid counts, after every control). It is
+researcher-only evidence: no reply or observation carries it, and ROBOUSE_STATE_TRACE=0 turns it off (practice and
+development episodes, whose files a broker may serve). A trace that fails is reported in the session summary.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ from ...workers.client import StdioWorker
 from ..base import ActionSpec, Backend, G, StepInfo, arm_layout
 from ..libero.backend import mat2rpy, quat2mat, rot_error, rpy2mat
 from .backend import WORKER
+from .state_trace import FILENAME as STATE_TRACE_FILE
 
 CAMERAS = {"camera_1": "robot0_eye_in_hand", "camera_2": "camera_2_external"}
 STEP_M, ROT_STEP, JOINT_STEP = 0.02, 0.1, 0.2  # as worker.py
@@ -168,6 +174,8 @@ class RobocasaScenarioBackend(Backend):
         self._last: dict = {}
         self._success = False
         self.meta: dict = {}
+        self._run_dir = None  # where the physical-state trace goes (Episode.attach_run_dir)
+        self.trace: dict | None = None  # trace_start's reply
 
     def _call(self, cmd: str, **kw):
         return self.worker.call(cmd, **kw)
@@ -237,6 +245,30 @@ class RobocasaScenarioBackend(Backend):
         return out
 
     # ---- episode ---------------------------------------------------------------------------------------------------
+    def attach_run_dir(self, run_dir) -> None:
+        """The episode's run folder (called before reset): the physical-state trace is written there."""
+        from pathlib import Path
+
+        self._run_dir = Path(run_dir)
+
+    def _start_trace(self) -> None:
+        self.trace = None
+        if self.control == "text" or self._run_dir is None or not config.flag("ROBOUSE_STATE_TRACE", default=True):
+            return
+        try:
+            self.trace = self._call("trace_start", path=str(self._run_dir.resolve() / STATE_TRACE_FILE))
+        except Exception as e:  # noqa: BLE001 - tracing never stops an episode; the summary says it failed
+            self.trace = {"ok": False, "error": f"{type(e).__name__}: {e}"[:300]}
+
+    def begin_settle(self) -> None:
+        """The still steps after `robo done` begin (session.finish): the trace labels them `settle`. The held action
+        is unchanged."""
+        if self.trace and self.trace.get("ok"):
+            try:
+                self._call("trace_phase", phase="settle")
+            except Exception:  # noqa: BLE001
+                pass
+
     def reset(self, seed: int) -> None:
         sc = self.scenario
         self._summary = None
@@ -252,6 +284,7 @@ class RobocasaScenarioBackend(Backend):
         self._joint_limits = self._call("joint_limits")
         self._state, self._last = None, {}
         self._success = False
+        self._start_trace()
 
     def step(self, action) -> StepInfo:
         if self.control == "text":
@@ -295,6 +328,7 @@ class RobocasaScenarioBackend(Backend):
             "settle_motion": self.meta.get("settle_motion"),
             "robot_base": m.get("robot_base") or self.meta.get("robot_base"),  # how the base was held, and its drift
             **({"compute": dict(self.scenario["compute"])} if self.scenario.get("compute") else {}),
+            **({"state_trace_error": t["error"]} if (t := getattr(self, "trace", None)) and not t.get("ok") else {}),
         }
         return self._summary
 
@@ -414,4 +448,9 @@ class RobocasaScenarioBackend(Backend):
 
     def close(self) -> None:
         self._closed = True
+        if getattr(self, "trace", None) and self.trace.get("ok"):
+            try:
+                self._call("trace_finish")  # the final state; the worker's close would write it too
+            except Exception:  # noqa: BLE001 - a dead worker leaves an incomplete trace, which readers flag
+                pass
         self.worker.close()

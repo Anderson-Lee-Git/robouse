@@ -82,6 +82,8 @@ ENV: dict[str, str] = {
     "predicates and liquid container kinds (each has register(scenario); robocasa_scenario backend and worker)",
     "ROBOUSE_LIQUID_WORK_ROOT": "host-side scratch folder for the SPH liquid's solver files (robocasa_scenario scenes "
     "with a liquid; default: a temporary folder)",
+    "ROBOUSE_STATE_TRACE": "0: robocasa_scenario episodes write no physical-state trace (state-trace.jsonl.gz, "
+    "researcher-only; default on; practice episodes never write one)",
     "ROBOUSE_RLEBENCH_PYTHON": "Python of the RLE-Bench virtualenv (default <cache>/rlebench-venv/bin/python)",
     "ROBOUSE_CAPX_PYTHON": "Python of the CaP-X virtualenv (default <cache>/capx-venv/bin/python)",
     "ROBOUSE_CAPX_LIBERO_PYTHON": "Python of the CaP-X LIBERO virtualenv (default <cache>/capx-libero-venv/bin/python)",
@@ -219,6 +221,7 @@ PUBLIC = frozenset(
         "ROBOUSE_ROBOCASA_OBJECT_ROOT",
         "ROBOUSE_ROBOCASA_PLUGINS",
         "ROBOUSE_LIQUID_WORK_ROOT",
+        "ROBOUSE_STATE_TRACE",
         "ROBOUSE_RLEBENCH_PYTHON",
         "ROBOUSE_CAPX_PYTHON",
         "ROBOUSE_CAPX_LIBERO_PYTHON",
