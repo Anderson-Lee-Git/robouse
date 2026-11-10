@@ -112,7 +112,7 @@ def build_apartment(s, objects: list[dict]) -> None:
     )
     w = s.worldbody
     w.add_light(
-        name="sun", pos=[0, 0, 8], dir=[0, 0, -1], directional=True, diffuse=[0.45, 0.45, 0.45], castshadow=False
+        name="sun", pos=[0, 0, 8], dir=[0, 0, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL, diffuse=[0.45, 0.45, 0.45], castshadow=False
     )
     w.add_geom(
         name="floor",

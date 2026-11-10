@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Auto-fix lint and formatting of staged Python files before each commit, so CI's
+# `ruff check` / `ruff format --check` (.github/workflows/ci.yml) pass. Uses the same ruff version CI pins.
+# --force-exclude keeps pyproject excludes (vendored upstream code) untouched.
+# Enable once per clone:  git config core.hooksPath .githooks
+# Skip for one commit:    git commit --no-verify
+set -euo pipefail
+RUFF_VERSION=0.14.3  # keep in step with .github/workflows/ci.yml and .pre-commit-config.yaml
+if command -v uv > /dev/null; then
+  ruff=(uv tool run --quiet "ruff@$RUFF_VERSION")
+elif command -v uvx > /dev/null; then
+  ruff=(uvx --quiet "ruff@$RUFF_VERSION")
+else
+  echo "pre-commit: uv not found, cannot run ruff $RUFF_VERSION; skipping" >&2
+  exit 0
+fi
+mapfile -t files < <(git diff --cached --name-only --diff-filter=ACMR -- '*.py')
+((${#files[@]})) || exit 0
+partial=()
+for f in "${files[@]}"; do
+  git diff --quiet -- "$f" || partial+=("$f")
+done
+"${ruff[@]}" check --force-exclude --fix --quiet "${files[@]}" || true
+"${ruff[@]}" format --force-exclude --quiet "${files[@]}"
+# Re-stage the fixes. A file that also had unstaged edits is re-staged whole; say so.
+git add -- "${files[@]}"
+((${#partial[@]})) && echo "pre-commit: re-staged whole files that had unstaged edits: ${partial[*]}" >&2
+# Anything ruff cannot fix automatically blocks the commit, as CI would.
+"${ruff[@]}" check --force-exclude --quiet "${files[@]}"

@@ -101,10 +101,97 @@ def _copy_blueprints() -> None:
         return
 
     def __init__(self, layout_id, *args, **kwargs):
-        init(self, copy.deepcopy(layout_id) if isinstance(layout_id, dict) else layout_id, *args, **kwargs)
+        blueprint = copy.deepcopy(layout_id) if isinstance(layout_id, dict) else layout_id
+        # Custom fixture XML v1: resolve only the arena's private copy. Kitchen
+        # metadata keeps the portable ID, including reset/replay layout_id.
+        def resolve(value):
+            if isinstance(value, dict):
+                if "authored_drawer_v1" in value:
+                    if value.get("type") != "drawer":
+                        raise ValueError("authored_drawer_v1 requires fixture type drawer")
+                    if value["authored_drawer_v1"] != "1.0.0":
+                        raise ValueError("authored_drawer_v1 requires version 1.0.0")
+                    _authored_drawers_v1()
+                xml = value.get("xml")
+                if "type" in value and isinstance(xml, str) and xml.startswith("custom/"):
+                    value["xml"] = model_path(xml)
+                for child in value.values():
+                    resolve(child)
+            elif isinstance(value, list):
+                for child in value:
+                    resolve(child)
+        resolve(blueprint)
+        init(self, blueprint, *args, **kwargs)
 
     __init__.copies_blueprints = True
     KA.KitchenArena.__init__ = __init__
+
+
+def _authored_drawers_v1():
+    """Opt-in immutable drawer XML; stock constructors and state are unchanged.
+
+    The XML owns geometry, mass, slide and regions. Style parameters are ignored
+    only for an authored drawer. Resizing is rejected: it would change mechanics.
+    """
+    from robocasa.models.fixtures.cabinets import Drawer
+    from robocasa.models.fixtures.fixture import Fixture
+
+    original = Drawer.__init__
+    if getattr(original, "authored_drawer_v1", False):
+        return
+    old_get, old_set = Drawer.get_door_state, Drawer.set_door_state
+
+    def init(self, *args, authored_drawer_v1=None, **kwargs):
+        if authored_drawer_v1 is None:
+            return original(self, *args, **kwargs)
+        if authored_drawer_v1 != "1.0.0" or args:
+            raise ValueError("authored_drawer_v1 requires version 1.0.0 and keyword arguments")
+        xml = kwargs.pop("xml", None)
+        if not isinstance(xml, str):
+            raise ValueError("authored drawer requires XML")
+        size = kwargs.pop("size", None)
+        for key in ("texture", "thickness", "door_gap", "handle_type", "handle_config",
+                    "panel_type", "panel_config", "open_top", "num_levels", "is_corner_cab"):
+            kwargs.pop(key, None)
+        if kwargs.get("scale", 1) != 1:
+            raise ValueError("authored drawer scaling is not supported")
+        self.num_levels = 0
+        self.cabinet_type = "drawer"
+        Fixture.__init__(self, xml=xml, **kwargs)
+        if size is not None and not np.allclose(size, self.size, atol=1e-9, rtol=0):
+            raise ValueError("authored drawer size must match its immutable XML")
+        joint = self.worldbody.find(f".//joint[@name='{self.name}_slidejoint']")
+        if joint is None or joint.get("type") != "slide" or joint.get("axis") != "0 1 0":
+            raise ValueError("authored drawer requires slidejoint along +Y")
+        limits = np.fromstring(joint.get("range", ""), sep=" ")
+        if len(limits) != 2 or not np.isfinite(limits).all() or limits[0] >= 0 or limits[1] != 0:
+            raise ValueError("authored drawer range must be [-travel, 0]")
+        self.authored_drawer_travel_v1 = float(-limits[0])
+
+    def get_state(self, env):
+        travel = getattr(self, "authored_drawer_travel_v1", None)
+        if travel is None:
+            return old_get(self, env)
+        q = env.sim.data.get_joint_qpos(f"{self.name}_slidejoint")
+        return {"door": float(np.clip(-q / travel, 0, 1))}
+
+    def set_state(self, min, max, env):
+        travel = getattr(self, "authored_drawer_travel_v1", None)
+        if travel is None:
+            return old_set(self, min, max, env)
+        if not 0 <= min <= max <= 1:
+            raise ValueError("door state must satisfy 0 <= min <= max <= 1")
+        q = -travel * env.rng.uniform(min, max)
+        joint_name = f"{self.name}_slidejoint"
+        env.sim.data.set_joint_qpos(joint_name, q)
+        # Initialize dependent carriage stages consistently before ordinary settling.
+        for eq in getattr(self, "equality", ()):
+            if eq.tag == "joint" and eq.get("joint2") == joint_name:
+                coeff = np.fromstring(eq.get("polycoef", "0 1 0 0 0"), sep=" ")
+                env.sim.data.set_joint_qpos(eq.get("joint1"), np.polynomial.polynomial.polyval(q, coeff))
+
+    init.authored_drawer_v1 = True
+    Drawer.__init__, Drawer.get_door_state, Drawer.set_door_state = init, get_state, set_state
 
 
 def _shift_robots() -> None:
@@ -339,16 +426,29 @@ def make_class(spec: dict):
                 "camera",
                 {"name": EXTERNAL_CAMERA, "pos": "0 0 2", "quat": "1 0 0 0", "fovy": str(spec.get("camera_2", {}).get("fovy", 60))},
             )
+        # RoboSuite merges object bodies/assets but drops their root equalities.
+        # Authored drawers opt into preserving their passive slide couplings.
+        for fixture in self.fixtures.values():
+            if hasattr(fixture, "authored_drawer_travel_v1"):
+                for constraint in fixture.equality:
+                    name = constraint.get("name")
+                    if name is None or self.model.equality.find(f"./*[@name='{name}']") is None:
+                        self.model.equality.append(copy.deepcopy(constraint))
         add_attach_welds(self, spec)  # breakable parts (object key `attach`), switched off by the AttachTracker
         add_burner_flames(self, spec)  # opt-in visible gas flames (a stove fixture entry's `flames`)
         add_base_lock(self, spec)  # the parked base and torso, locked at reset (ROBOT_BASE_VERSION)
+        if "contact_pairs_v1" in spec:
+            load_contact_pairs().add(self.model, spec)  # explicit compiled names and parameters
 
     def _reset_internal(self):
+        if any("timer_indicator_v1" in f for f in spec["fixtures"].values()):
+            self._timer_indicators_v1 = None
         configure_initial_arm(self, spec)
         Kitchen._reset_internal(self)
         lock_base(self, spec)  # after RoboCasa has parked the robot
         snap_attachments(self, spec)
         apply_object_friction(self, spec)  # opt-in object key `friction`, before the objects settle
+        sync_timer_indicators_v1(self, spec, reset=True)
 
     def _create_objects(self):
         # A replayed custom object must be drawn from its bundle on every attempt. RoboCasa's _load_model retries
@@ -367,6 +467,7 @@ def make_class(spec: dict):
     def update_state(self):
         Kitchen.update_state(self)  # RoboCasa shows a lit burner's disc here, after reset and after every action
         sync_burner_flames(self)
+        sync_timer_indicators_v1(self, spec)
 
     def get_ep_meta(self):
         meta = Kitchen.get_ep_meta(self)
@@ -629,6 +730,62 @@ def _turned_on(env, fx) -> bool:
     if "turned_on" in st:
         return bool(st["turned_on"])
     return any(bool(v) for k, v in st.items() if "turned_on" in str(k) or k == "on")
+
+
+def sync_timer_indicators_v1(env, spec, *, reset=False):
+    """Visual-only, opt-in timer feedback; no state, material or physics mutation.
+
+    Switch only the declared lens's material ID, after fixture state updates.
+    Resolve afresh at reset; never retain compiled IDs across model rebuilds.
+    Absence returns before accessing the model or adding environment attributes.
+    """
+    declared = [(key, f["timer_indicator_v1"]) for key, f in spec["fixtures"].items()
+                if "timer_indicator_v1" in f]
+    if not declared:
+        return
+    bindings = getattr(env, "_timer_indicators_v1", None)
+    if bindings is None:
+        import mujoco
+
+        model = env.sim.model
+        bindings, used_geoms, used_mats = [], set(), set()
+        for key, cfg in declared:
+            required = {"version", "geom", "off_material", "on_material"}
+            if not isinstance(cfg, dict) or set(cfg) != required or cfg.get("version") != "1.0.0":
+                raise ValueError("timer_indicator_v1 requires version 1.0.0 and geom/off_material/on_material")
+            if any(not isinstance(cfg[k], str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", cfg[k])
+                   for k in required - {"version"}):
+                raise ValueError("timer_indicator_v1 selectors must be local XML names")
+            fx = env.refs[key]
+            if not hasattr(fx, "set_time"):
+                raise ValueError("timer_indicator_v1 requires a timer-controlled fixture")
+            try:
+                gid = model.geom_name2id(fx.naming_prefix + cfg["geom"])
+                off = mujoco.mj_name2id(model._model, mujoco.mjtObj.mjOBJ_MATERIAL, fx.naming_prefix + cfg["off_material"])
+                on = mujoco.mj_name2id(model._model, mujoco.mjtObj.mjOBJ_MATERIAL, fx.naming_prefix + cfg["on_material"])
+            except (ValueError, KeyError) as exc:
+                raise ValueError("timer_indicator_v1 selector not found") from exc
+            if min(gid, off, on) < 0:
+                raise ValueError("timer_indicator_v1 selector not found")
+            if gid in used_geoms or off == on or {off, on} & used_mats:
+                raise ValueError("timer_indicator_v1 colliding selectors")
+            if model.geom_contype[gid] or model.geom_conaffinity[gid]:
+                raise ValueError("timer_indicator_v1 lens must be visual only")
+            if int(model.geom_matid[gid]) not in (off, on):
+                raise ValueError("timer_indicator_v1 lens must use a declared material")
+            for material in (off, on):
+                if any(int(g) != gid for g in np.flatnonzero(model.geom_matid == material)):
+                    raise ValueError("timer_indicator_v1 materials must be dedicated to the lens")
+            used_geoms.add(gid)
+            used_mats.update((off, on))
+            bindings.append((fx, gid, off, on))
+        env._timer_indicators_v1 = bindings
+    for fx, gid, off, on in bindings:
+        # A replay reset has not populated the rack cache required by get_state.
+        # set_time initializes _time; use that same timer value without updating
+        # fixtures again (which could clamp joints or advance the countdown).
+        active = float(fx._time or 0.0) >= 0.1 if reset else _turned_on(env, fx)
+        env.sim.model.geom_matid[gid] = on if active else off
 
 
 def _takes_env(fn) -> bool:
@@ -1917,6 +2074,20 @@ def install_residue_trackers(env, spec):
         _wrap_steps(env)
     env.robouse_adhere = AdhereTracker(env, spec) if adhesions(spec) else None
     env.robouse_streams = StreamTracker(env, spec) if spec.get("streams") else None
+
+
+def load_contact_pairs():
+    """The standalone worker loads scenario.py without a robouse package import."""
+    import importlib.util
+
+    name = "robouse_contact_pairs"
+    if name not in sys.modules:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "contact_pairs.py")
+        module_spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(module)
+        sys.modules[name] = module
+    return sys.modules[name]
 
 
 def load_liquid(submodule: str | None = None):

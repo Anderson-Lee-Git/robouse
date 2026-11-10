@@ -296,3 +296,9 @@ SUITES = {
     "capx-libero": dict(embodiments=["franka-panda-upstream"], scene="upstream-scenes", scenario="household-kitchen",
                         track="arm", capabilities=["pick-and-place"]),
 }
+
+# Generated action-interface variants retain their source suite metadata.
+for _suite in ("libero-10-eef", "libero-10-eef-pose", "libero-10-joint", "libero-10-vision"):
+    SUITES[_suite] = dict(SUITES["libero"])
+for _suite in ("libero-pro-eef", "libero-pro-joint"):
+    SUITES[_suite] = dict(SUITES["libero-pro"])

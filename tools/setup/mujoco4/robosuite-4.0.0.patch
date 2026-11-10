@@ -1,0 +1,62 @@
+--- a/setup.py
++++ b/setup.py
+@@ -18,7 +18,7 @@
+         "numpy>=1.13.3",
+         "numba>=0.49.1",
+         "scipy>=1.2.3",
+-        "mujoco>=3.3.0,<3.10",  # 3.10 changed mj_fullM signature; breaks controllers/parts/controller.py
++        "mujoco==4.0.0",  # 3.10 changed mj_fullM signature; breaks controllers/parts/controller.py
+         "qpsolvers[quadprog]>=4.3.1",
+         "Pillow",
+         "opencv-python",
+--- a/robosuite/controllers/parts/controller.py
++++ b/robosuite/controllers/parts/controller.py
+@@ -224,7 +224,7 @@
+             self.joint_vel = np.array(self.sim.data.qvel[self.qvel_index])
+ 
+             mass_matrix = np.ndarray(shape=(self.sim.model.nv, self.sim.model.nv), dtype=np.float64, order="C")
+-            mujoco.mj_fullM(self.sim.model._model, mass_matrix, self.sim.data.qM)
++            mujoco.mj_fullM(self.sim.model._model, self.sim.data._data, mass_matrix)
+             mass_matrix = np.reshape(mass_matrix, (len(self.sim.data.qvel), len(self.sim.data.qvel)))
+             self.mass_matrix = mass_matrix[self.qvel_index, :][:, self.qvel_index]
+ 
+--- a/robosuite/utils/binding_utils.py
++++ b/robosuite/utils/binding_utils.py
+@@ -518,7 +518,7 @@
+             returns the a (start, end) tuple for pos[start:end] access.
+         """
+         joint_id = self.joint_name2id(name)
+-        joint_type = self.jnt_type[joint_id]
++        joint_type = int(self.jnt_type[joint_id])
+         joint_addr = self.jnt_qposadr[joint_id]
+         if joint_type == mujoco.mjtJoint.mjJNT_FREE:
+             ndim = 7
+@@ -543,7 +543,7 @@
+             returns the a (start, end) tuple for vel[start:end] access.
+         """
+         joint_id = self.joint_name2id(name)
+-        joint_type = self.jnt_type[joint_id]
++        joint_type = int(self.jnt_type[joint_id])
+         joint_addr = self.jnt_dofadr[joint_id]
+         if joint_type == mujoco.mjtJoint.mjJNT_FREE:
+             ndim = 6
+--- a/robosuite/models/assets/base.xml
++++ b/robosuite/models/assets/base.xml
+@@ -1,13 +1,16 @@
+ <!-- This is the base xml for all physics simulations. Set global configs here. -->
+ <mujoco model="base">
+   <compiler angle="radian" meshdir="meshes/" inertiagrouprange="0 0" autolimits="true"/>
+-  <option impratio="20" cone="elliptic" density="1.2" viscosity="0.00002"/>
++  <option impratio="20" cone="elliptic" density="1.2" viscosity="0.00002" ccd_iterations="50">
++    <flag island="disable"/>
++  </option>
+   <size nconmax="5000" njmax="5000"/>
+ 
+   <asset>
+   </asset>
+ 
+   <visual>
++    <headlight active="1"/>
+     <map znear="0.001" />
+   </visual>
+ 

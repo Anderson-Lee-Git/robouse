@@ -761,7 +761,7 @@ class DexHandBackend(EmbodiedBackend):
             self._place_on_palm("cube", st["cube_on_palm"])
         # PD gains from the joint-space inertia at the start pose
         M = np.zeros((m.nv, m.nv))
-        mujoco.mj_fullM(m, M, d.qM)
+        mujoco.mj_fullM(m, d, M)
         self.inertia = np.array([M[v, v] for v in self.pv])
         self.kp = self.inertia * WN**2
         self.kd = 2 * ZETA * WN * self.inertia

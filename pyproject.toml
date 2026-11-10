@@ -48,7 +48,7 @@ dependencies = ["numpy>=1.24", "pyyaml>=6"]
 # menagerie and drone suites.
 # MuJoCo is pinned: with 3.14, robosuite, menagerie, gymrobotics and drone episodes crash and some reference solutions fail
 # (checked in September 2026). 3.3.0 is also the version Meta-World requires.
-sim = ["mujoco==3.3.0", "imageio>=2.34", "imageio-ffmpeg>=0.5", "pillow>=10"]
+sim = ["mujoco==4.0.0", "imageio>=2.34", "imageio-ffmpeg>=0.5", "pillow>=10"]
 metaworld = ["robouse[sim]", "metaworld>=3.1", "packaging"]
 gymrobotics = ["robouse[sim]", "gymnasium-robotics>=1.4"]
 # robosuite 1.5 conflicts with LIBERO's robosuite==1.4.0 pin. In an environment that also runs LIBERO, install it

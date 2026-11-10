@@ -180,10 +180,10 @@ def _build(task: dict):
     w = s.worldbody
     BOX, PLANE, CYL = mujoco.mjtGeom.mjGEOM_BOX, mujoco.mjtGeom.mjGEOM_PLANE, mujoco.mjtGeom.mjGEOM_CYLINDER
     w.add_light(
-        name="q_top", pos=[0, 0, 8], dir=[0, 0, -1], directional=True, diffuse=[0.55, 0.55, 0.55], castshadow=False
+        name="q_top", pos=[0, 0, 8], dir=[0, 0, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL, diffuse=[0.55, 0.55, 0.55], castshadow=False
     )
     w.add_light(
-        name="q_key", pos=[-3, -5, 6], dir=[0.4, 0.6, -0.7], directional=True, diffuse=[0.3, 0.3, 0.3], castshadow=False
+        name="q_key", pos=[-3, -5, 6], dir=[0.4, 0.6, -0.7], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL, diffuse=[0.3, 0.3, 0.3], castshadow=False
     )
     w.add_geom(name="floor", type=PLANE, size=[6.5, 4.5, 0.1], material="q_floor", friction=[1, 0.005, 0.0001])
 

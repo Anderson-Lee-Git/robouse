@@ -16,8 +16,14 @@ suites:
 - gpu-maniskill
 - kitchen
 - libero
+- libero-10-eef
+- libero-10-eef-pose
+- libero-10-joint
+- libero-10-vision
 - libero-90
 - libero-pro
+- libero-pro-eef
+- libero-pro-joint
 - maniskill
 - rle-bench
 - robocasa
