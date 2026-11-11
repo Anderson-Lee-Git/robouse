@@ -4,6 +4,7 @@ import ctypes
 import os
 
 GPU_CONTRACT = '0.5.0'
+GPU_CONTRACTS = ('0.5.0', '0.6.0')  # 0.6.0: the same GPU solver plus flex patch boundaries (flex_patches.py)
 GPU_BACKEND = 'warp-dfsph-0.5.0-candidate'
 
 
@@ -17,8 +18,8 @@ def requirement(spec):
     contract = liquid.get('contract_version', liquid.get('version'))
     compute = spec.get('compute')
     if compute is None:
-        if contract == GPU_CONTRACT:
-            raise ValueError('liquid 0.5.0 requires an explicit compute field')
+        if contract in GPU_CONTRACTS:
+            raise ValueError(f'liquid {contract} requires an explicit compute field')
         return None
     if not liquid:
         raise ValueError('compute liquid requirements need a liquid scene')
@@ -32,10 +33,10 @@ def requirement(spec):
         raise ValueError('compute.threads differs from liquid.threads')
     solver = compute['liquid_solver']
     if solver == 'gpu':
-        if contract != GPU_CONTRACT or compute['liquid_backend_id'] != GPU_BACKEND:
-            raise ValueError('GPU compute requires contract 0.5.0 and its exact backend id')
+        if contract not in GPU_CONTRACTS or compute['liquid_backend_id'] != GPU_BACKEND:
+            raise ValueError('GPU compute requires contract 0.5.0 or 0.6.0 and its exact backend id')
     elif solver == 'cpu':
-        if contract == GPU_CONTRACT:
+        if contract in GPU_CONTRACTS:
             raise ValueError('GPU contract cannot run on CPU')
         backend = liquid.get('native_backend') or {}
         if not backend.get('id') or compute['liquid_backend_id'] != backend['id']:

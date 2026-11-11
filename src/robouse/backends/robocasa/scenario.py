@@ -477,6 +477,9 @@ def make_class(spec: dict):
         apply_object_solimp(self, spec)  # opt-in object key `solimp`, before the objects settle
         sync_timer_indicators_v1(self, spec, reset=True)
 
+    def check_contact(self, geoms_1, geoms_2=None):
+        return check_geom_contact(self.sim, geoms_1, geoms_2)
+
     def _create_objects(self):
         # A replayed custom object must be drawn from its bundle on every attempt. RoboCasa's _load_model retries
         # placement by recursing, and its _create_objects writes each attempt's rebased `info` back into
@@ -515,6 +518,7 @@ def make_class(spec: dict):
             "_load_model": _load_model,
             "_create_objects": _create_objects,
             "_reset_internal": _reset_internal,
+            "check_contact": check_contact,  # flex-safe geom-name contact check (check_geom_contact)
             "update_state": update_state,
             "get_ep_meta": get_ep_meta,
             "_check_success": _check_success,
@@ -588,18 +592,43 @@ def place_camera(env, spec: dict) -> dict:
     return {"pos": [float(v) for v in pos], "quat": quat, "target": [float(v) for v in tgt]}
 
 
+def object_flexes(m, root: int) -> list[int]:
+    """Flexes owned by the object rooted at body `root`: every vertex body lies in its subtree (a pinned-root
+    flex has its pinned vertices on the root itself and the others on generated child bodies)."""
+    bodies = set(_subtree(m, root))
+    out = []
+    for f in range(int(getattr(m, "nflex", 0))):
+        a, n = int(m.flex_vertadr[f]), int(m.flex_vertnum[f])
+        if n and all(int(b) in bodies for b in m.flex_vertbodyid[a : a + n]):
+            out.append(f)
+    return out
+
+
 def apply_object_friction(env, spec: dict) -> None:
     """An object's `friction` ([sliding, torsional, rolling]) replaces RoboCasa's (0.95, 0.3, 0.1) on all its
     collision geoms (RoboCasa overwrites every object geom's friction, whatever its model file says). MuJoCo uses the
-    larger of two touching geoms' values, so this lowers friction only against geoms that are as slippery."""
+    larger of two touching geoms' values, so this lowers friction only against geoms that are as slippery.
+    Opt-in `condim` (1, 3, 4 or 6) likewise replaces the collision geoms' contact dimensionality (RoboCasa keeps the
+    model's). Both also apply to the object's flexes (deformable cloth), whose contact parameters RoboCasa leaves
+    as authored. A versioned physics condition: a scene declares them, they are never applied silently."""
     m = env.sim.model._model
     for o in spec.get("objects", []):
-        if o.get("friction") is None or o["name"] not in env.obj_body_id:
+        if (o.get("friction") is None and o.get("condim") is None) or o["name"] not in env.obj_body_id:
             continue
-        bodies = set(_subtree(m, env.obj_body_id[o["name"]]))
+        root = env.obj_body_id[o["name"]]
+        bodies = set(_subtree(m, root))
+        flexes = object_flexes(m, root)
         for g in range(m.ngeom):
             if int(m.geom_bodyid[g]) in bodies and (m.geom_contype[g] or m.geom_conaffinity[g]):
-                m.geom_friction[g] = np.asarray(o["friction"], dtype=float)
+                if o.get("friction") is not None:
+                    m.geom_friction[g] = np.asarray(o["friction"], dtype=float)
+                if o.get("condim") is not None:
+                    m.geom_condim[g] = int(o["condim"])
+        for f in flexes:
+            if o.get("friction") is not None:
+                m.flex_friction[f] = np.asarray(o["friction"], dtype=float)
+            if o.get("condim") is not None:
+                m.flex_condim[f] = int(o["condim"])
 
 
 # RoboCasa's object loader gives every geom of an object's model file this near-rigid impedance (with solref 0.001)
@@ -1049,7 +1078,20 @@ def _inside_primitives_v1(env, a):
     )
 
 
+def _refuse_flex(env, pred: str, *names) -> None:
+    """Geom-name contact checks (robosuite check_contact) never see a flex side (geom -1): for a deformable object
+    they would report no contact whatever touches it, which is missing evidence, not a negative measurement."""
+    sim = getattr(env, "sim", None)
+    m = getattr(sim.model, "_model", sim.model) if sim is not None else None
+    if m is None or not int(getattr(m, "nflex", 0) or 0):
+        return  # no flex in the model: the frozen geom-name checks are unchanged
+    for n in names:
+        if n in env.obj_body_id and object_flexes(m, env.obj_body_id[n]):
+            raise ValueError(f"{pred} does not measure deformable (flex) object {n!r}")
+
+
 def p_on_fixture(env, a):
+    _refuse_flex(env, "on_fixture", a["obj"])
     if "obj_geoms_v1" in a:
         return bool(env.check_contact(_contact_geoms_v1(env, a["obj"], a["obj_geoms_v1"]), _fx(env, a["fixture"])))
     from robocasa.utils import object_utils as OU
@@ -1057,13 +1099,35 @@ def p_on_fixture(env, a):
     return OU.check_obj_fixture_contact(env, a["obj"], _fx(env, a["fixture"]))
 
 
+def object_body_contact(env, name_a: str, name_b: str) -> bool:
+    """Any native contact between the two objects' body subtrees, flex sides resolved to their vertex bodies
+    (`contact_bodies`). Geom-name groups cannot see a deformable object's flex, which has no collision geoms."""
+    m = env.sim.model._model
+    d = env.sim.data._data
+    A, B = set(_subtree(m, env.obj_body_id[name_a])), set(_subtree(m, env.obj_body_id[name_b]))
+    for i in range(d.ncon):
+        b1, b2 = contact_bodies(m, d.contact[i])
+        if (b1 in A and b2 in B) or (b1 in B and b2 in A):
+            return True
+    return False
+
+
 def p_in_receptacle(env, a):
+    m = env.sim.model._model
+    if any(object_flexes(m, env.obj_body_id[n]) for n in (a["obj"], a["receptacle"])):
+        # RoboCasa's test with the contact measured natively: contact and the object's root within 0.7 x the
+        # receptacle's horizontal radius of the receptacle's root (unchanged threshold)
+        pos = env.sim.data.body_xpos
+        th = env.objects[a["receptacle"]].horizontal_radius * 0.7
+        near = np.linalg.norm(pos[env.obj_body_id[a["obj"]]][:2] - pos[env.obj_body_id[a["receptacle"]]][:2]) < th
+        return bool(near and object_body_contact(env, a["obj"], a["receptacle"]))
     from robocasa.utils import object_utils as OU
 
     return OU.check_obj_in_receptacle(env, a["obj"], a["receptacle"])
 
 
 def p_contact(env, a):
+    _refuse_flex(env, "contact", a["a"], a["b"])
     if "a_geoms_v1" in a or "b_geoms_v1" in a:
         sides = [
             _contact_geoms_v1(env, a[key], a[key + "_geoms_v1"]) if key + "_geoms_v1" in a else env.objects[a[key]]
@@ -1101,6 +1165,60 @@ def _contact_geoms_v1(env, obj_name, local_names):
     return selected
 
 
+def check_geom_contact(sim, geoms_1, geoms_2=None) -> bool:
+    """robosuite's `check_contact` (geom-name groups, or a model's `contact_geoms`; `geoms_2` None = any other side)
+    with one change: a contact side without a geom (a flex side, geom -1) is never a member of a geom-name group
+    (it still counts as "any other side" when `geoms_2` is None).
+    Stock robosuite raises on such contacts ("No geom with id -1"), so in a scene with a deformable cloth every
+    geom-name check failed while the cloth touched anything; without flexes the result is identical. A flex
+    object's own contacts are therefore invisible to it; `_refuse_flex` keeps flex objects out of such checks."""
+
+    def names(g):
+        if isinstance(g, str):
+            return {g}
+        if hasattr(g, "contact_geoms"):
+            return set(g.contact_geoms)
+        return set(g)
+
+    g1 = names(geoms_1)
+    g2 = None if geoms_2 is None else names(geoms_2)
+    m = sim.model
+    for i in range(sim.data.ncon):
+        c = sim.data.contact[i]
+        a, b = int(c.geom1), int(c.geom2)
+        na = m.geom_id2name(a) if a >= 0 else None
+        nb = m.geom_id2name(b) if b >= 0 else None
+        a1, b1 = na is not None and na in g1, nb is not None and nb in g1
+        a2 = (na is not None and na in g2) if g2 is not None else True
+        b2 = (nb is not None and nb in g2) if g2 is not None else True
+        if (a1 and b2) or (a2 and b1):
+            return True
+    return False
+
+
+def contact_bodies(m, c) -> tuple[int, int]:
+    """The two bodies of a native contact. A flex side (geom -1) resolves to the body of its contacting vertex,
+    or of the contacting element's first vertex; never to a wrapped-around geom index."""
+    M = getattr(m, "_model", m)
+    out = []
+    geoms = c.geom if hasattr(c, "geom") else (c.geom1, c.geom2)
+    for k in (0, 1):
+        g = int(geoms[k])
+        if g >= 0:
+            out.append(int(M.geom_bodyid[g]))
+            continue
+        f = int(c.flex[k])
+        if f < 0:
+            raise ValueError("contact side has neither a geom nor a flex")
+        v = int(c.vert[k])
+        if v < 0:
+            e = int(c.elem[k])
+            dim = int(M.flex_dim[f])
+            v = int(M.flex_elem[int(M.flex_elemdataadr[f]) + e * (dim + 1)])
+        out.append(int(M.flex_vertbodyid[int(M.flex_vertadr[f]) + v]))
+    return out[0], out[1]
+
+
 def p_grasped(env, a):
     from robocasa.utils import object_utils as OU
 
@@ -1131,13 +1249,8 @@ def p_supported_v1(env, a):
         raise ValueError("supported_v1 fixture has no contact geoms")
     for c in d.contact[: d.ncon]:
         g1, g2 = int(c.geom1), int(c.geom2)
-        sign = (
-            1
-            if int(m.geom_bodyid[g2]) in bodies and g1 in fixture
-            else -1
-            if int(m.geom_bodyid[g1]) in bodies and g2 in fixture
-            else 0
-        )
+        b1, b2 = contact_bodies(m, c)
+        sign = 1 if b2 in bodies and g1 in fixture else -1 if b1 in bodies and g2 in fixture else 0
         if sign and c.efc_address >= 0 and sign * float(c.frame[2]) >= threshold:
             return True
     return False
@@ -1155,7 +1268,7 @@ def p_released_v1(env, a):
     if not robot_bodies:
         raise ValueError("released_v1 requires robot bodies")
     for c in d.contact[: d.ncon]:
-        b1, b2 = int(m.geom_bodyid[c.geom1]), int(m.geom_bodyid[c.geom2])
+        b1, b2 = contact_bodies(m, c)
         if c.efc_address >= 0 and ((b1 in bodies and b2 in robot_bodies) or (b2 in bodies and b1 in robot_bodies)):
             return False
     return True
@@ -1551,9 +1664,12 @@ class ImpactTracker:
         self.body = {n: env.obj_body_id[n] for n in names}
         self.watch = {}  # geom -> watched object owning it (its root body or a descendant)
         for n, bid in self.body.items():
+            if object_flexes(m, bid):
+                raise ValueError(f"impact_speed does not measure deformable (flex) object {n!r}")
             for b in _subtree(m, bid):
                 for g in np.flatnonzero(m.geom_bodyid == b):
                     self.watch[int(g)] = n
+        self.m = m
         self.robot = np.array(
             [
                 (m.body(int(m.geom_bodyid[g])).name or "").startswith(("robot0_", "gripper0_", "mobilebase0_"))
@@ -1572,6 +1688,12 @@ class ImpactTracker:
         d, now = self.d, {n: set() for n in self.body}
         for i in range(d.ncon):
             g1, g2 = int(d.contact[i].geom1), int(d.contact[i].geom2)
+            if g1 < 0 or g2 < 0:  # a flex side (never watched, never the robot): the body of its touching vertex
+                g, k = (g2, 0) if g1 < 0 else (g1, 1)
+                n = self.watch.get(g) if g >= 0 else None
+                if n is not None:
+                    now[n].add(contact_bodies(self.m, d.contact[i])[k])
+                continue
             for mine, other in ((g1, g2), (g2, g1)):
                 n = self.watch.get(mine)
                 if n is not None and self.watch.get(other) != n and not self.robot[other]:
@@ -1746,6 +1868,8 @@ class MovingContactTracker:
         )
         for key in watched:
             obj, other, only, joint, with_robot = key
+            if any(o and object_flexes(m, env.obj_body_id[o]) for o in (obj, other)):
+                raise ValueError("moving_contact does not measure deformable (flex) objects")
             mine = np.zeros(m.ngeom, bool)
             if obj:
                 for b in _subtree(m, env.obj_body_id[obj]):
@@ -1773,6 +1897,8 @@ class MovingContactTracker:
             return
         g1 = np.array([c.geom1 for c in d.contact[: d.ncon]])
         g2 = np.array([c.geom2 for c in d.contact[: d.ncon]])
+        rigid = (g1 >= 0) & (g2 >= 0)  # a flex side (geom -1) belongs to no watched object (checked at init)
+        g1, g2 = g1[rigid], g2[rigid]
         for i in range(len(self.keys)):
             mine, theirs = self.mine[i], self.theirs[i]
             if np.any((mine[g1] & theirs[g2]) | (mine[g2] & theirs[g1])):
@@ -2067,6 +2193,13 @@ def p_contents_contact(env, a):
                 other[g] = True
     for i in range(d.ncon):
         g1, g2 = int(d.contact[i].geom1), int(d.contact[i].geom2)
+        if g1 < 0 or g2 < 0:  # a flex side: one of `obj`'s particles if its touching vertex body is
+            b1, b2 = contact_bodies(m, d.contact[i])
+            if (g1 < 0 and b1 in bodies and g2 >= 0 and other[g2]) or (
+                g2 < 0 and b2 in bodies and g1 >= 0 and other[g1]
+            ):
+                return True
+            continue
         if (mine[g1] and other[g2]) or (mine[g2] and other[g1]):
             return True
     return False

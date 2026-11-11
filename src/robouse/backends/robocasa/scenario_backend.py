@@ -89,6 +89,9 @@ def check_spec(spec: dict) -> None:
         fr = o.get("friction")
         if fr is not None and not (isinstance(fr, list) and len(fr) == 3 and all(float(v) >= 0 for v in fr)):
             raise ValueError(f"object {o['name']}: friction must be [sliding, torsional, rolling] >= 0")
+        cd = o.get("condim")
+        if cd is not None and (type(cd) is not int or cd not in (1, 3, 4, 6)):
+            raise ValueError(f"object {o['name']}: condim must be 1, 3, 4 or 6")
         si = o.get("solimp")
         if si is not None and not (
             isinstance(si, list)

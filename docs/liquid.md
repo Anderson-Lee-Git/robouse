@@ -256,6 +256,35 @@ simulator construction; runtime and constructed-solver checks are provided by th
 JSON declaration, scheduler/allocation workflow, frozen thread count and adoption
 status. Declarations and private diagnostics stay host-only, outside observations.
 
+## Flex patch contract 0.6.0
+
+Contract 0.6.0 is the 0.5.0 GPU solver, validity, domain and uptake implementation unchanged, plus one boundary
+kind for a deformable MuJoCo `dim=2` flex cloth (`physics/liquid/flex_patches.py`). The one-way coupling moves
+rigid meshes; a flex has no rigid body, so its boundary is a grid of piecewise-rigid thin boxes ("patches"). A
+boundary entry `{"object": NAME, "flex_patches": {"grid": [NX, NY], "cells": [CX, CY]}}` names the object owning
+exactly one flex (all its vertex bodies in the object's subtree), its flexcomp point grid (x-major vertex order,
+verified at attach) and the flex cells per patch (which must divide the grid's cells evenly). Each patch is a box
+of the block's rest extent plus the flex radius, half height the radius, named `NAME#pIIJJ`. Before every fluid
+query the patch takes the least-squares rigid pose (Kabsch) of its vertices relative to their layout at attach,
+supplied through `LiquidCoupling(pose_sources=...)` on the same data as body poses, so the accepted-substep
+interpolation and continuous contact are as for bodies. Bending and stretching inside a patch are not represented;
+at seams a bent cloth leaves gaps or overlaps of order patch size times half the bend angle. The fluid still exerts
+no force on MuJoCo.
+
+An absorber named like a patch boundary is a `PatchAbsorber`: one reservoir with the declared capacity for the
+whole cloth (never divided per patch); a free particle within `contact_m` of any patch is absorbed, lowest particle
+ids first. Its report adds `patches` and `by_patch_ml`, the split of absorbed volume by the first touching patch in
+fixed order, which is attribution only. `LiquidScene.wetting_ml(NAME)` unions the patches and the scene report
+lists `flex_patches` counts. Flex patch boundaries are refused under any other contract; contract 0.6.0 requires
+the same explicit GPU `compute` declaration and backend ID as 0.5.0 (`compute.GPU_CONTRACTS`).
+
+Related flex support outside the liquid package: `scenario.object_flexes`, object `friction` and opt-in `condim`
+(1, 3, 4 or 6) applied to an object's flexes as well as its geoms, `scenario.contact_bodies` (a flex contact side
+has geom -1 and resolves to its vertex's, or element's first vertex's, body), flex-aware `supported_v1`,
+`released_v1`, `contents_contact` and `impact_speed`, refusal of flex objects by `contact`, `on_fixture`,
+`impact_speed` and `moving_contact` watches (geom-name checks cannot see a flex, so a negative would be missing
+evidence), and state-trace contacts, labels and boxes for flexes.
+
 ## Material selection and surface capacity
 
 Surface-tension model parameter IDs remain -1 until that model is instantiated.

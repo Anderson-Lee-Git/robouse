@@ -16,12 +16,13 @@ Two calls, both opt-in (nothing changes for a scene that does not make them):
 their inside profiles are scene assets, registered by a scenario plugin); the source must be one of them. Every
 container's visual mesh is a boundary; the surface plate is a static boundary.
 """
+
 from __future__ import annotations
 
 import numpy as np
 
 from . import PROFILES, VISUAL_GEOM, container_kind, meshes, queries, solver, surface  # noqa: F401 (registry views)
-from .contact import Absorber, ContainerSleep, MeshContact, PuddleSleep
+from .contact import Absorber, ContainerSleep, MeshContact, PatchAbsorber, PuddleSleep
 from .coupling import LiquidCoupling
 
 
@@ -72,13 +73,17 @@ def _counter_top(env, fixture: str, geom: str | None = None):
         if not np.allclose(R[:, 2], [0, 0, 1], atol=1e-6):
             raise ValueError("liquid support geom must have a horizontal top")
         return float(d.geom_xpos[g][2] + m.geom_size[g][2]), [
-            (np.array(d.geom_xpos[g][:2]), R[:2, :2].copy(), np.array(m.geom_size[g][:2]))]
+            (np.array(d.geom_xpos[g][:2]), R[:2, :2].copy(), np.array(m.geom_size[g][:2]))
+        ]
 
     rects = S._support_rects(env, fixture)
     fx = S._fx(env, fixture)
-    zs = [float(d.geom_xpos[g][2] + m.geom_size[g][2]) for g in range(m.ngeom)
-          if (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "").startswith(f"{fx.name}_top")
-          and m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX]
+    zs = [
+        float(d.geom_xpos[g][2] + m.geom_size[g][2])
+        for g in range(m.ngeom)
+        if (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "").startswith(f"{fx.name}_top")
+        and m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX
+    ]
     if not zs:
         raise ValueError(f"fixture {fixture} has no top slabs to put the liquid's counter plate on")
     return max(zs), rects
@@ -97,7 +102,7 @@ def plate_in_rects(centre_xy, half: float, rects, z: float, spacing: float, laye
     return pts[keep]
 
 
-def map_plate_mesh(centre_xy, half, rects, thickness=.01):
+def map_plate_mesh(centre_xy, half, rects, thickness=0.01):
     """Closed mesh of the clipped support union, without fictitious gap floors.
 
     Maps use geometry instead of custom Akinci samples. Axis-aligned slab
@@ -108,8 +113,7 @@ def map_plate_mesh(centre_xy, half, rects, thickness=.01):
     slabs = []
     for c, R, h in rects:
         R = np.asarray(R)
-        if not np.allclose(np.abs(R).sum(axis=0), 1, atol=1e-8) or not np.allclose(
-                np.abs(R).sum(axis=1), 1, atol=1e-8):
+        if not np.allclose(np.abs(R).sum(axis=0), 1, atol=1e-8) or not np.allclose(np.abs(R).sum(axis=1), 1, atol=1e-8):
             raise ValueError("map boundaries require axis-aligned support slabs")
         extent = np.abs(R) @ np.asarray(h)
         lo = np.maximum(np.asarray(c) - extent - centre_xy, -half)
@@ -133,7 +137,7 @@ def map_plate_mesh(centre_xy, half, rects, thickness=.01):
             key = (i, j, k)
             if key not in ids:
                 ids[key] = len(vertices)
-                vertices.append([xs[i], ys[j], (k - .5) * thickness])
+                vertices.append([xs[i], ys[j], (k - 0.5) * thickness])
             indices.append(ids[key])
         faces.extend([[indices[0], indices[1], indices[2]], [indices[0], indices[2], indices[3]]])
 
@@ -156,13 +160,15 @@ class LiquidScene:
         self.env, self.coupling, self.fluid = env, coupling, coupling.fluid
         self.containers, self.surface, self.cfg = containers, surface_q, cfg
         self.contact_meshes = {}
+        self.patch_groups = {}  # contract 0.6.0: boundary name -> its flex patch boundary names
 
     def poses(self):
         return self.coupling.poses()
 
     def labels(self, film: float = 0.02):
-        labels = queries.partition(self.fluid.positions(), self.containers, self.poses(), self.surface,
-                                   self.fluid.params.particle_radius, film)
+        labels = queries.partition(
+            self.fluid.positions(), self.containers, self.poses(), self.surface, self.fluid.params.particle_radius, film
+        )
         absorbed = ~self.fluid.free_mask
         labels[absorbed] = ["absorbed:" + name for name in self.fluid.absorbed_by[absorbed]]
         return labels
@@ -170,8 +176,10 @@ class LiquidScene:
     def wetting_ml(self, name, distance_m=None):
         """Free liquid within two particle spacings of the actual boundary mesh."""
         distance = 2 * self.fluid.params.spacing if distance_m is None else float(distance_m)
-        mask = self.contact_meshes[name].within(self.fluid.positions()[self.fluid.free_mask],
-                                               *self.poses()[name], distance)
+        free, poses = self.fluid.positions()[self.fluid.free_mask], self.poses()
+        mask = np.zeros(len(free), bool)
+        for part in self.patch_groups.get(name, [name]):
+            mask |= self.contact_meshes[part].within(free, *poses[part], distance)
         return float(mask.sum()) * self.fluid.params.particle_volume * 1e6
 
     def volumes_ml(self) -> dict:
@@ -179,17 +187,47 @@ class LiquidScene:
 
     def puddle(self) -> dict:
         lab = self.labels()
-        return queries.puddle(self.fluid.positions(), lab == "surface", self.fluid.params.particle_radius,
-                              surface_z=None if self.surface is None else self.surface.z)
+        return queries.puddle(
+            self.fluid.positions(),
+            lab == "surface",
+            self.fluid.params.particle_radius,
+            surface_z=None if self.surface is None else self.surface.z,
+        )
 
     def report(self) -> dict:
         v = self.volumes_ml()
-        return {"time_s": self.fluid.time, "volumes_ml": {k: round(x, 2) for k, x in v.items()},
-                "contract_version": self.cfg.get("contract_version", self.cfg.get("version", "0.2.0")),
-                "native_backend": self.fluid.backend,
-                "puddle": self.puddle(), "sph_steps": self.fluid.steps,
-                "absorbers": {a.name: a.report(self.fluid.params.particle_volume) for a in self.coupling.absorbers},
-                "sleeping": bool(self.coupling.sleep and self.coupling.sleep.sleeping)}
+        return {
+            "time_s": self.fluid.time,
+            "volumes_ml": {k: round(x, 2) for k, x in v.items()},
+            "contract_version": self.cfg.get("contract_version", self.cfg.get("version", "0.2.0")),
+            "native_backend": self.fluid.backend,
+            "puddle": self.puddle(),
+            "sph_steps": self.fluid.steps,
+            "absorbers": {a.name: a.report(self.fluid.params.particle_volume) for a in self.coupling.absorbers},
+            "sleeping": bool(self.coupling.sleep and self.coupling.sleep.sleeping),
+            **({"flex_patches": {k: len(v) for k, v in self.patch_groups.items()}} if self.patch_groups else {}),
+        }
+
+
+def _object_flexes(m, root: int) -> list[int]:
+    """Flexes whose vertex bodies all lie in the subtree of body `root` (a pinned-root cloth object)."""
+    parent = m.body_parentid
+
+    def under(b):
+        b = int(b)
+        while b > 0 and b != root:
+            b = int(parent[b])
+        return b == root
+
+    return [
+        f
+        for f in range(int(getattr(m, "nflex", 0)))
+        if int(m.flex_vertnum[f])
+        and all(
+            under(b)
+            for b in m.flex_vertbodyid[int(m.flex_vertadr[f]) : int(m.flex_vertadr[f]) + int(m.flex_vertnum[f])]
+        )
+    ]
 
 
 def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray | None = None) -> LiquidScene:
@@ -241,8 +279,9 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
             pv, pf = map_plate_mesh(cxy, half, rects)
         origin = np.array([cxy[0], cxy[1], z - 0.005])
         # a boundary's particle file is in its body frame (SPlisHSPlasH moves it to the body's pose)
-        boundaries.insert(0, solver.Boundary("counter", pv, pf, pos=tuple(origin), animated=False,
-                                             extra={"samples": pts - origin}))
+        boundaries.insert(
+            0, solver.Boundary("counter", pv, pf, pos=tuple(origin), animated=False, extra={"samples": pts - origin})
+        )
         surf = queries.Surface(z, tuple(cxy - half), tuple(cxy + half), rects=rects)
     if "puddle" in cfg:
         if src is not None or surf is None:
@@ -252,17 +291,49 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
         if not surf.over(fill).all():
             raise ValueError("puddle footprint extends beyond its physical support boundary")
     # General moving objects (cloth, bags, jars, fingers) and fixed wall slabs.
+    contract = cfg.get("contract_version", cfg.get("version"))
+    pose_sources, patch_groups = [], {}
     for name, bc in cfg.get("boundaries", {}).items():
-        if name in bodies:
+        if name in bodies or name in patch_groups:
             raise ValueError(f"duplicate liquid boundary {name!r}")
+        if "flex_patches" in bc:
+            # contract 0.6.0: a deformable flex cloth as piecewise-rigid patches (flex_patches.py)
+            from .flex_patches import CONTRACT, FlexPatches
+
+            if contract != CONTRACT:
+                raise ValueError(f"flex patch boundaries require liquid contract {CONTRACT}")
+            if "body" in bc or not bc.get("animated", True):
+                raise ValueError("flex patch boundaries follow an object's flex and are always animated")
+            fp = bc["flex_patches"]
+            if set(fp) != {"grid", "cells"}:
+                raise ValueError("flex_patches needs exactly grid and cells")
+            root = int(env.obj_body_id[bc.get("object", name)])
+            flexes = _object_flexes(m, root)
+            if len(flexes) != 1:
+                raise ValueError(f"boundary {name!r}: object must own exactly one flex, found {len(flexes)}")
+            group = FlexPatches(m, env.sim.data, name, flexes[0], fp["grid"], fp["cells"])
+            initial = group.poses(env.sim.data)
+            for part, (v, f) in zip(group.names, group.meshes, strict=True):
+                pos, R = initial[part]
+                q = np.zeros(4)
+                mujoco.mju_mat2Quat(q, np.ascontiguousarray(R).reshape(9))
+                boundaries.append(solver.Boundary(part, v, f, pos=tuple(pos), quat=tuple(q), animated=True))
+            pose_sources.append(group.poses)
+            patch_groups[name] = list(group.names)
+            continue
         if "body" in bc:
             bid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, bc["body"])
         else:
             bid = int(env.obj_body_id[bc.get("object", name)])
         if bid < 0:
             raise ValueError(f"unknown boundary body {name!r}")
-        v, f = meshes.mujoco_body_mesh(m, bid, groups=tuple(bc.get("groups", [0])),
-                                     name_contains=bc.get("name_contains"), meshes_only=bc.get("meshes_only", False))
+        v, f = meshes.mujoco_body_mesh(
+            m,
+            bid,
+            groups=tuple(bc.get("groups", [0])),
+            name_contains=bc.get("name_contains"),
+            meshes_only=bc.get("meshes_only", False),
+        )
         pos, quat = np.array(env.sim.data.body_xpos[bid]), np.array(env.sim.data.body_xquat[bid])
         animated = bool(bc.get("animated", True))
         boundaries.append(solver.Boundary(name, v, f, pos=tuple(pos), quat=tuple(quat), animated=animated))
@@ -274,30 +345,42 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
     if cfg.get("contract_version", cfg.get("version")) == "0.4.0":
         from .domain_v1 import make_domain
         from .validity_v1 import ValidatedLiquidScene, ValidatedSPHFluid
+
         fluid_type, scene_type = ValidatedSPHFluid, ValidatedLiquidScene
         fluid_options["domain"] = make_domain(env, cfg["domain"], r)
     if cfg.get("contract_version", cfg.get("version")) == "0.4.1":
         from .domain_v1 import make_domain
         from .validity_v2 import ResolvedLiquidScene, ResolvedSPHFluid
+
         fluid_type, scene_type = ResolvedSPHFluid, ResolvedLiquidScene
         fluid_options["domain"] = make_domain(env, cfg["domain"], r)
     if cfg.get("contract_version", cfg.get("version")) == "0.4.2":
         from .domain_v1 import make_domain
         from .validity_v3 import PredictiveLiquidScene, PredictiveSPHFluid
+
         fluid_type, scene_type = PredictiveSPHFluid, PredictiveLiquidScene
         fluid_options["domain"] = make_domain(env, cfg["domain"], r)
     if cfg.get("contract_version", cfg.get("version")) == "0.4.3":
         from .domain_v1 import make_domain
         from .validity_v4 import SubstepContactLiquidScene, SubstepContactSPHFluid
+
         fluid_type, scene_type = SubstepContactSPHFluid, SubstepContactLiquidScene
         fluid_options["domain"] = make_domain(env, cfg["domain"], r)
-    if cfg.get("contract_version", cfg.get("version")) == "0.5.0":
+    if contract in ("0.5.0", "0.6.0"):  # 0.6.0 = the 0.5.0 GPU solver plus flex patch boundaries
         from .domain_v1 import make_domain
         from .gpu.validity_gpu import ValidatedWarpFluid, ValidatedWarpLiquidScene
+
         fluid_type, scene_type = ValidatedWarpFluid, ValidatedWarpLiquidScene
         fluid_options["domain"] = make_domain(env, cfg["domain"], r)
-    fluid = fluid_type(workdir, params, boundaries, fill if x0 is None else x0,
-                      threads=threads, backend=cfg.get("native_backend"), **fluid_options)
+    fluid = fluid_type(
+        workdir,
+        params,
+        boundaries,
+        fill if x0 is None else x0,
+        threads=threads,
+        backend=cfg.get("native_backend"),
+        **fluid_options,
+    )
     if x0 is None and cfg.get("settle_s", 0.3) > 0:
         fluid.settle(float(cfg.get("settle_s", 0.3)), float(cfg.get("settle_damping", 0.9)))
     renderer = None
@@ -306,15 +389,29 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
         # The placeholder starts below the scene. Refresh its derived world pose
         # after SurfaceRenderer moves it to the world origin, before reset images.
         env.sim.forward()
-    cpl = LiquidCoupling(env.sim, fluid, bodies, renderer).install()
+    cpl = LiquidCoupling(env.sim, fluid, bodies, renderer, pose_sources=pose_sources).install()
     ls = scene_type(env, cpl, containers, surf, cfg)
     ls.contact_meshes = {b.name: MeshContact(b.vertices, b.faces) for b in boundaries if b.animated}
+    ls.patch_groups = patch_groups
     for name, ac in cfg.get("absorbers", {}).items():
-        cpl.absorbers.append(Absorber(name, ls.contact_meshes[name], float(ac["capacity_ml"]),
-                                     float(ac.get("contact_m", params.spacing))))
+        if name in patch_groups:
+            cpl.absorbers.append(
+                PatchAbsorber(
+                    name,
+                    {p: ls.contact_meshes[p] for p in patch_groups[name]},
+                    float(ac["capacity_ml"]),
+                    float(ac.get("contact_m", params.spacing)),
+                )
+            )
+            continue
+        cpl.absorbers.append(
+            Absorber(
+                name, ls.contact_meshes[name], float(ac["capacity_ml"]), float(ac.get("contact_m", params.spacing))
+            )
+        )
     if cfg.get("contract_version", cfg.get("version")) == "0.4.3":
         fluid.substep_absorbers = cpl.absorbers
-    if cfg.get("contract_version", cfg.get("version")) == "0.5.0":
+    if contract in ("0.5.0", "0.6.0"):
         fluid.substep_absorbers = cpl.absorbers
     if cfg.get("sleep", {}).get("initially_frozen", False):
         if "puddle" not in cfg or not np.all(ls.labels() == "surface"):
@@ -368,8 +465,7 @@ def predicate(env, p):
         value = ls.wetting_ml(p["obj"], p.get("distance_m"))
     else:
         region = p["region"]
-        valid = set(ls.containers) | {"surface", "elsewhere"} | {
-            "absorbed:" + a.name for a in ls.coupling.absorbers}
+        valid = set(ls.containers) | {"surface", "elsewhere"} | {"absorbed:" + a.name for a in ls.coupling.absorbers}
         regions = [region] if isinstance(region, str) else region
         if not regions or any(r not in valid for r in regions):
             raise ValueError(f"unknown liquid region {region!r}")
