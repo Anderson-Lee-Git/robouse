@@ -1,4 +1,4 @@
-"""Physical-state trace of a RoboCasa scenario episode (format `robouse-state-trace` 1.0.0).
+"""Physical-state trace of a RoboCasa scenario episode (format `robouse-state-trace` 1.1.0).
 
 A researcher-only record of what physically happened, written by the simulation worker into the episode's run folder
 as `state-trace.jsonl.gz` (gzip, one JSON object per line). It is never part of an observation, a reply or anything a
@@ -6,7 +6,7 @@ policy can request: practice and development episodes do not write it, and run f
 
 Lines, in order:
   header   {"kind": "header", "format", "version", "scenario", "control", "stride", "liquid_every", "precision",
-            "objects": {name: {"body"}},
+            "objects": {name: {"body", "joints"?: {joint: "hinge"|"slide"}, "interior"?: true}},
             "fixtures": {key: {"type", "class", "joints": {joint: "hinge"|"slide"}, "parts", "box", "powered"}},
             "source": {"kind": "live"} (a replay adds its fidelity check here)}
   state    {"kind": "state", "step", "phase", "t", "digest", "robot", "objects", "fixtures", "contacts", "welds",
@@ -22,15 +22,21 @@ contact pair, a support, a fixture's power); `reset` and `final` are always reco
 
 State fields (positions in m, world frame; quaternions w, x, y, z; joints in rad or m; values rounded to `precision`
 decimals, 1 um / 1e-6 rad):
-  robot     {"eef": [x, y, z], "grip": opening 0..1, "grasped": [objects RoboCasa counts as grasped]}
+  robot     {"eef": [x, y, z], "grip": opening 0..1, "grasped": [objects RoboCasa counts as grasped],
+            "inside"?: {object: depth m} (1.1.0) for each object with an interior cylinder (its `reg_int` region) that
+            a colliding geom of the moving arm or gripper reaches into: how far below the top of that interior (a jar's
+            rim) the lowest such robot point is. Absent when the robot is in no interior}
   objects   {name: {"pos", "quat", "box": [[x, y, z] low, [x, y, z] high] world bounding box of its colliding geoms
             (0.1 mm), "on": [what supports it from below], "in": {fixture: fraction of that box inside the fixture's
-            fixed body box}}}
+            fixed body box}, "joints"?: {joint: value}, "speeds"?: {joint: rad/s or m/s} (1.1.0: the hinge and slide
+            joints inside an object, e.g. an appliance's lever or its driven blades, named without the object's
+            prefix)}}
   fixtures  {key: {"joints": {joint: value}, "parts": {part: [[x, y, z] low, [x, y, z] high] world box of a moving
             part, 0.1 mm}, "on": powered and running, "burners": {loc: lit}, "state": RoboCasa's own fixture state}}
   contacts  [[a, b], ...] active contact pairs, each side an object, a scenario fixture key (its fixed body), a
             moving part of one `<key>/<part>` (the bodies a fixture joint moves: `toaster_oven/door`,
-            `toaster_oven/rack0`), `robot:gripper`, `robot:arm`, `robot:base`, `floor`, `kitchen:<fixture>` or
+            `toaster_oven/rack0`), since 1.1.0 a jointed part of an object `<object>/<part>` (the bodies one of its
+            hinge or slide joints moves: `jar/blade_spin`, `blender/switch`), `robot:gripper`, `robot:arm`, `robot:base`, `floor`, `kitchen:<fixture>` or
             `world`; pairs without an object or a moving robot part, and pairs within one fixture, are left out
   welds     {name: active} for named equality constraints other than the parked-base lock (breakable attachments)
   liquid    {"counts": {region: particles}, "volumes_ml": {region: ml}}
@@ -53,7 +59,7 @@ import os
 import numpy as np
 
 FORMAT = "robouse-state-trace"
-VERSION = "1.0.0"
+VERSION = "1.1.0"  # 1.1.0: object joints and speeds, `<object>/<part>` contact labels, robot `inside` an interior
 FILENAME = "state-trace.jsonl.gz"
 PRECISION = 6
 ROBOT_PARTS = (
@@ -79,6 +85,7 @@ POWERED = {
 NOT_ENCLOSURES = {"counter", "counter_non_corner", "island"}  # surfaces: resting on them is `on`, not `in`
 SUPPORT_NORMAL_Z = 0.7  # a contact normal at least this vertical, pushing the object up, supports it
 BASE_LOCK_PREFIX = "robouse_base_lock_"
+MAX_OBJECT_JOINTS = 8  # an object with more hinge/slide joints is loose contents, recorded as before 1.1.0
 
 
 def _r(x, n: int = PRECISION):
@@ -139,7 +146,14 @@ class Tracer:
             "stride": self.stride,
             "liquid_every": self.liquid_every,
             "precision": PRECISION,
-            "objects": {n: {"body": self.m.body_id2name(int(env.obj_body_id[n]))} for n in self.objects},
+            "objects": {
+                n: {
+                    "body": self.m.body_id2name(int(env.obj_body_id[n])),
+                    **({"joints": {s: k for s, _, _, k in self.obj_joints[n]}} if self.obj_joints.get(n) else {}),
+                    **({"interior": True} if n in self.interiors else {}),
+                }
+                for n in self.objects
+            },
             "fixtures": self.fixture_meta,
             "source": source or {"kind": "live"},
         }
@@ -204,6 +218,28 @@ class Tracer:
         # a scenario fixture's moving parts (door, rack, knob: the bodies a hinge or slide joint moves) are labelled
         # `<key>/<part>` so that touching the rack differs from touching the cavity floor; the fixed body keeps `<key>`
         part_of: dict[int, str] = {}
+        # 1.1.0: an object's own hinge and slide joints (a lever, driven blades) and the parts they move
+        self.obj_joints: dict[str, list[tuple[str, int, int, str]]] = {}
+        found: dict[str, list[tuple[int, tuple[str, int, int, str]]]] = {}
+        for j in range(int(M.njnt)):
+            jt = int(M.jnt_type[j])
+            b = int(M.jnt_bodyid[j])
+            if jt not in (2, 3) or b not in body_label:
+                continue
+            owner = body_label[b]
+            short = m.joint_id2name(j) or str(j)
+            for p in (f"{owner}_p_", f"{owner}_"):
+                if short.startswith(p):
+                    short = short[len(p) :]
+                    break
+            row = (short, int(M.jnt_qposadr[j]), int(M.jnt_dofadr[j]), "hinge" if jt == 3 else "slide")
+            found.setdefault(owner, []).append((b, row))
+        for owner, rows in found.items():
+            if len(rows) > MAX_OBJECT_JOINTS:  # loose contents on their own joints (grains, drops): not a mechanism
+                continue
+            self.obj_joints[owner] = [row for _, row in rows]
+            for b, row in rows:
+                part_of.setdefault(b, row[0].removesuffix("_joint"))
         self.fixture_joints: dict[str, list[tuple[str, int]]] = {}
         joint_types: dict[str, dict[str, str]] = {}
         for j in range(int(M.njnt)):
@@ -227,7 +263,7 @@ class Tracer:
 
         def label_of_body(b: int) -> str:
             lab = fixture_label(b)
-            if lab in spec_fx:
+            if lab in spec_fx or b in body_label:
                 k = b
                 while k > 0 and fixture_label(k) == lab:
                     if k in part_of:
@@ -243,8 +279,20 @@ class Tracer:
             if lab == "world" and "floor" in gname.lower():
                 lab = "floor"
             self.geom_label.append(lab)
-            if lab in body_label.values() and (M.geom_contype[g] or M.geom_conaffinity[g]):
-                self.obj_geoms.setdefault(lab, []).append(g)
+            if b in body_label and (M.geom_contype[g] or M.geom_conaffinity[g]):
+                self.obj_geoms.setdefault(body_label[b], []).append(g)
+        # 1.1.0: interiors (an object's `reg_int` cylinder) and the moving robot's colliding geoms that may enter them
+        self.interiors: dict[str, tuple[int, float, float]] = {}
+        for name in self.objects:
+            prefix = getattr(env.objects[name], "naming_prefix", f"{name}_")
+            for g in range(int(M.ngeom)):
+                if (m.geom_id2name(g) or "") == f"{prefix}reg_int" and int(M.geom_type[g]) == 5:
+                    self.interiors[name] = (g, float(M.geom_size[g][0]), float(M.geom_size[g][1]))
+        self.robot_geoms = [
+            g
+            for g in range(int(M.ngeom))
+            if self.geom_label[g] in MOVING_ROBOT and (M.geom_contype[g] or M.geom_conaffinity[g])
+        ]
         # the fixed part's box: its own colliding geoms (moving parts carry `<key>/<part>` labels)
         self.spec_fx = spec_fx
         self.fixture_box: dict[str, tuple[np.ndarray, np.ndarray]] = {}
@@ -311,17 +359,40 @@ class Tracer:
             if not active[i]:  # inside the margin, exerting no force
                 continue
             a, b = self.geom_label[int(g1s[i])], self.geom_label[int(g2s[i])]
-            if a.split("/")[0] == b.split("/")[0] or (a.startswith("robot:") and b.startswith("robot:")):
-                continue  # within one fixture or within the robot
-            if a not in objects and b not in objects and a not in MOVING_ROBOT and b not in MOVING_ROBOT:
+            a0, b0 = a.split("/")[0], b.split("/")[0]  # an object's or fixture's own name, without a moving part
+            if a0 == b0 or (a.startswith("robot:") and b.startswith("robot:")):
+                continue  # within one fixture or object, or within the robot
+            if a0 not in objects and b0 not in objects and a not in MOVING_ROBOT and b not in MOVING_ROBOT:
                 continue
             pairs.add((a, b) if a < b else (b, a))
             nz = float(normal_z[i])  # the normal points from geom1 to geom2
-            if b in objects and nz >= SUPPORT_NORMAL_Z:
-                support.setdefault(b, set()).add(a)
-            if a in objects and -nz >= SUPPORT_NORMAL_Z:
-                support.setdefault(a, set()).add(b)
+            if b0 in objects and nz >= SUPPORT_NORMAL_Z:
+                support.setdefault(b0, set()).add(a0 if a0 in objects else a)
+            if a0 in objects and -nz >= SUPPORT_NORMAL_Z:
+                support.setdefault(a0, set()).add(b0 if b0 in objects else b)
         return sorted([list(p) for p in pairs]), {k: sorted(v) for k, v in support.items()}
+
+    def _robot_inside(self) -> dict:
+        """{object: depth} for each interior cylinder a colliding geom of the moving robot reaches into: the depth of
+        its lowest sampled point (box corners, face centres and centre of each geom) below the interior's top."""
+        if not self.interiors or not self.robot_geoms:
+            return {}
+        M, d = self.m._model, self.d._data
+        pts = []
+        unit = np.array([[x, y, z] for x in (-1, 0, 1) for y in (-1, 0, 1) for z in (-1, 0, 1)], float)
+        for g in self.robot_geoms:
+            R = np.asarray(d.geom_xmat[g]).reshape(3, 3)
+            c = np.asarray(d.geom_xpos[g]) + R @ M.geom_aabb[g][:3]
+            pts.append(c + (unit * M.geom_aabb[g][3:]) @ R.T)
+        pts = np.concatenate(pts)
+        out = {}
+        for name, (g, radius, half) in self.interiors.items():
+            R, c = np.asarray(d.geom_xmat[g]).reshape(3, 3), np.asarray(d.geom_xpos[g])
+            loc = (pts - c) @ R
+            hit = (np.linalg.norm(loc[:, :2], axis=1) <= radius) & (np.abs(loc[:, 2]) <= half)
+            if hit.any():
+                out[name] = round(float(half - loc[hit, 2].min()), 4)
+        return out
 
     def _inside(self, lo, hi) -> dict:
         if not self.fixture_box:
@@ -402,9 +473,15 @@ class Tracer:
                 inside = self._inside(lo, hi)
                 if inside:
                     row["in"] = inside
+            if self.obj_joints.get(n):
+                row["joints"] = {s: round(float(d.qpos[qa]), PRECISION) for s, qa, _, _ in self.obj_joints[n]}
+                row["speeds"] = {s: round(float(d.qvel[va]), 4) for s, _, va, _ in self.obj_joints[n]}
             objects[n] = row
         robot = dict(self.hooks["robot"]())
         robot["grasped"] = [n for n in self.objects if self._grasped(n)]
+        reach = self._robot_inside()
+        if reach:
+            robot["inside"] = reach
         rec = {
             "kind": "state",
             "step": int(step),
@@ -436,6 +513,7 @@ class Tracer:
         return json.dumps(
             [
                 rec["robot"].get("grasped"),
+                sorted(rec["robot"].get("inside") or {}),
                 rec["contacts"],
                 {n: [o.get("on"), sorted(o.get("in", {}))] for n, o in rec["objects"].items()},
                 {k: [f.get("on"), f.get("burners")] for k, f in rec["fixtures"].items()},
