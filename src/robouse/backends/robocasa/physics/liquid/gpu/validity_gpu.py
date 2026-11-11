@@ -177,7 +177,9 @@ class GatedWarpFluid(ValidatedWarpFluid):
     excluded from the wall speed; all others enter it exactly as in 0.5.0. With no free particle, the wall speed is
     zero. The particle bound itself, gravity term, CFL number, dt_min and every validity check are unchanged.
 
-    `gating` reports how often the exclusion changed the chosen step and the fastest excluded boundary.
+    `gating['substeps_changed']` counts wall-speed evaluations (substeps) in which an excluded boundary was faster
+    than every included one, i.e. the exclusion lowered the wall-speed term; the chosen step itself changes only when
+    that term was the binding limit. `max_excluded*` name the fastest excluded boundary and its speed.
     """
 
     def __init__(self, *args, **kwargs):

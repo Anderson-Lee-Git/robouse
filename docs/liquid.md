@@ -317,12 +317,29 @@ h + (u + |g| dt_max + s_b) dt_max from every free particle therefore cannot ente
 during any step the rule can choose, exerts no force in that step, and is excluded from the wall speed (a CFL
 argument: the excluded speed cannot affect resolution). Every other boundary enters exactly as before; with no free
 particle the wall speed is zero. The particle-speed term, gravity term, CFL number, dt_min and all validity checks
-are unchanged. The validity report adds `wall_speed_gating`: substeps whose chosen step the exclusion changed, and
-the fastest excluded boundary and its speed.
+are unchanged. The validity report adds `wall_speed_gating`: `substeps_changed` counts substeps in which an
+excluded boundary was faster than every included one (the exclusion lowered the wall-speed term; the step itself
+changed only where that term was binding), and the fastest excluded boundary and its speed.
 
 0.7.0 requires the same explicit GPU `compute` declaration and backend ID as 0.5.0 and 0.6.0. Scenes declaring
 0.5.0 or 0.6.0 are unchanged (`ValidatedWarpFluid.wall_speed` keeps the ungated maximum; `FlexPatches` keeps the
 0.6.0 fit unless `continuous`).
+
+## Flex patch rotation-rate limit, contract 0.7.1
+
+Contract 0.7.1 is 0.7.0 with one declared knob per flex patch boundary,
+`"flex_patches": {"grid": [...], "cells": [...], "max_angular_speed_rad_s": w_max}` (required under 0.7.1, refused
+under 0.6.0 and 0.7.0). Measured need: under 0.7.0, scene 8005 v6's violating route still failed at dt_min. The
+cause was a hold release: a patch held through a fold re-acquires its fitted rotation in one MuJoCo step (releases
+up to 3.09 rad; one of 1.95 rad, 977 rad/s, on a patch 18 mm from free liquid). 0.7.1 limits each patch's output
+rotation to turn at most w_max times the MuJoCo time elapsed since its last output at an earlier time, along the
+shortest arc (repeated queries at one time return one pose). The fit and the hold logic are unchanged, so the output
+catches up with the fitted rotation at w_max. A patch's contribution to the wall speed is then at most
+|v| + r_b w_max. Choice of w_max: regular (non-released) patch fits of the 8005 towel turn at about 1-2 rad/s, so
+50 rad/s never limits ordinary cloth motion, bounds a 3.5 cm patch's rim speed by 1.75 m/s, and lets a 3 rad release
+catch up in 60 ms. `flex_patch_fits` adds `max_angular_speed_rad_s`, `cap_events` (limited outputs) and
+`cap_max_deficit_rad` (largest angle still to catch up). Everything else, including the GPU solver, backend ID and
+time-step gating, is 0.7.0.
 
 ## Material selection and surface capacity
 

@@ -30,8 +30,19 @@ well posed and continuous:
   MuJoCo-step fits divided by the step (coupling.rotvec is the principal angle, <= pi), now between continuous fits.
 No angular-velocity cap is applied.
 
-Config (a liquid `boundaries` entry, contracts 0.6.0 and 0.7.0):
+Contract 0.7.1 (0.7.0 plus a declared patch rotation-rate limit; `FlexPatches(..., max_angular_speed=w_max)`): a
+patch held through a fold re-acquires its fitted rotation on release in one MuJoCo step (measured on scene 8005 v6:
+releases up to 3.09 rad, one of 1.95 rad giving 977 rad/s on a patch 18 mm from free liquid, which drove the time
+step below dt_min). 0.7.1 limits each patch's output rotation to turn at most w_max (rad/s) times the elapsed
+MuJoCo time from its last output at an earlier time (the shortest-arc increment is scaled down; repeated queries at
+the same time return the same pose). The fitted rotation itself (and the hold logic) is unchanged; the output
+catches up at w_max. Every limited output is counted, with the largest remaining angle (`cap_events`,
+`cap_max_deficit_rad`). The limit is declared per boundary (`max_angular_speed_rad_s`, required under 0.7.1 and
+refused under 0.6.0 and 0.7.0); it bounds a patch's contribution to the wall speed by r_b * w_max.
+
+Config (a liquid `boundaries` entry, contracts 0.6.0, 0.7.0 and 0.7.1):
     "towel": {"object": "towel", "flex_patches": {"grid": [15, 11], "cells": [2, 2]}}
+    0.7.1: "flex_patches": {"grid": [15, 11], "cells": [2, 2], "max_angular_speed_rad_s": 50}
 `grid` is the flexcomp point count (x-major vertex order, verified at attach), `cells` the flex cells per patch
 along x and y (the cell counts must divide evenly). An absorber of the same name uses all of its patches.
 """
@@ -41,10 +52,12 @@ from __future__ import annotations
 import numpy as np
 
 from . import meshes
+from .coupling import rotmat, rotvec
 
 CONTRACT = "0.6.0"
-CONTRACTS = ("0.6.0", "0.7.0")
-CONTINUOUS_CONTRACT = "0.7.0"
+CONTRACTS = ("0.6.0", "0.7.0", "0.7.1")
+CONTINUOUS_CONTRACTS = ("0.7.0", "0.7.1")
+RATE_LIMITED_CONTRACT = "0.7.1"  # continuous patches with a declared max_angular_speed_rad_s
 DEGENERATE_RATIO = 0.25  # second / first in-plane singular value (a 2 x 2-cell patch at rest: ~1)
 DEGENERATE_AREA = 0.25  # oriented area / rest area
 
@@ -92,9 +105,16 @@ def kabsch(rest: np.ndarray, now: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 class FlexPatches:
     """Patches of one flex: names, body-frame meshes and current poses from `flexvert_xpos`."""
 
-    def __init__(self, model, data, name: str, flex: int, grid, cells, continuous: bool = False):
+    def __init__(
+        self, model, data, name: str, flex: int, grid, cells, continuous: bool = False, max_angular_speed=None
+    ):
         nx, ny = (int(v) for v in grid)
         self.continuous = bool(continuous)
+        if max_angular_speed is not None:
+            max_angular_speed = float(max_angular_speed)
+            if not continuous or not np.isfinite(max_angular_speed) or max_angular_speed <= 0:
+                raise ValueError("max_angular_speed needs continuous patches and a positive finite rad/s value")
+        self.max_angular_speed = max_angular_speed
         cx, cy = (int(v) for v in cells)
         self.name, self.flex = name, int(flex)
         self.adr, n = int(model.flex_vertadr[flex]), int(model.flex_vertnum[flex])
@@ -157,6 +177,10 @@ class FlexPatches:
         self.held = {}
         self.holding = set()
         self.degenerate = []
+        # contract 0.7.1 rate limit: patch -> [time, output R, base time, base R] (base: last output at an earlier time)
+        self.limited = {}
+        self.cap_events = 0
+        self.cap_max_deficit = 0.0
 
     def vertices(self, data) -> np.ndarray:
         d = getattr(data, "_data", data)
@@ -205,5 +229,28 @@ class FlexPatches:
                     self.degenerate.append((round(t, 6), name, "release", 1.0, round(angle, 4), round(area_ratio, 4)))
                 self.holding.discard(name)
                 self.held[name] = R
+            if self.max_angular_speed is not None:
+                R = self._rate_limited(name, t, R)
             out[name] = (c, R)
         return out
+
+    def _rate_limited(self, name: str, t: float, R: np.ndarray) -> np.ndarray:
+        """Contract 0.7.1: turn at most max_angular_speed * (t - base time) from the last output at an earlier time."""
+        s = self.limited.get(name)
+        if s is None:
+            self.limited[name] = [t, R, None, None]
+            return R
+        if t > s[0] + 1e-12:  # a new time: the last output becomes the base
+            s[2], s[3] = s[0], s[1]
+        if s[3] is None:
+            s[0], s[1] = t, R
+            return R
+        dv = rotvec(R @ s[3].T)
+        angle = float(np.linalg.norm(dv))
+        allowed = self.max_angular_speed * max(t - s[2], 0.0)
+        if angle > allowed:
+            R = rotmat(dv * (allowed / angle)) @ s[3]
+            self.cap_events += 1
+            self.cap_max_deficit = max(self.cap_max_deficit, angle - allowed)
+        s[0], s[1] = t, R
+        return R

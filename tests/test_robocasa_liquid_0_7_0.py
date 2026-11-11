@@ -178,3 +178,51 @@ def test_gpu_compute_accepts_contract_0_7_0():
     assert CO.requirement(s) == s['compute']
     with pytest.raises(ValueError, match='explicit compute'):
         CO.requirement({'liquid': {'contract_version': '0.7.0'}})
+
+
+# ---- contract 0.7.1: declared flex patch rotation-rate limit -----------------------------------------------------
+
+
+def test_rate_limit_bounds_output_turn_rate_and_catches_up():
+    m, d = cloth()
+    p = FP.FlexPatches(m, d, 'towel', 0, (NX, NY), (2, 2), continuous=True, max_angular_speed=50.0)
+    x0 = p.vertices(d)
+    c0 = x0.mean(axis=0)
+    p.poses(at(x0, 0.0))
+    turned = (x0 - c0) @ rot([0, 0, 1], 2.0).T + c0  # a 2 rad jump in one 2 ms step
+    out = [p.poses(at(turned, 0.002 * k)) for k in range(1, 30)]
+    angles = [np.linalg.norm(CP.rotvec(o['towel#p0000'][1])) for o in out]
+    assert angles[0] == pytest.approx(0.1, abs=1e-9)  # 50 rad/s * 2 ms
+    assert np.allclose(np.diff(angles[:19]), 0.1, atol=1e-9)
+    assert np.allclose(out[-1]['towel#p0000'][1], rot([0, 0, 1], 2.0), atol=1e-9)  # caught up after 40 ms
+    # 2 rad at 0.1 rad per step: 19 limited outputs, a 20th only by rounding (exactly 2.0 allowed)
+    assert 19 * len(p.names) <= p.cap_events <= 20 * len(p.names)
+    assert p.cap_max_deficit == pytest.approx(1.9, abs=1e-9)
+    # repeated queries at one time are idempotent
+    again = p.poses(at(turned, 0.002 * 29))
+    assert np.allclose(again['towel#p0000'][1], out[-1]['towel#p0000'][1])
+    p.reset_hold()
+    assert p.limited == {} and p.cap_events == 0
+
+
+def test_rate_limit_leaves_slow_motion_and_unlimited_patches_unchanged():
+    m, d = cloth()
+    x0 = FP.FlexPatches(m, d, 'towel', 0, (NX, NY), (2, 2), continuous=True).vertices(d)
+    a = FP.FlexPatches(m, d, 'towel', 0, (NX, NY), (2, 2), continuous=True)
+    b = FP.FlexPatches(m, d, 'towel', 0, (NX, NY), (2, 2), continuous=True, max_angular_speed=50.0)
+    c0 = x0.mean(axis=0)
+    for k in range(50):
+        x = (x0 - c0) @ rot([1, 0.2, 0], 0.004 * k).T + c0  # 2 rad/s
+        pa, pb = a.poses(at(x, 0.002 * k)), b.poses(at(x, 0.002 * k))
+        for n in a.names:
+            assert np.array_equal(pa[n][1], pb[n][1])
+    assert b.cap_events == 0
+    with pytest.raises(ValueError, match='continuous'):
+        FP.FlexPatches(m, d, 'towel', 0, (NX, NY), (2, 2), continuous=False, max_angular_speed=50.0)
+    with pytest.raises(ValueError, match='positive'):
+        FP.FlexPatches(m, d, 'towel', 0, (NX, NY), (2, 2), continuous=True, max_angular_speed=0.0)
+
+
+def test_contract_0_7_1_is_a_gpu_contract():
+    assert '0.7.1' in CO.GPU_CONTRACTS and FP.RATE_LIMITED_CONTRACT == '0.7.1'
+    assert FP.CONTINUOUS_CONTRACTS == ('0.7.0', '0.7.1')

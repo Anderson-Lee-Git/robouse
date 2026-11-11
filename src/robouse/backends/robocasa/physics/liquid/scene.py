@@ -216,6 +216,15 @@ class LiquidScene:
                             "max_release_angle_rad": max(
                                 (r[4] for r in g.degenerate if r[2] == "release"), default=0.0
                             ),
+                            **(
+                                {
+                                    "max_angular_speed_rad_s": g.max_angular_speed,
+                                    "cap_events": g.cap_events,
+                                    "cap_max_deficit_rad": round(g.cap_max_deficit, 4),
+                                }
+                                if g.max_angular_speed is not None
+                                else {}
+                            ),
                         }
                         for k, g in self.flex_groups.items()
                         if g.continuous
@@ -316,21 +325,33 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
             raise ValueError(f"duplicate liquid boundary {name!r}")
         if "flex_patches" in bc:
             # contract 0.6.0: a deformable flex cloth as piecewise-rigid patches (flex_patches.py)
-            from .flex_patches import CONTINUOUS_CONTRACT, CONTRACTS, FlexPatches
+            from .flex_patches import CONTINUOUS_CONTRACTS, CONTRACTS, RATE_LIMITED_CONTRACT, FlexPatches
 
             if contract not in CONTRACTS:
                 raise ValueError(f"flex patch boundaries require liquid contract {' or '.join(CONTRACTS)}")
             if "body" in bc or not bc.get("animated", True):
                 raise ValueError("flex patch boundaries follow an object's flex and are always animated")
             fp = bc["flex_patches"]
-            if set(fp) != {"grid", "cells"}:
-                raise ValueError("flex_patches needs exactly grid and cells")
+            limited = contract == RATE_LIMITED_CONTRACT
+            if set(fp) != {"grid", "cells"} | ({"max_angular_speed_rad_s"} if limited else set()):
+                raise ValueError(
+                    "flex_patches needs exactly grid, cells and max_angular_speed_rad_s"
+                    if limited
+                    else f"flex_patches needs exactly grid and cells under contract {contract}"
+                )
             root = int(env.obj_body_id[bc.get("object", name)])
             flexes = _object_flexes(m, root)
             if len(flexes) != 1:
                 raise ValueError(f"boundary {name!r}: object must own exactly one flex, found {len(flexes)}")
             group = FlexPatches(
-                m, env.sim.data, name, flexes[0], fp["grid"], fp["cells"], continuous=contract == CONTINUOUS_CONTRACT
+                m,
+                env.sim.data,
+                name,
+                flexes[0],
+                fp["grid"],
+                fp["cells"],
+                continuous=contract in CONTINUOUS_CONTRACTS,
+                max_angular_speed=fp["max_angular_speed_rad_s"] if limited else None,
             )
             flex_groups[name] = group
             initial = group.poses(env.sim.data)
@@ -393,7 +414,7 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
 
         fluid_type, scene_type = ValidatedWarpFluid, ValidatedWarpLiquidScene
         fluid_options["domain"] = make_domain(env, cfg["domain"], r)
-    if contract == "0.7.0":  # the 0.5.0 GPU solver; continuous flex patches; time step gated to nearby boundaries
+    if contract in ("0.7.0", "0.7.1"):  # 0.5.0 GPU solver; continuous flex patches; step gated to nearby boundaries
         from .domain_v1 import make_domain
         from .gpu.validity_gpu import GatedWarpFluid, ValidatedWarpLiquidScene
 
@@ -439,7 +460,7 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
         )
     if cfg.get("contract_version", cfg.get("version")) == "0.4.3":
         fluid.substep_absorbers = cpl.absorbers
-    if contract in ("0.5.0", "0.6.0", "0.7.0"):
+    if contract in ("0.5.0", "0.6.0", "0.7.0", "0.7.1"):
         fluid.substep_absorbers = cpl.absorbers
     if cfg.get("sleep", {}).get("initially_frozen", False):
         if "puddle" not in cfg or not np.all(ls.labels() == "surface"):
