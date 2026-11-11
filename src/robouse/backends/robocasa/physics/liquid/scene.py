@@ -161,6 +161,7 @@ class LiquidScene:
         self.containers, self.surface, self.cfg = containers, surface_q, cfg
         self.contact_meshes = {}
         self.patch_groups = {}  # contract 0.6.0: boundary name -> its flex patch boundary names
+        self.flex_groups = {}  # boundary name -> its FlexPatches (0.7.0 logs degenerate fits there)
 
     def poses(self):
         return self.coupling.poses()
@@ -206,6 +207,23 @@ class LiquidScene:
             "absorbers": {a.name: a.report(self.fluid.params.particle_volume) for a in self.coupling.absorbers},
             "sleeping": bool(self.coupling.sleep and self.coupling.sleep.sleeping),
             **({"flex_patches": {k: len(v) for k, v in self.patch_groups.items()}} if self.patch_groups else {}),
+            **(
+                {
+                    "flex_patch_fits": {
+                        k: {
+                            "held": sum(r[2] != "release" for r in g.degenerate),
+                            "releases": sum(r[2] == "release" for r in g.degenerate),
+                            "max_release_angle_rad": max(
+                                (r[4] for r in g.degenerate if r[2] == "release"), default=0.0
+                            ),
+                        }
+                        for k, g in self.flex_groups.items()
+                        if g.continuous
+                    }
+                }
+                if any(g.continuous for g in self.flex_groups.values())
+                else {}
+            ),
         }
 
 
@@ -292,16 +310,16 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
             raise ValueError("puddle footprint extends beyond its physical support boundary")
     # General moving objects (cloth, bags, jars, fingers) and fixed wall slabs.
     contract = cfg.get("contract_version", cfg.get("version"))
-    pose_sources, patch_groups = [], {}
+    pose_sources, patch_groups, flex_groups = [], {}, {}
     for name, bc in cfg.get("boundaries", {}).items():
         if name in bodies or name in patch_groups:
             raise ValueError(f"duplicate liquid boundary {name!r}")
         if "flex_patches" in bc:
             # contract 0.6.0: a deformable flex cloth as piecewise-rigid patches (flex_patches.py)
-            from .flex_patches import CONTRACT, FlexPatches
+            from .flex_patches import CONTINUOUS_CONTRACT, CONTRACTS, FlexPatches
 
-            if contract != CONTRACT:
-                raise ValueError(f"flex patch boundaries require liquid contract {CONTRACT}")
+            if contract not in CONTRACTS:
+                raise ValueError(f"flex patch boundaries require liquid contract {' or '.join(CONTRACTS)}")
             if "body" in bc or not bc.get("animated", True):
                 raise ValueError("flex patch boundaries follow an object's flex and are always animated")
             fp = bc["flex_patches"]
@@ -311,7 +329,10 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
             flexes = _object_flexes(m, root)
             if len(flexes) != 1:
                 raise ValueError(f"boundary {name!r}: object must own exactly one flex, found {len(flexes)}")
-            group = FlexPatches(m, env.sim.data, name, flexes[0], fp["grid"], fp["cells"])
+            group = FlexPatches(
+                m, env.sim.data, name, flexes[0], fp["grid"], fp["cells"], continuous=contract == CONTINUOUS_CONTRACT
+            )
+            flex_groups[name] = group
             initial = group.poses(env.sim.data)
             for part, (v, f) in zip(group.names, group.meshes, strict=True):
                 pos, R = initial[part]
@@ -372,6 +393,12 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
 
         fluid_type, scene_type = ValidatedWarpFluid, ValidatedWarpLiquidScene
         fluid_options["domain"] = make_domain(env, cfg["domain"], r)
+    if contract == "0.7.0":  # the 0.5.0 GPU solver; continuous flex patches; time step gated to nearby boundaries
+        from .domain_v1 import make_domain
+        from .gpu.validity_gpu import GatedWarpFluid, ValidatedWarpLiquidScene
+
+        fluid_type, scene_type = GatedWarpFluid, ValidatedWarpLiquidScene
+        fluid_options["domain"] = make_domain(env, cfg["domain"], r)
     fluid = fluid_type(
         workdir,
         params,
@@ -393,6 +420,7 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
     ls = scene_type(env, cpl, containers, surf, cfg)
     ls.contact_meshes = {b.name: MeshContact(b.vertices, b.faces) for b in boundaries if b.animated}
     ls.patch_groups = patch_groups
+    ls.flex_groups = flex_groups
     for name, ac in cfg.get("absorbers", {}).items():
         if name in patch_groups:
             cpl.absorbers.append(
@@ -411,7 +439,7 @@ def attach(env, cfg: dict, workdir, threads: int | None = None, x0: np.ndarray |
         )
     if cfg.get("contract_version", cfg.get("version")) == "0.4.3":
         fluid.substep_absorbers = cpl.absorbers
-    if contract in ("0.5.0", "0.6.0"):
+    if contract in ("0.5.0", "0.6.0", "0.7.0"):
         fluid.substep_absorbers = cpl.absorbers
     if cfg.get("sleep", {}).get("initially_frozen", False):
         if "puddle" not in cfg or not np.all(ls.labels() == "surface"):

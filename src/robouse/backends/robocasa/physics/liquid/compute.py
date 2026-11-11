@@ -4,7 +4,8 @@ import ctypes
 import os
 
 GPU_CONTRACT = '0.5.0'
-GPU_CONTRACTS = ('0.5.0', '0.6.0')  # 0.6.0: the same GPU solver plus flex patch boundaries (flex_patches.py)
+GPU_CONTRACTS = ('0.5.0', '0.6.0', '0.7.0')  # 0.6.0: the same GPU solver plus flex patch boundaries (flex_patches.py);
+# 0.7.0: continuous flex patch rotation and a time step gated to boundaries that can reach the liquid
 GPU_BACKEND = 'warp-dfsph-0.5.0-candidate'
 
 
@@ -34,7 +35,7 @@ def requirement(spec):
     solver = compute['liquid_solver']
     if solver == 'gpu':
         if contract not in GPU_CONTRACTS or compute['liquid_backend_id'] != GPU_BACKEND:
-            raise ValueError('GPU compute requires contract 0.5.0 or 0.6.0 and its exact backend id')
+            raise ValueError('GPU compute requires contract 0.5.0, 0.6.0 or 0.7.0 and its exact backend id')
     elif solver == 'cpu':
         if contract in GPU_CONTRACTS:
             raise ValueError('GPU contract cannot run on CPU')

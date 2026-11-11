@@ -285,6 +285,45 @@ has geom -1 and resolves to its vertex's, or element's first vertex's, body), fl
 `impact_speed` and `moving_contact` watches (geom-name checks cannot see a flex, so a negative would be missing
 evidence), and state-trace contacts, labels and boxes for flexes.
 
+## Continuous flex patches and gated time step, contract 0.7.0
+
+Contract 0.7.0 is the 0.6.0 condition (same Warp DFSPH solver and backend ID, domain, uptake, absorbers and
+validity checks) with two changes to how moving boundaries reach the solver. Both fix a measured non-physical
+failure: under 0.6.0, scene 8005 v6's violating route failed with "relative boundary/particle speed requires a time
+step below dt_min" while every liquid particle moved below 0.07 m/s; the limiting "wall speed" came from single
+towel patches with fitted angular velocities of 893 and 1385 rad/s (a patch is about 7 cm across).
+
+**Continuous patch rotation** (`FlexPatches(..., continuous=True)`). The 0.6.0 Kabsch fit of a planar rest layout
+leaves the third axis to the determinant correction, so a crumpled or folded patch can change its best proper
+rotation abruptly. 0.7.0 augments rest and current vertices by plus and minus the patch half-diagonal along their
+oriented normals (rest: at attach; now: the area-weighted normal of the patch's flex triangles), which makes the
+fit well posed, and rejects a fit whose orthogonal optimum is a reflection (det < 0) instead of forcing it proper.
+A patch is degenerate when its fit is a reflection, its in-plane second/first singular value ratio is below 0.25
+(folded or collinear vertices), or its oriented area is below 0.25 of its rest area. A degenerate patch keeps its
+previous accepted rotation (its centroid still follows its vertices), and every such fit is logged with time,
+patch, reason and ratios; the first regular fit after a hold logs the rotation angle accumulated while held. The
+coupling's angular velocity is unchanged in form: the principal (smallest-angle) rotation increment between
+consecutive MuJoCo-step fits divided by the step. No angular-velocity cap is applied. The scene report adds
+`flex_patch_fits` (held fits, releases, largest release angle) per flex boundary.
+
+**Time step gated to boundaries that can reach the liquid** (`gpu.validity_gpu.GatedWarpFluid`). 0.5.0 and 0.6.0
+bound every substep by the fastest animated boundary anywhere in the scene. The bound exists to keep each
+particle-boundary interaction resolved, and a particle interacts with a boundary only inside the kernel support
+h = 4 r of its boundary samples, which lie inside the sphere of radius r_b (the boundary mesh's largest vertex
+distance from its body origin) about the boundary's pose. Over one step of at most dt_max, a boundary's points move
+at most s_b dt_max (s_b = |v| + r_b |w|, the bound 0.5.0 uses) and a free particle at most (u + |g| dt_max) dt_max,
+with u the larger of the current and previously predicted particle speed. A boundary whose sphere is farther than
+h + (u + |g| dt_max + s_b) dt_max from every free particle therefore cannot enter any particle's kernel support
+during any step the rule can choose, exerts no force in that step, and is excluded from the wall speed (a CFL
+argument: the excluded speed cannot affect resolution). Every other boundary enters exactly as before; with no free
+particle the wall speed is zero. The particle-speed term, gravity term, CFL number, dt_min and all validity checks
+are unchanged. The validity report adds `wall_speed_gating`: substeps whose chosen step the exclusion changed, and
+the fastest excluded boundary and its speed.
+
+0.7.0 requires the same explicit GPU `compute` declaration and backend ID as 0.5.0 and 0.6.0. Scenes declaring
+0.5.0 or 0.6.0 are unchanged (`ValidatedWarpFluid.wall_speed` keeps the ungated maximum; `FlexPatches` keeps the
+0.6.0 fit unless `continuous`).
+
 ## Material selection and surface capacity
 
 Surface-tension model parameter IDs remain -1 until that model is instantiated.

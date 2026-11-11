@@ -131,6 +131,10 @@ class LiquidCoupling:
             if np.linalg.norm(p - p0) > check_poses_m or np.linalg.norm(rotvec(R @ R0.T)) > 0.01:
                 raise RuntimeError(f"liquid reset: body {k} is not at its initial pose ({p} vs {p0})")
         self.fluid.reset()
+        for source in self.pose_sources:  # contract 0.7.0 flex patches hold rotations across steps
+            reset_hold = getattr(getattr(source, "__self__", None), "reset_hold", None)
+            if reset_hold is not None:
+                reset_hold()
         for absorber in self.absorbers:
             absorber.reset()
         if self.sleep is not None:
