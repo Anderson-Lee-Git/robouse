@@ -56,6 +56,7 @@ def check_spec(spec: dict) -> None:
     S.load_plugins()  # scene-specific predicates, as in the worker
     S.load_liquid("compute").requirement(spec)
     from .contact_pairs import validate as validate_contact_pairs
+
     validate_contact_pairs(spec)
     for k in ("id", "kitchen", "instruction", "robot_anchor", "fixtures", "objects"):
         if k not in spec:
@@ -88,6 +89,19 @@ def check_spec(spec: dict) -> None:
         fr = o.get("friction")
         if fr is not None and not (isinstance(fr, list) and len(fr) == 3 and all(float(v) >= 0 for v in fr)):
             raise ValueError(f"object {o['name']}: friction must be [sliding, torsional, rolling] >= 0")
+        si = o.get("solimp")
+        if si is not None and not (
+            isinstance(si, list)
+            and len(si) == 5
+            and 0 < float(si[0]) <= float(si[1]) < 1
+            and float(si[2]) > 0
+            and 0 < float(si[3]) < 1
+            and float(si[4]) >= 1
+        ):
+            raise ValueError(
+                f"object {o['name']}: solimp must be [dmin, dmax, width, midpoint, power] with "
+                "0 < dmin <= dmax < 1, width > 0, 0 < midpoint < 1, power >= 1"
+            )
         a = o.get("attach")
         if a is not None:
             if not isinstance(a, dict) or a.get("to") not in objects or float(a.get("max_n", 0)) <= 0:
@@ -112,12 +126,14 @@ def check_spec(spec: dict) -> None:
     for m in spec.get("monitors", []):
         if m.get("when", "step") not in ("step", "end"):
             raise ValueError("monitor when must be step or end")
-        if "hold_steps" in m and not (m.get("when", "step") == "step" and isinstance(m["hold_steps"], int)
-                                      and m["hold_steps"] >= 1):
+        if "hold_steps" in m and not (
+            m.get("when", "step") == "step" and isinstance(m["hold_steps"], int) and m["hold_steps"] >= 1
+        ):
             raise ValueError(f"monitor {m['id']}: hold_steps must be a positive integer on a step monitor")
         S.check_predicate(m["pred"], objects, fixtures, set(seen))
         if "reset_credit_v1" in m:
             from .rinse import validate_reset_credit
+
             validate_reset_credit(m)
             S.check_predicate(m["reset_credit_v1"]["pred"], objects, fixtures, set(seen))
         if m.get("when", "step") == "step":
@@ -136,6 +152,7 @@ class RobocasaScenarioBackend(Backend):
         self.condition = None
         if self.condition_requirement is not None:
             from .physics_condition import requirement
+
             requirement(self.condition_requirement)
         sc = spec.get("scenario")
         if isinstance(sc, str):
@@ -175,8 +192,10 @@ class RobocasaScenarioBackend(Backend):
             config.sim_python("robocasa", "robocasa"),
             WORKER,
             setup=config.SUITES_DOCS,
-            env={"PYTHONHASHSEED": "0",
-                 **({"OMP_NUM_THREADS": str(sc["compute"]["threads"])} if sc.get("compute") else {})},
+            env={
+                "PYTHONHASHSEED": "0",
+                **({"OMP_NUM_THREADS": str(sc["compute"]["threads"])} if sc.get("compute") else {}),
+            },
         )
         self._state: dict | None = None
         self._last: dict = {}
@@ -294,10 +313,12 @@ class RobocasaScenarioBackend(Backend):
         self._success = False
         if self.condition_requirement is not None:
             from pathlib import Path
+
             from .physics_condition import FILENAME, record_or_check, require_equal
 
             actual = self._call(
-                "physics_condition", requirement=self.condition_requirement,
+                "physics_condition",
+                requirement=self.condition_requirement,
                 render_size=list(self.render_size),
                 reset={"seed": seed, "settle_steps": self.settle_steps},
             )
@@ -307,8 +328,9 @@ class RobocasaScenarioBackend(Backend):
             # It stays outside any policy workspace or broker-served directory.
             group = os.environ.get("ROBOUSE_PHYSICS_CONDITION_FILE")
             if group:
-                record_or_check(Path(group), actual,
-                                must_exist=os.environ.get("ROBOUSE_PHYSICS_CONDITION_RESUME") == "1")
+                record_or_check(
+                    Path(group), actual, must_exist=os.environ.get("ROBOUSE_PHYSICS_CONDITION_RESUME") == "1"
+                )
             if self._run_dir is not None:
                 record_or_check(self._run_dir / FILENAME, actual)
             self.condition = actual
@@ -344,8 +366,11 @@ class RobocasaScenarioBackend(Backend):
         try:
             m = self._call("monitor_events")
         except Exception as e:  # noqa: BLE001
-            return {"scenario": self.scenario.get("id"), "monitor_error": f"{type(e).__name__}: {e}"[:300],
-                    **({"compute": dict(self.scenario["compute"])} if self.scenario.get("compute") else {})}
+            return {
+                "scenario": self.scenario.get("id"),
+                "monitor_error": f"{type(e).__name__}: {e}"[:300],
+                **({"compute": dict(self.scenario["compute"])} if self.scenario.get("compute") else {}),
+            }
         self._summary = {
             "scenario": self.scenario.get("id"),
             "control": self.control,
@@ -418,7 +443,9 @@ class RobocasaScenarioBackend(Backend):
             return self._move_joints(target, float(np.clip(vals[7], -1, 1)) if len(vals) == 8 else 0.0)
         if self.control == "eef" and name in ("move_to_pose", "move-to-pose"):
             if len(vals) not in (6, 7):
-                raise ValueError("move_to_pose X Y Z ROLL PITCH YAW [GRIP]: a position in m and world-frame angles in rad")
+                raise ValueError(
+                    "move_to_pose X Y Z ROLL PITCH YAW [GRIP]: a position in m and world-frame angles in rad"
+                )
             grip = float(np.clip(vals[6], -1, 1)) if len(vals) == 7 else 0.0
             return self._move_pose(np.asarray(vals[:3]), rpy2mat(*vals[3:6]), grip)
         raise ValueError(f"unknown skill {name!r}; skills: {', '.join(self.skills())}")
@@ -471,7 +498,9 @@ class RobocasaScenarioBackend(Backend):
             "eef_rpy": [round(float(a), 4) for a in mat2rpy(self._eef_R())],
         }
         if stalled:
-            out["stalled"] = "the hand stopped moving before reaching the pose (out of reach, a joint limit, or blocked)"
+            out["stalled"] = (
+                "the hand stopped moving before reaching the pose (out of reach, a joint limit, or blocked)"
+            )
         return out
 
     def close(self) -> None:
