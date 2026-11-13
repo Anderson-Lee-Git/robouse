@@ -71,13 +71,12 @@ class ValidatedWarpFluid(WarpFluid):
         while t1 - self._t > 1e-9:
             self.validate()
             poses = pose_at(self.time) if pose_at else self._initial_poses()
-            wall_speed = 0.0
-            for name, (pos, R, v, w) in poses.items():
-                if not all(np.isfinite(a).all() for a in (pos, R, v, w)):
+            for pose in poses.values():
+                if not all(np.isfinite(a).all() for a in pose):
                     self.fail('nonfinite boundary pose/velocity')
-                wall_speed = max(wall_speed, float(np.linalg.norm(v) + self.boundary_radii[name] * np.linalg.norm(w)))
             free = self.free_mask
             speed = float(np.linalg.norm(self.velocities()[free], axis=1).max()) if free.any() else 0.0
+            wall_speed = self.wall_speed(poses, free, max(speed, self.previous_predicted_speed))
             relative = max(speed, self.previous_predicted_speed) + wall_speed + np.linalg.norm(p.gravity) * p.dt_max
             dt = min(p.dt_max, p.cfl * p.spacing / max(relative, 1e-12))
             if p.surface_tension:
@@ -119,6 +118,13 @@ class ValidatedWarpFluid(WarpFluid):
                 self.substeps_log.append((self.time, dt, *self.iterations[:2]))
         return self.steps - n0
 
+    def wall_speed(self, poses, free, particle_speed):
+        """Fastest boundary surface speed bound |v| + r |w| over every animated boundary (contracts 0.5.0, 0.6.0)."""
+        wall_speed = 0.0
+        for name, (_pos, _R, v, w) in poses.items():
+            wall_speed = max(wall_speed, float(np.linalg.norm(v) + self.boundary_radii[name] * np.linalg.norm(w)))
+        return wall_speed
+
     def sleep_until(self, t1, pose_at=None):
         self.validate()
         if not np.isfinite(t1) or t1 < self.time:
@@ -149,4 +155,61 @@ class ValidatedWarpLiquidScene(SubstepContactLiquidScene):
     def report(self):
         result = super().report()
         result['validity']['reference_contract'] = '0.4.3'
+        if hasattr(self.fluid, 'gating'):
+            result['validity']['wall_speed_gating'] = dict(self.fluid.gating)
         return result
+
+
+class GatedWarpFluid(ValidatedWarpFluid):
+    """Contract 0.7.0: the 0.5.0/0.6.0 GPU fluid with its time step limited only by boundaries that can reach the
+    liquid within the step.
+
+    CFL argument. The step must keep every particle-boundary interaction resolved: within one step no boundary sample
+    may cross more than a fraction (cfl) of a particle spacing relative to a particle it interacts with. A particle
+    interacts with a boundary sample only inside the kernel support h = 4 r. A boundary's samples lie on its mesh,
+    inside the sphere of radius r_b (its largest vertex distance from the body origin) about its pose. Over a step of
+    at most dt_max the boundary's points move at most s_b dt_max (s_b = |v| + r_b |w|, the bound 0.5.0 already uses)
+    and a free particle at most (u + |g| dt_max) dt_max (u = the larger of the current and the previously predicted
+    particle speed). So if, at the start of the step, every free particle is farther than
+        h + (u + |g| dt_max + s_b) dt_max
+    from that sphere, no particle can enter the boundary's kernel support during any step this rule can choose, the
+    boundary exerts no force in the step, and its speed cannot affect the step's resolution. Such boundaries are
+    excluded from the wall speed; all others enter it exactly as in 0.5.0. With no free particle, the wall speed is
+    zero. The particle bound itself, gravity term, CFL number, dt_min and every validity check are unchanged.
+
+    `gating['substeps_changed']` counts wall-speed evaluations (substeps) in which an excluded boundary was faster
+    than every included one, i.e. the exclusion lowered the wall-speed term; the chosen step itself changes only when
+    that term was the binding limit. `max_excluded*` name the fastest excluded boundary and its speed.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self.gating = {'substeps_changed': 0, 'max_excluded_wall_speed': 0.0, 'max_excluded': None}
+        super().__init__(*args, **kwargs)
+        self.support = 4.0 * float(self.params.particle_radius)
+
+    def wall_speed(self, poses, free, particle_speed):
+        if not free.any():
+            return 0.0
+        x = self.positions()[free]
+        p = self.params
+        drift = (particle_speed + float(np.linalg.norm(p.gravity)) * p.dt_max) * p.dt_max
+        included = excluded = 0.0
+        excluded_name = None
+        for name, (pos, _R, v, w) in poses.items():
+            r = self.boundary_radii[name]
+            s = float(np.linalg.norm(v) + r * np.linalg.norm(w))
+            gap = float(np.sqrt(((x - np.asarray(pos, float)) ** 2).sum(axis=1).min())) - r
+            if gap <= self.support + drift + s * p.dt_max:
+                included = max(included, s)
+            elif s > excluded:
+                excluded, excluded_name = s, name
+        if excluded > included:
+            self.gating['substeps_changed'] += 1
+            if excluded > self.gating['max_excluded_wall_speed']:
+                self.gating['max_excluded_wall_speed'] = excluded
+                self.gating['max_excluded'] = excluded_name
+        return included
+
+    def reset(self):
+        super().reset()
+        self.gating = {'substeps_changed': 0, 'max_excluded_wall_speed': 0.0, 'max_excluded': None}
