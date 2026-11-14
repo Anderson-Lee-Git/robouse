@@ -281,6 +281,15 @@ class Tracer:
             self.geom_label.append(lab)
             if b in body_label and (M.geom_contype[g] or M.geom_conaffinity[g]):
                 self.obj_geoms.setdefault(body_label[b], []).append(g)
+        # a flex (deformable cloth) has no geoms: its contacts carry geom -1 and a flex id, labelled by the body of
+        # its first vertex (an object's flex vertices all lie in that object's subtree)
+        self.flex_label = [
+            label_of_body(int(M.flex_vertbodyid[int(M.flex_vertadr[f])])) for f in range(int(getattr(M, "nflex", 0)))
+        ]
+        self.obj_flexes: dict[str, list[int]] = {}
+        for f, lab in enumerate(self.flex_label):
+            if lab in body_label.values():
+                self.obj_flexes.setdefault(lab, []).append(f)
         # 1.1.0: interiors (an object's `reg_int` cylinder) and the moving robot's colliding geoms that may enter them
         self.interiors: dict[str, tuple[int, float, float]] = {}
         for name in self.objects:
@@ -354,11 +363,20 @@ class Tracer:
         n = int(d.ncon)
         con = d.contact
         g1s, g2s = np.asarray(con.geom1[:n]), np.asarray(con.geom2[:n])
+        flex = np.asarray(con.flex[:n]).reshape(n, 2) if n else np.zeros((0, 2), int)
+
+        def side(g: int, f: int) -> str:
+            if g >= 0:
+                return self.geom_label[g]
+            if f < 0:
+                raise ValueError("contact side has neither a geom nor a flex")
+            return self.flex_label[f]
+
         active, normal_z = np.asarray(con.efc_address[:n]) >= 0, np.asarray(con.frame[:n]).reshape(n, 9)[:, 2]
         for i in range(n):
             if not active[i]:  # inside the margin, exerting no force
                 continue
-            a, b = self.geom_label[int(g1s[i])], self.geom_label[int(g2s[i])]
+            a, b = side(int(g1s[i]), int(flex[i, 0])), side(int(g2s[i]), int(flex[i, 1]))
             a0, b0 = a.split("/")[0], b.split("/")[0]  # an object's or fixture's own name, without a moving part
             if a0 == b0 or (a.startswith("robot:") and b.startswith("robot:")):
                 continue  # within one fixture or object, or within the robot
@@ -467,8 +485,14 @@ class Tracer:
             if support.get(n):
                 row["on"] = support[n]
             gs = self.obj_geoms.get(n)
-            if gs:
-                lo, hi = self._box(gs)
+            fs = self.obj_flexes.get(n)
+            if gs or fs:
+                lo, hi = (self._box(gs) if gs else None) or (None, None)
+                for f in fs or []:  # a flex's box: its current vertices inflated by the flex radius
+                    a0, k = int(self.m._model.flex_vertadr[f]), int(self.m._model.flex_vertnum[f])
+                    v, r = np.asarray(d.flexvert_xpos[a0 : a0 + k]), float(self.m._model.flex_radius[f])
+                    lo = v.min(0) - r if lo is None else np.minimum(lo, v.min(0) - r)
+                    hi = v.max(0) + r if hi is None else np.maximum(hi, v.max(0) + r)
                 row["box"] = [_r(lo, 4), _r(hi, 4)]
                 inside = self._inside(lo, hi)
                 if inside:

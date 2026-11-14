@@ -256,6 +256,91 @@ simulator construction; runtime and constructed-solver checks are provided by th
 JSON declaration, scheduler/allocation workflow, frozen thread count and adoption
 status. Declarations and private diagnostics stay host-only, outside observations.
 
+## Flex patch contract 0.6.0
+
+Contract 0.6.0 is the 0.5.0 GPU solver, validity, domain and uptake implementation unchanged, plus one boundary
+kind for a deformable MuJoCo `dim=2` flex cloth (`physics/liquid/flex_patches.py`). The one-way coupling moves
+rigid meshes; a flex has no rigid body, so its boundary is a grid of piecewise-rigid thin boxes ("patches"). A
+boundary entry `{"object": NAME, "flex_patches": {"grid": [NX, NY], "cells": [CX, CY]}}` names the object owning
+exactly one flex (all its vertex bodies in the object's subtree), its flexcomp point grid (x-major vertex order,
+verified at attach) and the flex cells per patch (which must divide the grid's cells evenly). Each patch is a box
+of the block's rest extent plus the flex radius, half height the radius, named `NAME#pIIJJ`. Before every fluid
+query the patch takes the least-squares rigid pose (Kabsch) of its vertices relative to their layout at attach,
+supplied through `LiquidCoupling(pose_sources=...)` on the same data as body poses, so the accepted-substep
+interpolation and continuous contact are as for bodies. Bending and stretching inside a patch are not represented;
+at seams a bent cloth leaves gaps or overlaps of order patch size times half the bend angle. The fluid still exerts
+no force on MuJoCo.
+
+An absorber named like a patch boundary is a `PatchAbsorber`: one reservoir with the declared capacity for the
+whole cloth (never divided per patch); a free particle within `contact_m` of any patch is absorbed, lowest particle
+ids first. Its report adds `patches` and `by_patch_ml`, the split of absorbed volume by the first touching patch in
+fixed order, which is attribution only. `LiquidScene.wetting_ml(NAME)` unions the patches and the scene report
+lists `flex_patches` counts. Flex patch boundaries are refused under any other contract; contract 0.6.0 requires
+the same explicit GPU `compute` declaration and backend ID as 0.5.0 (`compute.GPU_CONTRACTS`).
+
+Related flex support outside the liquid package: `scenario.object_flexes`, object `friction` and opt-in `condim`
+(1, 3, 4 or 6) applied to an object's flexes as well as its geoms, `scenario.contact_bodies` (a flex contact side
+has geom -1 and resolves to its vertex's, or element's first vertex's, body), flex-aware `supported_v1`,
+`released_v1`, `contents_contact` and `impact_speed`, refusal of flex objects by `contact`, `on_fixture`,
+`impact_speed` and `moving_contact` watches (geom-name checks cannot see a flex, so a negative would be missing
+evidence), and state-trace contacts, labels and boxes for flexes.
+
+## Continuous flex patches and gated time step, contract 0.7.0
+
+Contract 0.7.0 is the 0.6.0 condition (same Warp DFSPH solver and backend ID, domain, uptake, absorbers and
+validity checks) with two changes to how moving boundaries reach the solver. Both fix a measured non-physical
+failure: under 0.6.0, scene 8005 v6's violating route failed with "relative boundary/particle speed requires a time
+step below dt_min" while every liquid particle moved below 0.07 m/s; the limiting "wall speed" came from single
+towel patches with fitted angular velocities of 893 and 1385 rad/s (a patch is about 7 cm across).
+
+**Continuous patch rotation** (`FlexPatches(..., continuous=True)`). The 0.6.0 Kabsch fit of a planar rest layout
+leaves the third axis to the determinant correction, so a crumpled or folded patch can change its best proper
+rotation abruptly. 0.7.0 augments rest and current vertices by plus and minus the patch half-diagonal along their
+oriented normals (rest: at attach; now: the area-weighted normal of the patch's flex triangles), which makes the
+fit well posed, and rejects a fit whose orthogonal optimum is a reflection (det < 0) instead of forcing it proper.
+A patch is degenerate when its fit is a reflection, its in-plane second/first singular value ratio is below 0.25
+(folded or collinear vertices), or its oriented area is below 0.25 of its rest area. A degenerate patch keeps its
+previous accepted rotation (its centroid still follows its vertices), and every such fit is logged with time,
+patch, reason and ratios; the first regular fit after a hold logs the rotation angle accumulated while held. The
+coupling's angular velocity is unchanged in form: the principal (smallest-angle) rotation increment between
+consecutive MuJoCo-step fits divided by the step. No angular-velocity cap is applied. The scene report adds
+`flex_patch_fits` (held fits, releases, largest release angle) per flex boundary.
+
+**Time step gated to boundaries that can reach the liquid** (`gpu.validity_gpu.GatedWarpFluid`). 0.5.0 and 0.6.0
+bound every substep by the fastest animated boundary anywhere in the scene. The bound exists to keep each
+particle-boundary interaction resolved, and a particle interacts with a boundary only inside the kernel support
+h = 4 r of its boundary samples, which lie inside the sphere of radius r_b (the boundary mesh's largest vertex
+distance from its body origin) about the boundary's pose. Over one step of at most dt_max, a boundary's points move
+at most s_b dt_max (s_b = |v| + r_b |w|, the bound 0.5.0 uses) and a free particle at most (u + |g| dt_max) dt_max,
+with u the larger of the current and previously predicted particle speed. A boundary whose sphere is farther than
+h + (u + |g| dt_max + s_b) dt_max from every free particle therefore cannot enter any particle's kernel support
+during any step the rule can choose, exerts no force in that step, and is excluded from the wall speed (a CFL
+argument: the excluded speed cannot affect resolution). Every other boundary enters exactly as before; with no free
+particle the wall speed is zero. The particle-speed term, gravity term, CFL number, dt_min and all validity checks
+are unchanged. The validity report adds `wall_speed_gating`: `substeps_changed` counts substeps in which an
+excluded boundary was faster than every included one (the exclusion lowered the wall-speed term; the step itself
+changed only where that term was binding), and the fastest excluded boundary and its speed.
+
+0.7.0 requires the same explicit GPU `compute` declaration and backend ID as 0.5.0 and 0.6.0. Scenes declaring
+0.5.0 or 0.6.0 are unchanged (`ValidatedWarpFluid.wall_speed` keeps the ungated maximum; `FlexPatches` keeps the
+0.6.0 fit unless `continuous`).
+
+## Flex patch rotation-rate limit, contract 0.7.1
+
+Contract 0.7.1 is 0.7.0 with one declared knob per flex patch boundary,
+`"flex_patches": {"grid": [...], "cells": [...], "max_angular_speed_rad_s": w_max}` (required under 0.7.1, refused
+under 0.6.0 and 0.7.0). Measured need: under 0.7.0, scene 8005 v6's violating route still failed at dt_min. The
+cause was a hold release: a patch held through a fold re-acquires its fitted rotation in one MuJoCo step (releases
+up to 3.09 rad; one of 1.95 rad, 977 rad/s, on a patch 18 mm from free liquid). 0.7.1 limits each patch's output
+rotation to turn at most w_max times the MuJoCo time elapsed since its last output at an earlier time, along the
+shortest arc (repeated queries at one time return one pose). The fit and the hold logic are unchanged, so the output
+catches up with the fitted rotation at w_max. A patch's contribution to the wall speed is then at most
+|v| + r_b w_max. Choice of w_max: regular (non-released) patch fits of the 8005 towel turn at about 1-2 rad/s, so
+50 rad/s never limits ordinary cloth motion, bounds a 3.5 cm patch's rim speed by 1.75 m/s, and lets a 3 rad release
+catch up in 60 ms. `flex_patch_fits` adds `max_angular_speed_rad_s`, `cap_events` (limited outputs) and
+`cap_max_deficit_rad` (largest angle still to catch up). Everything else, including the GPU solver, backend ID and
+time-step gating, is 0.7.0.
+
 ## Material selection and surface capacity
 
 Surface-tension model parameter IDs remain -1 until that model is instantiated.

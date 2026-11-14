@@ -13,6 +13,7 @@ the current particles (once per fluid state, shared by all cameras) and uploaded
 Install it after the scene has settled (robouse's worker settles objects in make_scenario); the fluid's time zero is
 the MuJoCo time at install, and its initial particles must already sit in the source container at its pose then.
 """
+
 from __future__ import annotations
 
 import time
@@ -51,10 +52,13 @@ class LiquidCoupling:
     """Drives an `SPHFluid` from a MuJoCo sim. `bodies` maps each animated SPH boundary name to its MuJoCo body id
     (the boundary mesh must be in that body's frame). `renderer`: a SurfaceRenderer for the model, or None."""
 
-    def __init__(self, sim, fluid, bodies: dict, renderer=None, max_lag_steps: int = 0):
+    def __init__(self, sim, fluid, bodies: dict, renderer=None, max_lag_steps: int = 0, pose_sources=()):
         self.sim = sim
         self.fluid = fluid
         self.bodies = {k: int(v) for k, v in bodies.items()}
+        # callables(data) -> {boundary name: (pos, R)} for boundaries that follow no single body (contract 0.6.0
+        # flex patches); evaluated on the same data as the bodies, so they share the bodies' timing
+        self.pose_sources = list(pose_sources)
         self.renderer = renderer
         self.pre_step = []  # callables(sim, t) run before each MuJoCo step (e.g. a scripted kinematic motion)
         self.absorbers = []
@@ -68,8 +72,16 @@ class LiquidCoupling:
     # ---- poses ---------------------------------------------------------------------------------------------------
     def _poses(self) -> dict:
         d = self.sim.data
-        return {k: (np.array(d.body_xpos[b], float), np.array(d.body_xmat[b], float).reshape(3, 3))
-                for k, b in self.bodies.items()}
+        out = {
+            k: (np.array(d.body_xpos[b], float), np.array(d.body_xmat[b], float).reshape(3, 3))
+            for k, b in self.bodies.items()
+        }
+        for source in self.pose_sources:
+            for k, pose in source(d).items():
+                if k in out:
+                    raise ValueError(f"liquid boundary {k!r} has two pose sources")
+                out[k] = pose
+        return out
 
     def _capture_origin(self):
         self.t0 = float(self.sim.data.time)
@@ -106,7 +118,7 @@ class LiquidCoupling:
         else:
             self.fluid.advance(t, pose_at)
         for absorber in self.absorbers:
-            absorber.update(self.fluid, *new[absorber.name])
+            absorber.update_poses(self.fluid, new)
         self.timing["sph_s"] += time.perf_counter() - c0
         self.timing["mj_steps"] += 1
         self._prev, self._t_prev = new, t
@@ -119,6 +131,10 @@ class LiquidCoupling:
             if np.linalg.norm(p - p0) > check_poses_m or np.linalg.norm(rotvec(R @ R0.T)) > 0.01:
                 raise RuntimeError(f"liquid reset: body {k} is not at its initial pose ({p} vs {p0})")
         self.fluid.reset()
+        for source in self.pose_sources:  # contract 0.7.0 flex patches hold rotations across steps
+            reset_hold = getattr(getattr(source, "__self__", None), "reset_hold", None)
+            if reset_hold is not None:
+                reset_hold()
         for absorber in self.absorbers:
             absorber.reset()
         if self.sleep is not None:

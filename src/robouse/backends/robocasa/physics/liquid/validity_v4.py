@@ -25,10 +25,11 @@ class SubstepContactSPHFluid(PredictiveSPHFluid):
         # interpolation inside the enclosing MuJoCo interval.
         poses = pose_at(self.time) if pose_at else self._initial_poses()
         for absorber in self.substep_absorbers:
-            pos, rotation, velocity, angular_velocity = poses[absorber.name]
-            if not all(np.isfinite(a).all() for a in (pos, rotation, velocity, angular_velocity)):
-                self.fail('nonfinite absorber pose/velocity')
-            absorber.update(self, pos, rotation)
+            for name in absorber.pose_names():
+                pos, rotation, velocity, angular_velocity = poses[name]
+                if not all(np.isfinite(a).all() for a in (pos, rotation, velocity, angular_velocity)):
+                    self.fail('nonfinite absorber pose/velocity')
+            absorber.update_poses(self, poses)
 
     def advance(self, t1, pose_at=None):
         if not np.isfinite(t1) or t1 < self.time - 1e-12:
