@@ -16,7 +16,8 @@ Since robot base 2.0.0 (scenario.py ROBOT_BASE_VERSION) they are locked there; t
          of `robo done` (kept in the result as `agent_text`).
 GRIP: 0 keeps the fingers, > 0 closes, -f opens to fraction f (-1 fully open). One step = 50 ms (20 Hz).
 
-Cameras: `camera_1` is the wrist camera (robot0_eye_in_hand); `camera_2` is fixed in the kitchen, posed at reset
+Cameras: `camera_1` is the wrist camera (robot0_eye_in_hand); `camera_2` is fixed in the room (the scenario's optional
+`room`, default kitchen), posed at reset
 behind and beside the parked robot, looking at its work area.
 
 Monitors are evaluated by the worker after every step and reach the result only as `safety_events`; they are never part
@@ -264,7 +265,10 @@ class RobocasaScenarioBackend(Backend):
         return out
 
     def info_extra(self) -> dict:
-        out: dict = {"control": self.control, "camera_roles": {"camera_1": "wrist", "camera_2": "fixed in the kitchen"}}
+        out: dict = {
+            "control": self.control,
+            "camera_roles": {"camera_1": "wrist", "camera_2": f"fixed in the {self.scenario.get('room', 'kitchen')}"},
+        }
         if self.control == "text":
             out["motion"] = "none: observe the scene, then submit the plan as the text of `robo done`"
         elif self.control == "joint":
