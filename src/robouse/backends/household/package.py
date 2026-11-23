@@ -16,7 +16,8 @@ episode.json: {"format": "household-episode", "format_version": "1.x.y", "scene"
   "budgets": {"max_steps": 45000, "settle_steps": 25, "reset_settle_steps": n},
   "plugins": {"path": "plugin", "goal": null | "goal:Goal", "behaviour": null | "behaviour:Behaviour",
               "behaviour_config": {}, "helpers": null | {"goals": semver, "behaviours": semver}},
-  "trace": {"objects": [...], "fixtures": [...], "room": "room"}, "compute": {"device": "cpu"},
+  "trace": {"objects": [...], "fixtures": [...], "room": "room"},
+  "compute": {"device": "cpu" | "gpu"},  "gpu" exactly when the liquid is on a GPU liquid contract (1.2.0)
   "files": {relpath: sha256, ...},   every other file of the package
   <extension key>: {...}}            optional physics extensions (extensions.py), e.g. a liquid; each key must be
                                      registered there and its module importable
@@ -224,8 +225,13 @@ def load(root, *, verify_files: bool = True) -> Episode:
             raise PackageError("plugins.helpers versions must be semver strings")
     tr = _obj(d, "trace", {"objects", "fixtures", "room"})
     comp = _obj(d, "compute", {"device"})
-    if comp["device"] != "cpu":
-        raise PackageError("compute.device must be cpu for this backend version")
+    if comp["device"] not in ("cpu", "gpu"):
+        raise PackageError("compute.device must be cpu or gpu")
+    if comp["device"] != _device(ext):
+        raise PackageError(
+            "compute.device gpu needs a liquid on a GPU liquid contract, and a GPU liquid contract needs compute.device"
+            " gpu"
+        )
     files = d.get("files")
     if verify_files:
         check_files(root, files)
@@ -258,6 +264,18 @@ def load(root, *, verify_files: bool = True) -> Episode:
         files=dict(files or {}),
         extensions=ext,
     )
+
+
+def _device(ext: dict) -> str:
+    """The device the package's physics extensions need: "gpu" only for a liquid on a GPU liquid contract (liquid
+    contract 1.2.0; only the liquid runs there, rigid MuJoCo and rendering stay on the CPU)."""
+    liquid = ext.get("liquid")
+    if isinstance(liquid, dict):
+        from .liquid.config import GPU_CONTRACTS
+
+        if liquid.get("contract") in GPU_CONTRACTS:
+            return "gpu"
+    return "cpu"
 
 
 def check_scene(spec) -> None:

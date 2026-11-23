@@ -16,7 +16,7 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 | `ROBOUSE_SANDBOX` | 0 disables the sandbox around agent processes (macOS Seatbelt, Linux bubblewrap; default 1) |
 | `ROBOUSE_SANDBOX_DENY` | extra colon-separated paths agents may neither read nor write |
 | `ROBOUSE_SANDBOX_ALLOW` | colon-separated paths inside a denied folder that agents may read (not write), such as an interpreter or a runtime library inside a denied checkout |
-| `ROBOUSE_HOUSEHOLD_LIQUID_BACKEND` | folder holding the pinned household liquid (SPlisHSPlasH) backend; default `<cache>/household/liquid/<backend id>` |
+| `ROBOUSE_HOUSEHOLD_LIQUID_BACKEND` | folder holding the pinned household liquid (SPlisHSPlasH) backend; default `<cache>/household/liquid/<backend id>`. The GPU backend (liquid contract 1.2.0, `warp-1.19.0-dfsph-cuda-f32-v1`) ships its Warp kernels in the package and reads no folder |
 | `ROBOUSE_DEXJOCO_PYTHON` | Python of the DexJoCo virtualenv (default <cache>/dexjoco-venv/bin/python) |
 | `ROBOUSE_DMCONTROL_PYTHON` | Python of the dm_control virtualenv (default <cache>/dmcontrol-venv/bin/python) |
 | `ROBOUSE_HUMANOIDBENCH_PYTHON` | Python of the HumanoidBench virtualenv (default <cache>/humanoidbench-venv/bin/python) |
