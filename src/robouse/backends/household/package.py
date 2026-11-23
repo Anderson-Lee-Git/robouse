@@ -1,4 +1,4 @@
-"""A compiled scene package: what the household backend loads for one episode (`household-episode`, spec 1.0.0; the
+"""A compiled scene package: what the household backend loads for one episode (`household-episode`, spec 1.1.0; the
 benchmark's `docs/specification.md` "Compiled package" and `episode.schema.json` own the format).
 
     <package>/episode.json   entry point (below); its sha256 is the package's identity
@@ -7,7 +7,7 @@ benchmark's `docs/specification.md` "Compiled package" and `episode.schema.json`
     <package>/assets/...     what scene.xml refers to
     <package>/plugin/...     goal.py (`goal:Goal`), behaviour.py (`behaviour:Behaviour`) and their vendored helpers
 
-episode.json: {"format": "household-episode", "format_version": "1.x.y", "scene": "scene.xml",
+episode.json: {"format": "household-episode", "format_version": "1.n.y" (n <= 1), "scene": "scene.xml",
   "robot": {"model": "fr3_2f85", "base": {"pos": [3], "quat": [w x y z]},
             "pedestal": {"half_extents_m": [2], "height_m": h, "rgba": [4]},
             "initial_qpos": [7], "initial_gripper_open": 0..1},
@@ -21,6 +21,10 @@ episode.json: {"format": "household-episode", "format_version": "1.x.y", "scene"
   "files": {relpath: sha256, ...},   every other file of the package
   <extension key>: {...}}            optional physics extensions (extensions.py), e.g. a liquid; each key must be
                                      registered there and its module importable
+
+`format_version` follows the spec's minor rule: a minor only adds optional fields or enum values, so this backend
+reads any 1.n.y with n <= 1 unchanged (1.0.0 packages included) and refuses a newer minor or another major. Spec 1.1
+added liquid contracts 1.1.0 and 1.2.0 and `compute.device` "gpu".
 
 The protocol constants (render, control, budgets other than reset_settle_steps) must equal the backend's own. Nothing
 here is shown to the policy; errors name fields, never paths or task names.
@@ -38,10 +42,17 @@ from . import extensions as X
 from .robot import CONTROL_DT, PHYSICS_DT, RENDER
 
 FORMAT = "household-episode"
-SPEC_MAJOR_MINOR = (1, 0)  # spec versions this backend reads: 1.0.x
+SPEC_MAJOR_MINOR = (1, 1)  # newest spec this backend reads; it reads 1.0.x to 1.1.x
 MAX_STEPS_CAP = 45_000  # technical cap: 900 s of robot time at 50 Hz
 SETTLE_STEPS = 25  # holding still after `done`, before the goal check
 RESERVED_CAMERAS = ("camera_1", "camera_2")
+
+
+def spec_readable(major: int, minor: int) -> bool:
+    """The spec's minor rule: the same major and an earlier or equal minor."""
+    return major == SPEC_MAJOR_MINOR[0] and minor <= SPEC_MAJOR_MINOR[1]
+
+
 _SEMVER_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 _FILE_RE = re.compile(r"^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$")
 _KEYS = {
@@ -174,8 +185,10 @@ def load(root, *, verify_files: bool = True) -> Episode:
         raise PackageError(f"episode.json format must be {FORMAT!r}")
     ver = d.get("format_version")
     m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", ver) if isinstance(ver, str) else None
-    if not m or (int(m[1]), int(m[2])) != SPEC_MAJOR_MINOR:
-        raise PackageError(f"format_version must be {SPEC_MAJOR_MINOR[0]}.{SPEC_MAJOR_MINOR[1]}.x")
+    if not m or not spec_readable(int(m[1]), int(m[2])):
+        raise PackageError(
+            f"format_version must be {SPEC_MAJOR_MINOR[0]}.0.x to {SPEC_MAJOR_MINOR[0]}.{SPEC_MAJOR_MINOR[1]}.x"
+        )
     ext = {k: d[k] for k in X.EXTENSIONS if k in d}
     for k in ext:
         if X.load_class(k) is None:
