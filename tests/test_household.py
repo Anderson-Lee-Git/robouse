@@ -177,6 +177,57 @@ def test_robot_base_pose_and_pedestal(tmp_path, pkg):
     b.close()
 
 
+@pytest.mark.parametrize("yaw_deg", [135, 120])
+def test_off_axis_base_yaw_eef_rows(tmp_path, pkg, yaw_deg):
+    """A base turned by a yaw that is not a multiple of 90 degrees: the arm, its IK model and the reported hand pose
+    all turn with it. From home, 5 cm straight moves along every world axis and wrist turns about the vertical are
+    accepted, and every pose relative to the base solves exactly as it does with the base unturned."""
+    from robouse.backends.household.ik import mat_quat
+    from robouse.backends.household.robot import quat_mat
+    from robouse.backends.household.sim import rpy_to_quat
+
+    yaw = math.radians(yaw_deg)
+    alt = copy_pkg(pkg, tmp_path / f"yaw{yaw_deg}")
+    edit_episode(alt, lambda d: d["robot"]["base"].update(quat=[math.cos(yaw / 2), 0, 0, math.sin(yaw / 2)]))
+    b0, b = make(pkg), make(alt)
+    Rb = quat_mat(b.sim.ep.base_quat)
+    p0, q0 = b0.sim.hand_pose()
+    p, q = b.sim.hand_pose()
+    base0, base = np.asarray(b0.sim.ep.base_pos), np.asarray(b.sim.ep.base_pos)
+    # the home hand pose is the unturned one carried round with the base, and eef_rpy reports the turn
+    assert p - base == pytest.approx(Rb @ (p0 - base0), abs=1e-6)
+    assert np.linalg.norm(rotvec(mat_quat(Rb @ quat_mat(q0)), q)) < 1e-6
+    st0, st = b0.observe(), b.observe()
+    assert math.remainder(st["eef_rpy"][2] - st0["eef_rpy"][2] - yaw, 2 * math.pi) == pytest.approx(0.0, abs=1e-3)
+    for d in np.vstack([np.eye(3), -np.eye(3)]) * 0.05:
+        path, rep = b.sim.solve_pose(p + d, q)
+        assert path is not None, (d.tolist(), rep)
+    for turn in (-0.6, -0.3, 0.3, 0.6):  # the wrist turned about the vertical, at home
+        Rt = quat_mat(rpy_to_quat(0.0, 0.0, turn)) @ quat_mat(q)
+        path, rep = b.sim.solve_pose(p, mat_quat(Rt))
+        assert path is not None, (turn, rep)
+    # pointing straight down, fingers along the base's forward axis (world yaw = the base yaw)
+    path, rep = b.sim.solve_pose(p, rpy_to_quat(math.pi, 0.0, yaw))
+    assert path is not None, rep
+    # invariance: the same base-relative targets give the same verdicts and joint paths as the unturned base
+    for k in range(12):
+        Rrel = quat_mat(rpy_to_quat(math.pi, 0.0, math.radians(30 * k)))
+        a, ra = b0.sim.solve_pose(p0, mat_quat(Rrel))
+        c, rc = b.sim.solve_pose(p, mat_quat(Rb @ Rrel))
+        assert (a is None) == (c is None) and ra["reason"] == rc["reason"], (k, ra, rc)
+        if a is not None:
+            assert c[-1] == pytest.approx(a[-1], abs=1e-4)
+    # an executed row lands on the commanded pose
+    target = p + np.array([0.0, 0.0, -0.05])
+    row = [*target.tolist(), *st["eef_rpy"], 1.0]
+    for _ in range(60):
+        b.step(row)
+    hold(b, 25)
+    assert np.linalg.norm(b.sim.hand_pose()[0] - target) < 0.002
+    b0.close()
+    b.close()
+
+
 # ---- joint mode --------------------------------------------------------------------------------------------------------
 def test_joint_tracking(pkg):
     b = make(pkg, "joint")
