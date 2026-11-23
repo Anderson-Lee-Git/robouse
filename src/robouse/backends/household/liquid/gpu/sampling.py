@@ -1,7 +1,6 @@
 """Akinci boundary samples of a triangle mesh: SPlisHSPlasH's RegularTriangleSampling (vertices, then edge samples
 without the vertices, then face samples without the edges), at `max_distance` = 1.5 x particle radius as the
 StaticBoundarySimulator calls it for samplingMode 1. Pure numpy, body frame."""
-
 from __future__ import annotations
 
 import numpy as np

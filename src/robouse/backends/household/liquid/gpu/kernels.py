@@ -7,7 +7,6 @@ with Akinci2012 boundary particles, and the Eigen conjugate-gradient driver (see
 Neighbour lists are built once per substep (fixed capacity per particle) together with W and grad W of every pair,
 like SPlisHSPlasH's precomputeValues; boundary volumes are Akinci's 1 / sum W over the body's own samples.
 """
-
 from __future__ import annotations
 
 import warp as wp
@@ -19,7 +18,7 @@ PI = 3.14159265358979323846
 def cubic_w(r: wp.vec3, h: float) -> float:
     k = 8.0 / (PI * h * h * h)
     q = wp.length(r) / h
-    res = 0.0
+    res = float(0.0)
     if q <= 1.0:
         if q <= 0.5:
             q2 = q * q
@@ -53,17 +52,9 @@ def cubic_w0(h: float) -> float:
 
 # ---- boundaries -------------------------------------------------------------------------------------------------
 @wp.kernel
-def boundary_update(
-    x0: wp.array(dtype=wp.vec3),
-    body: wp.array(dtype=int),
-    bpos: wp.array(dtype=wp.vec3),
-    brot: wp.array(dtype=wp.mat33),
-    bvel: wp.array(dtype=wp.vec3),
-    bang: wp.array(dtype=wp.vec3),
-    offset: int,
-    x: wp.array(dtype=wp.vec3),
-    v: wp.array(dtype=wp.vec3),
-):
+def boundary_update(x0: wp.array(dtype=wp.vec3), body: wp.array(dtype=int), bpos: wp.array(dtype=wp.vec3),
+                    brot: wp.array(dtype=wp.mat33), bvel: wp.array(dtype=wp.vec3), bang: wp.array(dtype=wp.vec3),
+                    offset: int, x: wp.array(dtype=wp.vec3), v: wp.array(dtype=wp.vec3)):
     i = wp.tid() + offset
     b = body[i]
     xi = brot[b] * x0[i] + bpos[b]
@@ -78,7 +69,7 @@ def boundary_volume(grid: wp.uint64, xb: wp.array(dtype=wp.vec3), h: float, vol:
     xi = xb[i]
     delta = float(cubic_w0(h))
     q = wp.hash_grid_query(grid, xi, h)
-    j = 0
+    j = int(0)
     while wp.hash_grid_query_next(q, j):
         if j != i:
             d = xi - xb[j]
@@ -89,32 +80,18 @@ def boundary_volume(grid: wp.uint64, xb: wp.array(dtype=wp.vec3), h: float, vol:
 
 # ---- neighbours -------------------------------------------------------------------------------------------------
 @wp.kernel
-def build_neighbours(
-    grid_f: wp.uint64,
-    grid_s: wp.uint64,
-    grid_d: wp.uint64,
-    x: wp.array(dtype=wp.vec3),
-    xb: wp.array(dtype=wp.vec3),
-    n_static: int,
-    has_dynamic: int,
-    h: float,
-    nn_f: wp.array2d(dtype=int),
-    cnt_f: wp.array(dtype=int),
-    gw_f: wp.array2d(dtype=wp.vec3),
-    w_f: wp.array2d(dtype=float),
-    nn_b: wp.array2d(dtype=int),
-    cnt_b: wp.array(dtype=int),
-    gw_b: wp.array2d(dtype=wp.vec3),
-    w_b: wp.array2d(dtype=float),
-    overflow: wp.array(dtype=int),
-):
+def build_neighbours(grid_f: wp.uint64, grid_s: wp.uint64, grid_d: wp.uint64, x: wp.array(dtype=wp.vec3),
+                     xb: wp.array(dtype=wp.vec3), n_static: int, has_dynamic: int, h: float,
+                     nn_f: wp.array2d(dtype=int), cnt_f: wp.array(dtype=int), gw_f: wp.array2d(dtype=wp.vec3),
+                     w_f: wp.array2d(dtype=float), nn_b: wp.array2d(dtype=int), cnt_b: wp.array(dtype=int),
+                     gw_b: wp.array2d(dtype=wp.vec3), w_b: wp.array2d(dtype=float), overflow: wp.array(dtype=int)):
     i = wp.tid()
     xi = x[i]
     kf = nn_f.shape[1]
     kb = nn_b.shape[1]
-    c = 0
+    c = int(0)
     q = wp.hash_grid_query(grid_f, xi, h)
-    j = 0
+    j = int(0)
     while wp.hash_grid_query_next(q, j):
         if j != i:
             d = xi - x[j]
@@ -127,7 +104,7 @@ def build_neighbours(
                     overflow[0] = 1
                 c += 1
     cnt_f[i] = wp.min(c, kf)
-    c = 0
+    c = int(0)
     q = wp.hash_grid_query(grid_s, xi, h)
     while wp.hash_grid_query_next(q, j):
         d = xi - xb[j]
@@ -157,18 +134,9 @@ def build_neighbours(
 
 # ---- DFSPH ------------------------------------------------------------------------------------------------------
 @wp.kernel
-def density(
-    cnt_f: wp.array(dtype=int),
-    w_f: wp.array2d(dtype=float),
-    nn_b: wp.array2d(dtype=int),
-    cnt_b: wp.array(dtype=int),
-    w_b: wp.array2d(dtype=float),
-    vb: wp.array(dtype=float),
-    vol: float,
-    rho0: float,
-    h: float,
-    rho: wp.array(dtype=float),
-):
+def density(cnt_f: wp.array(dtype=int), w_f: wp.array2d(dtype=float), nn_b: wp.array2d(dtype=int),
+            cnt_b: wp.array(dtype=int), w_b: wp.array2d(dtype=float), vb: wp.array(dtype=float), vol: float,
+            rho0: float, h: float, rho: wp.array(dtype=float)):
     i = wp.tid()
     d = vol * cubic_w0(h)
     for k in range(cnt_f[i]):
@@ -179,19 +147,11 @@ def density(
 
 
 @wp.kernel
-def dfsph_factor(
-    cnt_f: wp.array(dtype=int),
-    gw_f: wp.array2d(dtype=wp.vec3),
-    nn_b: wp.array2d(dtype=int),
-    cnt_b: wp.array(dtype=int),
-    gw_b: wp.array2d(dtype=wp.vec3),
-    vb: wp.array(dtype=float),
-    vol: float,
-    eps: float,
-    factor: wp.array(dtype=float),
-):
+def dfsph_factor(cnt_f: wp.array(dtype=int), gw_f: wp.array2d(dtype=wp.vec3), nn_b: wp.array2d(dtype=int),
+                 cnt_b: wp.array(dtype=int), gw_b: wp.array2d(dtype=wp.vec3), vb: wp.array(dtype=float), vol: float,
+                 eps: float, factor: wp.array(dtype=float)):
     i = wp.tid()
-    sum_grad = 0.0
+    sum_grad = float(0.0)
     grad_i = wp.vec3(0.0, 0.0, 0.0)
     for k in range(cnt_f[i]):
         g = -vol * gw_f[i, k]
@@ -207,30 +167,16 @@ def dfsph_factor(
 
 
 @wp.kernel
-def density_adv(
-    v: wp.array(dtype=wp.vec3),
-    nn_f: wp.array2d(dtype=int),
-    cnt_f: wp.array(dtype=int),
-    gw_f: wp.array2d(dtype=wp.vec3),
-    nn_b: wp.array2d(dtype=int),
-    cnt_b: wp.array(dtype=int),
-    gw_b: wp.array2d(dtype=wp.vec3),
-    vb: wp.array(dtype=float),
-    velb: wp.array(dtype=wp.vec3),
-    vol: float,
-    rho: wp.array(dtype=float),
-    rho0: float,
-    dt: float,
-    mode: int,
-    factor: wp.array(dtype=float),
-    p: wp.array(dtype=float),
-    dadv: wp.array(dtype=float),
-):
+def density_adv(v: wp.array(dtype=wp.vec3), nn_f: wp.array2d(dtype=int), cnt_f: wp.array(dtype=int),
+                gw_f: wp.array2d(dtype=wp.vec3), nn_b: wp.array2d(dtype=int), cnt_b: wp.array(dtype=int),
+                gw_b: wp.array2d(dtype=wp.vec3), vb: wp.array(dtype=float), velb: wp.array(dtype=wp.vec3), vol: float,
+                rho: wp.array(dtype=float), rho0: float, dt: float, mode: int, factor: wp.array(dtype=float),
+                p: wp.array(dtype=float), dadv: wp.array(dtype=float)):
     """mode 0: pressure solve (rho_adv = rho/rho0 + dt * delta, factor /= dt^2, warm start p);
     mode 1: divergence solve (rho_adv = max(delta, 0), zero with < 20 neighbours, factor /= dt, warm start p_v)."""
     i = wp.tid()
     vi = v[i]
-    delta = 0.0
+    delta = float(0.0)
     for k in range(cnt_f[i]):
         delta += wp.dot(vi - v[nn_f[i, k]], vol * gw_f[i, k])
     for k in range(cnt_b[i]):
@@ -257,20 +203,10 @@ def density_adv(
 
 
 @wp.kernel
-def pressure_accel(
-    p: wp.array(dtype=float),
-    state: wp.array(dtype=int),
-    nn_f: wp.array2d(dtype=int),
-    cnt_f: wp.array(dtype=int),
-    gw_f: wp.array2d(dtype=wp.vec3),
-    nn_b: wp.array2d(dtype=int),
-    cnt_b: wp.array(dtype=int),
-    gw_b: wp.array2d(dtype=wp.vec3),
-    vb: wp.array(dtype=float),
-    vol: float,
-    eps: float,
-    acc: wp.array(dtype=wp.vec3),
-):
+def pressure_accel(p: wp.array(dtype=float), state: wp.array(dtype=int), nn_f: wp.array2d(dtype=int),
+                   cnt_f: wp.array(dtype=int), gw_f: wp.array2d(dtype=wp.vec3), nn_b: wp.array2d(dtype=int),
+                   cnt_b: wp.array(dtype=int), gw_b: wp.array2d(dtype=wp.vec3), vb: wp.array(dtype=float), vol: float,
+                   eps: float, acc: wp.array(dtype=wp.vec3)):
     i = wp.tid()
     ai = wp.vec3(0.0, 0.0, 0.0)
     if state[i] == 0:
@@ -284,37 +220,23 @@ def pressure_accel(
 
 
 @wp.kernel
-def pressure_iter(
-    acc: wp.array(dtype=wp.vec3),
-    dadv: wp.array(dtype=float),
-    factor: wp.array(dtype=float),
-    state: wp.array(dtype=int),
-    nn_f: wp.array2d(dtype=int),
-    cnt_f: wp.array(dtype=int),
-    gw_f: wp.array2d(dtype=wp.vec3),
-    nn_b: wp.array2d(dtype=int),
-    cnt_b: wp.array(dtype=int),
-    gw_b: wp.array2d(dtype=wp.vec3),
-    vb: wp.array(dtype=float),
-    vol: float,
-    dt_pow: float,
-    mode: int,
-    rho0: float,
-    p: wp.array(dtype=float),
-    err: wp.array(dtype=float),
-):
+def pressure_iter(acc: wp.array(dtype=wp.vec3), dadv: wp.array(dtype=float), factor: wp.array(dtype=float),
+                  state: wp.array(dtype=int), nn_f: wp.array2d(dtype=int), cnt_f: wp.array(dtype=int),
+                  gw_f: wp.array2d(dtype=wp.vec3), nn_b: wp.array2d(dtype=int), cnt_b: wp.array(dtype=int),
+                  gw_b: wp.array2d(dtype=wp.vec3), vb: wp.array(dtype=float), vol: float, dt_pow: float, mode: int,
+                  rho0: float, p: wp.array(dtype=float), err: wp.array(dtype=float)):
     i = wp.tid()
     if mode == 0 and state[i] != 0:
         err[i] = 0.0
         return
     ai = acc[i]
-    aij_pj = 0.0
+    aij_pj = float(0.0)
     for k in range(cnt_f[i]):
         aij_pj += wp.dot(ai - acc[nn_f[i, k]], vol * gw_f[i, k])
     for k in range(cnt_b[i]):
         aij_pj += vb[nn_b[i, k]] * wp.dot(ai, gw_b[i, k])
     aij_pj *= dt_pow
-    s_i = 0.0
+    s_i = float(0.0)
     if mode == 0:
         s_i = 1.0 - dadv[i]
     else:
@@ -376,37 +298,19 @@ def nonfinite(x: wp.array(dtype=wp.vec3), v: wp.array(dtype=wp.vec3), out: wp.ar
 
 # ---- Jeske 2023 implicit surface tension (fluid-fluid cohesion; Akinci boundary terms are empty in 2.19) --------
 @wp.kernel
-def st_grad_rho(
-    v: wp.array(dtype=wp.vec3),
-    nn_f: wp.array2d(dtype=int),
-    cnt_f: wp.array(dtype=int),
-    gw_f: wp.array2d(dtype=wp.vec3),
-    mass: float,
-    grad_rho: wp.array(dtype=float),
-):
+def st_grad_rho(v: wp.array(dtype=wp.vec3), nn_f: wp.array2d(dtype=int), cnt_f: wp.array(dtype=int),
+                gw_f: wp.array2d(dtype=wp.vec3), mass: float, grad_rho: wp.array(dtype=float)):
     i = wp.tid()
     vi = v[i]
-    g = 0.0
+    g = float(0.0)
     for k in range(cnt_f[i]):
         g += mass * wp.dot(vi - v[nn_f[i, k]], gw_f[i, k])
     grad_rho[i] = g
 
 
 @wp.func
-def st_first_order(
-    w: float,
-    gw: wp.vec3,
-    d: wp.vec3,
-    dvi: wp.vec3,
-    dvj: wp.vec3,
-    rho_i: float,
-    rho_j: float,
-    gr_i: float,
-    gr_j: float,
-    dt: float,
-    w_min: float,
-    diam2: float,
-) -> float:
+def st_first_order(w: float, gw: wp.vec3, d: wp.vec3, dvi: wp.vec3, dvj: wp.vec3, rho_i: float, rho_j: float,
+                   gr_i: float, gr_j: float, dt: float, w_min: float, diam2: float) -> float:
     w_coh = (10.0 / 7.0) * wp.min(w, w_min)
     gw_coh = wp.vec3(0.0, 0.0, 0.0)
     if wp.dot(d, d) > diam2:
@@ -416,23 +320,10 @@ def st_first_order(
 
 
 @wp.kernel
-def st_rhs(
-    x: wp.array(dtype=wp.vec3),
-    v: wp.array(dtype=wp.vec3),
-    rho: wp.array(dtype=float),
-    grad_rho: wp.array(dtype=float),
-    nn_f: wp.array2d(dtype=int),
-    cnt_f: wp.array(dtype=int),
-    w_f: wp.array2d(dtype=float),
-    gw_f: wp.array2d(dtype=wp.vec3),
-    vdiff: wp.array(dtype=wp.vec3),
-    dt: float,
-    cohesion: float,
-    w_min: float,
-    diam2: float,
-    b: wp.array(dtype=wp.vec3),
-    g: wp.array(dtype=wp.vec3),
-):
+def st_rhs(x: wp.array(dtype=wp.vec3), v: wp.array(dtype=wp.vec3), rho: wp.array(dtype=float),
+           grad_rho: wp.array(dtype=float), nn_f: wp.array2d(dtype=int), cnt_f: wp.array(dtype=int),
+           w_f: wp.array2d(dtype=float), gw_f: wp.array2d(dtype=wp.vec3), vdiff: wp.array(dtype=wp.vec3), dt: float,
+           cohesion: float, w_min: float, diam2: float, b: wp.array(dtype=wp.vec3), g: wp.array(dtype=wp.vec3)):
     i = wp.tid()
     xi = x[i]
     vi = v[i]
@@ -449,22 +340,10 @@ def st_rhs(
 
 
 @wp.kernel
-def st_matvec(
-    vec: wp.array(dtype=wp.vec3),
-    x: wp.array(dtype=wp.vec3),
-    v: wp.array(dtype=wp.vec3),
-    rho: wp.array(dtype=float),
-    grad_rho: wp.array(dtype=float),
-    nn_f: wp.array2d(dtype=int),
-    cnt_f: wp.array(dtype=int),
-    w_f: wp.array2d(dtype=float),
-    gw_f: wp.array2d(dtype=wp.vec3),
-    dt: float,
-    cohesion: float,
-    w_min: float,
-    diam2: float,
-    out: wp.array(dtype=wp.vec3),
-):
+def st_matvec(vec: wp.array(dtype=wp.vec3), x: wp.array(dtype=wp.vec3), v: wp.array(dtype=wp.vec3),
+              rho: wp.array(dtype=float), grad_rho: wp.array(dtype=float), nn_f: wp.array2d(dtype=int),
+              cnt_f: wp.array(dtype=int), w_f: wp.array2d(dtype=float), gw_f: wp.array2d(dtype=wp.vec3), dt: float,
+              cohesion: float, w_min: float, diam2: float, out: wp.array(dtype=wp.vec3)):
     i = wp.tid()
     xi = x[i]
     vi = vec[i]
@@ -482,25 +361,11 @@ def st_matvec(
 
 # ---- Weiler 2018 implicit viscosity ------------------------------------------------------------------------------
 @wp.kernel
-def visc_diag(
-    x: wp.array(dtype=wp.vec3),
-    rho: wp.array(dtype=float),
-    nn_f: wp.array2d(dtype=int),
-    cnt_f: wp.array(dtype=int),
-    gw_f: wp.array2d(dtype=wp.vec3),
-    nn_b: wp.array2d(dtype=int),
-    cnt_b: wp.array(dtype=int),
-    gw_b: wp.array2d(dtype=wp.vec3),
-    xb: wp.array(dtype=wp.vec3),
-    vb: wp.array(dtype=float),
-    mass: float,
-    dt: float,
-    d_mu: float,
-    d_mub: float,
-    h2_001: float,
-    rho0: float,
-    inv_diag: wp.array(dtype=wp.mat33),
-):
+def visc_diag(x: wp.array(dtype=wp.vec3), rho: wp.array(dtype=float), nn_f: wp.array2d(dtype=int),
+              cnt_f: wp.array(dtype=int), gw_f: wp.array2d(dtype=wp.vec3), nn_b: wp.array2d(dtype=int),
+              cnt_b: wp.array(dtype=int), gw_b: wp.array2d(dtype=wp.vec3), xb: wp.array(dtype=wp.vec3),
+              vb: wp.array(dtype=float), mass: float, dt: float, d_mu: float, d_mub: float, h2_001: float, rho0: float,
+              inv_diag: wp.array(dtype=wp.mat33)):
     i = wp.tid()
     xi = x[i]
     rho_i = rho[i]
@@ -519,24 +384,11 @@ def visc_diag(
 
 
 @wp.kernel
-def visc_rhs(
-    x: wp.array(dtype=wp.vec3),
-    v: wp.array(dtype=wp.vec3),
-    rho: wp.array(dtype=float),
-    nn_b: wp.array2d(dtype=int),
-    cnt_b: wp.array(dtype=int),
-    gw_b: wp.array2d(dtype=wp.vec3),
-    xb: wp.array(dtype=wp.vec3),
-    velb: wp.array(dtype=wp.vec3),
-    vb: wp.array(dtype=float),
-    vdiff: wp.array(dtype=wp.vec3),
-    dt: float,
-    d_mub: float,
-    h2_001: float,
-    rho0: float,
-    b: wp.array(dtype=wp.vec3),
-    g: wp.array(dtype=wp.vec3),
-):
+def visc_rhs(x: wp.array(dtype=wp.vec3), v: wp.array(dtype=wp.vec3), rho: wp.array(dtype=float),
+             nn_b: wp.array2d(dtype=int), cnt_b: wp.array(dtype=int), gw_b: wp.array2d(dtype=wp.vec3),
+             xb: wp.array(dtype=wp.vec3), velb: wp.array(dtype=wp.vec3), vb: wp.array(dtype=float),
+             vdiff: wp.array(dtype=wp.vec3), dt: float, d_mub: float, h2_001: float, rho0: float,
+             b: wp.array(dtype=wp.vec3), g: wp.array(dtype=wp.vec3)):
     i = wp.tid()
     xi = x[i]
     vi = v[i]
@@ -552,26 +404,11 @@ def visc_rhs(
 
 
 @wp.kernel
-def visc_matvec(
-    vec: wp.array(dtype=wp.vec3),
-    x: wp.array(dtype=wp.vec3),
-    rho: wp.array(dtype=float),
-    nn_f: wp.array2d(dtype=int),
-    cnt_f: wp.array(dtype=int),
-    gw_f: wp.array2d(dtype=wp.vec3),
-    nn_b: wp.array2d(dtype=int),
-    cnt_b: wp.array(dtype=int),
-    gw_b: wp.array2d(dtype=wp.vec3),
-    xb: wp.array(dtype=wp.vec3),
-    vb: wp.array(dtype=float),
-    mass: float,
-    dt: float,
-    d_mu: float,
-    d_mub: float,
-    h2_001: float,
-    rho0: float,
-    out: wp.array(dtype=wp.vec3),
-):
+def visc_matvec(vec: wp.array(dtype=wp.vec3), x: wp.array(dtype=wp.vec3), rho: wp.array(dtype=float),
+                nn_f: wp.array2d(dtype=int), cnt_f: wp.array(dtype=int), gw_f: wp.array2d(dtype=wp.vec3),
+                nn_b: wp.array2d(dtype=int), cnt_b: wp.array(dtype=int), gw_b: wp.array2d(dtype=wp.vec3),
+                xb: wp.array(dtype=wp.vec3), vb: wp.array(dtype=float), mass: float, dt: float, d_mu: float,
+                d_mub: float, h2_001: float, rho0: float, out: wp.array(dtype=wp.vec3)):
     i = wp.tid()
     xi = x[i]
     vi = vec[i]
@@ -590,13 +427,8 @@ def visc_matvec(
 
 
 @wp.kernel
-def apply_vdiff(
-    a: wp.array(dtype=wp.vec3),
-    vnew: wp.array(dtype=wp.vec3),
-    v: wp.array(dtype=wp.vec3),
-    dt: float,
-    vdiff: wp.array(dtype=wp.vec3),
-):
+def apply_vdiff(a: wp.array(dtype=wp.vec3), vnew: wp.array(dtype=wp.vec3), v: wp.array(dtype=wp.vec3), dt: float,
+                vdiff: wp.array(dtype=wp.vec3)):
     i = wp.tid()
     d = vnew[i] - v[i]
     a[i] = a[i] + d * (1.0 / dt)
@@ -623,14 +455,8 @@ def cg_precond_block(inv_diag: wp.array(dtype=wp.mat33), r: wp.array(dtype=wp.ve
 
 
 @wp.kernel
-def cg_update_xr(
-    xv: wp.array(dtype=wp.vec3),
-    r: wp.array(dtype=wp.vec3),
-    p: wp.array(dtype=wp.vec3),
-    ap: wp.array(dtype=wp.vec3),
-    abs_new: wp.array(dtype=float),
-    p_ap: wp.array(dtype=float),
-):
+def cg_update_xr(xv: wp.array(dtype=wp.vec3), r: wp.array(dtype=wp.vec3), p: wp.array(dtype=wp.vec3),
+                 ap: wp.array(dtype=wp.vec3), abs_new: wp.array(dtype=float), p_ap: wp.array(dtype=float)):
     i = wp.tid()
     alpha = abs_new[0] / p_ap[0]
     xv[i] = xv[i] + alpha * p[i]
@@ -638,12 +464,8 @@ def cg_update_xr(
 
 
 @wp.kernel
-def cg_update_p(
-    p: wp.array(dtype=wp.vec3),
-    z: wp.array(dtype=wp.vec3),
-    abs_new: wp.array(dtype=float),
-    abs_old: wp.array(dtype=float),
-):
+def cg_update_p(p: wp.array(dtype=wp.vec3), z: wp.array(dtype=wp.vec3), abs_new: wp.array(dtype=float),
+                abs_old: wp.array(dtype=float)):
     i = wp.tid()
     beta = abs_new[0] / abs_old[0]
     p[i] = z[i] + beta * p[i]

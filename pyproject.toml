@@ -157,7 +157,7 @@ exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store", "/tasks/behavior"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["tasks", "components", "assets", "src/robouse/backends/rlebench/rlebench_upstream", "src/robouse/backends/capx/capx_upstream", "src/robouse/harnesses/aspire/upstream"]  # vendored upstream code
+extend-exclude = ["tasks", "components", "assets", "src/robouse/backends/household/liquid/gpu/kernels.py", "src/robouse/backends/household/liquid/gpu/sampling.py", "src/robouse/backends/rlebench/rlebench_upstream", "src/robouse/backends/capx/capx_upstream", "src/robouse/harnesses/aspire/upstream"]  # vendored upstream code
 per-file-target-version = { "tools/**" = "py312" }  # maintainer tools run on the development environment
 
 [tool.ruff.lint]

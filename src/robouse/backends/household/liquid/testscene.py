@@ -50,8 +50,10 @@ WIPE_PUDDLE = [[0.83, -0.17], [0.91, -0.17], [0.91, -0.07], [0.83, -0.07]]
 WIPE_ML = 30.0
 SPONGE_HALF = (0.04, 0.025, 0.012)
 WIPE_X, WIPE_Y = 0.87, (-0.24, -0.01)
-WIPE_PHASES = (0.2, 0.4, 1.2, 0.4, 0.3)  # 2.5 s: hold, lower, wipe, lift, hold
-WIPE_CLEARANCE = 0.0005  # sponge underside above the counter top while wiping
+WIPE_PHASES = (0.2, 0.4, 2.4, 0.4, 0.3)  # 3.7 s: hold, lower, wipe (about 0.1 m/s), lift, hold
+# Sponge underside above the counter top while wiping. A faster (1.2 s) sweep, or one 0.5 mm above the counter, squeezes
+# particles out at about 25 m/s and is invalid on the CPU backend itself, so it is no fixture for either backend.
+WIPE_CLEARANCE = 0.003
 
 
 def cup_profile():
