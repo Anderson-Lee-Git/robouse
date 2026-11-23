@@ -78,6 +78,7 @@ class ProbeExtension:
         self.cube = world.id("body", "cube")
         self.calls = {"before_step": 0, "before_substep": 0, "after_substep": 0, "after_step": 0}
         self.raise_at = config.get("raise_at")
+        self.renders: list = []
 
     def before_step(self, world):
         self.calls["before_step"] += 1
@@ -92,6 +93,12 @@ class ProbeExtension:
 
     def after_step(self, world):
         self.calls["after_step"] += 1
+
+    def before_render(self, world, renderer):
+        self.renders.append(type(renderer).__name__)
+
+    def volume(self):  # a query a goal may call through world.extensions
+        return 0.25
 
     def trace_state(self, world):
         return {"calls": dict(self.calls)}
@@ -524,3 +531,19 @@ def test_harness_launch_blindness(tmp_path, pkg, monkeypatch):
         "goal:Goal",
     ):
         assert f not in blob, f"{f!r} reached the agent"
+
+
+def test_extension_render_hook_and_world_access(tmp_path, pkg, probe_registered):
+    ext = shutil.copytree(pkg, tmp_path / "ext")
+    edit_episode(ext, lambda d: d.update(probe={}))
+    ep = session(ext, tmp_path / "run", obs_mode="vision", cameras=["camera_1", "camera_2"], visible_fields=VISIBLE)
+    sim = ep.backend.sim
+    e = sim.extensions[0].obj
+    n = len(e.renders)
+    ep.handle({"op": "observe"})
+    assert e.renders[n:] == ["Renderer", "Renderer"]  # once per camera image, with the mujoco.Renderer
+    w = sim.world
+    assert w.extensions["probe"] is e and w.extensions["probe"].volume() == 0.25
+    with pytest.raises(TypeError):
+        w.extensions["probe"] = None  # read-only
+    ep.close()

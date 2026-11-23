@@ -18,6 +18,9 @@ The class (all methods but `__init__` optional):
     before_substep(world)           before each of the SUBSTEPS mj_step calls
     after_substep(world)            after each of them
     after_step(world)               after the substeps, before Goal.update and the state trace
+    before_render(world, renderer)  before each image the backend renders (policy views, video), after the
+                                    renderer's update_scene and before render; `renderer` is the mujoco.Renderer.
+                                    For visual state only (e.g. uploading a deformed mesh into its GL context)
     trace_state(world) -> dict|None JSON-able state recorded in every state-trace record under the extension's key
                                     (None: nothing this record). Must only read.
     summary() -> dict               researcher-only, added to the session summary under `extensions.<key>`
@@ -27,7 +30,13 @@ The control-step order is therefore: Behaviour.control, the action, before_step,
 after_substep) x SUBSTEPS, after_step, Goal.update, the trace. Reset settling steps run the same hooks (step not
 counted). An exception in any hook is an infrastructure error: the episode ends as `infrastructure_error` and the
 policy only sees "an internal error occurred". Extensions may write `data` (they are physics); Goal plugins may not.
-Nothing an extension returns is shown to the policy.
+Nothing an extension returns is shown to the policy. Plugins reach the constructed extensions read-only as
+`world.extensions[key]` (e.g. a goal reading liquid volumes through the extension's query methods).
+
+Interpreter: an extension may need a particular Python (liquid's pinned solver is cp312 only); run the household
+simulation with ROBOUSE_HOUSEHOLD_PYTHON set to that interpreter (or a wrapper that execs it). The worker imports
+robouse from the episode server's source tree, so that interpreter needs only the simulator's dependencies (numpy,
+mujoco, Pillow and the extension's own).
 """
 
 from __future__ import annotations
@@ -37,7 +46,7 @@ import importlib
 EXTENSIONS: dict[str, str] = {
     "liquid": "robouse.backends.household.liquid:Extension",
 }
-HOOKS = ("before_step", "before_substep", "after_substep", "after_step")
+HOOKS = ("before_step", "before_substep", "after_substep", "after_step", "before_render")
 
 
 def load_class(key: str):

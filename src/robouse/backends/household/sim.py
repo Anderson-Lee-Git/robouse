@@ -129,6 +129,15 @@ class World:
     def step(self) -> int:
         return self._sim.tick
 
+    @property
+    def extensions(self):
+        """The constructed physics extensions by their episode.json key (read-only mapping), e.g. for a goal that
+        reads a liquid's volumes: `world.extensions["liquid"]`. Call only their query methods (a goal must not
+        change the simulation state)."""
+        from types import MappingProxyType
+
+        return MappingProxyType({e.key: e.obj for e in self._sim.extensions})
+
     def id(self, kind: str, ref: str) -> int:
         """MuJoCo id of a scene element by its instance-scoped name ("phone", "pad/charge_zone"); KeyError if none."""
         if kind not in _OBJ:
@@ -563,6 +572,9 @@ class HouseholdSim:
         if r is None:
             r = self._renderers[key] = mujoco.Renderer(self.model, height=height, width=width)
         r.update_scene(self.data, camera=camera)
+        for e in self.extensions:  # e.g. upload a deformed visual mesh into this renderer's context
+            if e.before_render is not None and not self.infra_error:  # visual only: must not change the state
+                self._plugin(e.before_render, self.world, r, read_only=True)
         return r.render().copy()
 
     def close(self) -> None:
