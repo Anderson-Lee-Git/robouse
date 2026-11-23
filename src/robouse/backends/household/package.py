@@ -15,7 +15,7 @@ episode.json: {"format": "household-episode", "format_version": "1.x.y", "scene"
   "render": {"width": 640, "height": 480}, "control": {"rate_hz": 50, "physics_dt_s": 0.002},
   "budgets": {"max_steps": 45000, "settle_steps": 25, "reset_settle_steps": n},
   "plugins": {"path": "plugin", "goal": null | "goal:Goal", "behaviour": null | "behaviour:Behaviour",
-              "behaviour_config": {}},
+              "behaviour_config": {}, "helpers": null | {"goals": semver, "behaviours": semver}},
   "trace": {"objects": [...], "fixtures": [...], "room": "room"}, "compute": {"device": "cpu"},
   "files": {relpath: sha256, ...},   every other file of the package
   <extension key>: {...}}            optional physics extensions (extensions.py), e.g. a liquid; each key must be
@@ -41,6 +41,7 @@ SPEC_MAJOR_MINOR = (1, 0)  # spec versions this backend reads: 1.0.x
 MAX_STEPS_CAP = 45_000  # technical cap: 900 s of robot time at 50 Hz
 SETTLE_STEPS = 25  # holding still after `done`, before the goal check
 RESERVED_CAMERAS = ("camera_1", "camera_2")
+_SEMVER_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 _FILE_RE = re.compile(r"^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$")
 _KEYS = {
     "format",
@@ -83,6 +84,7 @@ class Episode:
     goal: str | None
     behaviour: str | None
     behaviour_config: dict
+    helpers: dict | None
     trace: dict
     files: dict = field(default_factory=dict)
     extensions: dict = field(default_factory=dict)  # episode.json key -> that extension's config (extensions.py)
@@ -206,7 +208,7 @@ def load(root, *, verify_files: bool = True) -> Episode:
     rss = b["reset_settle_steps"]
     if not isinstance(rss, int) or isinstance(rss, bool) or not 0 <= rss <= 500:
         raise PackageError("budgets.reset_settle_steps must be an integer in [0, 500]")
-    pl = _obj(d, "plugins", {"path", "goal", "behaviour", "behaviour_config"})
+    pl = _obj(d, "plugins", {"path", "goal", "behaviour", "behaviour_config", "helpers"})
     _const(pl["path"], "plugin", "plugins.path")
     if pl["goal"] not in (None, "goal:Goal"):
         raise PackageError("plugins.goal must be null or 'goal:Goal'")
@@ -214,6 +216,12 @@ def load(root, *, verify_files: bool = True) -> Episode:
         raise PackageError("plugins.behaviour must be null or 'behaviour:Behaviour'")
     if not isinstance(pl["behaviour_config"], dict):
         raise PackageError("plugins.behaviour_config must be an object")
+    helpers = pl["helpers"]  # versions of the vendored helper packages; part of the package identity
+    if helpers is not None:
+        if not isinstance(helpers, dict) or set(helpers) != {"goals", "behaviours"}:
+            raise PackageError("plugins.helpers must be null or {goals, behaviours}")
+        if not all(isinstance(v, str) and _SEMVER_RE.match(v) for v in helpers.values()):
+            raise PackageError("plugins.helpers versions must be semver strings")
     tr = _obj(d, "trace", {"objects", "fixtures", "room"})
     comp = _obj(d, "compute", {"device"})
     if comp["device"] != "cpu":
@@ -245,6 +253,7 @@ def load(root, *, verify_files: bool = True) -> Episode:
         goal=pl["goal"],
         behaviour=pl["behaviour"],
         behaviour_config=dict(pl["behaviour_config"]),
+        helpers=dict(helpers) if helpers is not None else None,
         trace=dict(tr),
         files=dict(files or {}),
         extensions=ext,

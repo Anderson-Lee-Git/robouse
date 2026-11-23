@@ -100,6 +100,9 @@ def test_package_validation(tmp_path, pkg):
         (lambda d: d["robot"]["base"].update(quat=[1, 1, 0, 0]), "unit quaternion"),
         (lambda d: d["cameras"].update(camera_1={}), "unknown fields"),
         (lambda d: d["plugins"].update(goal="other:Thing"), "plugins.goal"),
+        (lambda d: d["plugins"].pop("helpers"), "missing"),
+        (lambda d: d["plugins"].update(helpers={"goals": "1.0"}), "plugins.helpers"),
+        (lambda d: d["plugins"].update(helpers={"goals": "1.0", "behaviours": "1.0.0"}), "semver"),
         (lambda d: d["compute"].update(device="gpu"), "compute.device"),
     ]
     for i, (fn, needle) in enumerate(cases):

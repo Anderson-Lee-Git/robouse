@@ -342,15 +342,33 @@ def without_provider_keys(environ) -> dict[str, str]:
     return {k: v for k, v in environ.items() if not k.startswith(PROVIDER_KEY_PREFIXES) and k not in names}
 
 
+# Runner and simulator configuration that no harness reads and no agent needs: the sandbox's deny list, simulator
+# workers and their allocation (ROBOUSE_SCENE_* is set by a launcher's worker wrapper), asset and plugin locations,
+# the state-trace switch and the physics condition. Their values name the researcher's folders, task plugins and the
+# simulator's setup, so they stay with the episode server.
+RUNNER_ONLY_PREFIXES = (
+    "ROBOUSE_PHYSICS_CONDITION_",
+    "ROBOUSE_SANDBOX_DENY",
+    "ROBOUSE_HOUSEHOLD_",
+    "ROBOUSE_SCENE_",
+    "ROBOUSE_ROBOCASA_",
+    "ROBOUSE_LIQUID_",
+    "ROBOUSE_STATE_TRACE",
+    "ROBOUSE_MENAGERIE_ASSETS",
+    "ROBOUSE_CHEMLAB_ASSETS",
+)
+
+
 def agent_env(environ) -> dict[str, str]:
-    """The environment an agent starts from: the runner's, without model provider keys and without any variable whose
+    """The environment an agent starts from: the runner's, without model provider keys, without any variable whose
     name marks a credential (`SECRET_NAME`, e.g. GITHUB_TOKEN, HF_TOKEN, AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, or the
-    session token of an agent that launched the runner), whatever set it. A harness adds back what its program needs:
-    its vendor's login, a gateway key, a policy server's token."""
+    session token of an agent that launched the runner), whatever set it, and without the runner's simulator
+    configuration (`RUNNER_ONLY_PREFIXES`). A harness adds back what its program needs: its vendor's login, a gateway
+    key, a policy server's token."""
     return {
         k: v
         for k, v in without_provider_keys(environ).items()
-        if not SECRET_NAME.search(k) and not k.startswith("ROBOUSE_PHYSICS_CONDITION_")
+        if not SECRET_NAME.search(k) and not k.startswith(RUNNER_ONLY_PREFIXES)
     }
 
 

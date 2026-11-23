@@ -186,6 +186,29 @@ def test_a_dotenv_file_above_the_trial_s_folders_is_denied(outside_tmp, monkeypa
     assert near in sandbox._denied([])  # robouse installed in the project's virtualenv
 
 
+def test_nested_denied_folders_leave_no_trace(outside_tmp, monkeypatch) -> None:
+    """A launcher denies a whole runs/ folder, and the runner also denies the trial's run folder inside it, whose path
+    names the task. Only the outer folder gets an empty folder over it: a second mount would recreate the inner path
+    inside it (and list it in /proc/self/mountinfo) for the agent to read."""
+    from robouse.runner import sandbox
+
+    base = Path(os.path.realpath(outside_tmp))
+    _isolate(monkeypatch, _home(base))
+    monkeypatch.setattr(sandbox, "PKG", base / "venv" / "lib" / "site-packages" / "robouse")
+    runs = base / "project" / "runs"
+    job = runs / "eval" / "2026-11-22-co_some_task-v1.0.0" / "model" / "eef"
+    job.mkdir(parents=True)
+    (job / "result.json").write_text(SECRET)
+    args = sandbox.bwrap_args(base / "ws", str(base / "sock"), [runs, job, job / "result.json"], [])
+    assert args[args.index(str(runs)) - 1] == "--tmpfs"
+    assert not any("co_some_task" in a for a in args)
+    # a denied folder that holds the workspace stays, and what is denied inside it is still hidden
+    ws = runs / "ws"
+    ws.mkdir()
+    args = sandbox.bwrap_args(ws, str(base / "sock"), [runs, job], [])
+    assert str(runs) not in args and args[args.index(str(job)) - 1] == "--tmpfs"
+
+
 def _libero(base: Path, monkeypatch) -> list[Path]:
     """A stand-in for hf-libero on the runner's sys.path, and a LIBERO config naming another environment's copy of its
     task data, as ~/.libero/config.yaml can (LIBERO writes it once, for the environment that first imports it). The
@@ -691,6 +714,29 @@ def test_no_credential_variable_reaches_an_agent(monkeypatch) -> None:
     environ = {k: "not-a-real-credential" for k in (*CREDENTIAL_VARS, *HARMLESS_VARS)}
     env = trial.agent_env(environ)
     assert sorted(env) == sorted(HARMLESS_VARS)
+
+
+def test_runner_configuration_does_not_reach_an_agent(monkeypatch) -> None:
+    """A launcher's simulator settings name the researcher's folders and task plugins (the sandbox deny list, the
+    household worker, the scene allocation, plugin and asset roots): an agent that runs `env` must not see them."""
+    from robouse.runner import trial
+
+    monkeypatch.setattr(trial, "_secret_env_names", lambda: set())
+    runner = (
+        "ROBOUSE_SANDBOX_DENY",
+        "ROBOUSE_HOUSEHOLD_PYTHON",
+        "ROBOUSE_HOUSEHOLD_LIQUID_BACKEND",
+        "ROBOUSE_SCENE_WORKER_PYTHON",
+        "ROBOUSE_SCENE_WORKER_JOB",
+        "ROBOUSE_SCENE_ALLOCATION_CPUS",
+        "ROBOUSE_ROBOCASA_PLUGINS",
+        "ROBOUSE_LIQUID_WORK_ROOT",
+        "ROBOUSE_STATE_TRACE",
+        "ROBOUSE_MENAGERIE_ASSETS",
+        "ROBOUSE_PHYSICS_CONDITION_FRICTION",
+    )
+    environ = {k: "/some/where" for k in (*runner, *HARMLESS_VARS, "ROBOUSE_INTERFACE")}
+    assert sorted(trial.agent_env(environ)) == sorted((*HARMLESS_VARS, "ROBOUSE_INTERFACE"))
 
 
 def test_z_ai_settings_count_as_provider_settings(monkeypatch) -> None:

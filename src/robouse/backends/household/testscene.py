@@ -128,6 +128,7 @@ def write(root, *, goal: bool = True, behaviour: bool = False, reset_settle_step
             "goal": "goal:Goal" if goal else None,
             "behaviour": "behaviour:Behaviour" if behaviour else None,
             "behaviour_config": {"cube": "cube", "zone": "pad/zone", "lamp": "table/lamp"} if behaviour else {},
+            "helpers": None,
         },
         "trace": {"objects": ["cube"], "fixtures": ["table", "pad"], "room": "room"},
         "compute": {"device": "cpu"},

@@ -244,6 +244,7 @@ def write(root, variant: str = "pour", threads: int = 4, liquid: dict | None = N
             "goal": None,
             "behaviour": "behaviour:Behaviour",
             "behaviour_config": {"driver": "cup_driver", "route": "pour" if variant == "pour" else "hold"},
+            "helpers": None,
         },
         "trace": {"objects": ["cup", "bowl"], "fixtures": ["counter"], "room": "room"},
         "compute": {"device": "cpu"},

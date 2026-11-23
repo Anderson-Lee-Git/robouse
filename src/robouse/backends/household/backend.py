@@ -396,6 +396,7 @@ class HouseholdBackend(Backend):
                 "control_steps": sim.tick,
                 "ik_refusals": sim.ik_refusals,
                 "goal": self.ep.goal if self.control != "text" else None,
+                "plugin_helpers": self.ep.helpers,
                 "goal_success": self._judged,
                 **({"extensions": ext} if (ext := sim.extension_summary()) else {}),
                 **({"state_trace": self._trace_status} if self._trace_status else {}),

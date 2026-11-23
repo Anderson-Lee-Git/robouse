@@ -298,7 +298,8 @@ def bwrap_args(
     workspace: Path, socket: str, deny: list[Path], own: list[str] | None = None, read_only: list[Path] | None = None
 ) -> list[str]:
     """The bubblewrap command prefix on Linux: the host file system as it is, a fresh /tmp holding only this trial's
-    workspace and socket, an empty folder over every denied folder and /dev/null over every denied file, the agent's
+    workspace and socket, an empty folder over every denied folder and /dev/null over every denied file (none for a
+    denied path inside a folder already hidden, whose mount would show its path), the agent's
     own homes and the program folders bound back in, the harness's read-only paths bound read-only, and a PID namespace
     of its own."""
     args = [
@@ -318,9 +319,16 @@ def bwrap_args(
     for p in interpreters():  # read-only, under the denied folders' mounts (a robouse install inside stays hidden)
         if not _inside(p, ["/tmp"]):
             args += ["--ro-bind", p, p]
-    for d in _denied(deny):
+    denied = _denied(deny)
+    hidden = [d for d in denied if os.path.isdir(d) and not str(workspace).startswith(d)]
+    for d in denied:
         if str(workspace).startswith(d):
             continue  # a folder holding the workspace stays
+        if any(d != h and _inside(d, [h]) for h in hidden):
+            # already hidden by the empty folder over a denied folder above it; a mount of its own would create its
+            # path inside that empty folder and list it in /proc/self/mountinfo, and a run folder's path can name
+            # the task (e.g. runs/eval/<date>-<task>-v<version>/...)
+            continue
         if os.path.isdir(d):
             args += ["--tmpfs", d]
         elif os.path.exists(d) and not _inside(d, ["/tmp"]):  # a file or socket; /tmp is fresh already
