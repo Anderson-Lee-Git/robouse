@@ -65,6 +65,8 @@ ENV: dict[str, str] = {
     # local runner sandbox
     "ROBOUSE_SANDBOX": "0 disables the sandbox around agent processes (macOS Seatbelt, Linux bubblewrap; default 1)",
     "ROBOUSE_SANDBOX_DENY": "extra colon-separated paths agents may neither read nor write",
+    "ROBOUSE_SANDBOX_ALLOW": "colon-separated paths inside a denied folder that agents may read (not write), such as "
+    "an interpreter or a runtime library inside a denied checkout",
     "ROBOUSE_CLAUDE_TOKEN_FILE": "optional env file of Claude Code OAuth tokens (NAME=token lines), used in turn when "
     "neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set; denied to agents",
     "ROBOUSE_CODEX_AUTH_DIR": "optional folder of Codex logins (<account>.json, copies of a `codex login` auth.json), "
@@ -215,6 +217,7 @@ PUBLIC = frozenset(
         "ROBOUSE_RECORD_SIZE",
         "ROBOUSE_SANDBOX",
         "ROBOUSE_SANDBOX_DENY",
+        "ROBOUSE_SANDBOX_ALLOW",
         "ROBOUSE_SPEND_CAP_USD",
         "ROBOUSE_AGENT_IMAGES",
         "ROBOUSE_DEXJOCO_PYTHON",
@@ -330,3 +333,10 @@ def sandbox_denied_paths() -> list[str]:
     out += [v for k in MOVED_CACHE if (v := env(k))]
     out += [p for p in env("ROBOUSE_SANDBOX_DENY").split(":") if p]
     return out
+
+
+def sandbox_allowed_paths() -> list[str]:
+    """Paths inside a denied folder that agents may read but not write ($ROBOUSE_SANDBOX_ALLOW): a launcher hides a
+    checkout whole (one mount, so no inner folder's name shows in the agent's mount table) and gives back only what
+    agents need from it, such as its Python environment."""
+    return [p for p in env("ROBOUSE_SANDBOX_ALLOW").split(":") if p]

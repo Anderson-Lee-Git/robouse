@@ -349,6 +349,7 @@ def without_provider_keys(environ) -> dict[str, str]:
 RUNNER_ONLY_PREFIXES = (
     "ROBOUSE_PHYSICS_CONDITION_",
     "ROBOUSE_SANDBOX_DENY",
+    "ROBOUSE_SANDBOX_ALLOW",
     "ROBOUSE_HOUSEHOLD_",
     "ROBOUSE_SCENE_",
     "ROBOUSE_ROBOCASA_",

@@ -15,6 +15,7 @@ Robo Use reads its settings from environment variables; the ones you set are lis
 | `ROBOUSE_SPEND_CAP_USD` | the model spend at which the model gateway stops a trial, in USD (default 5; 0: no cap; recorded as a budget stop). A model without a price, such as glm/glm-5.3, runs with 0 or with its price in ROBOUSE_PRICING |
 | `ROBOUSE_SANDBOX` | 0 disables the sandbox around agent processes (macOS Seatbelt, Linux bubblewrap; default 1) |
 | `ROBOUSE_SANDBOX_DENY` | extra colon-separated paths agents may neither read nor write |
+| `ROBOUSE_SANDBOX_ALLOW` | colon-separated paths inside a denied folder that agents may read (not write), such as an interpreter or a runtime library inside a denied checkout |
 | `ROBOUSE_DEXJOCO_PYTHON` | Python of the DexJoCo virtualenv (default <cache>/dexjoco-venv/bin/python) |
 | `ROBOUSE_DMCONTROL_PYTHON` | Python of the dm_control virtualenv (default <cache>/dmcontrol-venv/bin/python) |
 | `ROBOUSE_HUMANOIDBENCH_PYTHON` | Python of the HumanoidBench virtualenv (default <cache>/humanoidbench-venv/bin/python) |

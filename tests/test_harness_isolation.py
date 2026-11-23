@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -207,6 +208,59 @@ def test_nested_denied_folders_leave_no_trace(outside_tmp, monkeypatch) -> None:
     ws.mkdir()
     args = sandbox.bwrap_args(ws, str(base / "sock"), [runs, job], [])
     assert str(runs) not in args and args[args.index(str(job)) - 1] == "--tmpfs"
+
+
+def test_a_hidden_checkout_gives_back_only_allowed_paths(outside_tmp, monkeypatch) -> None:
+    """A launcher hides a whole checkout (one mount: none of its inner folder names, such as other worktrees or cache
+    folders named after tasks, reaches the agent's mount table) and gives back its Python environment read-only through
+    $ROBOUSE_SANDBOX_ALLOW. A denied path inside a given-back folder stays hidden. With working bubblewrap, an agent
+    reads the given-back file, cannot read the rest or write the given-back folder, and its mount table names nothing
+    else in the checkout."""
+    from robouse.runner import sandbox
+
+    base = Path(os.path.realpath(outside_tmp))
+    _isolate(monkeypatch, _home(base))
+    monkeypatch.setattr(sandbox, "PKG", base / "venv" / "lib" / "site-packages" / "robouse")
+    repo = base / "project"
+    venv, secret_in_venv = repo / ".venv", repo / ".venv" / "private"
+    named = [repo / ".cache" / "co_some_task-cache", repo / ".claude" / "worktrees" / "co_some_task", repo / "docs"]
+    for d in [*named, secret_in_venv]:
+        d.mkdir(parents=True)
+        (d / "f").write_text(SECRET)
+    (venv / "python").write_text("interpreter\n")
+    monkeypatch.setenv("ROBOUSE_SANDBOX_ALLOW", f"{venv}:{base / 'elsewhere'}")
+    ws = base / "ws"
+    ws.mkdir()
+    sock = base / "sock"
+    sock.touch()
+    args = sandbox.bwrap_args(ws, str(sock), [repo, *named, secret_in_venv], [])
+    assert args[args.index(str(repo)) - 1] == "--tmpfs"
+    assert args[args.index(str(venv)) - 1 : args.index(str(venv)) + 2] == ["--ro-bind", str(venv), str(venv)]
+    assert args[args.index(str(secret_in_venv)) - 1] == "--tmpfs"
+    assert args.index(str(secret_in_venv)) > args.index(str(venv))
+    assert not any("co_some_task" in a or "docs" in a or "elsewhere" in a for a in args)
+    profile = sandbox.sandbox_profile(ws, (), [repo, secret_in_venv], [], str(sock))
+    allow, deny = (
+        f'(allow file-read* (subpath "{venv}"))',
+        f'(deny file-read* file-write* (subpath "{secret_in_venv}"))',
+    )
+    assert profile.index(f'(deny file-read* file-write* (subpath "{repo}"))') < profile.index(allow)
+    assert profile.index(allow) < profile.rindex(deny)
+    if not (sys.platform.startswith("linux") and sandbox.bwrap_works()):
+        return
+    peek = (
+        f"cat {venv / 'python'}; cat {secret_in_venv / 'f'} {' '.join(str(d / 'f') for d in named)} 2>/dev/null; "
+        f"touch {venv / 'w'} 2>/dev/null && echo venv-writable; cat /proc/self/mountinfo"
+    )
+    r = subprocess.run([*args, "bash", "-c", peek], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.startswith("interpreter") and SECRET not in r.stdout and "venv-writable" not in r.stdout
+    inside = {line.split()[4] for line in r.stdout.splitlines()[1:] if _inside_str(line.split()[4], str(repo))}
+    assert inside == {str(repo), str(venv), str(secret_in_venv)}, inside
+
+
+def _inside_str(path: str, root: str) -> bool:
+    return path == root or path.startswith(root + "/")
 
 
 def _libero(base: Path, monkeypatch) -> list[Path]:
@@ -724,6 +778,7 @@ def test_runner_configuration_does_not_reach_an_agent(monkeypatch) -> None:
     monkeypatch.setattr(trial, "_secret_env_names", lambda: set())
     runner = (
         "ROBOUSE_SANDBOX_DENY",
+        "ROBOUSE_SANDBOX_ALLOW",
         "ROBOUSE_HOUSEHOLD_PYTHON",
         "ROBOUSE_HOUSEHOLD_LIQUID_BACKEND",
         "ROBOUSE_SCENE_WORKER_PYTHON",
