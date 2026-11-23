@@ -78,7 +78,8 @@ def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
         metavar="N",
         help="agent turn cap passed to the harness, recorded in config.json (default: "
         + ("each task's" if many else "the task's")
-        + " agent.max_turns, else the harness's own); Claude Code enforces it, Codex has none (recorded as not enforced)",
+        + " agent.max_turns, else the harness's own): model requests whose answer asked for tools; Claude Code's"
+        " --max-turns, and for Codex the runner's count through Codex's model-request hooks (docs/configuration.md)",
     )
     p.add_argument("--record-size", metavar="WxH", help=RECORD_SIZE_HELP)
     p.add_argument("--seed", type=_seed, help="override " + ("every task's" if many else "the task's") + " seed")

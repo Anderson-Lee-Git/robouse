@@ -75,3 +75,47 @@ unchanged prompt. `config.json` and `job.json` record `robot_framing`; resume
 refuses another framing (older configs without the field mean `simulated`).
 ATIF preserves the framed prompt. The private runner-to-builder variable
 `_ROBOUSE_ROBOT_FRAMING` never reaches the agent environment.
+
+## Agent turn cap
+
+`run` and `run-many` accept `--max-turns N` (else a task's `agent.max_turns`). It is
+the same count for every coding agent: model requests whose answer asked for tools.
+`config.json` records `max_turns`, and its `harness_config` records `max_turns_method`
+and `max_turns_enforced`. `result.json` records `turn_cap`, which includes whether
+the agent `reached` the cap.
+
+- **Claude Code** (`claude-code`, and the inner agent of `program` and `aspire`) gets
+  `--max-turns N` (`max_turns_method: "claude-code --max-turns"`). Claude Code counts
+  its agent loop's iterations. Each one is a model request whose answer asked for
+  tools, followed by those tools' run. A retried request counts as the same
+  iteration. After the tools of answer N have run, it does not send request N+1.
+  Instead it ends with a result event `{"subtype": "error_max_turns", "is_error": true}`.
+- **Codex** (`codex`, and the inner agent of `program-codex` and `aspire-codex`) has
+  no turn option, so the runner applies the same count
+  (`max_turns_method: "codex-hooks"`, codex-cli 0.167.0 and later). The runner writes
+  `hooks.json` into the trial's own `CODEX_HOME` and passes
+  `--dangerously-bypass-hook-trust`, because Robo Use wrote these hooks. The hooks
+  report each model request to a server in the runner process.
+  - A PostModelRequest hook reports each attempt's `status`. Only `completed`
+    attempts count, so retries do not.
+  - A PreModelRequest hook asks before every attempt. Once N requests have completed,
+    it gets no answer and blocks, so request N+1 is never sent. The runner then stops
+    Codex. Under a driver, the runner stops only Codex's own process group, and the
+    driver goes on as it does after Claude Code's cap.
+
+  The count is kept in the runner, where the agent cannot reach it. The hooks print
+  nothing, and `hooks.json` is read-only in the sandbox.
+- **Fallback** (`max_turns_method: "json-stream"`, `max_turns_enforced: false`): the
+  runner uses this when the Codex is older than 0.167.0, when a shared account-pool
+  home is in use (`ROBOUSE_CODEX_AUTH_DIR`), or when the home's path is too long for
+  a Unix socket. The runner counts model answers in the `codex exec --json` stream
+  and stops Codex once answer N+1 begins. This count is approximate. By that point
+  request N+1 has already been sent, and one answer whose tool calls run one after
+  another may count more than once. The same count backs up the hooks: if the stream
+  shows more than N answers and no hook ever reported, the runner stops Codex and
+  records `reached_by: "json-stream (hooks never fired)"`.
+
+A trial that reaches the cap ends the same way for both agents. The runner closes the
+episode with "agent exited without robo done" (`gave_up`) and records no harness
+error. For example, Claude Code's `error_max_turns` result and Codex being stopped are
+not infrastructure failures. Other harnesses refuse a turn cap.
