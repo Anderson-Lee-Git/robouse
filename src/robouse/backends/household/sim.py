@@ -1,7 +1,8 @@
 """The household simulation: a scene package with the FR3 + 2F-85 in it, its plugins, and the 50 Hz controller.
 
-One control step (`CONTROL_DT` = 20 ms): the behaviour plugin's `control`, the action, `SUBSTEPS` physics steps, the
-goal plugin's `update` (docs/specification.md "Loading").
+One control step (`CONTROL_DT` = 20 ms): the behaviour plugin's `control`, the action, the physics extensions'
+`before_step`, `SUBSTEPS` physics steps (each wrapped by the extensions' `before_substep` / `after_substep`), their
+`after_step`, the goal plugin's `update`, the physical-state trace (docs/specification.md "Loading"; extensions.py).
 
 Arm. Every interface ends in the same place: a joint setpoint goal, which a `motion.Tracker` reference chases within
 the joint velocity and acceleration limits; the Menagerie position servos get `reference + lead * reference velocity`.
@@ -25,6 +26,7 @@ from types import SimpleNamespace
 import mujoco
 import numpy as np
 
+from . import extensions as X
 from . import motion
 from .assets import model_root
 from .ik import IK, mat_quat, straight_poses
@@ -212,6 +214,16 @@ class HouseholdSim:
         c2 = episode.camera_2
         s.worldbody.add_camera(name="camera_2", pos=c2["pos"], quat=c2["quat"], fovy=c2["fovy"])
         apply_render(s)
+        self.ext_classes = {k: X.load_class(k) for k in episode.extensions}
+        for k, cls in self.ext_classes.items():
+            if cls is None:
+                raise PackageError(f"{k} packages are not supported by this backend version")
+            prep = getattr(cls, "prepare", None)
+            if callable(prep):
+                try:
+                    prep(s, episode.extensions[k], episode.root)
+                except Exception as e:  # noqa: BLE001 - an authoring error, raised before the episode starts
+                    raise PackageError(f"extension {k} could not prepare the scene: {type(e).__name__}") from None
         w, h = episode.render_size
         g = s.visual.global_
         g.offwidth, g.offheight = max(w, 1280), max(h, 960)
@@ -262,6 +274,8 @@ class HouseholdSim:
         self.goal_cls, self.behaviour_cls = _load_plugins(episode)
         self.world = World(self)
         self.goal_obj = self.behaviour_obj = None
+        self.extensions: list[X.Active] = []
+        self.tracer = None  # the physical-state trace (state_trace.Tracer), set by the backend
         self.infra_error: str | None = None
         self._renderers: dict = {}
         self.tick = 0
@@ -322,7 +336,7 @@ class HouseholdSim:
             self.infra_error = f"plugin {getattr(fn, '__qualname__', fn)}: {type(e).__name__}: {e}"[:500]
             raise InternalError() from None
         if read_only and _digest(self.data) != before:
-            self.infra_error = f"goal plugin {getattr(fn, '__qualname__', fn)} changed the simulation state"
+            self.infra_error = f"plugin {getattr(fn, '__qualname__', fn)} changed the simulation state"
             raise InternalError()
         return out
 
@@ -344,6 +358,9 @@ class HouseholdSim:
         self.infra_error = None
         self.tick = 0
         self.behaviour_obj = self.goal_obj = None
+        self._close_extensions()
+        for k, cls in self.ext_classes.items():
+            self.extensions.append(X.Active(k, self._plugin(cls, self.world, self.ep.extensions[k])))
         if self.behaviour_cls is not None:
             self.behaviour_obj = self._plugin(self.behaviour_cls, self.world, dict(self.ep.behaviour_config))
         for _ in range(self.ep.reset_settle_steps):  # the scene comes to rest; part of the reset, not the budget
@@ -362,8 +379,22 @@ class HouseholdSim:
             self._plugin(self.behaviour_obj.control, self.world)
         d.ctrl[self.arm_ctrl] = motion.servo_target(ref, vel, self.rs.lead, self.ctrl_lo, self.ctrl_hi)
         d.ctrl[self.grip_ctrl_id] = self.grip_cmd
+        ext = self.extensions
+        for e in ext:
+            if e.before_step:
+                self._plugin(e.before_step, self.world)
+        sub = [e for e in ext if e.before_substep or e.after_substep]
         for _ in range(SUBSTEPS):
+            for e in sub:
+                if e.before_substep:
+                    self._plugin(e.before_substep, self.world)
             mujoco.mj_step(self.model, d)
+            for e in sub:
+                if e.after_substep:
+                    self._plugin(e.after_substep, self.world)
+        for e in ext:
+            if e.after_step:
+                self._plugin(e.after_step, self.world)
         if d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number > 0 or not np.all(np.isfinite(d.qpos)):
             self.infra_error = "the simulation became unstable"
             raise SimulationDiverged("the simulation became unstable")
@@ -371,6 +402,37 @@ class HouseholdSim:
             self.tick += 1
             if self.goal_obj is not None:
                 self._plugin(self.goal_obj.update, self.world, read_only=True)
+            if self.tracer is not None:
+                self.tracer.record(self.tick)
+
+    def extension_trace(self) -> dict:
+        """{key: state} of the extensions that report one (for the state trace; read-only)."""
+        out = {}
+        for e in self.extensions:
+            if e.trace_state:
+                v = self._plugin(e.trace_state, self.world, read_only=True)
+                if v is not None:
+                    out[e.key] = v
+        return out
+
+    def extension_summary(self) -> dict:
+        out = {}
+        for e in self.extensions:
+            if e.summary:
+                try:
+                    out[e.key] = e.summary()
+                except Exception as err:  # noqa: BLE001 - researcher-only detail
+                    out[e.key] = {"error": f"{type(err).__name__}: {err}"[:300]}
+        return out
+
+    def _close_extensions(self) -> None:
+        for e in self.extensions:
+            if e.close:
+                try:
+                    e.close()
+                except Exception:  # noqa: BLE001
+                    pass
+        self.extensions = []
 
     def goal_success(self) -> bool | None:
         """The goal plugin's verdict (None: the package has no goal)."""
@@ -501,6 +563,7 @@ class HouseholdSim:
         return r.render().copy()
 
     def close(self) -> None:
+        self._close_extensions()
         for r in self._renderers.values():
             try:
                 r.close()
