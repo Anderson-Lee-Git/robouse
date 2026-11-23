@@ -178,7 +178,8 @@ def test_gpu_static_containment_and_exact_reset(tmp_path):
     sim = _make(tmp_path, "rest")
     ext = _ext(sim)
     f = ext.fluid
-    assert type(f).__name__ == "WarpFluid" and f.backend["device"] == "cuda"
+    assert isinstance(f, G.WarpFluid) and f.backend["device"] == "cuda"
+    assert type(f).__name__ == "ThinnedWarpFluid" and f.backend["id"] == T.GPU_BACKEND
     n = f.n
     _tick(sim, 25)
     s = sim.extension_summary()["liquid"]
