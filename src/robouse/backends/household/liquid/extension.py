@@ -204,6 +204,7 @@ class Extension:
         self.fluid = f
         self.settle_report = _FLUID["settle"]
         self._label_cache = (None, None)
+        self.closed = False  # set before sleep setup: _labels() reads it
 
         self.contact_meshes = {b.name: MeshContact(b.vertices, b.faces) for b in bms if b.animated}
         f.absorbers = [
@@ -237,7 +238,6 @@ class Extension:
             "surfaces": 0,
             "upload_s": 0.0,
         }
-        self.closed = False
 
     def _key(self, bms, particles) -> str:
         h = hashlib.sha256(json.dumps(self.config_raw, sort_keys=True).encode())
