@@ -10,7 +10,6 @@ changed file is an error, never a silent substitute.
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -26,7 +25,7 @@ def manifest() -> dict:
 
 
 def asset_root() -> Path:
-    override = os.environ.get("ROBOUSE_HOUSEHOLD_ASSETS", "").strip()  # not in config.ENV: owned here
+    override = config.env("ROBOUSE_HOUSEHOLD_ASSETS").strip()
     if override:
         return Path(override)
     return config.cache_dir() / "household" / "menagerie"

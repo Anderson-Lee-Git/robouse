@@ -71,6 +71,10 @@ ROBOT_FRAMING_ENV = "_ROBOUSE_ROBOT_FRAMING"  # runner to builder only
 ROBOT_FRAMINGS = ("simulated", "real")
 ROBOT_FRAMING_HARNESSES = ("claude-code", "codex", "program", "program-codex")
 EFFORT_ENV = "_ROBOUSE_REASONING_EFFORT"  # runner to builder; never in the agent's environment
+# the agent turn cap (`--max-turns`, or the task's agent.max_turns): runner to builder; never in the agent's environment.
+# Claude Code enforces it (`--max-turns`, also as the inner agent of program and aspire, overriding their own caps);
+# Codex has no turn cap, so codex harnesses record it as not enforced
+MAX_TURNS_ENV = "_ROBOUSE_MAX_TURNS"
 # what else sets Claude Code's effort or thinking: never inherited from the runner's shell, so a trial's effort is the
 # one its config.json records (Claude Code's default when none is given)
 CLAUDE_THINKING_VARS = (
@@ -216,6 +220,8 @@ def _via_gateway(harness: str, model: str) -> object | None:
 def _claude_code(
     model, prompt, workspace, task, env, prefix: str = PROMPT_PREFIX, tools: str = CLAUDE_TOOLS, max_turns: int = 400
 ) -> Launch:
+    if turns := env.pop(MAX_TURNS_ENV, ""):  # the trial's cap wins over the harness's own
+        max_turns = int(turns)
     prefix = frame_prompt(prefix, env.pop(ROBOT_FRAMING_ENV, "simulated"))
     effort = env.pop(EFFORT_ENV, "")
     for k in CLAUDE_THINKING_VARS:
@@ -542,13 +548,34 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
             if isinstance(launch.config.get("prompt"), str):
                 if not launch.config["prompt"].startswith("You are controlling a real robot."):
                     launch.config["prompt"] = frame_prompt(launch.config["prompt"], framing)
-    for k in (*PRIVATE_ENV, EFFORT_ENV, ROBOT_FRAMING_ENV):  # never in the agent's environment
+    for k in (*PRIVATE_ENV, EFFORT_ENV, ROBOT_FRAMING_ENV, MAX_TURNS_ENV):  # never in the agent's environment
         launch.env.pop(k, None)
+    if turns := base_env.get(MAX_TURNS_ENV):
+        check_max_turns(harness, launch, int(turns))
     # a harness whose top process is a driver (program) records the effort it passed to its agent in its config
     passed = _flag(launch.cmd, "--effort") or launch.config.get("effort")
     if (effort := base_env.get(EFFORT_ENV)) and passed != effort:
         raise RuntimeError(f"{harness} did not pass reasoning effort {effort!r} to its agent")
     return launch
+
+
+def check_max_turns(harness: str, launch: Launch, turns: int) -> None:
+    """Make sure the launch runs its agent with the trial's turn cap, and record it in config.json (`max_turns`,
+    `max_turns_enforced`). Claude Code agents carry `--max-turns` (the top command, or a driver's `agent_cmd`); a Codex
+    agent has no turn cap, which is recorded as not enforced; anything else that runs Claude Code without it is
+    refused."""
+    top = Path(str(launch.cmd[0])).name if launch.cmd else ""
+    if top in ("claude", "codex"):
+        agent, passed = ("claude-code" if top == "claude" else "codex"), _flag(launch.cmd, "--max-turns")
+    else:  # a driver (program, aspire) records the agent it starts and that agent's cap
+        agent, passed = launch.config.get("agent"), launch.config.get("agent_max_turns")
+    if agent == "claude-code":
+        if passed is None or int(passed) != turns:
+            raise RuntimeError(f"{harness} did not pass --max-turns {turns} to Claude Code")
+    elif agent != "codex":
+        raise RuntimeError(f"{harness} cannot enforce an agent turn cap (--max-turns {turns})")
+    launch.config["max_turns"] = turns
+    launch.config["max_turns_enforced"] = agent == "claude-code"
 
 
 def _flag(cmd: list[str], name: str) -> str | None:
