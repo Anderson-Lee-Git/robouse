@@ -135,20 +135,16 @@ def test_compute_device_matches_liquid_contract(tmp_path):
             P.load(root)
 
 
-def test_gpu_backend_pin_and_kernel_sources():
-    pn = G.check_backend(T.GPU_BACKEND)
-    assert (
-        pn["device"] == "cuda"
-        and pn["warp"] == "1.19.0"
-        and set(pn["sources"])
-        == {
-            "kernels.py",
-            "sampling.py",
-            "solver.py",
-        }
-    )
-    assert G.pin_sources() == pn["sources"]
-    assert G.is_gpu(T.GPU_BACKEND) and not G.is_gpu(T.liquid_block("pour")["backend"])
+@pytest.mark.parametrize("backend", C.GPU_BACKENDS)
+def test_gpu_backend_pin_and_kernel_sources(backend):
+    pn = G.check_backend(backend)
+    files = {"kernels.py", "sampling.py", "solver.py"} | ({"thinning.py"} if backend.endswith("-v2") else set())
+    assert pn["device"] == "cuda" and pn["warp"] == "1.19.0" and set(pn["sources"]) == files
+    assert {k: pn["sources"][k] for k in G.pin_sources()} == G.pin_sources()
+    for rel in files:
+        assert hashlib.sha256((G.HERE / rel).read_bytes()).hexdigest() == pn["sources"][rel]
+    assert ("boundary_min_spacing" in pn) == backend.endswith("-v2")
+    assert G.is_gpu(backend) and not G.is_gpu(T.liquid_block("pour")["backend"])
     # the kernels are the adopted RoboCasa liquid 0.5.0 GPU kernels, byte for byte (when that backend is present)
     adopted = Path(G.HERE).parents[2] / "robocasa" / "physics" / "liquid" / "gpu"
     if adopted.is_dir():
@@ -182,7 +178,8 @@ def test_gpu_static_containment_and_exact_reset(tmp_path):
     sim = _make(tmp_path, "rest")
     ext = _ext(sim)
     f = ext.fluid
-    assert type(f).__name__ == "WarpFluid" and f.backend["device"] == "cuda"
+    assert isinstance(f, G.WarpFluid) and f.backend["device"] == "cuda"
+    assert type(f).__name__ == "ThinnedWarpFluid" and f.backend["id"] == T.GPU_BACKEND
     n = f.n
     _tick(sim, 25)
     s = sim.extension_summary()["liquid"]
@@ -272,3 +269,50 @@ def test_gpu_two_sources_render_in_their_colours_physics_unchanged(tmp_path):
             assert (blue_minus_red if rgba[2] > rgba[0] else -blue_minus_red) > 30
         sim.close()
     assert np.array_equal(snaps[True], snaps[False])
+
+
+def _revolved_cup(n=48, radius=0.03, height=0.06, rings=6):
+    """A revolved cup as mesh exporters write it: the floor closes at the axis on a ring of n coincident vertices,
+    so n thin fan triangles and n zero-length edges meet at the pole."""
+    prof = [(0.0, 0.0)] + [(radius * k / rings, 0.0) for k in range(1, rings + 1)] + [(radius, height)]
+    a = 2 * np.pi * np.arange(n) / n
+    v = np.array([(r * np.cos(t), r * np.sin(t), z) for r, z in prof for t in a])
+    f = []
+    for i in range(len(prof) - 1):
+        for j in range(n):
+            p, q = i * n + j, i * n + (j + 1) % n
+            f += [(p, q, q + n), (p, q + n, p + n)]
+    return v, np.array(f)
+
+
+def test_thinning_removes_pole_stacking_with_minimum_spacing():
+    cKDTree = pytest.importorskip("scipy.spatial").cKDTree
+    from robouse.backends.household.liquid.gpu.sampling import regular_triangle_sampling
+    from robouse.backends.household.liquid.gpu.thinning import thin_samples
+
+    r = 0.00125
+    v, f = _revolved_cup()
+    raw = regular_triangle_sampling(v, f, 1.5 * r)
+    dmin = 0.6 * 1.5 * r
+    thin = thin_samples(raw, dmin)
+    assert np.array_equal(thin, thin_samples(raw, dmin))  # deterministic
+    assert np.array_equal(thin[0], raw[0])  # greedy in the vendored order
+    assert cKDTree(thin).query(thin, k=2)[0][:, 1].min() >= dmin  # minimum spacing, across triangle boundaries
+    assert cKDTree(thin).query(raw)[0].max() < dmin  # every dropped sample is covered by a kept one
+    pole = np.array([[0.0, 0.0, 1.5 * r]])  # a particle resting on the floor, on the axis
+    before = len(cKDTree(raw).query_ball_point(pole, 4 * r)[0])
+    after = len(cKDTree(thin).query_ball_point(pole, 4 * r)[0])
+    metric("thinning_pole_neighbours_before", before)
+    metric("thinning_pole_neighbours_after", after)
+    assert before > 128 >= after
+    assert len(thin_samples(np.zeros((0, 3)), dmin)) == 0
+
+
+def test_backend_v2_selects_the_thinned_solver_and_v1_stays_unthinned():
+    from robouse.backends.household.liquid import extension as E
+    from robouse.backends.household.liquid.gpu.thinning import ThinnedWarpFluid
+
+    v2 = C.parse(T.gpu_block(T.liquid_block("pour")))
+    v1 = C.parse({**T.gpu_block(T.liquid_block("pour")), "backend": "warp-1.19.0-dfsph-cuda-f32-v1"})
+    assert v2.backend == "warp-1.19.0-dfsph-cuda-f32-v2" and E._fluid_class(v2) is ThinnedWarpFluid
+    assert E._fluid_class(v1) is G.WarpFluid

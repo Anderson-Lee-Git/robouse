@@ -41,7 +41,11 @@ and Weiler 2018 viscosity, gpu/solver.py) and the package's `compute.device` mus
 validity guards, time-step schedule, absorbers, accounting, queries and the rendered surface are the CPU contract's and
 run on the host. `threads` is the host CPU thread count the condition reserves (the GPU solver uses no OpenMP). The GPU
 solver implements surface tension methods "none" and "jeske2023" without boundary adhesion; others are refused. A GPU
-backend under 1.0.0 or 1.1.0, or a CPU backend under 1.2.0, is refused: the contract names the device.
+backend under 1.0.0 or 1.1.0, or a CPU backend under 1.2.0, is refused: the contract names the device. The GPU
+backend id versions the numerics within 1.2.0: `warp-1.19.0-dfsph-cuda-f32-v1` samples mesh boundaries as the vendored
+sampler does (coincident samples stack at the pole of a revolved vessel and overflow the boundary neighbour list);
+`warp-1.19.0-dfsph-cuda-f32-v2` thins each mesh boundary's samples to a minimum spacing (gpu/thinning.py). Both stay
+loadable; a package names the one it was validated on.
 """
 
 from __future__ import annotations
@@ -53,7 +57,10 @@ from dataclasses import dataclass
 CONTRACT = "1.2.0"  # the newest liquid contract this backend implements
 CONTRACTS = ("1.0.0", "1.1.0", "1.2.0")  # 1.1.0 = 1.0.0 + optional per-source rgba (rendering only); 1.2.0 = GPU
 GPU_CONTRACTS = ("1.2.0",)
-GPU_BACKENDS = ("warp-1.19.0-dfsph-cuda-f32-v1",)  # pins in backends/<id>.json with "device": "cuda"
+GPU_BACKENDS = (
+    "warp-1.19.0-dfsph-cuda-f32-v1",
+    "warp-1.19.0-dfsph-cuda-f32-v2",
+)  # backends/<id>.json, "device": "cuda"
 GPU_TENSION = ("none", "jeske2023")
 TENSION_METHODS = {"none": 0, "becker2007": 1, "akinci2013": 2, "he2014": 3, "jeske2023": 4}
 SLEEP = ("none", "puddle", "containers")
