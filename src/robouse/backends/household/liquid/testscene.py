@@ -11,6 +11,11 @@ Variants:
     invert    the tumbler starts upside down, its mouth 12 cm above the counter (free-fall control)
     drop      the same with the mouth 3 cm above the counter (impact and containment control)
     embedded  a static shelf box cuts through the fill (must be refused as invalid)
+    wipe      the full tumbler stands still while a mocap sponge (an animated boundary with an absorber) is lowered
+              onto a 30 ml counter puddle, wipes across it and lifts (puddle, moving boundary and uptake)
+
+`gpu_block(block)` turns any variant's liquid block into liquid contract 1.2.0 on the GPU backend (and `write(...,
+gpu=True)` writes such a package, with compute.device gpu).
 
     python -m robouse.backends.household.liquid.testscene <dir> [variant]
 """
@@ -39,6 +44,14 @@ TILT1_DEG, TILT_DEG = 72.0, 115.0
 # phases (s): hold, lift, tilt over the counter, sweep into the bowl, hold, upright, hold tail
 DROP_M = {"invert": 0.12, "drop": 0.03}  # mouth height above the counter of the upside-down variants
 PHASES = (0.2, 0.5, 0.8, 1.0, 0.6, 0.5, 1.5)  # 5.1 s: the CPU contract runs ~100x slower than real time
+GPU_BACKEND = "warp-1.19.0-dfsph-cuda-f32-v1"
+# wipe: a 30 ml puddle in front of the tumbler; a 8 x 5 x 2.4 cm sponge, lowered, wiped along +y, lifted
+WIPE_PUDDLE = [[0.83, -0.17], [0.91, -0.17], [0.91, -0.07], [0.83, -0.07]]
+WIPE_ML = 30.0
+SPONGE_HALF = (0.04, 0.025, 0.012)
+WIPE_X, WIPE_Y = 0.87, (-0.24, -0.01)
+WIPE_PHASES = (0.2, 0.4, 1.2, 0.4, 0.3)  # 2.5 s: hold, lower, wipe, lift, hold
+WIPE_CLEARANCE = 0.0005  # sponge underside above the counter top while wiping
 
 
 def cup_profile():
@@ -70,6 +83,12 @@ def scene_xml(variant: str) -> str:
     if variant in DROP_M:
         cup_z, cup_quat = TOP + DROP_M[variant] + CUP_H, "0 1 0 0"  # upside down, the mouth above the counter
     shelf = ""
+    if variant == "wipe":
+        hx, hy, hz = SPONGE_HALF
+        shelf = (
+            f'<body name="sponge" mocap="true" pos="{WIPE_X} {WIPE_Y[0]} {TOP + 0.05 + hz}"><geom name="sponge/foam" '
+            f'type="box" size="{hx} {hy} {hz}" rgba=".95 .85 .2 1" contype="0" conaffinity="0" group="1"/></body>'
+        )
     if variant == "embedded":
         shelf = (
             f'<body name="shelf" pos="{cx} {cy} {TOP + 0.03}"><geom name="shelf/board" type="box" '
@@ -163,6 +182,37 @@ class Behaviour:
 '''
 
 
+WIPE_BEHAVIOUR = '''import numpy as np
+
+PHASES = {phases}
+X, Y0, Y1, Z0, Z1 = {x}, {y0}, {y1}, {z0}, {z1}
+
+
+def smooth(s):
+    s = min(max(s, 0.0), 1.0)
+    return s * s * (3 - 2 * s)
+
+
+class Behaviour:
+    """Lowers the mocap sponge onto the puddle, wipes it along +y and lifts it (a function of the control step only)."""
+
+    def __init__(self, world, config):
+        self.mocap = int(world.model.body_mocapid[world.id("body", config["driver"])])
+
+    def control(self, world):
+        t = world.step * 0.02
+        e = np.cumsum(PHASES)
+        down = smooth((t - e[0]) / PHASES[1]) - smooth((t - e[2]) / PHASES[3])
+        y = Y0 + (Y1 - Y0) * smooth((t - e[1]) / PHASES[2])
+        world.data.mocap_pos[self.mocap] = [X, y, Z1 + (Z0 - Z1) * down]
+'''
+
+
+def gpu_block(block: dict) -> dict:
+    """The same liquid on liquid contract 1.2.0 (GPU backend); every other field unchanged."""
+    return {**block, "contract": "1.2.0", "backend": GPU_BACKEND}
+
+
 def liquid_block(variant: str, threads: int = 4) -> dict:
     walls = [f"room/wall_{w}" for w in ("px", "nx", "py", "ny")]
     boxes = ["room/floor", *walls, "counter/top"] + (["shelf/board"] if variant == "embedded" else [])
@@ -207,21 +257,40 @@ def liquid_block(variant: str, threads: int = 4) -> dict:
         "surface": {"geom": "counter/top", "centre_xy": [0.70, -0.08], "half_extent_m": 0.25, "film_m": 0.02},
         "sources": [{"name": "juice", "container": "cup", "fill_ml": FILL_ML}],
         "absorbers": [],
+        **(
+            {
+                "boundaries": [{"name": "sponge", "body": "sponge", "geoms": ["sponge/foam"], "animated": True}],
+                "sources": [
+                    {"name": "juice", "container": "cup", "fill_ml": FILL_ML},
+                    {"name": "spill", "puddle": {"polygon_xy": WIPE_PUDDLE, "volume_ml": WIPE_ML}},
+                ],
+                "absorbers": [{"boundary": "sponge", "capacity_ml": 20.0, "contact_m": 0.0025}],
+            }
+            if variant == "wipe"
+            else {}
+        ),
         "settle": {"seconds": 0.0 if variant in DROP_M else 0.3, "damping": 0.9},
         "sleep": "none",
         "initial_state": None,
     }
 
 
-def write(root, variant: str = "pour", threads: int = 4, liquid: dict | None = None) -> Path:
+def write(root, variant: str = "pour", threads: int = 4, liquid: dict | None = None, gpu: bool = False) -> Path:
     from ..robot import look_at_quat
 
     root = Path(root)
     (root / "plugin").mkdir(parents=True, exist_ok=True)
     (root / "scene.xml").write_text(scene_xml(variant))
-    (root / "plugin" / "behaviour.py").write_text(
-        BEHAVIOUR.format(phases=PHASES, lift=LIFT, sweep=SWEEP, tilt1=TILT1_DEG, tilt=TILT_DEG, rt=CUP_R_TOP, h=CUP_H)
-    )
+    if variant == "wipe":
+        hz = SPONGE_HALF[2]
+        behaviour = WIPE_BEHAVIOUR.format(
+            phases=WIPE_PHASES, x=WIPE_X, y0=WIPE_Y[0], y1=WIPE_Y[1], z0=TOP + hz + WIPE_CLEARANCE, z1=TOP + 0.05 + hz
+        )
+    else:
+        behaviour = BEHAVIOUR.format(
+            phases=PHASES, lift=LIFT, sweep=SWEEP, tilt1=TILT1_DEG, tilt=TILT_DEG, rt=CUP_R_TOP, h=CUP_H
+        )
+    (root / "plugin" / "behaviour.py").write_text(behaviour)
     c2 = {"pos": [1.30, -0.70, 1.20], "fovy_deg": 50}
     c2["quat"] = [round(v, 7) for v in look_at_quat(c2["pos"], [0.70, -0.10, 0.80])]
     ep = {
@@ -243,14 +312,18 @@ def write(root, variant: str = "pour", threads: int = 4, liquid: dict | None = N
             "path": "plugin",
             "goal": None,
             "behaviour": "behaviour:Behaviour",
-            "behaviour_config": {"driver": "cup_driver", "route": "pour" if variant == "pour" else "hold"},
+            "behaviour_config": {"driver": "sponge"}
+            if variant == "wipe"
+            else {"driver": "cup_driver", "route": "pour" if variant == "pour" else "hold"},
             "helpers": None,
         },
         "trace": {"objects": ["cup", "bowl"], "fixtures": ["counter"], "room": "room"},
-        "compute": {"device": "cpu"},
+        "compute": {"device": "gpu" if gpu else "cpu"},
         "files": {},
         "liquid": liquid if liquid is not None else liquid_block(variant, threads),
     }
+    if gpu and liquid is None:
+        ep["liquid"] = gpu_block(ep["liquid"])
     (root / "episode.json").write_text(json.dumps(ep, indent=2) + "\n")
     write_files_map(root)
     return root

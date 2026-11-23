@@ -1,10 +1,11 @@
-"""The `liquid` block of a household package's episode.json (liquid contracts 1.0.0 and 1.1.0), validated strictly.
+"""The `liquid` block of a household package's episode.json (liquid contracts 1.0.0, 1.1.0 and 1.2.0), validated
+strictly.
 
 Every value is explicit: there are no defaults, so a package states its whole liquid condition (material, solver,
 geometry, sources, absorbers, settling, sleep, threads, backend) and any change to it is visible in the package
 identity. Errors name fields, never paths or task names.
 
-    {"contract": "1.0.0" | "1.1.0",
+    {"contract": "1.0.0" | "1.1.0" | "1.2.0",
      "backend": "splishsplash-2.19.0-tree-f32-avx2-v1",       a pin in backends/<id>.json
      "threads": 4,                                              SPlisHSPlasH OpenMP threads (results depend on it)
      "material": {"particle_radius_m": 0.00125, "density_kg_m3": 1000, "viscosity_m2_s": 1e-4,
@@ -33,6 +34,14 @@ mesh, material and geom (`liquid/surface/<source>`), reconstructed from that sou
 in its rgba (`material.rgba` for a source without one). Particles keep their source for the whole episode, so a
 mixed liquid is coloured by origin: where two sources mix their two surfaces overlap. A 1.0.0 block refuses a source
 rgba.
+
+Contract 1.2.0 is 1.1.0 (per-source rgba allowed) with the DFSPH integration on a CUDA GPU: `backend` must be a GPU
+backend (GPU_BACKENDS: an NVIDIA Warp re-implementation of the same SPlisHSPlasH 2.19.0 DFSPH with Akinci boundaries
+and Weiler 2018 viscosity, gpu/solver.py) and the package's `compute.device` must be "gpu". Domain, continuous contact,
+validity guards, time-step schedule, absorbers, accounting, queries and the rendered surface are the CPU contract's and
+run on the host. `threads` is the host CPU thread count the condition reserves (the GPU solver uses no OpenMP). The GPU
+solver implements surface tension methods "none" and "jeske2023" without boundary adhesion; others are refused. A GPU
+backend under 1.0.0 or 1.1.0, or a CPU backend under 1.2.0, is refused: the contract names the device.
 """
 
 from __future__ import annotations
@@ -41,8 +50,11 @@ import math
 import re
 from dataclasses import dataclass
 
-CONTRACT = "1.1.0"  # the newest liquid contract this backend implements
-CONTRACTS = ("1.0.0", "1.1.0")  # 1.1.0 = 1.0.0 + optional per-source rgba (rendering only)
+CONTRACT = "1.2.0"  # the newest liquid contract this backend implements
+CONTRACTS = ("1.0.0", "1.1.0", "1.2.0")  # 1.1.0 = 1.0.0 + optional per-source rgba (rendering only); 1.2.0 = GPU
+GPU_CONTRACTS = ("1.2.0",)
+GPU_BACKENDS = ("warp-1.19.0-dfsph-cuda-f32-v1",)  # pins in backends/<id>.json with "device": "cuda"
+GPU_TENSION = ("none", "jeske2023")
 TENSION_METHODS = {"none": 0, "becker2007": 1, "akinci2013": 2, "he2014": 3, "jeske2023": 4}
 SLEEP = ("none", "puddle", "containers")
 MAX_THREADS = 64
@@ -215,6 +227,11 @@ class LiquidConfig:
     sleep: str
     initial_state: InitialState | None
 
+    @property
+    def device(self) -> str:
+        """ "gpu" under a GPU liquid contract (1.2.0), else "cpu": the package's compute.device must equal it."""
+        return "gpu" if self.contract in GPU_CONTRACTS else "cpu"
+
     def boundary_names(self) -> list[str]:
         return [c.name for c in self.containers] + [b.name for b in self.boundaries]
 
@@ -254,6 +271,10 @@ def parse(d) -> LiquidConfig:
     contract = d["contract"]
     if not isinstance(d["backend"], str) or not re.fullmatch(r"[a-z0-9][a-z0-9.\-]{0,95}", d["backend"]):
         _fail("backend must be a backend id")
+    if (contract in GPU_CONTRACTS) != (d["backend"] in GPU_BACKENDS):
+        if contract in GPU_CONTRACTS:
+            _fail(f"contract {contract} needs a GPU backend ({', '.join(GPU_BACKENDS)})")
+        _fail(f"contract {contract} runs on the CPU: a GPU backend needs contract {GPU_CONTRACTS[-1]}")
     threads = _int(d["threads"], "threads", 1, MAX_THREADS)
 
     m = _obj(
@@ -277,6 +298,8 @@ def parse(d) -> LiquidConfig:
         _fail("material.surface_tension: method none needs coefficient and boundary_adhesion 0")
     if st["method"] != "none" and not (tension or adhesion):
         _fail("material.surface_tension: a method needs a nonzero coefficient or boundary_adhesion")
+    if contract in GPU_CONTRACTS and (st["method"] not in GPU_TENSION or adhesion):
+        _fail(f"material.surface_tension: contract {contract} implements methods {list(GPU_TENSION)} without adhesion")
     rgba = _rgba(m["rgba"], "material.rgba")
     material = Material(
         particle_radius=_num(m["particle_radius_m"], "material.particle_radius_m", 0.0005, 0.005),
@@ -377,7 +400,7 @@ def parse(d) -> LiquidConfig:
         if not isinstance(s, dict):
             _fail(f"{w} must be an object")
         if "rgba" in s and not colour:
-            _fail(f"{w}.rgba needs liquid contract 1.1.0")
+            _fail(f"{w}.rgba needs liquid contract 1.1.0 or later")
         src_rgba = tuple(_rgba(s["rgba"], f"{w}.rgba")) if "rgba" in s else None
         if "container" in s:
             s = _obj(s, w, {"name", "container", "fill_ml"}, colour)

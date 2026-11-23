@@ -1,11 +1,14 @@
-"""The household physics extension for `liquid` (contracts 1.0.0 and 1.1.0): one-way MuJoCo -> SPH coupling, accounting and the
+"""The household physics extension for `liquid` (contracts 1.0.0, 1.1.0 and 1.2.0): one-way MuJoCo -> SPH coupling, accounting and the
 rendered surface, on the generic hooks of extensions.py.
 
-- `prepare(spec, config, root)` validates the block, checks the pinned backend (ABI, sha256) and the initial-state
+- `prepare(spec, config, root)` validates the block, checks the pinned backend (CPU: ABI, sha256 of the native module;
+  GPU, contract 1.2.0: sha256 of the kernel sources; Warp and the CUDA device are checked when the fluid is built, so
+  a missing GPU is an infrastructure error, never a fallback) and the initial-state
   file, and adds the visual-only surface mesh geom to the scene (one per source when a source gives its own rgba,
   contract 1.1.0; see surface.py).
 - `__init__(world, config)` (every reset, before reset settling) builds the boundaries from the compiled scene, the
-  domain, the initial particles (source fills, puddles or the package's initial state) and the fluid. The native fluid
+  domain, the initial particles (source fills, puddles or the package's initial state) and the fluid
+  (solver.Fluid on the CPU, gpu.solver.WarpFluid under contract 1.2.0). The native fluid
   is kept for the process and reused through an exact reset when the configuration, boundary meshes, initial poses
   and particles are the same; otherwise it is rebuilt.
 - `after_substep(world)` advances the fluid to the MuJoCo time. Within each 2 ms MuJoCo substep the animated
@@ -66,6 +69,24 @@ def release() -> None:
     _FLUID["workdir"] = None
 
 
+def _fluid_class(cfg):
+    """The solver class of the configured contract: contract 1.2.0 runs the DFSPH step on the GPU."""
+    if cfg.device == "gpu":
+        from .gpu.solver import WarpFluid
+
+        return WarpFluid
+    return Fluid
+
+
+def _check_backend(cfg) -> None:
+    if cfg.device == "gpu":
+        from .gpu.solver import check_backend as check_gpu
+
+        check_gpu(cfg.backend)
+    else:
+        check_backend(cfg.backend)
+
+
 def _id(model, kind, name):
     import mujoco
 
@@ -79,7 +100,7 @@ class Extension:
     @staticmethod
     def prepare(spec, config, root) -> None:
         cfg = C.parse(config)
-        check_backend(cfg.backend)
+        _check_backend(cfg)
         if cfg.initial_state is not None:
             p = Path(root) / cfg.initial_state.file
             if not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest() != cfg.initial_state.sha256:
@@ -197,7 +218,7 @@ class Extension:
             work = tempfile.mkdtemp(prefix="household-liquid-", dir=root)
             _FLUID["workdir"] = work
             domain = make_domain(model, data, *self.domain_args)
-            f = Fluid(work, cfg.backend, cfg.threads, mat, cfg.solver, bms, particles, domain)
+            f = _fluid_class(cfg)(work, cfg.backend, cfg.threads, mat, cfg.solver, bms, particles, domain)
             settle = None
             try:
                 if cfg.initial_state is None and cfg.settle_seconds > 0:
@@ -404,6 +425,8 @@ class Extension:
             },
             "absorbers": {a.name: a.report(f.mat.particle_volume) for a in f.absorbers},
         }
+        if self.cfg.device == "gpu":
+            out["device_timing"] = dict(f.timing)  # contract 1.2.0: device step time (synchronised) and substeps
         if f.invalid_reason is None:
             counts = self.counts()
             out["counts"] = counts
