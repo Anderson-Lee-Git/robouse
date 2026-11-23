@@ -137,6 +137,22 @@ def test_package_validation(tmp_path, pkg):
         HouseholdBackend({"package": str(pkg), "control": "teleport"})
 
 
+@pytest.mark.parametrize(
+    "version,ok",
+    [("1.0.0", True), ("1.0.3", True), ("1.1.0", True), ("1.1.2", True),
+     ("1.2.0", False), ("1.10.0", False), ("2.0.0", False), ("0.1.0", False), ("1.1", False)],
+)  # fmt: skip
+def test_format_version_minor_rule(tmp_path, pkg, version, ok):
+    """An earlier or equal spec minor of the same major loads unchanged; a newer minor or another major is refused."""
+    p = copy_pkg(pkg, tmp_path / "p")
+    edit_episode(p, lambda d: d.update(format_version=version))
+    if ok:
+        assert P.load(p).format_version == version
+    else:
+        with pytest.raises(P.PackageError, match="format_version"):
+            P.load(p)
+
+
 def test_physics_and_render_set_by_backend(tmp_path, pkg):
     alt = copy_pkg(pkg, tmp_path / "alt")
     xml = (alt / "scene.xml").read_text().replace("<asset>", '<option timestep="0.01" integrator="Euler"/><asset>', 1)
