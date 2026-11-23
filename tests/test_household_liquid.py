@@ -413,10 +413,12 @@ JUICE, WATER = [1.0, 0.56, 0.1, 0.93], [0.15, 0.45, 1.0, 0.8]
 
 
 def _two_sources(colours=True, variant="rest") -> dict:
-    """The test package's liquid with a second source (30 ml of water in the bowl); contract 1.1.0."""
+    """The test package's liquid with a second source, 15 ml of water as a puddle on the counter in camera_2's view
+    (water at the bottom of the bowl is hidden by its rim); contract 1.1.0."""
     d = T.liquid_block(variant)
     d["contract"] = "1.1.0"
-    d["sources"].append({"name": "water", "container": "bowl", "fill_ml": 30.0})
+    poly = [[0.84, -0.14], [0.92, -0.14], [0.92, -0.06], [0.84, -0.06]]
+    d["sources"].append({"name": "water", "puddle": {"polygon_xy": poly, "volume_ml": 15.0}})
     if colours:
         d["sources"][1]["rgba"] = WATER
     return d
@@ -498,7 +500,7 @@ def _hidden_render(sim, cam, geoms):
 
 
 def test_two_sources_render_in_their_colours_physics_unchanged(tmp_path):
-    """Juice in the cup, water in the bowl: each source's surface is reconstructed from its own particles and drawn
+    """Juice in the cup, a water puddle on the counter: each source's surface is reconstructed from its own particles and drawn
     in its own colour, and the particles move bit for bit as without per-source colours."""
     _sim_or_skip()
     snaps = {}
@@ -508,7 +510,8 @@ def test_two_sources_render_in_their_colours_physics_unchanged(tmp_path):
         for _ in range(10):
             _tick(sim)
         snaps[colours] = ext.fluid.positions().copy()
-        assert ext.source_counts() == {"juice": {"cup": 9600}, "water": {"bowl": 1920}}
+        counts = ext.source_counts()
+        assert counts["juice"] == {"cup": 9600} and counts["water"].get("surface", 0) > 0.9 * 960
         img = sim.render("camera_2", 640, 480)
         s = sim.extension_summary()["liquid"]
         if not colours:
@@ -529,11 +532,12 @@ def test_two_sources_render_in_their_colours_physics_unchanged(tmp_path):
             bare = _hidden_render(sim, "camera_2", [f"liquid/surface/{src}"])
             diff = np.abs(img.astype(int) - bare.astype(int)).sum(axis=2) > 30
             metric(f"colour.camera_2_{src}_pixels", int(diff.sum()))
-            assert diff.sum() > 50
+            assert diff.sum() > 500  # 1404 juice, 1573 water pixels measured
             mean = img[diff].astype(float).mean(0)
             blue_minus_red = mean[2] - mean[0]
             metric(f"colour.camera_2_{src}_mean_rgb", json.dumps([round(float(c), 1) for c in mean]))
-            assert (blue_minus_red > 0) == (rgba[2] > rgba[0])
+            # juice reads orange (R - B = 49 measured), water blue (B - R = 181 measured)
+            assert (blue_minus_red if rgba[2] > rgba[0] else -blue_minus_red) > 30
         if OUT:
             from PIL import Image
 
