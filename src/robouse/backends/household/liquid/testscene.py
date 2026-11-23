@@ -44,7 +44,7 @@ TILT1_DEG, TILT_DEG = 72.0, 115.0
 # phases (s): hold, lift, tilt over the counter, sweep into the bowl, hold, upright, hold tail
 DROP_M = {"invert": 0.12, "drop": 0.03}  # mouth height above the counter of the upside-down variants
 PHASES = (0.2, 0.5, 0.8, 1.0, 0.6, 0.5, 1.5)  # 5.1 s: the CPU contract runs ~100x slower than real time
-GPU_BACKEND = "warp-1.19.0-dfsph-cuda-f32-v1"
+GPU_BACKEND = "warp-1.19.0-dfsph-cuda-f32-v2"
 # wipe: a 30 ml puddle in front of the tumbler; a 8 x 5 x 2.4 cm sponge, lowered, wiped along +y, lifted
 WIPE_PUDDLE = [[0.83, -0.17], [0.91, -0.17], [0.91, -0.07], [0.83, -0.07]]
 WIPE_ML = 30.0

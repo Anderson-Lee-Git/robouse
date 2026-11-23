@@ -1,0 +1,25 @@
+{
+  "id": "warp-1.19.0-dfsph-cuda-f32-v2",
+  "device": "cuda",
+  "warp": "1.19.0",
+  "precision": "float32",
+  "algorithm": "DFSPH (SPlisHSPlasH 2.19.0 formulation, warm start), Akinci 2012 boundary samples at 1.5 r thinned to a 0.6 x 1.5 r minimum spacing per body, Weiler 2018 implicit viscosity, Jeske 2023 surface tension; cubic spline kernel, support 4 r",
+  "neighbour_capacity": {
+    "fluid": 64,
+    "boundary": 128
+  },
+  "boundary_min_spacing": 0.6,
+  "sources": {
+    "kernels.py": "6d146bceadf7f2bb0a58c446d6c6622bdeae446722327aed65a26e2e3a235509",
+    "sampling.py": "a67446f54a041ad05e6c763bd1ec35549f6ac9d674211962f7960db9aa569182",
+    "solver.py": "71f039c9d6533ec6fce551254ff0ff0577312739cd75a73e647151d495e263d5",
+    "thinning.py": "83e294a54c95c139132007d71f44c916d0cd4284c00bf6de6a5723999a6b1938"
+  },
+  "origin": "gpu/kernels.py and gpu/sampling.py are the adopted RoboCasa liquid 0.5.0 Warp kernels (robouse backends/robocasa/physics/liquid/gpu, commits 9ec9592, fe148db, 3dd4e1f), byte for byte; gpu/thinning.py is household (not adopted): the minimum-distance thinning of each mesh boundary's samples",
+  "license": "robouse; NVIDIA Warp is Apache-2.0",
+  "notes": [
+    "Household liquid contract 1.2.0. Needs a CUDA device; no CPU fallback.",
+    "Supersedes warp-1.19.0-dfsph-cuda-f32-v1 (kept unchanged): the vendored per-vertex/edge/face sampling stacks coincident samples at the pole of a revolved vessel (339-435 boundary neighbours against the 128 capacity). v2 keeps, per mesh boundary and in the vendored order, only samples at least boundary_min_spacing x 1.5 r from every kept one (gpu/thinning.py). Kernels, vendored sampler, solver and neighbour capacities are v1's; boundaries with their own samples (the work-surface plate) are used as given.",
+    "Domain, continuous contact, validity, time step, absorbers, accounting, queries and surface run on the host, as the CPU contract."
+  ]
+}

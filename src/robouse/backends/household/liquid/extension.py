@@ -42,7 +42,7 @@ from . import config as C
 from . import meshes, queries
 from .contact import Absorber, ContainerSleep, MeshContact, PuddleSleep
 from .domain import LiquidValidityError, make_domain
-from .solver import BoundaryMesh, Fluid, check_backend, rotmat, rotvec
+from .solver import BoundaryMesh, Fluid, check_backend, pin, rotmat, rotvec
 from .surface import GEOM as SURFACE_GEOM
 from .surface import SurfaceRenderer, add_to_spec
 
@@ -70,10 +70,15 @@ def release() -> None:
 
 
 def _fluid_class(cfg):
-    """The solver class of the configured contract: contract 1.2.0 runs the DFSPH step on the GPU."""
+    """The solver class of the configured contract: contract 1.2.0 runs the DFSPH step on the GPU; a GPU backend
+    whose pin names `boundary_min_spacing` (v2 on) thins its mesh boundary samples (gpu/thinning.py)."""
     if cfg.device == "gpu":
         from .gpu.solver import WarpFluid
 
+        if pin(cfg.backend).get("boundary_min_spacing") is not None:
+            from .gpu.thinning import ThinnedWarpFluid
+
+            return ThinnedWarpFluid
         return WarpFluid
     return Fluid
 
