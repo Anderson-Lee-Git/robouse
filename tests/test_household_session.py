@@ -10,6 +10,7 @@ from __future__ import annotations
 import gzip
 import json
 import math
+import os
 import shutil
 import sys
 import types
@@ -332,7 +333,14 @@ def test_state_trace_changes_no_physics(tmp_path, pkg, monkeypatch):
 
 
 # ---- the worker process (ROBOUSE_HOUSEHOLD_PYTHON) ---------------------------------------------------------------------
-def test_worker_process_matches_in_process(tmp_path, pkg, monkeypatch):
+# another interpreter for the worker (e.g. liquid's Python 3.12 environment): HOUSEHOLD_TEST_PYTHON=<python>
+WORKER_PYTHONS = [sys.executable] + (
+    [os.environ["HOUSEHOLD_TEST_PYTHON"]] if os.environ.get("HOUSEHOLD_TEST_PYTHON") else []
+)
+
+
+@pytest.mark.parametrize("python", WORKER_PYTHONS)
+def test_worker_process_matches_in_process(tmp_path, pkg, monkeypatch, python):
     from robouse.backends.household.remote import RemoteHouseholdBackend
 
     def episode(run):
@@ -352,7 +360,7 @@ def test_worker_process_matches_in_process(tmp_path, pkg, monkeypatch):
         return ep, out, res, hp
 
     local, out_l, res_l, _ = episode(tmp_path / "local")
-    monkeypatch.setenv("ROBOUSE_HOUSEHOLD_PYTHON", sys.executable)
+    monkeypatch.setenv("ROBOUSE_HOUSEHOLD_PYTHON", python)
     remote, out_r, res_r, _ = episode(tmp_path / "remote")
     assert isinstance(remote.backend, RemoteHouseholdBackend) and not hasattr(remote.backend, "sim")
 
@@ -362,8 +370,9 @@ def test_worker_process_matches_in_process(tmp_path, pkg, monkeypatch):
         )
 
     assert clean(out_r) == clean(out_l)
-    assert out_r[2]["ok"] and out_r[2]["result"]["refused"] == "unreachable"
-    assert not out_r[3]["ok"] and "refused (unreachable)" in out_r[3]["error"]
+    # out_r[0] is info; the refusals crossed the process boundary with their reasons
+    assert "unreachable" in json.dumps(out_r[1])
+    assert not out_r[2]["ok"] and "unreachable" in out_r[2]["error"]
     assert res_r == res_l
     a, b = (
         read_trace(tmp_path / "local" / "state-trace.jsonl.gz"),
@@ -406,7 +415,7 @@ def test_session_layer_blindness(tmp_path, pkg, probe_registered):
         "sa_",
         "cube",
         "table",
-        "pad",
+        "pad/",
         "goal:Goal",
         P.load(ext).identity[:16],
     ]

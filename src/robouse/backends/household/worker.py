@@ -14,7 +14,7 @@ import numpy as np
 
 
 def _raise_info(e: Exception) -> dict | None:
-    from .sim import InternalError, Refused, SimulationDiverged
+    from robouse.backends.household.sim import InternalError, Refused, SimulationDiverged
 
     if isinstance(e, Refused):
         return {"type": "Refused", "reason": e.reason, "detail": e.detail}
@@ -64,7 +64,7 @@ class Worker:
         self.pending = None
 
     def open(self, spec: dict, run_dir: str | None = None) -> dict:
-        from .backend import HouseholdBackend
+        from robouse.backends.household.backend import HouseholdBackend
 
         def make():
             b = HouseholdBackend(spec)
@@ -76,7 +76,7 @@ class Worker:
         if "raise" in r:
             return r
         b = self.b = r["value"]
-        from ..base import embodiment_dict
+        from robouse.backends.base import embodiment_dict
 
         s = b.action_spec
         return {
@@ -108,7 +108,7 @@ class Worker:
 
     def call(self, name: str, args: list | None = None) -> dict:
         """One of the backend's plain methods (the list in remote.PLAIN)."""
-        from .remote import PLAIN
+        from robouse.backends.household.remote import PLAIN
 
         if name not in PLAIN:
             raise ValueError(f"not a household worker method: {name}")
@@ -129,7 +129,7 @@ class Worker:
             self.b.camera = old
 
     def camera_info(self, cameras: list[str], uncalibrated: list[str] | None = None) -> list[dict]:
-        from ...core.cameras import mujoco_camera
+        from robouse.core.cameras import mujoco_camera
 
         model, data = self.b.mj_model_data()
         w, h = self.b.render_size
