@@ -67,6 +67,8 @@ ENV: dict[str, str] = {
     "ROBOUSE_SANDBOX_DENY": "extra colon-separated paths agents may neither read nor write",
     "ROBOUSE_SANDBOX_ALLOW": "colon-separated paths inside a denied folder that agents may read (not write), such as "
     "an interpreter or a runtime library inside a denied checkout",
+    "ROBOUSE_HOUSEHOLD_LIQUID_BACKEND": "folder holding the pinned household liquid (SPlisHSPlasH) backend; default "
+    "<cache>/household/liquid/<backend id>",
     "ROBOUSE_CLAUDE_TOKEN_FILE": "optional env file of Claude Code OAuth tokens (NAME=token lines), used in turn when "
     "neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set; denied to agents",
     "ROBOUSE_CODEX_AUTH_DIR": "optional folder of Codex logins (<account>.json, copies of a `codex login` auth.json), "
