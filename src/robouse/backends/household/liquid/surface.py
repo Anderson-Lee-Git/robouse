@@ -8,6 +8,10 @@ no mass: it never touches the physics, and the scene's own lights, shadows, anti
 Reconstruction parameters are part of liquid contract 1.0.0 (they decide what the policy sees): smoothing length 2,
 cube size 0.75, iso-surface 0.6, 15 mesh and 10 normal smoothing iterations (all in particle radii where SPlisHSPlasH
 and splashsurf define them so). A surface over capacity is an error (a truncated surface is never shown).
+
+Per-source colour (liquid contract 1.1.0): when a source gives its own rgba, every source gets its own mesh, material
+and geom named `liquid/surface/<source>` (`names(source)`), each reconstructed from that source's particles alone with
+the same parameters. Without one, the single `liquid/surface` mesh of contract 1.0.0 is used, unchanged.
 """
 
 from __future__ import annotations
@@ -46,13 +50,23 @@ def placeholder(max_verts: int = MAX_VERTS):
     return revolve(prof, seg)
 
 
-def add_to_spec(spec, rgba) -> None:
-    """Add the surface mesh, its material and its visual-only world geom to a scene MjSpec (before compile)."""
+def names(source: str | None = None) -> tuple[str, str, str]:
+    """(mesh, geom, material) names: the single surface's (source None) or one source's own surface's."""
+    if source is None:
+        return MESH, GEOM, MATERIAL
+    n = f"{MESH}/{source}"
+    return n, n, n
+
+
+def add_to_spec(spec, rgba, source: str | None = None) -> None:
+    """Add the surface mesh, its material and its visual-only world geom to a scene MjSpec (before compile): the
+    single liquid surface (source None) or one source's own surface."""
     import mujoco
 
+    MESH, GEOM, MATERIAL = names(source)
     for coll in (spec.meshes, spec.geoms, spec.materials):
         if any((el.name or "") == MESH for el in coll):
-            raise ValueError("the scene already has a liquid/surface element")
+            raise ValueError(f"the scene already has a {MESH} element")
     v, f = placeholder()
     mesh = spec.add_mesh()
     mesh.name = MESH
@@ -81,14 +95,15 @@ def add_to_spec(spec, rgba) -> None:
 class SurfaceRenderer:
     """Owns the liquid mesh geom of a compiled model: update(points) writes it into the model; upload(renderer)."""
 
-    def __init__(self, model, particle_radius: float):
+    def __init__(self, model, particle_radius: float, source: str | None = None):
         import mujoco
 
+        mesh, geom, _ = names(source)
         self.model = model
-        self.mesh = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_MESH, MESH)
-        self.geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, GEOM)
+        self.mesh = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_MESH, mesh)
+        self.geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, geom)
         if self.mesh < 0 or self.geom < 0:
-            raise ValueError("the model has no liquid surface mesh")
+            raise ValueError(f"the model has no liquid surface mesh {mesh!r}")
         m = self.mesh
         self.va, self.vn = int(model.mesh_vertadr[m]), int(model.mesh_vertnum[m])
         self.fa, self.fn = int(model.mesh_faceadr[m]), int(model.mesh_facenum[m])
