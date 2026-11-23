@@ -406,3 +406,142 @@ def test_pour_spill_and_reset_repeatability(tmp_path):
     metric("pour.reset_max_abs_diff_m", diff)
     assert diff == 0.0
     sim.close()
+
+
+# ---- per-source colour (liquid contract 1.1.0) -----------------------------------------------------------------------
+JUICE, WATER = [1.0, 0.56, 0.1, 0.93], [0.15, 0.45, 1.0, 0.8]
+
+
+def _two_sources(colours=True, variant="rest") -> dict:
+    """The test package's liquid with a second source, 15 ml of water as a puddle on the counter in camera_2's view
+    (water at the bottom of the bowl is hidden by its rim); contract 1.1.0."""
+    d = T.liquid_block(variant)
+    d["contract"] = "1.1.0"
+    poly = [[0.84, -0.14], [0.92, -0.14], [0.92, -0.06], [0.84, -0.06]]
+    d["sources"].append({"name": "water", "puddle": {"polygon_xy": poly, "volume_ml": 15.0}})
+    if colours:
+        d["sources"][1]["rgba"] = WATER
+    return d
+
+
+def test_source_rgba_config():
+    cfg = C.parse(_two_sources())
+    assert cfg.contract == "1.1.0" and cfg.per_source_colour
+    assert cfg.sources[0].rgba is None and cfg.sources[1].rgba == tuple(WATER)
+    assert cfg.source_rgba() == {"juice": tuple(JUICE), "water": tuple(WATER)}  # juice falls back to material.rgba
+    plain = C.parse(_two_sources(colours=False))
+    assert not plain.per_source_colour and all(s.rgba is None for s in plain.sources)
+    old = C.parse(T.liquid_block("pour"))
+    assert old.contract == "1.0.0" and not old.per_source_colour
+    bad = []
+    d = _two_sources()
+    d["contract"] = "1.0.0"
+    bad.append(d)  # a source rgba needs 1.1.0
+    for v in ([0.1, 0.2, 0.3], [0.1, 0.2, 0.3, 1.5], "blue", [0.1, 0.2, float("nan"), 1]):
+        d = _two_sources()
+        d["sources"][1]["rgba"] = v
+        bad.append(d)
+    d = _two_sources()
+    d["contract"] = "1.2.0"
+    bad.append(d)
+    for d in bad:
+        with pytest.raises(C.LiquidConfigError):
+            C.parse(d)
+
+
+def _surface_spec(cfg):
+    from robouse.backends.household.liquid import surface
+
+    spec = mujoco.MjSpec()
+    spec.worldbody.add_geom(name="floor", type=mujoco.mjtGeom.mjGEOM_PLANE, size=[1, 1, 0.1])
+    if cfg.per_source_colour:
+        for name, rgba in cfg.source_rgba().items():
+            surface.add_to_spec(spec, rgba, source=name)
+    else:
+        surface.add_to_spec(spec, cfg.material.rgba)
+    return spec.compile()
+
+
+def test_source_rgba_compiles_one_material_per_source():
+    from robouse.backends.household.liquid import surface
+
+    def named(m, kind, n):
+        return [mujoco.mj_id2name(m, kind, i) for i in range(n)]
+
+    M = mujoco.mjtObj
+    m = _surface_spec(C.parse(_two_sources()))
+    assert named(m, M.mjOBJ_MATERIAL, m.nmat) == ["liquid/surface/juice", "liquid/surface/water"]
+    assert named(m, M.mjOBJ_MESH, m.nmesh) == ["liquid/surface/juice", "liquid/surface/water"]
+    for src, rgba in (("juice", JUICE), ("water", WATER)):
+        mesh, geom, mat = surface.names(src)
+        g = mujoco.mj_name2id(m, M.mjOBJ_GEOM, geom)
+        assert m.geom_matid[g] == mujoco.mj_name2id(m, M.mjOBJ_MATERIAL, mat)
+        assert m.geom_contype[g] == 0 and m.geom_conaffinity[g] == 0
+        np.testing.assert_allclose(m.mat_rgba[m.geom_matid[g]], rgba, atol=1e-6)
+    # no per-source rgba (1.0.0, or 1.1.0 without one): the single surface of contract 1.0.0, unchanged
+    for d in (T.liquid_block("pour"), _two_sources(colours=False)):
+        m = _surface_spec(C.parse(d))
+        assert named(m, M.mjOBJ_MATERIAL, m.nmat) == ["liquid/surface"]
+        assert named(m, M.mjOBJ_MESH, m.nmesh) == ["liquid/surface"]
+        assert mujoco.mj_name2id(m, M.mjOBJ_GEOM, "liquid/surface") >= 0
+        np.testing.assert_allclose(m.mat_rgba[0], JUICE, atol=1e-6)
+
+
+def _hidden_render(sim, cam, geoms):
+    """camera render with the named geoms made transparent."""
+    r = sim._renderers[(640, 480)]
+    r.update_scene(sim.data, camera=cam)
+    ids = {mujoco.mj_name2id(sim.model, mujoco.mjtObj.mjOBJ_GEOM, g) for g in geoms}
+    for i in range(r.scene.ngeom):
+        g = r.scene.geoms[i]
+        if g.objtype == mujoco.mjtObj.mjOBJ_GEOM and g.objid in ids:
+            g.rgba[3] = 0.0
+    return r.render().copy()
+
+
+def test_two_sources_render_in_their_colours_physics_unchanged(tmp_path):
+    """Juice in the cup, a water puddle on the counter: each source's surface is reconstructed from its own particles and drawn
+    in its own colour, and the particles move bit for bit as without per-source colours."""
+    _sim_or_skip()
+    snaps = {}
+    for colours in (True, False):
+        sim, _ = _make(tmp_path / str(colours), "rest", liquid=_two_sources(colours))
+        ext = _ext(sim)
+        for _ in range(10):
+            _tick(sim)
+        snaps[colours] = ext.fluid.positions().copy()
+        counts = ext.source_counts()
+        assert counts["juice"] == {"cup": 9600} and counts["water"].get("surface", 0) > 0.9 * 960
+        img = sim.render("camera_2", 640, 480)
+        s = sim.extension_summary()["liquid"]
+        if not colours:
+            assert [x[0] for x in ext.surfaces] == [None] and "sources" not in s["surface_mesh"]
+            sim.close()
+            continue
+        assert [x[0] for x in ext.surfaces] == ["juice", "water"]
+        mesh = s["surface_mesh"]["sources"]
+        metric("colour.surface_mesh", json.dumps(mesh, default=float))
+        assert mesh["juice"]["faces"] > 0 and mesh["water"]["faces"] > 0
+        # geometry: each surface encloses its own source's particles only
+        for src, (a, b), r in ext.surfaces:
+            v = sim.model.mesh_vert[r.va : r.va + mesh[src]["verts"]]
+            x = ext.fluid.positions()[a:b]
+            assert np.all(v.min(0) > x.min(0) - 0.01) and np.all(v.max(0) < x.max(0) + 0.01)
+        # render: hiding one source's surface changes pixels towards that source's colour
+        for src, rgba in (("juice", JUICE), ("water", WATER)):
+            bare = _hidden_render(sim, "camera_2", [f"liquid/surface/{src}"])
+            diff = np.abs(img.astype(int) - bare.astype(int)).sum(axis=2) > 30
+            metric(f"colour.camera_2_{src}_pixels", int(diff.sum()))
+            assert diff.sum() > 500  # 1404 juice, 1573 water pixels measured
+            mean = img[diff].astype(float).mean(0)
+            blue_minus_red = mean[2] - mean[0]
+            metric(f"colour.camera_2_{src}_mean_rgb", json.dumps([round(float(c), 1) for c in mean]))
+            # juice reads orange (R - B = 49 measured), water blue (B - R = 181 measured)
+            assert (blue_minus_red if rgba[2] > rgba[0] else -blue_minus_red) > 30
+        if OUT:
+            from PIL import Image
+
+            Path(OUT).mkdir(parents=True, exist_ok=True)
+            Image.fromarray(img).save(Path(OUT) / "colour_camera_2.png")
+        sim.close()
+    assert np.array_equal(snaps[True], snaps[False])

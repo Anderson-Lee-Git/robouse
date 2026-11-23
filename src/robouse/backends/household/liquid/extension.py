@@ -1,8 +1,9 @@
-"""The household physics extension for `liquid` (contract 1.0.0): one-way MuJoCo -> SPH coupling, accounting and the
+"""The household physics extension for `liquid` (contracts 1.0.0 and 1.1.0): one-way MuJoCo -> SPH coupling, accounting and the
 rendered surface, on the generic hooks of extensions.py.
 
 - `prepare(spec, config, root)` validates the block, checks the pinned backend (ABI, sha256) and the initial-state
-  file, and adds the visual-only surface mesh geom to the scene.
+  file, and adds the visual-only surface mesh geom to the scene (one per source when a source gives its own rgba,
+  contract 1.1.0; see surface.py).
 - `__init__(world, config)` (every reset, before reset settling) builds the boundaries from the compiled scene, the
   domain, the initial particles (source fills, puddles or the package's initial state) and the fluid. The native fluid
   is kept for the process and reused through an exact reset when the configuration, boundary meshes, initial poses
@@ -87,7 +88,11 @@ class Extension:
             if x.ndim != 2 or x.shape[1] != 3 or not np.isfinite(x).all():
                 raise ValueError("liquid: initial_state must be a finite (N, 3) array")
             _INITIAL[cfg.initial_state.sha256] = np.asarray(x, float)
-        add_to_spec(spec, cfg.material.rgba)
+        if cfg.per_source_colour:
+            for name, rgba in cfg.source_rgba().items():
+                add_to_spec(spec, rgba, source=name)
+        else:
+            add_to_spec(spec, cfg.material.rgba)
 
     # ---- construction ------------------------------------------------------------------------------------------------
     def __init__(self, world, config):
@@ -224,10 +229,18 @@ class Extension:
                 raise ValueError("liquid: sleep containers needs all liquid inside containers")
             self.sleep = ContainerSleep(self.contact_meshes, self._prev, mat.spacing, owners)
 
-        self.renderer = SurfaceRenderer(model, mat.particle_radius)
-        g = self.renderer.geom
-        data.geom_xpos[g] = 0.0
-        data.geom_xmat[g] = np.eye(3).ravel()
+        # rendered surfaces: [(source name or None, particle index range or None, renderer)]
+        if cfg.per_source_colour:
+            self.surfaces = [
+                (s, self.source_ranges[s], SurfaceRenderer(model, mat.particle_radius, source=s))
+                for s in self.source_ranges
+            ]
+        else:
+            self.surfaces = [(None, None, SurfaceRenderer(model, mat.particle_radius))]
+        self.renderer = self.surfaces[0][2]
+        for _, _, r in self.surfaces:
+            data.geom_xpos[r.geom] = 0.0
+            data.geom_xmat[r.geom] = np.eye(3).ravel()
         self._surface_key = None
         self._uploaded: set = set()
         self.timing = {
@@ -381,7 +394,7 @@ class Extension:
             "settle": self.settle_report,
             "reused_native_fluid": self.reused,
             "timing": dict(self.timing),
-            "surface_mesh": dict(self.renderer.last),
+            "surface_mesh": self._surface_report(),
             "sleep": None
             if self.sleep is None
             else {
@@ -401,20 +414,35 @@ class Extension:
                 out["validity"]["ledger_error"] = "label counts differ from the particle count"
         return out
 
+    def _surface_report(self) -> dict:
+        if self.surfaces[0][0] is None:
+            return dict(self.renderer.last)
+        by = {s: dict(r.last) for s, _, r in self.surfaces}
+        out = {k: sum(d[k] for d in by.values()) for k in ("verts", "faces", "seconds")}
+        out["sources"] = by
+        return out
+
     def before_render(self, world, renderer) -> None:
         f = self.fluid
         f.validate()
         k = self._state_key()[:3]
         if k != self._surface_key:
             c0 = time.perf_counter()
-            self.renderer.update(f.positions()[f.free_mask])
+            x, free = f.positions(), f.free_mask
+            for _, rng, r in self.surfaces:
+                if rng is None:
+                    r.update(x[free])
+                else:
+                    a, b = rng
+                    r.update(x[a:b][free[a:b]])
             self.timing["surface_s"] += time.perf_counter() - c0
             self.timing["surfaces"] += 1
             self._surface_key = k
             self._uploaded = set()
         if id(renderer) not in self._uploaded:
             c0 = time.perf_counter()
-            self.renderer.upload(renderer)
+            for _, _, r in self.surfaces:
+                r.upload(renderer)
             self.timing["upload_s"] += time.perf_counter() - c0
             self._uploaded.add(id(renderer))
 

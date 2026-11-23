@@ -1,6 +1,7 @@
-"""SPH liquid for household scene packages (liquid contract 1.0.0, CPU): DFSPH through a pinned SPlisHSPlasH build,
-one-way coupled to MuJoCo, with particle accounting (containers, work surface, absorbers, per-source identity), a
-validated static domain and a rendered surface. Registered in extensions.py under the episode.json key `liquid`.
+"""SPH liquid for household scene packages (liquid contracts 1.0.0 and 1.1.0, CPU): DFSPH through a pinned
+SPlisHSPlasH build, one-way coupled to MuJoCo, with particle accounting (containers, work surface, absorbers,
+per-source identity), a validated static domain and a rendered surface. Registered in extensions.py under the
+episode.json key `liquid`.
 
 Modules: `config` (the episode.json block, strict), `solver` (backend pin and the validated fluid), `domain` (static
 boxes, continuous contact, validity), `meshes`, `contact` (mesh distance, absorbers, sleep), `queries` (labels,

@@ -1,10 +1,10 @@
-"""The `liquid` block of a household package's episode.json (liquid contract 1.0.0), validated strictly.
+"""The `liquid` block of a household package's episode.json (liquid contracts 1.0.0 and 1.1.0), validated strictly.
 
 Every value is explicit: there are no defaults, so a package states its whole liquid condition (material, solver,
 geometry, sources, absorbers, settling, sleep, threads, backend) and any change to it is visible in the package
 identity. Errors name fields, never paths or task names.
 
-    {"contract": "1.0.0",
+    {"contract": "1.0.0" | "1.1.0",
      "backend": "splishsplash-2.19.0-tree-f32-avx2-v1",       a pin in backends/<id>.json
      "threads": 4,                                              SPlisHSPlasH OpenMP threads (results depend on it)
      "material": {"particle_radius_m": 0.00125, "density_kg_m3": 1000, "viscosity_m2_s": 1e-4,
@@ -20,10 +20,19 @@ identity. Errors name fields, never paths or task names.
      "surface": {"geom": "counter/top", "centre_xy": [x, y], "half_extent_m": 0.22, "film_m": 0.02} | null,
      "sources": [{"name": "juice", "container": "cup", "fill_ml": 150},
                  {"name": "spill", "puddle": {"polygon_xy": [[x, y], ...], "volume_ml": 40}}],
+                (1.1.0 only: a source may add "rgba": [r, g, b, a], see below)
      "absorbers": [{"boundary": "sponge", "capacity_ml": 100, "contact_m": 0.0025}],
      "settle": {"seconds": 0.3, "damping": 0.9},
      "sleep": "none" | "puddle" | "containers",
      "initial_state": null | {"file": "liquid/initial_state.npy", "sha256": "...", "frame": "world"}}
+
+Contract 1.1.0 is 1.0.0 plus an optional per-source colour: `"rgba": [r, g, b, a]` (each in [0, 1]) on any source.
+Physics, accounting and queries are identical. When no source gives an rgba, the liquid renders exactly as under
+1.0.0: one surface mesh `liquid/surface` in `material.rgba`. When at least one does, every source gets its own surface
+mesh, material and geom (`liquid/surface/<source>`), reconstructed from that source's free particles only and drawn
+in its rgba (`material.rgba` for a source without one). Particles keep their source for the whole episode, so a
+mixed liquid is coloured by origin: where two sources mix their two surfaces overlap. A 1.0.0 block refuses a source
+rgba.
 """
 
 from __future__ import annotations
@@ -32,7 +41,8 @@ import math
 import re
 from dataclasses import dataclass
 
-CONTRACT = "1.0.0"
+CONTRACT = "1.1.0"  # the newest liquid contract this backend implements
+CONTRACTS = ("1.0.0", "1.1.0")  # 1.1.0 = 1.0.0 + optional per-source rgba (rendering only)
 TENSION_METHODS = {"none": 0, "becker2007": 1, "akinci2013": 2, "he2014": 3, "jeske2023": 4}
 SLEEP = ("none", "puddle", "containers")
 MAX_THREADS = 64
@@ -41,7 +51,7 @@ _FILE = re.compile(r"liquid/[A-Za-z0-9_.\-]{1,96}\.npy")
 
 
 class LiquidConfigError(ValueError):
-    """The liquid block does not satisfy contract 1.0.0."""
+    """The liquid block does not satisfy its liquid contract."""
 
 
 def _fail(msg: str):
@@ -94,6 +104,13 @@ def _vec(v, n: int, what: str) -> list[float]:
     if not isinstance(v, list) or len(v) != n:
         _fail(f"{what} must be a list of {n} numbers")
     return [_num(x, what) for x in v]
+
+
+def _rgba(v, what: str) -> list[float]:
+    rgba = _vec(v, 4, what)
+    if any(not 0 <= x <= 1 for x in rgba):
+        _fail(f"{what} values must be in [0, 1]")
+    return rgba
 
 
 @dataclass(frozen=True)
@@ -163,6 +180,7 @@ class Source:
     fill_ml: float | None
     polygon_xy: tuple | None
     puddle_ml: float | None
+    rgba: tuple | None = None  # contract 1.1.0: this source's surface colour (None: material.rgba)
 
 
 @dataclass(frozen=True)
@@ -200,6 +218,15 @@ class LiquidConfig:
     def boundary_names(self) -> list[str]:
         return [c.name for c in self.containers] + [b.name for b in self.boundaries]
 
+    @property
+    def per_source_colour(self) -> bool:
+        """True when some source gives its own rgba: each source then renders as its own surface."""
+        return any(s.rgba is not None for s in self.sources)
+
+    def source_rgba(self) -> dict:
+        """{source name: rgba} in source order, a source without its own rgba taking material.rgba."""
+        return {s.name: s.rgba if s.rgba is not None else self.material.rgba for s in self.sources}
+
 
 KEYS = {
     "contract",
@@ -222,8 +249,9 @@ KEYS = {
 def parse(d) -> LiquidConfig:
     """The validated configuration, or LiquidConfigError naming the first problem."""
     d = _obj(d, "the liquid block", KEYS)
-    if d["contract"] != CONTRACT:
-        _fail(f"contract must be {CONTRACT!r} (the only liquid contract this backend implements)")
+    if d["contract"] not in CONTRACTS:
+        _fail(f"contract must be one of {list(CONTRACTS)} (the liquid contracts this backend implements)")
+    contract = d["contract"]
     if not isinstance(d["backend"], str) or not re.fullmatch(r"[a-z0-9][a-z0-9.\-]{0,95}", d["backend"]):
         _fail("backend must be a backend id")
     threads = _int(d["threads"], "threads", 1, MAX_THREADS)
@@ -249,9 +277,7 @@ def parse(d) -> LiquidConfig:
         _fail("material.surface_tension: method none needs coefficient and boundary_adhesion 0")
     if st["method"] != "none" and not (tension or adhesion):
         _fail("material.surface_tension: a method needs a nonzero coefficient or boundary_adhesion")
-    rgba = _vec(m["rgba"], 4, "material.rgba")
-    if any(not 0 <= v <= 1 for v in rgba):
-        _fail("material.rgba values must be in [0, 1]")
+    rgba = _rgba(m["rgba"], "material.rgba")
     material = Material(
         particle_radius=_num(m["particle_radius_m"], "material.particle_radius_m", 0.0005, 0.005),
         density=_num(m["density_kg_m3"], "material.density_kg_m3", 100, 5000),
@@ -345,12 +371,16 @@ def parse(d) -> LiquidConfig:
         _fail("sources must be a nonempty list")
     sources = []
     cnames = {c.name for c in containers}
+    colour = {"rgba"} if contract != "1.0.0" else set()
     for i, s in enumerate(d["sources"]):
         w = f"sources[{i}]"
         if not isinstance(s, dict):
             _fail(f"{w} must be an object")
+        if "rgba" in s and not colour:
+            _fail(f"{w}.rgba needs liquid contract 1.1.0")
+        src_rgba = tuple(_rgba(s["rgba"], f"{w}.rgba")) if "rgba" in s else None
         if "container" in s:
-            s = _obj(s, w, {"name", "container", "fill_ml"})
+            s = _obj(s, w, {"name", "container", "fill_ml"}, colour)
             if s["container"] not in cnames:
                 _fail(f"{w}.container must name one of the containers")
             sources.append(
@@ -360,10 +390,11 @@ def parse(d) -> LiquidConfig:
                     _num(s["fill_ml"], f"{w}.fill_ml", 0, 5000, lo_open=True),
                     None,
                     None,
+                    src_rgba,
                 )
             )
         else:
-            s = _obj(s, w, {"name", "puddle"})
+            s = _obj(s, w, {"name", "puddle"}, colour)
             p = _obj(s["puddle"], f"{w}.puddle", {"polygon_xy", "volume_ml"})
             poly = p["polygon_xy"]
             if not isinstance(poly, list) or len(poly) < 3:
@@ -377,6 +408,7 @@ def parse(d) -> LiquidConfig:
                     None,
                     tuple(tuple(_vec(q, 2, f"{w}.puddle.polygon_xy")) for q in poly),
                     _num(p["volume_ml"], f"{w}.puddle.volume_ml", 0, 5000, lo_open=True),
+                    src_rgba,
                 )
             )
     if len({s.name for s in sources}) != len(sources):
@@ -422,7 +454,7 @@ def parse(d) -> LiquidConfig:
         init = InitialState(it["file"], it["sha256"])
 
     return LiquidConfig(
-        contract=CONTRACT,
+        contract=contract,
         backend=d["backend"],
         threads=threads,
         material=material,
