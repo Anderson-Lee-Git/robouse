@@ -96,7 +96,7 @@ def test_package_validation(tmp_path, pkg):
         (lambda d: d["render"].update(width=320), "render"),
         (lambda d: d.update(format_version="2.0.0"), "format_version"),
         (lambda d: d.update(instruction="Put the cube on the pad."), "unknown fields"),
-        (lambda d: d.update(liquid={"contract": "x", "config": {}}), "liquid"),
+        (lambda d: d.update(not_an_extension={}), "unknown fields"),
         (lambda d: d["robot"]["base"].update(quat=[1, 1, 0, 0]), "unit quaternion"),
         (lambda d: d["cameras"].update(camera_1={}), "unknown fields"),
         (lambda d: d["plugins"].update(goal="other:Thing"), "plugins.goal"),
@@ -372,7 +372,7 @@ def test_eef_pick_and_place(tmp_path, pkg):
     assert r["ok"] and ep.result["success"] is True, ep.result
     assert ep.result["session"]["goal_success"] is True
     metric("control_steps_incl_settle", ep.result["session"]["control_steps"])
-    assert ep.result["session"]["control_steps"] == ep.steps + 25  # the backend tops the session's settle up to 25
+    assert ep.result["session"]["control_steps"] == ep.steps + 25  # the session settles the backend's 25 steps
     b.close()
 
 

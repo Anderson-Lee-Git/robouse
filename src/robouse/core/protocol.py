@@ -24,6 +24,7 @@ FINISH_MESSAGES = {
     "success_reached": "goal reached, episode scored as solved",
     "wall_time_exhausted": "wall-clock budget exhausted",
     "safety_stop": "stopped by the safety layer (the robot holds; a human must check it)",
+    "infrastructure_error": "an internal error occurred; the episode cannot continue",
 }
 
 # the runner's own give-up (the agent timed out or exited without `robo done`) starts with this

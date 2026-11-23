@@ -45,7 +45,6 @@ from .robot import (
     robot_only_model,
 )
 
-EEF_WINDOW = 0.05  # m: a delta hand target (robouse's built-in move_to) stays this close to the hand
 PATH_MAX_JUMP = 0.35  # rad: largest joint change between consecutive 5 mm / 0.05 rad waypoints of a hand path
 BLOCKED_RAD = 0.15  # a planned move stops when a joint trails its reference by more than this (something is in the way)
 SETTLE_RAD, SETTLE_VEL = 2e-3, 2e-2
@@ -130,6 +129,15 @@ class World:
     def step(self) -> int:
         return self._sim.tick
 
+    @property
+    def extensions(self):
+        """The constructed physics extensions by their episode.json key (read-only mapping), e.g. for a goal that
+        reads a liquid's volumes: `world.extensions["liquid"]`. Call only their query methods (a goal must not
+        change the simulation state)."""
+        from types import MappingProxyType
+
+        return MappingProxyType({e.key: e.obj for e in self._sim.extensions})
+
     def id(self, kind: str, ref: str) -> int:
         """MuJoCo id of a scene element by its instance-scoped name ("phone", "pad/charge_zone"); KeyError if none."""
         if kind not in _OBJ:
@@ -160,14 +168,22 @@ def _digest(d) -> str:
     return h.hexdigest()
 
 
+def _plugin_modules() -> dict:
+    return {n: m for n, m in sys.modules.items() if n.split(".")[0] in PLUGIN_MODULES}
+
+
 def _load_plugins(ep: Episode):
-    """Import the package's entry points with plugin/ first on the import path (fresh: no module of another
-    package's plugins survives). Returns (Goal class or None, Behaviour class or None)."""
+    """Import the package's entry points with plugin/ first on the import path. The import is isolated: modules named
+    like the plugins (`goal`, `behaviour`, the vendored `tasks.*` helpers) are taken out of sys.modules for the
+    import, so the package's own copies load fresh, and afterwards sys.modules is restored to the host's, so the
+    host's `tasks.*` (or another package's plugins) are untouched. The loaded classes keep their own modules through
+    their globals; a plugin must import its helpers at module level (an import inside a method would see the host's
+    sys.modules). Returns (Goal class or None, Behaviour class or None)."""
     if not (ep.goal or ep.behaviour):
         return None, None
-    for name in list(sys.modules):
-        if name.split(".")[0] in PLUGIN_MODULES:
-            del sys.modules[name]
+    saved = _plugin_modules()
+    for name in saved:
+        del sys.modules[name]
     path = str(ep.plugin_dir)
     sys.path.insert(0, path)
     old_bytecode, sys.dont_write_bytecode = sys.dont_write_bytecode, True  # never write into the package
@@ -189,6 +205,10 @@ def _load_plugins(ep: Episode):
             sys.path.remove(path)
         except ValueError:
             pass
+        for name in _plugin_modules():  # the package's modules leave; the host's come back
+            del sys.modules[name]
+        sys.modules.update(saved)
+        importlib.invalidate_caches()
 
 
 class HouseholdSim:
@@ -384,6 +404,7 @@ class HouseholdSim:
             if e.before_step:
                 self._plugin(e.before_step, self.world)
         sub = [e for e in ext if e.before_substep or e.after_substep]
+        tracer = self.tracer if count else None
         for _ in range(SUBSTEPS):
             for e in sub:
                 if e.before_substep:
@@ -392,6 +413,8 @@ class HouseholdSim:
             for e in sub:
                 if e.after_substep:
                     self._plugin(e.after_substep, self.world)
+            if tracer is not None:
+                tracer.substep()
         for e in ext:
             if e.after_step:
                 self._plugin(e.after_step, self.world)
@@ -511,17 +534,6 @@ class HouseholdSim:
         self.target_pos, self.target_quat = pos, quat
         self._row_cache = key
 
-    def eef_delta(self, dpos) -> None:
-        """robouse's built-in move_to: the hand target moved by `dpos` (kept within 5 cm of the hand), same rules."""
-        hp, _ = self.hand_pose()
-        pos = self.target_pos + np.asarray(dpos, dtype=np.float64)
-        off = pos - hp
-        if np.linalg.norm(off) > EEF_WINDOW:
-            pos = hp + off * (EEF_WINDOW / np.linalg.norm(off))
-        if np.allclose(pos, self.target_pos, atol=1e-9):
-            return
-        self.eef_row(pos, self.target_quat)
-
     # ---- planned moves (skills) --------------------------------------------------------------------------------------
     def plan_pose(self, pos, quat) -> tuple[tuple | None, dict]:
         """Time-parameterized rows taking the hand along a straight line to the pose, or None and the refusal."""
@@ -560,6 +572,9 @@ class HouseholdSim:
         if r is None:
             r = self._renderers[key] = mujoco.Renderer(self.model, height=height, width=width)
         r.update_scene(self.data, camera=camera)
+        for e in self.extensions:  # e.g. upload a deformed visual mesh into this renderer's context
+            if e.before_render is not None and not self.infra_error:  # visual only: must not change the state
+                self._plugin(e.before_render, self.world, r, read_only=True)
         return r.render().copy()
 
     def close(self) -> None:

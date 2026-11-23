@@ -347,8 +347,11 @@ def agent_env(environ) -> dict[str, str]:
     name marks a credential (`SECRET_NAME`, e.g. GITHUB_TOKEN, HF_TOKEN, AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, or the
     session token of an agent that launched the runner), whatever set it. A harness adds back what its program needs:
     its vendor's login, a gateway key, a policy server's token."""
-    return {k: v for k, v in without_provider_keys(environ).items()
-            if not SECRET_NAME.search(k) and not k.startswith("ROBOUSE_PHYSICS_CONDITION_")}
+    return {
+        k: v
+        for k, v in without_provider_keys(environ).items()
+        if not SECRET_NAME.search(k) and not k.startswith("ROBOUSE_PHYSICS_CONDITION_")
+    }
 
 
 def _wait_agent(agent: subprocess.Popen, timeout: float, stop_file: Path | None) -> tuple[int | None, bool]:
@@ -533,6 +536,7 @@ def run_trial(
     interface: str | None = None,
     reasoning_effort: str | None = None,
     robot_framing: str = "simulated",
+    max_turns: int | None = None,
 ) -> dict:
     if why := harnesses.effort_refusal(harness, reasoning_effort):
         raise ValueError(why)
@@ -553,6 +557,10 @@ def run_trial(
     for sub in ("agent", "episode", "verifier", "artifacts"):
         (tdir / sub).mkdir(parents=True, exist_ok=True)
     timeout = float(timeout or max(task.agent_timeout_s, harnesses.MIN_TIMEOUT_S.get(harness, 0.0)))
+    # the agent turn cap: --max-turns, else the task's agent.max_turns, else the harness's own (None)
+    max_turns = int(max_turns) if max_turns is not None else task.agent_max_turns
+    if max_turns is not None and max_turns < 1:
+        raise ValueError("max_turns must be at least 1")
     ws = _make_workspace(task)
     sock = f"/tmp/robouse-{uuid.uuid4().hex[:10]}.sock"
     # a harness that practises on other episodes first (aspire) gets the scored episode locked until its own last phase
@@ -582,6 +590,7 @@ def run_trial(
         "robot_framing": robot_framing,
         "prior_learnings": prior_learnings,
         "reasoning_effort": reasoning_effort or None,  # None: the harness's default
+        "max_turns": max_turns,  # None: the harness's default; config.max_turns_enforced says whether the agent has it
         "requested": {"harness": requested[0], "model": requested[1]} if requested != (harness, model) else None,
         "image_input": plan["image_input"],
         "image_input_reason": plan["image_input_reason"],
@@ -666,6 +675,8 @@ def run_trial(
         base_env["ROBOUSE_INTERFACE"] = interface
         if reasoning_effort:
             base_env[harnesses.EFFORT_ENV] = reasoning_effort
+        if max_turns is not None and harness not in ("oracle", "noop"):  # those run no model, so take no turns
+            base_env[harnesses.MAX_TURNS_ENV] = str(max_turns)
         base_env[harnesses.ROBOT_FRAMING_ENV] = robot_framing
         launch = harnesses.build(harness, model, task.instruction, ws, task, base_env)
         if launch.stop_file is not None:  # a model gateway: it enforces the spend cap

@@ -30,6 +30,13 @@ SIM_HINT = (
 )
 
 
+def _positive_int(v: str) -> int:
+    n = int(v)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return n
+
+
 def _engine_opts(p: argparse.ArgumentParser) -> None:
     # The BenchFlow engine needs a BenchFlow release with the task-format hook (no PyPI release of BenchFlow has it yet),
     # so these options work but are not listed until that release exists.
@@ -47,7 +54,9 @@ def _engine_opts(p: argparse.ArgumentParser) -> None:
 def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
     p.add_argument("--harness", "--agent", dest="harness", metavar="HARNESS", required=True, help=HARNESS_HELP)
     p.add_argument(
-        "--robot-framing", choices=("simulated", "real"), default="simulated",
+        "--robot-framing",
+        choices=("simulated", "real"),
+        default="simulated",
         help="recorded robot prompt framing (default: simulated)",
     )
     p.add_argument("--model", default="", help="model for the harness (default: the harness's)")
@@ -62,6 +71,14 @@ def _trial_opts(p: argparse.ArgumentParser, many: bool) -> None:
         type=float,
         help="agent wall-clock limit in seconds (default: "
         + ("each task's)" if many else "the task's agent.timeout_sec)"),
+    )
+    p.add_argument(
+        "--max-turns",
+        type=_positive_int,
+        metavar="N",
+        help="agent turn cap passed to the harness, recorded in config.json (default: "
+        + ("each task's" if many else "the task's")
+        + " agent.max_turns, else the harness's own); Claude Code enforces it, Codex has none (recorded as not enforced)",
     )
     p.add_argument("--record-size", metavar="WxH", help=RECORD_SIZE_HELP)
     p.add_argument("--seed", type=_seed, help="override " + ("every task's" if many else "the task's") + " seed")
@@ -162,10 +179,7 @@ def _effort_refusal(a: argparse.Namespace) -> int:
     """0 when the local engine supports the requested reasoning effort and robot framing, else 2."""
     from ..harnesses import effort_refusal, robot_framing_refusal
 
-    if why := (
-        robot_framing_refusal(a.harness, a.robot_framing)
-        or effort_refusal(a.harness, a.reasoning_effort)
-    ):
+    if why := (robot_framing_refusal(a.harness, a.robot_framing) or effort_refusal(a.harness, a.reasoning_effort)):
         print(f"robouse: {why}", file=sys.stderr)
         return 2
     return 0
@@ -293,6 +307,7 @@ def run(a: argparse.Namespace) -> int:
         interface=a.interface,
         reasoning_effort=a.reasoning_effort,
         robot_framing=a.robot_framing,
+        max_turns=a.max_turns,
     )
     print(json.dumps(res, indent=2))
     return 1 if res.get("exception") else 0  # the trial could not run to a result (reward 0 is a result)
@@ -374,6 +389,7 @@ def run_many(a: argparse.Namespace) -> int:
         interface=a.interface,
         reasoning_effort=a.reasoning_effort,
         robot_framing=a.robot_framing,
+        max_turns=a.max_turns,
     )
     failed = sum(1 for r in results if r.get("exception"))
     if failed:
