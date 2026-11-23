@@ -39,7 +39,7 @@ from typing import Any
 
 from ... import config
 from ..aspire import WORKSPACE_FILES as ASPIRE_FILES
-from ..aspire import _requests_before_stage2, _shim
+from ..aspire import _inner_turn_cap, _requests_before_stage2, _shim
 from ..aspire.broker import PracticeBroker, WorkspaceReader, _reply
 
 HERE = Path(__file__).resolve().parent
@@ -359,7 +359,10 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env
         "dev_workers": workers,
         "practice_deadline_s": round(practice_s),
         "effort": _flag(inner.cmd, "--effort"),
-        "agent_max_turns": int(t) if (t := _flag(inner.cmd, "--max-turns")) else None,  # Claude Code's cap
+        # Claude Code's cap, or Codex's (turncap.py, which the runner applies)
+        "agent_max_turns": int(t)
+        if (t := _flag(inner.cmd, "--max-turns"))
+        else (inner.turn_cap.cap if inner.turn_cap is not None else None),
         "prompt": text,
     }
     state: dict[str, Any] = {}
@@ -385,8 +388,10 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env
         stop=stop,
         stop_file=inner.stop_file,
         notes=dict(inner.notes),
+        read_only=list(inner.read_only),
         config=cfg,
         record=lambda trial_ok: state,
+        turn_cap=_inner_turn_cap(inner),
     )
 
 

@@ -73,7 +73,8 @@ ROBOT_FRAMING_HARNESSES = ("claude-code", "codex", "program", "program-codex")
 EFFORT_ENV = "_ROBOUSE_REASONING_EFFORT"  # runner to builder; never in the agent's environment
 # the agent turn cap (`--max-turns`, or the task's agent.max_turns): runner to builder; never in the agent's environment.
 # Claude Code enforces it (`--max-turns`, also as the inner agent of program and aspire, overriding their own caps);
-# Codex has no turn cap, so codex harnesses record it as not enforced
+# Codex has no such option: the runner enforces the same count through Codex's model-request hooks (turncap.py), or,
+# without them, approximately from its --json stream (recorded as not enforced)
 MAX_TURNS_ENV = "_ROBOUSE_MAX_TURNS"
 # what else sets Claude Code's effort or thinking: never inherited from the runner's shell, so a trial's effort is the
 # one its config.json records (Claude Code's default when none is given)
@@ -106,6 +107,9 @@ class Launch:
     # what the harness did, recorded in result.json once it has stopped; it is told whether the trial's verdict is a
     # verified result (signed by the episode server, no integrity failure)
     record: Callable[[bool], dict] | None = None
+    # a Codex agent's turn cap (turncap.CodexTurnCap): the runner watches it while the agent runs, stops Codex at the
+    # cap and records it in result.json (`turn_cap`)
+    turn_cap: Any = None
 
 
 Builder = Callable[[str, str, Path, Any, dict], Launch]  # (model, prompt, workspace, task, env) -> Launch
@@ -255,6 +259,7 @@ def _codex(model, prompt, workspace, task, env, prefix: str = PROMPT_PREFIX) -> 
     import os
 
     prefix = frame_prompt(prefix, env.pop(ROBOT_FRAMING_ENV, "simulated"))
+    turns = env.pop(MAX_TURNS_ENV, "")
     if model and (ref := _via_gateway("codex", model)) is not None:
         home = credentials.clean_codex_home("# model provider: the trial's gateway, set on the command line\n")
         try:
@@ -279,26 +284,65 @@ def _codex(model, prompt, workspace, task, env, prefix: str = PROMPT_PREFIX) -> 
         ]
         # the provider's own Responses endpoint, the request passed through unchanged (reasoning effort and earlier
         # reasoning kept); the gateway moves any image out of a tool result into the next user message
-        launch = _gateway_launch(gw, ref, _codex_cmd(prompt, gw.model, workspace, cfg, prefix), env)
-        launch.stop = _removing(home, launch.stop)
-        return launch
+        try:
+            tc, flags = _codex_turn_cap(turns, home, env)
+        except BaseException:
+            gw.stop()
+            credentials.remove_trial_home(home)
+            raise
+        launch = _gateway_launch(gw, ref, _codex_cmd(prompt, gw.model, workspace, [*cfg, *flags], prefix), env)
+        launch.stop = _removing(home, launch.stop, tc)
+        return _with_turn_cap(launch, tc, home)
     m = (model or "gpt-6-astra").removeprefix("openai/")
     key = os.environ.get("OPENAI_API_KEY", "")
     env["CODEX_HOME"] = home = credentials.clean_codex_home(api_key=key)
     if key:
         env["CODEX_API_KEY"] = key
-    return Launch(_codex_cmd(prompt, m, workspace, prefix=prefix), env, stop=_removing(home), notes={"model": m})
+    try:
+        tc, flags = _codex_turn_cap(turns, home, env)
+    except BaseException:
+        credentials.remove_trial_home(home)
+        raise
+    launch = Launch(
+        _codex_cmd(prompt, m, workspace, flags, prefix=prefix), env, stop=_removing(home, None, tc), notes={"model": m}
+    )
+    return _with_turn_cap(launch, tc, home)
 
 
-def _removing(home: str, stop: Callable[[], None] | None = None) -> Callable[[], None]:
-    """`stop`, then the removal of the trial's own Codex home (`remove_trial_home` leaves a pool home alone)."""
+def _codex_turn_cap(turns: str, home: str, env: dict) -> tuple[Any, list[str]]:
+    """The trial's Codex turn cap (turncap.py), started, and the flags Codex needs for it; (None, []) without a cap."""
+    if not turns:
+        return None, []
+    from . import turncap
+
+    pool = Path(home).parent != credentials.trial_homes()
+    tc = turncap.plan(int(turns), home, env.get("PATH"), pool)
+    tc.start()
+    return tc, [turncap.BYPASS_TRUST] if tc.method == turncap.METHOD_HOOKS else []
+
+
+def _with_turn_cap(launch: Launch, tc: Any, home: str) -> Launch:
+    if tc is not None:
+        launch.turn_cap = tc
+        if tc.sock:  # the agent may read its hooks, never change them
+            launch.read_only.append(Path(home) / "hooks.json")
+    return launch
+
+
+def _removing(home: str, stop: Callable[[], None] | None = None, turn_cap: Any = None) -> Callable[[], None]:
+    """The turn cap's server closed, `stop`, then the removal of the trial's own Codex home (`remove_trial_home`
+    leaves a pool home alone)."""
 
     def run() -> None:
         try:
-            if stop is not None:
-                stop()
+            if turn_cap is not None:
+                turn_cap.close()
         finally:
-            credentials.remove_trial_home(home)
+            try:
+                if stop is not None:
+                    stop()
+            finally:
+                credentials.remove_trial_home(home)
 
     return run
 
@@ -561,9 +605,12 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task, base_env
 
 def check_max_turns(harness: str, launch: Launch, turns: int) -> None:
     """Make sure the launch runs its agent with the trial's turn cap, and record it in config.json (`max_turns`,
-    `max_turns_enforced`). Claude Code agents carry `--max-turns` (the top command, or a driver's `agent_cmd`); a Codex
-    agent has no turn cap, which is recorded as not enforced; anything else that runs Claude Code without it is
-    refused."""
+    `max_turns_method`, `max_turns_enforced`). Claude Code agents carry `--max-turns` (the top command, or a driver's
+    `agent_cmd`); a Codex agent carries the runner's turn cap (`Launch.turn_cap`, turncap.py), enforced through Codex's
+    model-request hooks or, without them, counted from its --json stream (not enforced: approximate, and the request
+    after the cap has been sent); anything else that runs an agent without the cap is refused."""
+    from . import turncap
+
     top = Path(str(launch.cmd[0])).name if launch.cmd else ""
     if top in ("claude", "codex"):
         agent, passed = ("claude-code" if top == "claude" else "codex"), _flag(launch.cmd, "--max-turns")
@@ -572,10 +619,20 @@ def check_max_turns(harness: str, launch: Launch, turns: int) -> None:
     if agent == "claude-code":
         if passed is None or int(passed) != turns:
             raise RuntimeError(f"{harness} did not pass --max-turns {turns} to Claude Code")
-    elif agent != "codex":
+        method = "claude-code --max-turns"
+    elif agent == "codex":
+        tc = launch.turn_cap
+        if tc is None or tc.cap != turns:
+            raise RuntimeError(f"{harness} did not give its Codex agent the turn cap {turns}")
+        if top == "codex" and tc.method == turncap.METHOD_HOOKS and turncap.BYPASS_TRUST not in launch.cmd:
+            raise RuntimeError(f"{harness} did not let Codex run the turn cap's hooks ({turncap.BYPASS_TRUST})")
+        method = tc.method
+        launch.config.update(turncap.describe(tc))
+    else:
         raise RuntimeError(f"{harness} cannot enforce an agent turn cap (--max-turns {turns})")
     launch.config["max_turns"] = turns
-    launch.config["max_turns_enforced"] = agent == "claude-code"
+    launch.config["max_turns_method"] = method
+    launch.config["max_turns_enforced"] = method in ("claude-code --max-turns", turncap.METHOD_HOOKS)
 
 
 def _flag(cmd: list[str], name: str) -> str | None:

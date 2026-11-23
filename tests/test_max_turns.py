@@ -1,6 +1,6 @@
 """The agent turn cap (`--max-turns`, a task's agent.max_turns): passed to every harness explicitly, enforced by
-Claude Code (also as the inner agent of program and aspire), recorded as not enforced for Codex, and never in the
-agent's environment."""
+Claude Code (also as the inner agent of program and aspire), by the runner for Codex (test_codex_turn_cap.py), and never
+in the agent's environment."""
 
 from __future__ import annotations
 
@@ -55,12 +55,11 @@ def test_the_trial_s_cap_overrides_a_driver_s_own(tmp_path, claude_login):
 def test_check_max_turns(monkeypatch, tmp_path):
     ok = Launch(["claude", "-p", "x", "--max-turns", "400"], {})
     harnesses.check_max_turns("claude-code", ok, 400)
-    assert ok.config == {"max_turns": 400, "max_turns_enforced": True}
+    assert ok.config == {"max_turns": 400, "max_turns_method": "claude-code --max-turns", "max_turns_enforced": True}
     with pytest.raises(RuntimeError, match="did not pass --max-turns 400"):
         harnesses.check_max_turns("x", Launch(["claude", "--max-turns", "1000"], {}), 400)
-    codex = Launch(["codex", "exec", "x"], {})
-    harnesses.check_max_turns("codex", codex, 400)
-    assert codex.config == {"max_turns": 400, "max_turns_enforced": False}
+    with pytest.raises(RuntimeError, match="did not give its Codex agent the turn cap"):  # test_codex_turn_cap.py
+        harnesses.check_max_turns("codex", Launch(["codex", "exec", "x"], {}), 400)
     driver = Launch(["python", "driver.py"], {}, config={"agent": "claude-code", "agent_max_turns": 400})
     harnesses.check_max_turns("program", driver, 400)
     assert driver.config["max_turns_enforced"] is True
@@ -68,8 +67,8 @@ def test_check_max_turns(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError):
         harnesses.check_max_turns("program", driver, 400)
     driver = Launch(["python", "driver.py"], {}, config={"agent": "codex", "agent_max_turns": None})
-    harnesses.check_max_turns("program-codex", driver, 400)
-    assert driver.config["max_turns_enforced"] is False
+    with pytest.raises(RuntimeError, match="did not give its Codex agent the turn cap"):
+        harnesses.check_max_turns("program-codex", driver, 400)
     with pytest.raises(RuntimeError, match="cannot enforce"):
         harnesses.check_max_turns("vla", Launch(["python", "policy.py"], {}), 400)
     # a plugin harness that drops the cap is refused by build

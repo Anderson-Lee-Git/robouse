@@ -236,12 +236,18 @@ def _inside(path: str, roots: list[str]) -> bool:
     return any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots)
 
 
-def _read_only(paths: Iterable[str | Path], workspace: str | Path | None, denied: list[str]) -> list[str]:
+def _read_only(
+    paths: Iterable[str | Path], workspace: str | Path | None, denied: list[str], own: list[str] | None = None
+) -> list[str]:
     """A harness's read-only paths (`Launch.read_only`) that exist, without one that holds the workspace (which stays
-    writable) or lies in a denied folder (which stays hidden)."""
+    writable) or lies in a denied folder (which stays hidden) other than inside the agent's own homes (e.g. the turn
+    cap's hooks.json in its Codex home)."""
     ws = _real([workspace]) if workspace else []
+    homes = _real(own or [])
     return [
-        p for p in _real(paths) if os.path.exists(p) and not _inside(p, denied) and not any(_inside(w, [p]) for w in ws)
+        p
+        for p in _real(paths)
+        if os.path.exists(p) and (not _inside(p, denied) or _inside(p, homes)) and not any(_inside(w, [p]) for w in ws)
     ]
 
 
@@ -301,7 +307,9 @@ def sandbox_profile(
     rules += "".join(f'(allow file-read* (subpath "{p}"))' for p in _programs())
     for d in [*_real([workspace] if workspace else []), *_real(own or [])]:
         rules += f'(allow file-read* file-write* (subpath "{d}"))'
-    rules += "".join(f'(deny file-write* (subpath "{p}"))' for p in _read_only(read_only or [], workspace, denied))
+    # the agent's own homes may hold a Unix socket of its harness (the Codex turn cap's hooks talk to the runner there)
+    rules += "".join(f'(allow network-outbound (remote unix-socket (subpath "{h}")))' for h in _real(own or []))
+    rules += "".join(f'(deny file-write* (subpath "{p}"))' for p in _read_only(read_only or [], workspace, denied, own))
     # the folders above a home, program or given-back folder that sits inside a denied one: their metadata (stat), not their
     # contents, so a program can resolve its own path there (Codex canonicalizes CODEX_HOME, inside robouse's cache)
     above = sorted({a for p in [*_programs(), *_real(own or []), *allowed] for a in _ancestors(p)})
@@ -367,7 +375,7 @@ def bwrap_args(
     for h in _real(own or []):
         if os.path.isdir(h) and not h.startswith(str(workspace)):
             args += ["--bind", h, h]
-    for p in _read_only(read_only or [], workspace, _denied(deny)):
+    for p in _read_only(read_only or [], workspace, _denied(deny), own):
         args += ["--ro-bind", p, p]
     return [*args, "--chdir", str(workspace)]
 
