@@ -17,7 +17,9 @@ episode.json: {"format": "household-episode", "format_version": "1.x.y", "scene"
   "plugins": {"path": "plugin", "goal": null | "goal:Goal", "behaviour": null | "behaviour:Behaviour",
               "behaviour_config": {}},
   "trace": {"objects": [...], "fixtures": [...], "room": "room"}, "compute": {"device": "cpu"},
-  "files": {relpath: sha256, ...}}   every other file of the package
+  "files": {relpath: sha256, ...},   every other file of the package
+  <extension key>: {...}}            optional physics extensions (extensions.py), e.g. a liquid; each key must be
+                                     registered there and its module importable
 
 The protocol constants (render, control, budgets other than reset_settle_steps) must equal the backend's own. Nothing
 here is shown to the policy; errors name fields, never paths or task names.
@@ -31,6 +33,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import extensions as X
 from .robot import CONTROL_DT, PHYSICS_DT, RENDER
 
 FORMAT = "household-episode"
@@ -52,7 +55,6 @@ _KEYS = {
     "trace",
     "compute",
     "files",
-    "liquid",
 }
 
 
@@ -83,6 +85,7 @@ class Episode:
     behaviour_config: dict
     trace: dict
     files: dict = field(default_factory=dict)
+    extensions: dict = field(default_factory=dict)  # episode.json key -> that extension's config (extensions.py)
 
     @property
     def scene_xml(self) -> Path:
@@ -162,7 +165,7 @@ def load(root, *, verify_files: bool = True) -> Episode:
         raise PackageError("episode.json is not valid JSON") from None
     if not isinstance(d, dict):
         raise PackageError("episode.json must be an object")
-    if extra := set(d) - _KEYS:
+    if extra := set(d) - _KEYS - set(X.EXTENSIONS):
         raise PackageError(f"episode.json has unknown fields {sorted(extra)}")
     if d.get("format") != FORMAT:
         raise PackageError(f"episode.json format must be {FORMAT!r}")
@@ -170,8 +173,10 @@ def load(root, *, verify_files: bool = True) -> Episode:
     m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", ver) if isinstance(ver, str) else None
     if not m or (int(m[1]), int(m[2])) != SPEC_MAJOR_MINOR:
         raise PackageError(f"format_version must be {SPEC_MAJOR_MINOR[0]}.{SPEC_MAJOR_MINOR[1]}.x")
-    if "liquid" in d:
-        raise PackageError("liquid packages are not supported by this backend version")
+    ext = {k: d[k] for k in X.EXTENSIONS if k in d}
+    for k in ext:
+        if X.load_class(k) is None:
+            raise PackageError(f"{k} packages are not supported by this backend version")
     _const(d.get("scene"), "scene.xml", "scene")
     r = _obj(d, "robot", {"model", "base", "pedestal", "initial_qpos", "initial_gripper_open"})
     _const(r["model"], "fr3_2f85", "robot.model")
@@ -242,6 +247,7 @@ def load(root, *, verify_files: bool = True) -> Episode:
         behaviour_config=dict(pl["behaviour_config"]),
         trace=dict(tr),
         files=dict(files or {}),
+        extensions=ext,
     )
 
 
