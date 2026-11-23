@@ -7,6 +7,8 @@ import mujoco
 import numpy as np
 import pytest
 
+pytest.importorskip('warp', reason='the GPU validity kernels need NVIDIA warp, absent from this environment')
+
 from robouse.backends.robocasa.physics import load_liquid
 
 FP = load_liquid('flex_patches')
