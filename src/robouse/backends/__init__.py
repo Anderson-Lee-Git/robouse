@@ -27,6 +27,7 @@ BACKENDS: dict[str, tuple[str, str]] = {
     "embodied_playground": ("embodied_playground", "EmbodiedPlaygroundBackend"),  # Launcher tasks; simulator worker
     "gpu": ("gpu", "GpuBackend"),  # ManiSkill3, Genesis, MuJoCo Playground, Isaac Lab; remote GPU workers
     "gymrobotics": ("gymrobotics", "GymRoboticsBackend"),
+    "household": ("household", "HouseholdBackend"),  # scene packages with the FR3 + 2F-85 (MuJoCo 4, in process)
     "humanoid": ("humanoid", "HumanoidBackend"),
     "humanoidbench": ("humanoidbench", "HumanoidBenchBackend"),  # simulator worker
     "kitchen": ("kitchen", "KitchenBackend"),  # Gymnasium-Robotics Franka Kitchen

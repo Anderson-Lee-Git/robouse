@@ -1,0 +1,320 @@
+{
+  "about": "Franka Research 3 arm and Robotiq 2F-85 gripper of the household backend, unmodified from MuJoCo Menagerie at a pinned commit. Binaries are not in git: `python -m robouse.backends.household.assets fetch` downloads them (checked file by file against these SHA-256) into $ROBOUSE_HOUSEHOLD_ASSETS or <robouse cache>/household. The backend combines them in memory (robot.py) and never edits a file.",
+  "repository": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "0059d4335f8156206f63a35662313385f7ad6d74",
+  "models": {
+    "franka_fr3": {
+      "upstream": "Franka Robotics franka_description (URDF) via MuJoCo Menagerie franka_fr3",
+      "licence": "Apache-2.0",
+      "licence_file": "licenses/franka_fr3-LICENSE"
+    },
+    "robotiq_2f85": {
+      "upstream": "ROS-Industrial robotiq (URDF) via MuJoCo Menagerie robotiq_2f85",
+      "licence": "BSD-2-Clause",
+      "licence_file": "licenses/robotiq_2f85-LICENSE"
+    }
+  },
+  "cross_check": "The same commit and the same 50 SHA-256 are pinned by Embodied Safety Exam (images/ese/context/menagerie.env, menagerie.sha256).",
+  "files": [
+    {
+      "path": "franka_fr3/LICENSE",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/LICENSE",
+      "bytes": 12927,
+      "sha256": "5e15554a918bf661583d7df7a1014177be4fed561532aaaee852dca06c71821a"
+    },
+    {
+      "path": "franka_fr3/README.md",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/README.md",
+      "bytes": 1767,
+      "sha256": "19c8ad2e78fb0d046bd9db23a64448a81f046d5b4fe0bdd0eeebeec6759fab41"
+    },
+    {
+      "path": "franka_fr3/assets/link0.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link0.stl",
+      "bytes": 10084,
+      "sha256": "dfc6d94330de8ddb005b311bfdba9f3b8e1aa7c256b71592ee7ff32cb9a9a5aa"
+    },
+    {
+      "path": "franka_fr3/assets/link0_0.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link0_0.obj",
+      "bytes": 1444419,
+      "sha256": "c830c25874a8a5736580cfce6f247fd145782d0b050fa424b00dd8194d8b2872"
+    },
+    {
+      "path": "franka_fr3/assets/link0_1.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link0_1.obj",
+      "bytes": 134554,
+      "sha256": "12f0affb9b540574f28ddf579413455a4728a093498457c9408539c31e2efcb8"
+    },
+    {
+      "path": "franka_fr3/assets/link0_2.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link0_2.obj",
+      "bytes": 949120,
+      "sha256": "19a4d2fd6fef4fa09e109349bdaa315a00a00b17c814392902665bd92217f94c"
+    },
+    {
+      "path": "franka_fr3/assets/link0_3.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link0_3.obj",
+      "bytes": 2281227,
+      "sha256": "ed22c0de7adbc10618321715e047d1d9a36acca3260bc9497acd3ebda998e4e0"
+    },
+    {
+      "path": "franka_fr3/assets/link0_4.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link0_4.obj",
+      "bytes": 291361,
+      "sha256": "bc99c6e6b4752daa010ec2ac4ab38457eca0a1b75fcb4a60139b8200e186454d"
+    },
+    {
+      "path": "franka_fr3/assets/link0_5.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link0_5.obj",
+      "bytes": 2729951,
+      "sha256": "dbccb46d8a3bfd602cd110a0bf69036e42661ec89c0074f18dc10dbdd2c0325e"
+    },
+    {
+      "path": "franka_fr3/assets/link0_6.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link0_6.obj",
+      "bytes": 1448529,
+      "sha256": "9205596427463353249ab5acc7c7b4f5eb8be358527cd9e229b656b16f5bd1fe"
+    },
+    {
+      "path": "franka_fr3/assets/link1.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link1.obj",
+      "bytes": 862466,
+      "sha256": "a9e73987b774f3fb76ec640c2f6e172b128736363792f1697a13d7795f745663"
+    },
+    {
+      "path": "franka_fr3/assets/link1.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link1.stl",
+      "bytes": 15084,
+      "sha256": "e41a39a94108fcf56aacff603fc91ec80541f4c1af17b51a0de5617f5566e6d2"
+    },
+    {
+      "path": "franka_fr3/assets/link2.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link2.obj",
+      "bytes": 853861,
+      "sha256": "1818f1eed57552d006a3e9353a670a39c271ac67833274efcee2403db7e4fa92"
+    },
+    {
+      "path": "franka_fr3/assets/link2.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link2.stl",
+      "bytes": 15084,
+      "sha256": "370f7605a0fae3529db169ded50f52f171024aa792d4d773bc84197301f6a039"
+    },
+    {
+      "path": "franka_fr3/assets/link3.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link3.stl",
+      "bytes": 15084,
+      "sha256": "0a8d638b9349c6c0eefc4e888636ac4838c4b27170f18a51699321118af709c1"
+    },
+    {
+      "path": "franka_fr3/assets/link3_0.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link3_0.obj",
+      "bytes": 954393,
+      "sha256": "d15c6360be859d55ed1e0d5b08317c4c26d5b3a2a4743c04faf4cc07080f5c9a"
+    },
+    {
+      "path": "franka_fr3/assets/link3_1.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link3_1.obj",
+      "bytes": 2148256,
+      "sha256": "89c2c02bdb1c5175d42c5181b4dcc0bb282fab1c5a0c2f99183c156ad45c2f6d"
+    },
+    {
+      "path": "franka_fr3/assets/link4.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link4.stl",
+      "bytes": 15084,
+      "sha256": "0180ebb5772ec9840cb049750cffb29a9ddc90311752a16ea34757782ef9e48d"
+    },
+    {
+      "path": "franka_fr3/assets/link4_0.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link4_0.obj",
+      "bytes": 957444,
+      "sha256": "8da93d2b65258890be3dfaa39f3cef5acd3d85e7e4e515eb6eb7e1284c3af795"
+    },
+    {
+      "path": "franka_fr3/assets/link4_1.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link4_1.obj",
+      "bytes": 2145586,
+      "sha256": "0428a185f74edb3a23c81d71adc9269c8b63f73805f9d210960a5d425fee060d"
+    },
+    {
+      "path": "franka_fr3/assets/link5.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link5.stl",
+      "bytes": 15084,
+      "sha256": "dd17e688c7870e722283525879643d53a74c0024d328b0e14b034b54c8b6c31a"
+    },
+    {
+      "path": "franka_fr3/assets/link5_0.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link5_0.obj",
+      "bytes": 1235806,
+      "sha256": "bcc32346b6558d8a1c42594b6988d4f6f68ece2e0a769c28b0242d5b398e1f86"
+    },
+    {
+      "path": "franka_fr3/assets/link5_1.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link5_1.obj",
+      "bytes": 186395,
+      "sha256": "d2ef3af3be96ebb7c3f78cf3cedbdfb36b375db8dc32068c5dca613d9086e5e5"
+    },
+    {
+      "path": "franka_fr3/assets/link5_2.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link5_2.obj",
+      "bytes": 2847962,
+      "sha256": "a897831482eed642e5d441d1a1abf0ede89d37672f8168ce2cd40d620e25daca"
+    },
+    {
+      "path": "franka_fr3/assets/link6.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link6.stl",
+      "bytes": 10084,
+      "sha256": "20b768e99a0e0440b5754dcca108016434e57937cc356acd9c352ccd3cb27f77"
+    },
+    {
+      "path": "franka_fr3/assets/link6_0.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link6_0.obj",
+      "bytes": 544,
+      "sha256": "f2a77f8890b3c24de62c6f23c2c63e59cb95b0e3986741d00ac12ec733156635"
+    },
+    {
+      "path": "franka_fr3/assets/link6_1.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link6_1.obj",
+      "bytes": 15225,
+      "sha256": "4165ccedf27ec576c8fe3ec86702a43cbdacfb2a25328f6762721a92d22ca8fc"
+    },
+    {
+      "path": "franka_fr3/assets/link6_2.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link6_2.obj",
+      "bytes": 2447199,
+      "sha256": "1111395c7a1c4a1c803e35969fb4cdd5a183a21292a0da5f0519f6d684083445"
+    },
+    {
+      "path": "franka_fr3/assets/link6_3.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link6_3.obj",
+      "bytes": 23993,
+      "sha256": "86fc49381273ccc0079b1f7ce5a77ce363e85ef4df5ebcf2b07c1ae6173043e6"
+    },
+    {
+      "path": "franka_fr3/assets/link6_4.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link6_4.obj",
+      "bytes": 1378,
+      "sha256": "ed3f2d2a05b7d7704f4d04f38b99ce59792a8ef79e2f989567a0319a9f029599"
+    },
+    {
+      "path": "franka_fr3/assets/link6_5.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link6_5.obj",
+      "bytes": 345691,
+      "sha256": "435abeff7bded0c6e9af1e3f98857413fd3964a65c138efc9d99703d9dfffbbb"
+    },
+    {
+      "path": "franka_fr3/assets/link6_6.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link6_6.obj",
+      "bytes": 3762367,
+      "sha256": "b76323550be892e32482f5dee5ca0631b080cf6543404495961834de19f89e71"
+    },
+    {
+      "path": "franka_fr3/assets/link6_7.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link6_7.obj",
+      "bytes": 13910,
+      "sha256": "5189566a36197a91792e8704f9dd0097e63a1141c5aca72427fb977d4389c72a"
+    },
+    {
+      "path": "franka_fr3/assets/link7.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link7.stl",
+      "bytes": 10084,
+      "sha256": "92ac6afcf7574c034d3170d8a68e95ac9048ab9d0dd5bbd8311b86e551b9ab1c"
+    },
+    {
+      "path": "franka_fr3/assets/link7_0.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link7_0.obj",
+      "bytes": 887197,
+      "sha256": "bc0953056e78a063c0de7c81f7ba320b74f7957ee5e7da0786e678be64769ab2"
+    },
+    {
+      "path": "franka_fr3/assets/link7_1.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link7_1.obj",
+      "bytes": 933413,
+      "sha256": "bab975d59b724a0fac020d80c4483b77d29b9217485f0aae0b866a1b70b56fad"
+    },
+    {
+      "path": "franka_fr3/assets/link7_2.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link7_2.obj",
+      "bytes": 2409912,
+      "sha256": "7f7b27bab891757731d78c0b717a1da3fc48cebb6db5d3cd37994d768ce9b509"
+    },
+    {
+      "path": "franka_fr3/assets/link7_3.obj",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/assets/link7_3.obj",
+      "bytes": 1310980,
+      "sha256": "3ccfdcf6043602577da37969244a660ebd72bc4bd172b7fbeb542809b62dccff"
+    },
+    {
+      "path": "franka_fr3/fr3.xml",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/franka_fr3/fr3.xml",
+      "bytes": 8843,
+      "sha256": "0d0e502d0c517a33217dac859fa84fbb74c7ab9b2f104c64c70a41dfa77e6d2f"
+    },
+    {
+      "path": "robotiq_2f85/2f85.xml",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/2f85.xml",
+      "bytes": 9540,
+      "sha256": "d48aca5f9151798ffd38111ce4e8b2081f3ec2d4f525161b33643451580010de"
+    },
+    {
+      "path": "robotiq_2f85/LICENSE",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/LICENSE",
+      "bytes": 1297,
+      "sha256": "3d5edd18d1e22a17666e9bb84270171ed5ac90b192d24e0177fd171708ea2316"
+    },
+    {
+      "path": "robotiq_2f85/README.md",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/README.md",
+      "bytes": 1367,
+      "sha256": "a10f34027d417f8f7b9102b74b42976031f0246f3090444728ab322bc4632aaf"
+    },
+    {
+      "path": "robotiq_2f85/assets/base.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/assets/base.stl",
+      "bytes": 1712484,
+      "sha256": "1c7b9f2bd92d705fc4e897c94e905973a3c05f406845e942229433deb7041453"
+    },
+    {
+      "path": "robotiq_2f85/assets/base_mount.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/assets/base_mount.stl",
+      "bytes": 1091784,
+      "sha256": "87971dfdd6e5311b5a723e7b73c4701ebf5c2364df671500f30dfc1c53c8e61a"
+    },
+    {
+      "path": "robotiq_2f85/assets/coupler.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/assets/coupler.stl",
+      "bytes": 89084,
+      "sha256": "d5ee95e62f8415bf5b6e503c831a958f5fc1990bf9b2865329ec38a28932727c"
+    },
+    {
+      "path": "robotiq_2f85/assets/driver.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/assets/driver.stl",
+      "bytes": 67084,
+      "sha256": "bbd6e868b1778bead60d2516c7ede581d7ad4e431744b1828757d6ea5129c112"
+    },
+    {
+      "path": "robotiq_2f85/assets/follower.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/assets/follower.stl",
+      "bytes": 110484,
+      "sha256": "633793332c081641ce200df27a40643cc293b29956e3cb5cb29cb811c33ef1c7"
+    },
+    {
+      "path": "robotiq_2f85/assets/pad.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/assets/pad.stl",
+      "bytes": 15084,
+      "sha256": "4af1fa8d9bb285abecbf5dfc88e74cb30f059a7a074c2030dc35e9ee4316019d"
+    },
+    {
+      "path": "robotiq_2f85/assets/silicone_pad.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/assets/silicone_pad.stl",
+      "bytes": 15084,
+      "sha256": "ca20c0fa61e6d3ce7b04bed25360e048e31dfd88ace04187aa6d9e8f4ca3fd0f"
+    },
+    {
+      "path": "robotiq_2f85/assets/spring_link.stl",
+      "url": "https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/0059d4335f8156206f63a35662313385f7ad6d74/robotiq_2f85/assets/spring_link.stl",
+      "bytes": 84884,
+      "sha256": "4fb74a8a0d76c0e471cf19fd48bc676fd5b19123798e7a39eb6aa56869354283"
+    }
+  ]
+}
