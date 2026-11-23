@@ -82,8 +82,8 @@ def _programs():
 
 class ProgramBroker(PracticeBroker):
     """The practice broker for development runs on the scored scene: the trial's seed is the only practice seed, and
-    nothing the episode server judges goes back to the agent. Adds `POST /submit {source}` and `POST /give_up {reason}`
-(the agent declines: nothing runs on the scored episode, which ends with the reason); the later of the two counts."""
+        nothing the episode server judges goes back to the agent. Adds `POST /submit {source}` and `POST /give_up {reason}`
+    (the agent declines: nothing runs on the scored episode, which ends with the reason); the later of the two counts."""
 
     def __init__(self, *a: Any, **kw: Any):
         super().__init__(*a, **kw)
@@ -184,7 +184,11 @@ class ProgramBroker(PracticeBroker):
         import secrets
 
         parts = [p for p in h.path.split("?")[0].split("/") if p]
-        ours = len(parts) == 2 and secrets.compare_digest(parts[0], self.token) and parts[1] in ("status", "submit", "give_up")
+        ours = (
+            len(parts) == 2
+            and secrets.compare_digest(parts[0], self.token)
+            and parts[1] in ("status", "submit", "give_up")
+        )
         if not ours:
             return super()._handle(h, method)
         if parts[1] == "status" and method == "GET":
@@ -322,7 +326,10 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env
     key_file.write_text(broker.freeze_key)
     key_file.chmod(0o600)
     preamble = (
-        (HERE / "prompt.md").read_text().replace("{{max_runs}}", str(max_runs)).replace("{{minutes}}", str(int(practice_s // 60)))
+        (HERE / "prompt.md")
+        .read_text()
+        .replace("{{max_runs}}", str(max_runs))
+        .replace("{{minutes}}", str(int(practice_s // 60)))
     )
     from .. import ROBOT_FRAMING_ENV, frame_prompt
 
@@ -352,6 +359,7 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env
         "dev_workers": workers,
         "practice_deadline_s": round(practice_s),
         "effort": _flag(inner.cmd, "--effort"),
+        "agent_max_turns": int(t) if (t := _flag(inner.cmd, "--max-turns")) else None,  # Claude Code's cap
         "prompt": text,
     }
     state: dict[str, Any] = {}

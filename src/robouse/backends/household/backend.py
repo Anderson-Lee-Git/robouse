@@ -5,17 +5,26 @@ No RoboCasa, no robosuite: MuJoCo 4 in this process. The task's `robouse:` block
   {"backend": "household", "package": "package", "control": "eef" | "joint" | "text",
    "obs_mode": "vision", "cameras": ["camera_1", "camera_2"], "visible_fields": [...]}
 
-`package` is the compiled package directory, absolute or relative to the task folder (`task_dir`, when the loader
-gives it) or else to the working directory.
+`package` is the compiled package directory, absolute or relative to the task folder (`task_dir`, which robouse's task
+loader adds to every spec: the folder of the task.md). A relative path without `task_dir` is refused.
 
 Action rows are absolute targets, one per 50 Hz control step (protocol 1.0.0, contracts.md "Action rows"):
   eef    [X, Y, Z, ROLL, PITCH, YAW, G]: the pinch point's pose in the world frame, R = Rz(YAW) Ry(PITCH) Rx(ROLL).
          A row inverse kinematics cannot solve safely is refused with the reason (`unreachable`, `branch_flip`,
-         `joint_limit`): nothing moves, no step is used. Skills: move_to, move_to_pose, grip.
+         `joint_limit`): nothing moves, no step is used. Skills: move_to (the pinch point to a position, orientation
+         kept), move_to_pose, grip; each a sequence of the same absolute rows.
   joint  [Q1, ..., Q7, G]: joint targets in rad, clipped to the joint ranges less 0.02 rad (the reply says so).
          Skills: move_joints_to, grip.
   text   no motion: the agent observes and submits its plan as the text of `robo done`.
 G: commanded gripper opening, 1 fully open (85 mm) to 0 closed (the gripper stops on what it holds).
+There are no delta rows: robouse's built-in `move_to` and `grip` requests run through `start_move_to` and
+`grip_action` (session hooks), never through a 4-number row.
+
+Episode: the session settles `settle_steps` (25) after `done`, then asks `success()` (the goal plugin, once). A plugin
+or extension failure ends the episode as `infrastructure_error` (session hook `infrastructure_error`). Every Code /
+EEF / Joint episode writes the researcher-only physical-state trace `state-trace.jsonl.gz` into its run folder
+(state_trace.py; ROBOUSE_STATE_TRACE=0 turns it off). With ROBOUSE_HOUSEHOLD_PYTHON set, the simulation runs in a
+worker process started with that interpreter (worker.py; e.g. a wrapper that runs it on a compute allocation).
 
 Cameras: `camera_1` on the gripper (wrist), `camera_2` fixed in the room; both calibrated (`robo info`).
 
@@ -30,6 +39,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ... import config
 from ...core.embodiment_spec import Camera, Embodiment, Skill, SkillArg
 from ..base import ActionSpec, Backend, G, StepInfo
 from . import package as P
@@ -37,13 +47,30 @@ from .ik import rotvec
 from .robot import CONTROL_DT, PHYSICS, PHYSICS_VERSION, RENDER
 from .sim import PATH_MAX_JUMP, HouseholdSim, quat_to_rpy, rpy_to_quat
 
-LEGACY_STEP_M = 0.01  # robouse's built-in move_to sends [DX, DY, DZ, G] with 1.0 = 1 cm per step
 SKILL_CAP = 3000  # control steps (60 s) one move_to_pose / move_joints_to call may take
 POSE_TOL = (0.005, 0.03)  # move_to_pose: reached within 5 mm and 0.03 rad
 JOINT_TOL = 0.01
 REACH_M = 1.0  # published bounds of an EEF row's position: the base position +- this
 CAMERA_ROLES = {"camera_1": "wrist (moves with the hand)", "camera_2": "fixed in the room"}
 GRIP_DOC = "commanded opening: 1 fully open (85 mm), 0 closed; the gripper closes under a force limit"
+
+
+def resolve_package(spec: dict) -> Path:
+    """The package directory: `package` absolute, or relative to the task folder `task_dir`."""
+    pkg = spec.get("package")
+    if not pkg:
+        raise ValueError("a household task needs `package:` (the compiled scene package directory)")
+    pkg = Path(pkg)
+    if not pkg.is_absolute():
+        if not spec.get("task_dir"):
+            raise ValueError("a relative `package:` needs the task folder (task_dir) to resolve against")
+        pkg = Path(spec["task_dir"]) / pkg
+    return pkg
+
+
+def worker_python() -> str:
+    """ROBOUSE_HOUSEHOLD_PYTHON: the interpreter (or wrapper) of the simulation worker; empty: in this process."""
+    return config.env("ROBOUSE_HOUSEHOLD_PYTHON").strip()
 
 
 class HouseholdBackend(Backend):
@@ -54,15 +81,16 @@ class HouseholdBackend(Backend):
     image_flipped = False
     proprioception = ("hand_pos", "eef_quat", "eef_rpy", "gripper_open", "joint_pos", "robot_base_pos", "robot_forward")
 
+    def __new__(cls, spec: dict | None = None, *a, **kw):
+        if cls is HouseholdBackend and worker_python():  # the simulation runs in a worker process (remote.py)
+            from .remote import RemoteHouseholdBackend
+
+            return RemoteHouseholdBackend(spec)  # not a HouseholdBackend, so Python does not call __init__ again
+        return super().__new__(cls)
+
     def __init__(self, spec: dict):
         self.spec = spec
-        pkg = spec.get("package")
-        if not pkg:
-            raise ValueError("a household task needs `package:` (the compiled scene package directory)")
-        pkg = Path(pkg)
-        if not pkg.is_absolute():
-            pkg = Path(spec.get("task_dir") or ".") / pkg
-        self.ep = P.load(pkg)
+        self.ep = P.load(resolve_package(spec))
         self.control = str(spec.get("control", "eef"))
         if self.control not in ("eef", "joint", "text"):
             raise ValueError(f"control must be eef, joint or text, not {self.control!r}")
@@ -71,13 +99,19 @@ class HouseholdBackend(Backend):
             raise ValueError(f"max_steps must be 1 to {P.MAX_STEPS_CAP}")
         self.camera = str(spec.get("camera", "camera_2"))
         self.render_size = self.ep.render_size
+        self.settle_steps = self.ep.settle_steps
         self.sim = HouseholdSim(self.ep)
         if self.control == "text":  # Text episodes do not run the goal plugin
             self.sim.goal_cls = None
         self._notes: list[dict] = []
         self._summary: dict | None = None
         self._judged: bool | None = None
-        lo, hi = self.sim.lo, self.sim.hi
+        self._run_dir: Path | None = None
+        self.tracer = None
+        self._trace_status: dict | None = None
+        self._init_action_spec(self.sim.lo, self.sim.hi)
+
+    def _init_action_spec(self, lo, hi) -> None:
         if self.control == "joint":
             self.action_spec = ActionSpec(
                 names=[f"Q{i}" for i in range(1, 8)] + ["G"],
@@ -133,8 +167,63 @@ class HouseholdBackend(Backend):
 
     @property
     def _grip(self) -> float:
-        """robouse's built-in move_to sends this G when the agent gives none: the fingers stay as commanded."""
+        """The commanded gripper opening (the fingers stay as commanded when a move gives no G)."""
         return float(self.sim.grip_open_cmd)
+
+    def grip_action(self, value: float) -> dict:
+        """Session hook (`grip`): the row that holds the arm's setpoint and commands the gripper opening (0-1)."""
+        return {"grip": float(np.clip(value, 0.0, 1.0))}
+
+    def start_move_to(self, pos, grip: float | None, max_steps: int, tol: float):
+        """Session hook (`move_to`): the pinch point along a straight line to `pos`, orientation kept, as a sequence of
+        planned absolute rows (the same as move_to_pose with the current target orientation). At most `max_steps`
+        steps: a longer path stops there and holds. Refused before anything moves when IK cannot follow the path."""
+        if self.control != "eef":
+            raise ValueError("move_to is not available for this task; use act")
+        g = None if grip is None else float(np.clip(grip, 0.0, 1.0))
+        return self._run_move_to(np.asarray(pos, dtype=float), g, int(max_steps), float(tol))
+
+    def _run_move_to(self, pos: np.ndarray, grip: float | None, max_steps: int, tol: float):
+        sim = self.sim
+        quat = sim.target_quat.copy()
+        rows, report = sim.plan_pose(pos, quat)
+        if rows is None:
+            return {
+                "reached": False,
+                "refused": report["reason"],
+                "why": report["why"],
+                "note": "nothing moved; no step was used",
+            }
+        ref, vel = rows
+        cut = len(ref) > max_steps
+        n = 0
+        if len(ref) == 0 and grip is not None:
+            yield {"grip": grip}
+            n += 1
+        stop = None
+        for k in range(min(len(ref), max_steps)):
+            yield {"ref": ref[k], "vel": vel[k], "grip": grip if k == 0 else None}
+            n += 1
+            if sim.blocked():
+                stop = "blocked"
+                break
+        if stop is None and not cut:
+            sim.target_pos, sim.target_quat = pos.copy(), quat
+            while n < max_steps and not sim.settled():
+                yield {}
+                n += 1
+                if sim.blocked():
+                    stop = "blocked"
+                    break
+        if stop is not None or cut:
+            sim.hold_here()
+        dist = float(np.linalg.norm(pos - sim.hand_pose()[0]))
+        out = {"reached": dist < tol, "distance": round(dist, 4)}
+        if stop == "blocked":
+            out["stalled"] = "the arm was blocked before reaching the target; it holds where it stopped"
+        elif cut:
+            out["stopped"] = f"max_steps ({max_steps}) reached before the target; the arm holds where it stopped"
+        return out
 
     def skills(self) -> list[str]:
         if self.control == "text":
@@ -202,9 +291,40 @@ class HouseholdBackend(Backend):
         return out
 
     # ---- episode ---------------------------------------------------------------------------------------------------
+    def attach_run_dir(self, run_dir) -> None:
+        """Session hook: the episode's run folder, where the physical-state trace goes."""
+        self._run_dir = Path(run_dir)
+
     def reset(self, seed: int) -> None:
+        self._finish_trace(None)
+        self.sim.tracer = None
         self.sim.reset()
         self._notes, self._summary, self._judged = [], None, None
+        self._trace_status = None
+        if self.control != "text" and self._run_dir is not None and config.flag("ROBOUSE_STATE_TRACE", default=True):
+            from .state_trace import FILENAME, Tracer
+
+            self.tracer = Tracer(self.sim, self._run_dir / FILENAME, self.control)
+            self.tracer.record(self.sim.tick)
+            self.sim.tracer = self.tracer
+
+    def begin_settle(self) -> None:
+        """Session hook: the settle after `done` starts (the trace marks its records)."""
+        if self.tracer is not None:
+            self.tracer.phase = "settle"
+
+    def infrastructure_error(self) -> str | None:
+        """Session hook: why the episode cannot continue (a plugin or extension failed), researcher-only."""
+        return self.sim.infra_error
+
+    def _finish_trace(self, goal) -> None:
+        if self.tracer is not None:
+            try:
+                self.tracer.finish(goal)
+            finally:
+                self._trace_status = self.tracer.status()
+                self.tracer = None
+                self.sim.tracer = None
 
     def mj_model_data(self):
         return self.sim.model, self.sim.data
@@ -227,12 +347,6 @@ class HouseholdBackend(Backend):
         if a.size == 0:  # hold still (the session's settle)
             sim.tick_tracker()
             return StepInfo(success=False)
-        if a.size == 4:  # robouse's built-in move_to / grip: [DX, DY, DZ, G], 1.0 = 1 cm per step
-            if self.control == "eef" and np.any(a[:3] != 0):
-                sim.eef_delta(np.clip(a[:3], -1, 1) * LEGACY_STEP_M)
-            sim.set_grip(np.clip(a[3], 0.0, 1.0))
-            sim.tick_tracker()
-            return StepInfo(success=False)
         if a.size != self.action_spec.dim:
             raise ValueError(f"action must have {self.action_spec.dim} numbers {self.action_spec.names}")
         g = float(a[-1])
@@ -252,19 +366,15 @@ class HouseholdBackend(Backend):
             self._notes.append(n)
 
     def pop_notes(self) -> list[dict]:
-        """What the controller changed in the rows since the last call (clipping), for the reply. Needs a session hook
-        that merges it into the act / skill reply without stopping the request (not in robouse's session yet)."""
+        """Session hook: what the controller changed in the rows since the last call (clipping), for the reply."""
         n, self._notes = self._notes, []
         return n
 
     def success(self) -> bool:
-        """After `done`: top the session's settle up to the protocol's 25 steps, then ask the goal plugin once."""
+        """After `done` and the session's settle (`settle_steps`): the goal plugin's verdict, asked once."""
         if self._judged is None:
-            from ...core import session
-
-            for _ in range(max(0, self.ep.settle_steps - int(getattr(session, "SETTLE_STEPS", 0)))):
-                self.sim.tick_tracker()
             self._judged = bool(self.sim.goal_success())
+            self._finish_trace(self._judged)
         return self._judged
 
     def session_summary(self) -> dict:
@@ -287,6 +397,8 @@ class HouseholdBackend(Backend):
                 "ik_refusals": sim.ik_refusals,
                 "goal": self.ep.goal if self.control != "text" else None,
                 "goal_success": self._judged,
+                **({"extensions": ext} if (ext := sim.extension_summary()) else {}),
+                **({"state_trace": self._trace_status} if self._trace_status else {}),
                 **({"infrastructure_error": sim.infra_error} if sim.infra_error else {}),
             }
         return self._summary
@@ -301,6 +413,9 @@ class HouseholdBackend(Backend):
     def render(self, width: int | None = None, height: int | None = None) -> np.ndarray:
         w, h = (width, height) if width and height else self.render_size
         return self.sim.render(self.camera, int(w), int(h))
+
+    def metrics_point(self) -> np.ndarray:
+        return self.hand_pos()
 
     # ---- skills ----------------------------------------------------------------------------------------------------
     def start_skill(self, name: str, raw: list[str]):
@@ -400,4 +515,9 @@ class HouseholdBackend(Backend):
         return out
 
     def close(self) -> None:
-        self.sim.close()
+        try:
+            self._finish_trace(self._judged)
+        finally:
+            self._summary = None  # recomputed with the trace's final status
+            self.session_summary()
+            self.sim.close()

@@ -318,7 +318,7 @@ def init_campaign(
 
 # ---- the harness ----------------------------------------------------------------------------------------------------
 def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env: dict) -> Any:
-    from .. import Launch
+    from .. import Launch, _flag
 
     agent = AGENTS[harness]
     facts = json.loads(env.get("_ROBOUSE_TRIAL") or "{}")  # read before the agent's builder removes private variables
@@ -502,6 +502,9 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env
     cfg = {
         "upstream": {"repo": ASPIRE_REPO, "commit": ASPIRE_COMMIT},
         "agent": agent,
+        "agent_max_turns": (
+            int(t) if agent_cmd and (t := _flag(agent_cmd, "--max-turns")) else None
+        ),  # Claude Code's cap
         "workflow": wf,
         "family": {"benchmark": b, "suite": s, "task_id": i},
         "stage1": "reused" if reuse is not None else "run",
