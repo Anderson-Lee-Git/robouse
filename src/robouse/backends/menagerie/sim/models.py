@@ -83,7 +83,7 @@ def attach_robots(scene: mujoco.MjSpec, embodiment: str, base_offsets: dict | No
             dx, dy, dyaw = offsets[side]
             robot.body(f"{side}/base_link").pos = [x + dx, REAR_BASE_Y + dy, 0.035]
             robot.body(f"{side}/base_link").quat = list(_yaw(FORWARD_QUAT, dyaw))
-        scene.attach(robot, frame=scene.worldbody.add_frame())
+        scene.attach(robot, prefix="", frame=scene.worldbody.add_frame())
         for side in SIDES:
             names = ("waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate")
             arms[side] = Arm(

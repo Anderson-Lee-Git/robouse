@@ -39,7 +39,7 @@ from typing import Any
 
 from ... import config
 from ..aspire import WORKSPACE_FILES as ASPIRE_FILES
-from ..aspire import _requests_before_stage2, _shim
+from ..aspire import _inner_turn_cap, _requests_before_stage2, _shim
 from ..aspire.broker import PracticeBroker, WorkspaceReader, _reply
 
 HERE = Path(__file__).resolve().parent
@@ -82,8 +82,8 @@ def _programs():
 
 class ProgramBroker(PracticeBroker):
     """The practice broker for development runs on the scored scene: the trial's seed is the only practice seed, and
-    nothing the episode server judges goes back to the agent. Adds `POST /submit {source}` and `POST /give_up {reason}`
-(the agent declines: nothing runs on the scored episode, which ends with the reason); the later of the two counts."""
+        nothing the episode server judges goes back to the agent. Adds `POST /submit {source}` and `POST /give_up {reason}`
+    (the agent declines: nothing runs on the scored episode, which ends with the reason); the later of the two counts."""
 
     def __init__(self, *a: Any, **kw: Any):
         super().__init__(*a, **kw)
@@ -184,7 +184,11 @@ class ProgramBroker(PracticeBroker):
         import secrets
 
         parts = [p for p in h.path.split("?")[0].split("/") if p]
-        ours = len(parts) == 2 and secrets.compare_digest(parts[0], self.token) and parts[1] in ("status", "submit", "give_up")
+        ours = (
+            len(parts) == 2
+            and secrets.compare_digest(parts[0], self.token)
+            and parts[1] in ("status", "submit", "give_up")
+        )
         if not ours:
             return super()._handle(h, method)
         if parts[1] == "status" and method == "GET":
@@ -322,7 +326,10 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env
     key_file.write_text(broker.freeze_key)
     key_file.chmod(0o600)
     preamble = (
-        (HERE / "prompt.md").read_text().replace("{{max_runs}}", str(max_runs)).replace("{{minutes}}", str(int(practice_s // 60)))
+        (HERE / "prompt.md")
+        .read_text()
+        .replace("{{max_runs}}", str(max_runs))
+        .replace("{{minutes}}", str(int(practice_s // 60)))
     )
     from .. import ROBOT_FRAMING_ENV, frame_prompt
 
@@ -352,6 +359,10 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env
         "dev_workers": workers,
         "practice_deadline_s": round(practice_s),
         "effort": _flag(inner.cmd, "--effort"),
+        # Claude Code's cap, or Codex's (turncap.py, which the runner applies)
+        "agent_max_turns": int(t)
+        if (t := _flag(inner.cmd, "--max-turns"))
+        else (inner.turn_cap.cap if inner.turn_cap is not None else None),
         "prompt": text,
     }
     state: dict[str, Any] = {}
@@ -377,8 +388,10 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env
         stop=stop,
         stop_file=inner.stop_file,
         notes=dict(inner.notes),
+        read_only=list(inner.read_only),
         config=cfg,
         record=lambda trial_ok: state,
+        turn_cap=_inner_turn_cap(inner),
     )
 
 

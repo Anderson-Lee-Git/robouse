@@ -124,8 +124,13 @@ def _wait_ready(p: Path, proc: subprocess.Popen, timeout: float = 120, log: Path
             if (
                 log is not None and log.exists()
             ):  # the server's last line usually names the cause (e.g. a missing simulator)
-                lines = [l for l in log.read_text(errors="replace").splitlines() if l.strip()]
+                from ..core.gl import explain
+
+                content = log.read_text(errors="replace")
+                lines = [l for l in content.splitlines() if l.strip()]
                 last = f": {clip(lines[-1], 1000)}" if lines else ""
+                if rendering_error := explain(content):
+                    last = f": {rendering_error}"
             raise RuntimeError(f"episode server exited early ({proc.returncode}){last}")
         time.sleep(0.2)
     raise TimeoutError("episode server did not start")
@@ -337,23 +342,52 @@ def without_provider_keys(environ) -> dict[str, str]:
     return {k: v for k, v in environ.items() if not k.startswith(PROVIDER_KEY_PREFIXES) and k not in names}
 
 
+# Runner and simulator configuration that no harness reads and no agent needs: the sandbox's deny list, simulator
+# workers and their allocation (ROBOUSE_SCENE_* is set by a launcher's worker wrapper), asset and plugin locations,
+# the state-trace switch and the physics condition. Their values name the researcher's folders, task plugins and the
+# simulator's setup, so they stay with the episode server.
+RUNNER_ONLY_PREFIXES = (
+    "ROBOUSE_PHYSICS_CONDITION_",
+    "ROBOUSE_SANDBOX_DENY",
+    "ROBOUSE_SANDBOX_ALLOW",
+    "ROBOUSE_HOUSEHOLD_",
+    "ROBOUSE_SCENE_",
+    "ROBOUSE_ROBOCASA_",
+    "ROBOUSE_LIQUID_",
+    "ROBOUSE_STATE_TRACE",
+    "ROBOUSE_MENAGERIE_ASSETS",
+    "ROBOUSE_CHEMLAB_ASSETS",
+)
+
+
 def agent_env(environ) -> dict[str, str]:
-    """The environment an agent starts from: the runner's, without model provider keys and without any variable whose
+    """The environment an agent starts from: the runner's, without model provider keys, without any variable whose
     name marks a credential (`SECRET_NAME`, e.g. GITHUB_TOKEN, HF_TOKEN, AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, or the
-    session token of an agent that launched the runner), whatever set it. A harness adds back what its program needs:
-    its vendor's login, a gateway key, a policy server's token."""
-    return {k: v for k, v in without_provider_keys(environ).items() if not SECRET_NAME.search(k)}
+    session token of an agent that launched the runner), whatever set it, and without the runner's simulator
+    configuration (`RUNNER_ONLY_PREFIXES`). A harness adds back what its program needs: its vendor's login, a gateway
+    key, a policy server's token."""
+    return {
+        k: v
+        for k, v in without_provider_keys(environ).items()
+        if not SECRET_NAME.search(k) and not k.startswith(RUNNER_ONLY_PREFIXES)
+    }
 
 
-def _wait_agent(agent: subprocess.Popen, timeout: float, stop_file: Path | None) -> tuple[int | None, bool]:
+def _wait_agent(
+    agent: subprocess.Popen, timeout: float, stop_file: Path | None, turn_cap: Any = None
+) -> tuple[int | None, bool]:
     """(return code, timed out). Waits for the agent; stops it at the timeout, or as soon as its model gateway writes
-    `stop_file` (the trial's spend cap is reached)."""
+    `stop_file` (the trial's spend cap is reached), or when its Codex reaches the trial's turn cap (`turn_cap`,
+    harnesses/turncap.py: the whole agent, or only the Codex under a driver, which goes on)."""
     deadline = time.time() + timeout
     while True:
         try:
             return agent.wait(timeout=max(0.0, min(1.0, deadline - time.time()))), False
         except subprocess.TimeoutExpired:
             if stop_file is not None and stop_file.exists():
+                _kill_group(agent)
+                return agent.returncode, False
+            if turn_cap is not None and turn_cap.poll(agent.pid):
                 _kill_group(agent)
                 return agent.returncode, False
             if time.time() >= deadline:
@@ -494,6 +528,24 @@ def _provider_error(stats: object, episode: dict) -> str | None:
     )
 
 
+def _turn_cap_record(tdir: Path, cfg: dict, launch: Any) -> dict | None:
+    """result.json's `turn_cap`, for a trial run with one: {max_turns, method, reached, ...}. A Codex agent's comes from
+    the runner's own count (harnesses/turncap.py); Claude Code's from its own final result event, which says
+    `error_max_turns` when it stopped at --max-turns (the agent loop's iterations: model requests whose answer asked
+    for tools). None without a cap."""
+    from ..harnesses import turncap
+
+    hc = cfg.get("harness_config") or {}
+    if launch is None or cfg.get("max_turns") is None or "max_turns_method" not in hc:
+        return None
+    if launch.turn_cap is not None:
+        return launch.turn_cap.record()
+    if hc["max_turns_method"] != "claude-code --max-turns":
+        return None
+    reached = turncap.claude_cap_reached(_final_result(tdir, "claude-code"))
+    return {"max_turns": cfg["max_turns"], "method": hc["max_turns_method"], "reached": reached}
+
+
 INFRA_OUTCOME = "infrastructure_error"
 
 
@@ -527,6 +579,7 @@ def run_trial(
     interface: str | None = None,
     reasoning_effort: str | None = None,
     robot_framing: str = "simulated",
+    max_turns: int | None = None,
 ) -> dict:
     if why := harnesses.effort_refusal(harness, reasoning_effort):
         raise ValueError(why)
@@ -547,6 +600,10 @@ def run_trial(
     for sub in ("agent", "episode", "verifier", "artifacts"):
         (tdir / sub).mkdir(parents=True, exist_ok=True)
     timeout = float(timeout or max(task.agent_timeout_s, harnesses.MIN_TIMEOUT_S.get(harness, 0.0)))
+    # the agent turn cap: --max-turns, else the task's agent.max_turns, else the harness's own (None)
+    max_turns = int(max_turns) if max_turns is not None else task.agent_max_turns
+    if max_turns is not None and max_turns < 1:
+        raise ValueError("max_turns must be at least 1")
     ws = _make_workspace(task)
     sock = f"/tmp/robouse-{uuid.uuid4().hex[:10]}.sock"
     # a harness that practises on other episodes first (aspire) gets the scored episode locked until its own last phase
@@ -576,6 +633,7 @@ def run_trial(
         "robot_framing": robot_framing,
         "prior_learnings": prior_learnings,
         "reasoning_effort": reasoning_effort or None,  # None: the harness's default
+        "max_turns": max_turns,  # None: the harness's default; config.max_turns_enforced says whether the agent has it
         "requested": {"harness": requested[0], "model": requested[1]} if requested != (harness, model) else None,
         "image_input": plan["image_input"],
         "image_input_reason": plan["image_input_reason"],
@@ -660,6 +718,8 @@ def run_trial(
         base_env["ROBOUSE_INTERFACE"] = interface
         if reasoning_effort:
             base_env[harnesses.EFFORT_ENV] = reasoning_effort
+        if max_turns is not None and harness not in ("oracle", "noop"):  # those run no model, so take no turns
+            base_env[harnesses.MAX_TURNS_ENV] = str(max_turns)
         base_env[harnesses.ROBOT_FRAMING_ENV] = robot_framing
         launch = harnesses.build(harness, model, task.instruction, ws, task, base_env)
         if launch.stop_file is not None:  # a model gateway: it enforces the spend cap
@@ -681,6 +741,8 @@ def run_trial(
         # what the agent was given besides its prompt (the task.md body): the files in its workspace
         cfg["workspace_files"] = _workspace_files(ws)
         (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
+        if launch.turn_cap is not None:  # the Codex turn cap's fallback and backup count model answers here
+            launch.turn_cap.stream = tdir / "agent" / "stdout.jsonl"
         with open(tdir / "agent" / "stdout.jsonl", "w") as out, open(tdir / "agent" / "stderr.txt", "w") as err:
             agent = subprocess.Popen(
                 launch.cmd,
@@ -699,7 +761,8 @@ def run_trial(
                 if INTERRUPTED.is_set():  # started just as another trial was interrupted
                     raise KeyboardInterrupt
                 # stops the agent at the timeout, or when its model gateway reaches the trial's spend cap
-                agent_rc, timed_out = _wait_agent(agent, timeout, launch.stop_file)
+                # and at the turn cap, for a Codex agent (Claude Code stops itself at --max-turns)
+                agent_rc, timed_out = _wait_agent(agent, timeout, launch.stop_file, launch.turn_cap)
             except KeyboardInterrupt:
                 interrupted = True
                 interrupt_all()
@@ -773,7 +836,10 @@ def run_trial(
     elif lock and lock.get("unlocked_after_s") is None and int(episode.get("steps_used") or 0) > 0 and exc is None:
         refused = 1  # steps on an episode its harness never unlocked: not a result either
         exc = "IntegrityError: the scored episode took steps although its harness never unlocked it"
-    if exc is None and not timed_out and not budget_stop:  # a harness stopped at the spend cap did not fail
+    turn_cap = _turn_cap_record(tdir, cfg, launch)
+    capped = bool(turn_cap and turn_cap.get("reached"))
+    # a harness stopped at the spend cap or at its turn cap did not fail
+    if exc is None and not timed_out and not budget_stop and not capped:
         exc = _harness_error(tdir, harness, agent_rc, episode)
     if exc is None and not budget_stop and launch is not None:  # also after a timeout: the harness may retry until then
         exc = _provider_error(launch.helper, episode)
@@ -836,6 +902,8 @@ def run_trial(
         "cost": cost,
         "image_input": plan["image_input"],
         "budget_stop": budget_stop,
+        # the agent turn cap: whether the agent reached it (it then ends as "agent exited without robo done")
+        "turn_cap": turn_cap,
     }
     if launch and isinstance(launch.helper, dict):
         res["proxy_stats"] = launch.helper

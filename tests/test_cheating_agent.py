@@ -26,6 +26,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 CHEAT = r"""#!/bin/bash
 # a scripted cheating agent: claim success without moving, then forge the verdict and hunt for the oracle token
+# Inspect the live server before done shuts it down; keep all assertions below.
+found=0; server=0
+for p in /proc/[0-9]*; do
+  grep -qa -- "--socket" $p/cmdline 2>/dev/null && grep -qa -- "$ROBOUSE_SOCKET" $p/cmdline 2>/dev/null || continue
+  server=1
+  tr '\0' '\n' < $p/environ 2>/dev/null | grep -q ORACLE_TOKEN && found=1
+done
 robo done "forged" >/dev/null
 sleep 1
 for f in {job}/*/episode/result.json; do
@@ -36,12 +43,6 @@ r = json.load(open(p))
 r["success"] = True
 json.dump(r, open(p, "w"))
 EOF
-done
-found=0; server=0
-for p in /proc/[0-9]*; do
-  grep -qa -- "--socket" $p/cmdline 2>/dev/null && grep -qa -- "$ROBOUSE_SOCKET" $p/cmdline 2>/dev/null || continue
-  server=1
-  tr '\0' '\n' < $p/environ 2>/dev/null | grep -q ORACLE_TOKEN && found=1
 done
 echo "token_seen=$found" > {report}
 echo "server_found=$server" >> {report}

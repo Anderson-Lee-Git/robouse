@@ -16,16 +16,23 @@ Since robot base 2.0.0 (scenario.py ROBOT_BASE_VERSION) they are locked there; t
          of `robo done` (kept in the result as `agent_text`).
 GRIP: 0 keeps the fingers, > 0 closes, -f opens to fraction f (-1 fully open). One step = 50 ms (20 Hz).
 
-Cameras: `camera_1` is the wrist camera (robot0_eye_in_hand); `camera_2` is fixed in the kitchen, posed at reset
+Cameras: `camera_1` is the wrist camera (robot0_eye_in_hand); `camera_2` is fixed in the room (the scenario's optional
+`room`, default kitchen), posed at reset
 behind and beside the parked robot, looking at its work area.
 
 Monitors are evaluated by the worker after every step and reach the result only as `safety_events`; they are never part
 of an observation. A monitor that could not be evaluated is reported as an error, never as "did not happen".
+
+Physical-state trace: an episode with motion (eef, joint) writes `state-trace.jsonl.gz` into its run folder
+(state_trace.py: object poses, fixture joints and power, grasps, contacts, liquid counts, after every control). It is
+researcher-only evidence: no reply or observation carries it, and ROBOUSE_STATE_TRACE=0 turns it off (practice and
+development episodes, whose files a broker may serve). A trace that fails is reported in the session summary.
 """
 
 from __future__ import annotations
 
 import json
+import os
 
 import numpy as np
 
@@ -35,6 +42,7 @@ from ...workers.client import StdioWorker
 from ..base import ActionSpec, Backend, G, StepInfo, arm_layout
 from ..libero.backend import mat2rpy, quat2mat, rot_error, rpy2mat
 from .backend import WORKER
+from .state_trace import FILENAME as STATE_TRACE_FILE
 
 CAMERAS = {"camera_1": "robot0_eye_in_hand", "camera_2": "camera_2_external"}
 STEP_M, ROT_STEP, JOINT_STEP = 0.02, 0.1, 0.2  # as worker.py
@@ -48,6 +56,9 @@ def check_spec(spec: dict) -> None:
 
     S.load_plugins()  # scene-specific predicates, as in the worker
     S.load_liquid("compute").requirement(spec)
+    from .contact_pairs import validate as validate_contact_pairs
+
+    validate_contact_pairs(spec)
     for k in ("id", "kitchen", "instruction", "robot_anchor", "fixtures", "objects"):
         if k not in spec:
             raise ValueError(f"scenario spec has no {k!r}")
@@ -79,6 +90,22 @@ def check_spec(spec: dict) -> None:
         fr = o.get("friction")
         if fr is not None and not (isinstance(fr, list) and len(fr) == 3 and all(float(v) >= 0 for v in fr)):
             raise ValueError(f"object {o['name']}: friction must be [sliding, torsional, rolling] >= 0")
+        cd = o.get("condim")
+        if cd is not None and (type(cd) is not int or cd not in (1, 3, 4, 6)):
+            raise ValueError(f"object {o['name']}: condim must be 1, 3, 4 or 6")
+        si = o.get("solimp")
+        if si is not None and not (
+            isinstance(si, list)
+            and len(si) == 5
+            and 0 < float(si[0]) <= float(si[1]) < 1
+            and float(si[2]) > 0
+            and 0 < float(si[3]) < 1
+            and float(si[4]) >= 1
+        ):
+            raise ValueError(
+                f"object {o['name']}: solimp must be [dmin, dmax, width, midpoint, power] with "
+                "0 < dmin <= dmax < 1, width > 0, 0 < midpoint < 1, power >= 1"
+            )
         a = o.get("attach")
         if a is not None:
             if not isinstance(a, dict) or a.get("to") not in objects or float(a.get("max_n", 0)) <= 0:
@@ -103,12 +130,14 @@ def check_spec(spec: dict) -> None:
     for m in spec.get("monitors", []):
         if m.get("when", "step") not in ("step", "end"):
             raise ValueError("monitor when must be step or end")
-        if "hold_steps" in m and not (m.get("when", "step") == "step" and isinstance(m["hold_steps"], int)
-                                      and m["hold_steps"] >= 1):
+        if "hold_steps" in m and not (
+            m.get("when", "step") == "step" and isinstance(m["hold_steps"], int) and m["hold_steps"] >= 1
+        ):
             raise ValueError(f"monitor {m['id']}: hold_steps must be a positive integer on a step monitor")
         S.check_predicate(m["pred"], objects, fixtures, set(seen))
         if "reset_credit_v1" in m:
             from .rinse import validate_reset_credit
+
             validate_reset_credit(m)
             S.check_predicate(m["reset_credit_v1"]["pred"], objects, fixtures, set(seen))
         if m.get("when", "step") == "step":
@@ -123,6 +152,12 @@ class RobocasaScenarioBackend(Backend):
 
     def __init__(self, spec: dict):
         self.spec = spec
+        self.condition_requirement = spec.get("physics_condition")
+        self.condition = None
+        if self.condition_requirement is not None:
+            from .physics_condition import requirement
+
+            requirement(self.condition_requirement)
         sc = spec.get("scenario")
         if isinstance(sc, str):
             sc = json.loads(sc)
@@ -161,13 +196,17 @@ class RobocasaScenarioBackend(Backend):
             config.sim_python("robocasa", "robocasa"),
             WORKER,
             setup=config.SUITES_DOCS,
-            env={"PYTHONHASHSEED": "0",
-                 **({"OMP_NUM_THREADS": str(sc["compute"]["threads"])} if sc.get("compute") else {})},
+            env={
+                "PYTHONHASHSEED": "0",
+                **({"OMP_NUM_THREADS": str(sc["compute"]["threads"])} if sc.get("compute") else {}),
+            },
         )
         self._state: dict | None = None
         self._last: dict = {}
         self._success = False
         self.meta: dict = {}
+        self._run_dir = None  # where the physical-state trace goes (Episode.attach_run_dir)
+        self.trace: dict | None = None  # trace_start's reply
 
     def _call(self, cmd: str, **kw):
         return self.worker.call(cmd, **kw)
@@ -226,7 +265,10 @@ class RobocasaScenarioBackend(Backend):
         return out
 
     def info_extra(self) -> dict:
-        out: dict = {"control": self.control, "camera_roles": {"camera_1": "wrist", "camera_2": "fixed in the kitchen"}}
+        out: dict = {
+            "control": self.control,
+            "camera_roles": {"camera_1": "wrist", "camera_2": f"fixed in the {self.scenario.get('room', 'kitchen')}"},
+        }
         if self.control == "text":
             out["motion"] = "none: observe the scene, then submit the plan as the text of `robo done`"
         elif self.control == "joint":
@@ -237,6 +279,30 @@ class RobocasaScenarioBackend(Backend):
         return out
 
     # ---- episode ---------------------------------------------------------------------------------------------------
+    def attach_run_dir(self, run_dir) -> None:
+        """The episode's run folder (called before reset): the physical-state trace is written there."""
+        from pathlib import Path
+
+        self._run_dir = Path(run_dir)
+
+    def _start_trace(self) -> None:
+        self.trace = None
+        if self.control == "text" or self._run_dir is None or not config.flag("ROBOUSE_STATE_TRACE", default=True):
+            return
+        try:
+            self.trace = self._call("trace_start", path=str(self._run_dir.resolve() / STATE_TRACE_FILE))
+        except Exception as e:  # noqa: BLE001 - tracing never stops an episode; the summary says it failed
+            self.trace = {"ok": False, "error": f"{type(e).__name__}: {e}"[:300]}
+
+    def begin_settle(self) -> None:
+        """The still steps after `robo done` begin (session.finish): the trace labels them `settle`. The held action
+        is unchanged."""
+        if self.trace and self.trace.get("ok"):
+            try:
+                self._call("trace_phase", phase="settle")
+            except Exception:  # noqa: BLE001
+                pass
+
     def reset(self, seed: int) -> None:
         sc = self.scenario
         self._summary = None
@@ -252,6 +318,30 @@ class RobocasaScenarioBackend(Backend):
         self._joint_limits = self._call("joint_limits")
         self._state, self._last = None, {}
         self._success = False
+        if self.condition_requirement is not None:
+            from pathlib import Path
+
+            from .physics_condition import FILENAME, record_or_check, require_equal
+
+            actual = self._call(
+                "physics_condition",
+                requirement=self.condition_requirement,
+                render_size=list(self.render_size),
+                reset={"seed": seed, "settle_steps": self.settle_steps},
+            )
+            if self.condition is not None:
+                require_equal(self.condition, actual)
+            # The configured group receipt is shared by development and final resets.
+            # It stays outside any policy workspace or broker-served directory.
+            group = os.environ.get("ROBOUSE_PHYSICS_CONDITION_FILE")
+            if group:
+                record_or_check(
+                    Path(group), actual, must_exist=os.environ.get("ROBOUSE_PHYSICS_CONDITION_RESUME") == "1"
+                )
+            if self._run_dir is not None:
+                record_or_check(self._run_dir / FILENAME, actual)
+            self.condition = actual
+        self._start_trace()
 
     def step(self, action) -> StepInfo:
         if self.control == "text":
@@ -283,8 +373,11 @@ class RobocasaScenarioBackend(Backend):
         try:
             m = self._call("monitor_events")
         except Exception as e:  # noqa: BLE001
-            return {"scenario": self.scenario.get("id"), "monitor_error": f"{type(e).__name__}: {e}"[:300],
-                    **({"compute": dict(self.scenario["compute"])} if self.scenario.get("compute") else {})}
+            return {
+                "scenario": self.scenario.get("id"),
+                "monitor_error": f"{type(e).__name__}: {e}"[:300],
+                **({"compute": dict(self.scenario["compute"])} if self.scenario.get("compute") else {}),
+            }
         self._summary = {
             "scenario": self.scenario.get("id"),
             "control": self.control,
@@ -295,6 +388,7 @@ class RobocasaScenarioBackend(Backend):
             "settle_motion": self.meta.get("settle_motion"),
             "robot_base": m.get("robot_base") or self.meta.get("robot_base"),  # how the base was held, and its drift
             **({"compute": dict(self.scenario["compute"])} if self.scenario.get("compute") else {}),
+            **({"state_trace_error": t["error"]} if (t := getattr(self, "trace", None)) and not t.get("ok") else {}),
         }
         return self._summary
 
@@ -356,7 +450,9 @@ class RobocasaScenarioBackend(Backend):
             return self._move_joints(target, float(np.clip(vals[7], -1, 1)) if len(vals) == 8 else 0.0)
         if self.control == "eef" and name in ("move_to_pose", "move-to-pose"):
             if len(vals) not in (6, 7):
-                raise ValueError("move_to_pose X Y Z ROLL PITCH YAW [GRIP]: a position in m and world-frame angles in rad")
+                raise ValueError(
+                    "move_to_pose X Y Z ROLL PITCH YAW [GRIP]: a position in m and world-frame angles in rad"
+                )
             grip = float(np.clip(vals[6], -1, 1)) if len(vals) == 7 else 0.0
             return self._move_pose(np.asarray(vals[:3]), rpy2mat(*vals[3:6]), grip)
         raise ValueError(f"unknown skill {name!r}; skills: {', '.join(self.skills())}")
@@ -409,9 +505,16 @@ class RobocasaScenarioBackend(Backend):
             "eef_rpy": [round(float(a), 4) for a in mat2rpy(self._eef_R())],
         }
         if stalled:
-            out["stalled"] = "the hand stopped moving before reaching the pose (out of reach, a joint limit, or blocked)"
+            out["stalled"] = (
+                "the hand stopped moving before reaching the pose (out of reach, a joint limit, or blocked)"
+            )
         return out
 
     def close(self) -> None:
         self._closed = True
+        if getattr(self, "trace", None) and self.trace.get("ok"):
+            try:
+                self._call("trace_finish")  # the final state; the worker's close would write it too
+            except Exception:  # noqa: BLE001 - a dead worker leaves an incomplete trace, which readers flag
+                pass
         self.worker.close()

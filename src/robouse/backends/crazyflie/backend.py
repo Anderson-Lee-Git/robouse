@@ -121,7 +121,7 @@ def _build(n: int):
     del tex
     w = s.worldbody
     BOX, PLANE, CYL = mujoco.mjtGeom.mjGEOM_BOX, mujoco.mjtGeom.mjGEOM_PLANE, mujoco.mjtGeom.mjGEOM_CYLINDER
-    w.add_light(name="top", pos=[0, 0, 6], dir=[0, 0, -1], directional=True, diffuse=[0.6, 0.6, 0.6], castshadow=False)
+    w.add_light(name="top", pos=[0, 0, 6], dir=[0, 0, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL, diffuse=[0.6, 0.6, 0.6], castshadow=False)
     w.add_geom(name="floor", type=PLANE, size=[4, 3, 0.1], material="floor")
     x0, x1 = ARENA["x"]
     y0, y1 = ARENA["y"]

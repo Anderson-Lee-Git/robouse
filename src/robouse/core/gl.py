@@ -26,6 +26,7 @@ _PROBE = "import mujoco; m = mujoco.MjModel.from_xml_string('<mujoco/>'); r = mu
 _SIGNS = (
     "OpenGL platform library has not been loaded",
     "mjr_makeContext",
+    "gladLoadGL error",
     "_mjr_context",
     "Could not create GL context",
     "GLFWError",

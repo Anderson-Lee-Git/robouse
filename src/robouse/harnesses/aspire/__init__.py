@@ -318,7 +318,7 @@ def init_campaign(
 
 # ---- the harness ----------------------------------------------------------------------------------------------------
 def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env: dict) -> Any:
-    from .. import Launch
+    from .. import Launch, _flag
 
     agent = AGENTS[harness]
     facts = json.loads(env.get("_ROBOUSE_TRIAL") or "{}")  # read before the agent's builder removes private variables
@@ -502,6 +502,10 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env
     cfg = {
         "upstream": {"repo": ASPIRE_REPO, "commit": ASPIRE_COMMIT},
         "agent": agent,
+        "agent_max_turns": (
+            int(t) if agent_cmd and (t := _flag(agent_cmd, "--max-turns")) else None
+        )  # Claude Code's cap
+        or (inner.turn_cap.cap if inner is not None and inner.turn_cap is not None else None),  # Codex's (turncap.py)
         "workflow": wf,
         "family": {"benchmark": b, "suite": s, "task_id": i},
         "stage1": "reused" if reuse is not None else "run",
@@ -571,9 +575,19 @@ def build(harness: str, model: str, prompt: str, workspace: Path, task: Any, env
         stop_file=inner.stop_file if inner is not None else None,
         notes=notes,
         deny=[lib.path] if lib.path is not None else [],
+        read_only=list(inner.read_only) if inner is not None else [],
         config=cfg,
         record=record,
+        turn_cap=_inner_turn_cap(inner),
     )
+
+
+def _inner_turn_cap(inner: Any) -> Any:
+    """The coding agent's Codex turn cap, stopped as the driver's agent (its own process group), not the driver."""
+    tc = inner.turn_cap if inner is not None else None
+    if tc is not None:
+        tc.inner = True
+    return tc
 
 
 def agent_launch(agent: str, model: str, prompt: str, workspace: Path, task: Any, env: dict) -> Any:

@@ -4,8 +4,9 @@ Runs inside the RoboCasa virtualenv (imported by worker.py; only numpy, robosuit
 kitchen (layout, style; or, with `blueprint`, a layout of its own in RoboCasa's layout-YAML structure as a dict), the
 fixtures it refers to (by RoboCasa fixture type, optionally near another fixture; or by `name`, one fixture of the
 layout), the objects (an installed model or a category, with RoboCasa's own placement dict relative to a fixture, or {"object": NAME}
-to start inside an object listed before it; optional `tint` [r, g, b, a] recolours its materials), the fixtures' initial states, the instruction, a goal predicate and
-monitor predicates. The robot is parked facing the `robot_anchor` fixture; `robot_shift` {"toward": FIXTURE, "m": M}
+to start inside an object listed before it; optional `tint` [r, g, b, a] recolours its materials, `friction`
+[sliding, torsional, rolling] and `solimp` [dmin, dmax, width, midpoint, power] replace RoboCasa's contact values),
+the fixtures' initial states, the instruction, a goal predicate and monitor predicates. The robot is parked facing the `robot_anchor` fixture; `robot_shift` {"toward": FIXTURE, "m": M}
 parks it M metres to the side of that fixture's centre, toward another (a stove's near burners and the counter beside
 it both in reach). RoboCasa then moves the base by a random offset of up to 0.15 m along the fixture's front and
 0.05 m toward it; `robot_spawn_deviation_m` [X, Y] sets those bounds (e.g. [0, 0] for a scene whose objects are
@@ -101,10 +102,109 @@ def _copy_blueprints() -> None:
         return
 
     def __init__(self, layout_id, *args, **kwargs):
-        init(self, copy.deepcopy(layout_id) if isinstance(layout_id, dict) else layout_id, *args, **kwargs)
+        blueprint = copy.deepcopy(layout_id) if isinstance(layout_id, dict) else layout_id
+
+        # Custom fixture XML v1: resolve only the arena's private copy. Kitchen
+        # metadata keeps the portable ID, including reset/replay layout_id.
+        def resolve(value):
+            if isinstance(value, dict):
+                if "authored_drawer_v1" in value:
+                    if value.get("type") != "drawer":
+                        raise ValueError("authored_drawer_v1 requires fixture type drawer")
+                    if value["authored_drawer_v1"] != "1.0.0":
+                        raise ValueError("authored_drawer_v1 requires version 1.0.0")
+                    _authored_drawers_v1()
+                xml = value.get("xml")
+                if "type" in value and isinstance(xml, str) and xml.startswith("custom/"):
+                    value["xml"] = model_path(xml)
+                for child in value.values():
+                    resolve(child)
+            elif isinstance(value, list):
+                for child in value:
+                    resolve(child)
+
+        resolve(blueprint)
+        init(self, blueprint, *args, **kwargs)
 
     __init__.copies_blueprints = True
     KA.KitchenArena.__init__ = __init__
+
+
+def _authored_drawers_v1():
+    """Opt-in immutable drawer XML; stock constructors and state are unchanged.
+
+    The XML owns geometry, mass, slide and regions. Style parameters are ignored
+    only for an authored drawer. Resizing is rejected: it would change mechanics.
+    """
+    from robocasa.models.fixtures.cabinets import Drawer
+    from robocasa.models.fixtures.fixture import Fixture
+
+    original = Drawer.__init__
+    if getattr(original, "authored_drawer_v1", False):
+        return
+    old_get, old_set = Drawer.get_door_state, Drawer.set_door_state
+
+    def init(self, *args, authored_drawer_v1=None, **kwargs):
+        if authored_drawer_v1 is None:
+            return original(self, *args, **kwargs)
+        if authored_drawer_v1 != "1.0.0" or args:
+            raise ValueError("authored_drawer_v1 requires version 1.0.0 and keyword arguments")
+        xml = kwargs.pop("xml", None)
+        if not isinstance(xml, str):
+            raise ValueError("authored drawer requires XML")
+        size = kwargs.pop("size", None)
+        for key in (
+            "texture",
+            "thickness",
+            "door_gap",
+            "handle_type",
+            "handle_config",
+            "panel_type",
+            "panel_config",
+            "open_top",
+            "num_levels",
+            "is_corner_cab",
+        ):
+            kwargs.pop(key, None)
+        if kwargs.get("scale", 1) != 1:
+            raise ValueError("authored drawer scaling is not supported")
+        self.num_levels = 0
+        self.cabinet_type = "drawer"
+        Fixture.__init__(self, xml=xml, **kwargs)
+        if size is not None and not np.allclose(size, self.size, atol=1e-9, rtol=0):
+            raise ValueError("authored drawer size must match its immutable XML")
+        joint = self.worldbody.find(f".//joint[@name='{self.name}_slidejoint']")
+        if joint is None or joint.get("type") != "slide" or joint.get("axis") != "0 1 0":
+            raise ValueError("authored drawer requires slidejoint along +Y")
+        limits = np.fromstring(joint.get("range", ""), sep=" ")
+        if len(limits) != 2 or not np.isfinite(limits).all() or limits[0] >= 0 or limits[1] != 0:
+            raise ValueError("authored drawer range must be [-travel, 0]")
+        self.authored_drawer_travel_v1 = float(-limits[0])
+
+    def get_state(self, env):
+        travel = getattr(self, "authored_drawer_travel_v1", None)
+        if travel is None:
+            return old_get(self, env)
+        q = env.sim.data.get_joint_qpos(f"{self.name}_slidejoint")
+        return {"door": float(np.clip(-q / travel, 0, 1))}
+
+    def set_state(self, min, max, env):
+        travel = getattr(self, "authored_drawer_travel_v1", None)
+        if travel is None:
+            return old_set(self, min, max, env)
+        if not 0 <= min <= max <= 1:
+            raise ValueError("door state must satisfy 0 <= min <= max <= 1")
+        q = -travel * env.rng.uniform(min, max)
+        joint_name = f"{self.name}_slidejoint"
+        env.sim.data.set_joint_qpos(joint_name, q)
+        # Initialize dependent carriage stages consistently before ordinary settling.
+        for eq in getattr(self, "equality", ()):
+            if eq.tag == "joint" and eq.get("joint2") == joint_name:
+                coeff = np.fromstring(eq.get("polycoef", "0 1 0 0 0"), sep=" ")
+                env.sim.data.set_joint_qpos(eq.get("joint1"), np.polynomial.polynomial.polyval(q, coeff))
+
+    init.authored_drawer_v1 = True
+    Drawer.__init__, Drawer.get_door_state, Drawer.set_door_state = init, get_state, set_state
 
 
 def _shift_robots() -> None:
@@ -130,8 +230,9 @@ def _shift_robots() -> None:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value) or value < 0:
                 raise ValueError("robot_shift.back_m must be finite nonnegative metres")
             back = -float(value)
-        return EU.compute_robot_base_placement_pose(env, ref_fixture=anchor,
-                                                    offset=(float(np.sign(dx)) * float(shift["m"]), back))
+        return EU.compute_robot_base_placement_pose(
+            env, ref_fixture=anchor, offset=(float(np.sign(dx)) * float(shift["m"]), back)
+        )
 
     init_robot_base_pose.shifts_robots = True
     EU.init_robot_base_pose = init_robot_base_pose
@@ -217,8 +318,9 @@ def register_custom_model(identifier: str, path: str, registries) -> None:
     cats = OBJ_CATEGORIES.setdefault(identifier, {})
     for registry in registries:
         if registry not in cats:
-            cats[registry] = ObjCat(name=identifier, types=("custom",), model_folders=[],
-                                    graspable=True, reg_type=registry)
+            cats[registry] = ObjCat(
+                name=identifier, types=("custom",), model_folders=[], graspable=True, reg_type=registry
+            )
         if path not in cats[registry].mjcf_paths:
             cats[registry].mjcf_paths.append(path)
 
@@ -275,7 +377,9 @@ def make_class(spec: dict):
         self.init_robot_base_ref = self.refs[spec["robot_anchor"]]
         self.robot_shift = spec.get("robot_shift")
         if spec.get("robot_spawn_deviation_m") is not None:  # read when the robot is placed, after this
-            self.robot_spawn_deviation_pos_x, self.robot_spawn_deviation_pos_y = map(float, spec["robot_spawn_deviation_m"])
+            self.robot_spawn_deviation_pos_x, self.robot_spawn_deviation_pos_y = map(
+                float, spec["robot_spawn_deviation_m"]
+            )
 
     def _get_obj_cfgs(self):
         cfgs = []
@@ -285,8 +389,12 @@ def make_class(spec: dict):
                 # inside (or on) an object placed before it, as RoboCasa nests an object in its container. No overlap
                 # test: inside a container that is inside a countertop appliance (a placed fixture, unlike a built-in
                 # one) every sample overlaps the appliance's box, and RoboCasa gives up after 50 rebuilds
-                nested = dict(size=tuple(pl.get("size", (0.01, 0.01))), ensure_object_boundary_in_range=False,
-                              ensure_valid_placement=False, sample_args=dict(reference=pl["object"]))
+                nested = dict(
+                    size=tuple(pl.get("size", (0.01, 0.01))),
+                    ensure_object_boundary_in_range=False,
+                    ensure_valid_placement=False,
+                    sample_args=dict(reference=pl["object"]),
+                )
                 if isinstance(pl.get("rotation"), (list, tuple)):  # else RoboCasa samples a random yaw
                     nested["rotation"] = tuple(pl["rotation"])
                 pl = nested
@@ -337,18 +445,40 @@ def make_class(spec: dict):
             ET.SubElement(
                 self.model.worldbody,
                 "camera",
-                {"name": EXTERNAL_CAMERA, "pos": "0 0 2", "quat": "1 0 0 0", "fovy": str(spec.get("camera_2", {}).get("fovy", 60))},
+                {
+                    "name": EXTERNAL_CAMERA,
+                    "pos": "0 0 2",
+                    "quat": "1 0 0 0",
+                    "fovy": str(spec.get("camera_2", {}).get("fovy", 60)),
+                },
             )
+        # RoboSuite merges object bodies/assets but drops their root equalities.
+        # Authored drawers opt into preserving their passive slide couplings.
+        for fixture in self.fixtures.values():
+            if hasattr(fixture, "authored_drawer_travel_v1"):
+                for constraint in fixture.equality:
+                    name = constraint.get("name")
+                    if name is None or self.model.equality.find(f"./*[@name='{name}']") is None:
+                        self.model.equality.append(copy.deepcopy(constraint))
         add_attach_welds(self, spec)  # breakable parts (object key `attach`), switched off by the AttachTracker
         add_burner_flames(self, spec)  # opt-in visible gas flames (a stove fixture entry's `flames`)
         add_base_lock(self, spec)  # the parked base and torso, locked at reset (ROBOT_BASE_VERSION)
+        if "contact_pairs_v1" in spec:
+            load_contact_pairs().add(self.model, spec)  # explicit compiled names and parameters
 
     def _reset_internal(self):
+        if any("timer_indicator_v1" in f for f in spec["fixtures"].values()):
+            self._timer_indicators_v1 = None
         configure_initial_arm(self, spec)
         Kitchen._reset_internal(self)
         lock_base(self, spec)  # after RoboCasa has parked the robot
         snap_attachments(self, spec)
         apply_object_friction(self, spec)  # opt-in object key `friction`, before the objects settle
+        apply_object_solimp(self, spec)  # opt-in object key `solimp`, before the objects settle
+        sync_timer_indicators_v1(self, spec, reset=True)
+
+    def check_contact(self, geoms_1, geoms_2=None):
+        return check_geom_contact(self.sim, geoms_1, geoms_2)
 
     def _create_objects(self):
         # A replayed custom object must be drawn from its bundle on every attempt. RoboCasa's _load_model retries
@@ -367,6 +497,7 @@ def make_class(spec: dict):
     def update_state(self):
         Kitchen.update_state(self)  # RoboCasa shows a lit burner's disc here, after reset and after every action
         sync_burner_flames(self)
+        sync_timer_indicators_v1(self, spec)
 
     def get_ep_meta(self):
         meta = Kitchen.get_ep_meta(self)
@@ -387,6 +518,7 @@ def make_class(spec: dict):
             "_load_model": _load_model,
             "_create_objects": _create_objects,
             "_reset_internal": _reset_internal,
+            "check_contact": check_contact,  # flex-safe geom-name contact check (check_geom_contact)
             "update_state": update_state,
             "get_ep_meta": get_ep_meta,
             "_check_success": _check_success,
@@ -460,18 +592,68 @@ def place_camera(env, spec: dict) -> dict:
     return {"pos": [float(v) for v in pos], "quat": quat, "target": [float(v) for v in tgt]}
 
 
+def object_flexes(m, root: int) -> list[int]:
+    """Flexes owned by the object rooted at body `root`: every vertex body lies in its subtree (a pinned-root
+    flex has its pinned vertices on the root itself and the others on generated child bodies)."""
+    bodies = set(_subtree(m, root))
+    out = []
+    for f in range(int(getattr(m, "nflex", 0))):
+        a, n = int(m.flex_vertadr[f]), int(m.flex_vertnum[f])
+        if n and all(int(b) in bodies for b in m.flex_vertbodyid[a : a + n]):
+            out.append(f)
+    return out
+
+
 def apply_object_friction(env, spec: dict) -> None:
     """An object's `friction` ([sliding, torsional, rolling]) replaces RoboCasa's (0.95, 0.3, 0.1) on all its
     collision geoms (RoboCasa overwrites every object geom's friction, whatever its model file says). MuJoCo uses the
-    larger of two touching geoms' values, so this lowers friction only against geoms that are as slippery."""
+    larger of two touching geoms' values, so this lowers friction only against geoms that are as slippery.
+    Opt-in `condim` (1, 3, 4 or 6) likewise replaces the collision geoms' contact dimensionality (RoboCasa keeps the
+    model's). Both also apply to the object's flexes (deformable cloth), whose contact parameters RoboCasa leaves
+    as authored. A versioned physics condition: a scene declares them, they are never applied silently."""
     m = env.sim.model._model
     for o in spec.get("objects", []):
-        if o.get("friction") is None or o["name"] not in env.obj_body_id:
+        if (o.get("friction") is None and o.get("condim") is None) or o["name"] not in env.obj_body_id:
+            continue
+        root = env.obj_body_id[o["name"]]
+        bodies = set(_subtree(m, root))
+        flexes = object_flexes(m, root)
+        for g in range(m.ngeom):
+            if int(m.geom_bodyid[g]) in bodies and (m.geom_contype[g] or m.geom_conaffinity[g]):
+                if o.get("friction") is not None:
+                    m.geom_friction[g] = np.asarray(o["friction"], dtype=float)
+                if o.get("condim") is not None:
+                    m.geom_condim[g] = int(o["condim"])
+        for f in flexes:
+            if o.get("friction") is not None:
+                m.flex_friction[f] = np.asarray(o["friction"], dtype=float)
+            if o.get("condim") is not None:
+                m.flex_condim[f] = int(o["condim"])
+
+
+# RoboCasa's object loader gives every geom of an object's model file this near-rigid impedance (with solref 0.001)
+ROBOCASA_OBJECT_SOLIMP = (0.998, 0.998, 0.001, 0.5, 2.0)
+
+
+def apply_object_solimp(env, spec: dict) -> None:
+    """An object's `solimp` ([dmin, dmax, width, midpoint, power]) replaces the near-rigid impedance RoboCasa's loader
+    imposes (ROBOCASA_OBJECT_SOLIMP) on its collision geoms. Geoms with an impedance of their own (an attached
+    mechanism's parts, which the loader does not rewrite) keep it. MuJoCo mixes two touching geoms' impedances
+    (solmix), so a softer object also softens its contacts with the robot and the kitchen. An object without the key
+    is unchanged."""
+    m = env.sim.model._model
+    imposed = np.asarray(ROBOCASA_OBJECT_SOLIMP)
+    for o in spec.get("objects", []):
+        if o.get("solimp") is None or o["name"] not in env.obj_body_id:
             continue
         bodies = set(_subtree(m, env.obj_body_id[o["name"]]))
         for g in range(m.ngeom):
-            if int(m.geom_bodyid[g]) in bodies and (m.geom_contype[g] or m.geom_conaffinity[g]):
-                m.geom_friction[g] = np.asarray(o["friction"], dtype=float)
+            if (
+                int(m.geom_bodyid[g]) in bodies
+                and (m.geom_contype[g] or m.geom_conaffinity[g])
+                and np.allclose(m.geom_solimp[g], imposed, rtol=0, atol=1e-9)
+            ):
+                m.geom_solimp[g] = np.asarray(o["solimp"], dtype=float)
 
 
 def apply_tints(env, spec: dict) -> None:
@@ -490,10 +672,20 @@ def apply_tints(env, spec: dict) -> None:
                 m.mat_rgba[m.geom_matid[g]] = np.asarray(o["tint"], dtype=float)
 
 
-FLAME_DEFAULTS = {"ring": 0.42, "ring_min_m": 0.03, "ring_max_m": 0.05, "dz_m": 0.0, "pitch_m": 0.008,
-                  "outer_m": [0.0032, 0.0032, 0.012], "inner_m": [0.0018, 0.0018, 0.006], "tilt_deg": 35.0,
-                  "outer_rgba": [0.2, 0.42, 1.0, 0.75], "inner_rgba": [0.62, 0.9, 1.0, 0.95], "disc_rgb": None,
-                  "hide_disc": False}
+FLAME_DEFAULTS = {
+    "ring": 0.42,
+    "ring_min_m": 0.03,
+    "ring_max_m": 0.05,
+    "dz_m": 0.0,
+    "pitch_m": 0.008,
+    "outer_m": [0.0032, 0.0032, 0.012],
+    "inner_m": [0.0018, 0.0018, 0.006],
+    "tilt_deg": 35.0,
+    "outer_rgba": [0.2, 0.42, 1.0, 0.75],
+    "inner_rgba": [0.62, 0.9, 1.0, 0.95],
+    "disc_rgb": None,
+    "hide_disc": False,
+}
 
 
 def add_burner_flames(env, spec: dict) -> None:
@@ -508,12 +700,18 @@ def add_burner_flames(env, spec: dict) -> None:
     if not keys:
         return
     if env.model.asset.find("./material[@name='robouse_flame']") is None:
-        ET.SubElement(env.model.asset, "material", {"name": "robouse_flame", "emission": "1", "specular": "0",
-                                                     "shininess": "0", "rgba": "1 1 1 1"})
+        ET.SubElement(
+            env.model.asset,
+            "material",
+            {"name": "robouse_flame", "emission": "1", "specular": "0", "shininess": "0", "rgba": "1 1 1 1"},
+        )
     parents = {c: p for p in env.model.worldbody.iter() for c in p}
     sites = {s.get("name"): s for s in env.model.worldbody.iter("site")}
     for key in keys:
-        cfg = dict(FLAME_DEFAULTS, **(spec["fixtures"][key]["flames"] if isinstance(spec["fixtures"][key]["flames"], dict) else {}))
+        cfg = dict(
+            FLAME_DEFAULTS,
+            **(spec["fixtures"][key]["flames"] if isinstance(spec["fixtures"][key]["flames"], dict) else {}),
+        )
         prefix = env.refs[key].naming_prefix
         for name, site in list(sites.items()):
             if not (name or "").startswith(prefix + "burner_on_") or name + "_flame0" in sites:
@@ -529,18 +727,32 @@ def add_burner_flames(env, spec: dict) -> None:
                 q = [np.cos(tilt / 2), -np.sin(tilt / 2) * np.sin(a), np.sin(tilt / 2) * np.cos(a), 0.0]
                 for part, rad in (("outer", r), ("inner", r - 0.002)):
                     half = np.asarray(cfg[f"{part}_m"], float)
-                    p = c + [rad * np.cos(a) + np.sin(tilt) * half[2] * np.cos(a),
-                             rad * np.sin(a) + np.sin(tilt) * half[2] * np.sin(a), cfg["dz_m"] + np.cos(tilt) * half[2]]
-                    ET.SubElement(parents[site], "site", {
-                        "name": f"{name}_flame{k}", "type": "ellipsoid", "material": "robouse_flame",
-                        "size": " ".join(f"{v:.5f}" for v in half), "pos": " ".join(f"{v:.5f}" for v in p),
-                        "quat": " ".join(f"{v:.6f}" for v in q), "rgba": " ".join(str(v) for v in cfg[f"{part}_rgba"][:3]) + " 0",
-                        "group": "0"})
+                    p = c + [
+                        rad * np.cos(a) + np.sin(tilt) * half[2] * np.cos(a),
+                        rad * np.sin(a) + np.sin(tilt) * half[2] * np.sin(a),
+                        cfg["dz_m"] + np.cos(tilt) * half[2],
+                    ]
+                    ET.SubElement(
+                        parents[site],
+                        "site",
+                        {
+                            "name": f"{name}_flame{k}",
+                            "type": "ellipsoid",
+                            "material": "robouse_flame",
+                            "size": " ".join(f"{v:.5f}" for v in half),
+                            "pos": " ".join(f"{v:.5f}" for v in p),
+                            "quat": " ".join(f"{v:.6f}" for v in q),
+                            "rgba": " ".join(str(v) for v in cfg[f"{part}_rgba"][:3]) + " 0",
+                            "group": "0",
+                        },
+                    )
                     k += 1
             if cfg["hide_disc"]:  # the disc stays RoboCasa's on/off indicator (its alpha); it is only drawn tiny
                 site.set("size", "0.0005 " + " ".join(site.get("size").split()[1:]))
             if cfg["disc_rgb"] is not None:
-                site.set("rgba", " ".join(str(v) for v in cfg["disc_rgb"]) + " " + site.get("rgba", "0 0 0 0").split()[3])
+                site.set(
+                    "rgba", " ".join(str(v) for v in cfg["disc_rgb"]) + " " + site.get("rgba", "0 0 0 0").split()[3]
+                )
     env.robouse_flame_alpha = {p: float(cfg[f"{p}_rgba"][3]) for p in ("outer", "inner")}
 
 
@@ -631,6 +843,67 @@ def _turned_on(env, fx) -> bool:
     return any(bool(v) for k, v in st.items() if "turned_on" in str(k) or k == "on")
 
 
+def sync_timer_indicators_v1(env, spec, *, reset=False):
+    """Visual-only, opt-in timer feedback; no state, material or physics mutation.
+
+    Switch only the declared lens's material ID, after fixture state updates.
+    Resolve afresh at reset; never retain compiled IDs across model rebuilds.
+    Absence returns before accessing the model or adding environment attributes.
+    """
+    declared = [(key, f["timer_indicator_v1"]) for key, f in spec["fixtures"].items() if "timer_indicator_v1" in f]
+    if not declared:
+        return
+    bindings = getattr(env, "_timer_indicators_v1", None)
+    if bindings is None:
+        import mujoco
+
+        model = env.sim.model
+        bindings, used_geoms, used_mats = [], set(), set()
+        for key, cfg in declared:
+            required = {"version", "geom", "off_material", "on_material"}
+            if not isinstance(cfg, dict) or set(cfg) != required or cfg.get("version") != "1.0.0":
+                raise ValueError("timer_indicator_v1 requires version 1.0.0 and geom/off_material/on_material")
+            if any(
+                not isinstance(cfg[k], str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", cfg[k])
+                for k in required - {"version"}
+            ):
+                raise ValueError("timer_indicator_v1 selectors must be local XML names")
+            fx = env.refs[key]
+            if not hasattr(fx, "set_time"):
+                raise ValueError("timer_indicator_v1 requires a timer-controlled fixture")
+            try:
+                gid = model.geom_name2id(fx.naming_prefix + cfg["geom"])
+                off = mujoco.mj_name2id(
+                    model._model, mujoco.mjtObj.mjOBJ_MATERIAL, fx.naming_prefix + cfg["off_material"]
+                )
+                on = mujoco.mj_name2id(
+                    model._model, mujoco.mjtObj.mjOBJ_MATERIAL, fx.naming_prefix + cfg["on_material"]
+                )
+            except (ValueError, KeyError) as exc:
+                raise ValueError("timer_indicator_v1 selector not found") from exc
+            if min(gid, off, on) < 0:
+                raise ValueError("timer_indicator_v1 selector not found")
+            if gid in used_geoms or off == on or {off, on} & used_mats:
+                raise ValueError("timer_indicator_v1 colliding selectors")
+            if model.geom_contype[gid] or model.geom_conaffinity[gid]:
+                raise ValueError("timer_indicator_v1 lens must be visual only")
+            if int(model.geom_matid[gid]) not in (off, on):
+                raise ValueError("timer_indicator_v1 lens must use a declared material")
+            for material in (off, on):
+                if any(int(g) != gid for g in np.flatnonzero(model.geom_matid == material)):
+                    raise ValueError("timer_indicator_v1 materials must be dedicated to the lens")
+            used_geoms.add(gid)
+            used_mats.update((off, on))
+            bindings.append((fx, gid, off, on))
+        env._timer_indicators_v1 = bindings
+    for fx, gid, off, on in bindings:
+        # A replay reset has not populated the rack cache required by get_state.
+        # set_time initializes _time; use that same timer value without updating
+        # fixtures again (which could clamp joints or advance the countdown).
+        active = float(fx._time or 0.0) >= 0.1 if reset else _turned_on(env, fx)
+        env.sim.model.geom_matid[gid] = on if active else off
+
+
 def _takes_env(fn) -> bool:
     import inspect
 
@@ -710,16 +983,21 @@ def _inside_geometry_v1(env, a):
         if "partial" in a or "tolerance_m" in a:
             raise ValueError("inside collision_boxes_v1 cannot combine partial or tolerance_m")
         bodies = set(_subtree(m, body))
-        gids = [g for g in range(m.ngeom) if int(m.geom_bodyid[g]) in bodies
-                and (m.geom_contype[g] or m.geom_conaffinity[g])]
+        gids = [
+            g
+            for g in range(m.ngeom)
+            if int(m.geom_bodyid[g]) in bodies and (m.geom_contype[g] or m.geom_conaffinity[g])
+        ]
         if not gids:
             raise ValueError("inside collision_boxes_v1: object has no collision geoms")
         # MuJoCo mjGEOM_BOX=6. Fail before evaluating any overlap, including when
         # an earlier box intersects, so unsupported geometry never goes unnoticed.
         if any(int(m.geom_type[g]) != 6 for g in gids):
             raise ValueError("inside collision_boxes_v1 requires only box collision geoms")
-        boxes = [(np.asarray(d.geom_xpos[g]), np.asarray(d.geom_xmat[g]).reshape(3, 3),
-                  np.asarray(m.geom_size[g])) for g in gids]
+        boxes = [
+            (np.asarray(d.geom_xpos[g]), np.asarray(d.geom_xmat[g]).reshape(3, 3), np.asarray(m.geom_size[g]))
+            for g in gids
+        ]
         return any(_boxes_intersect_v1(box, region) for box in boxes for region in regions)
     value = a["tolerance_m"]
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value) or value < 0:
@@ -732,8 +1010,7 @@ def _inside_geometry_v1(env, a):
         points = np.asarray(env.objects[a["obj"]].get_bbox_points(trans=pos, rot=quat))
     if not points.size or not np.isfinite(points).all():
         raise ValueError("inside geometry: object has no finite bounding points")
-    return any(bool(np.all(np.abs((points - centre) @ axes) <= half + value + 1e-10))
-               for centre, axes, half in regions)
+    return any(bool(np.all(np.abs((points - centre) @ axes) <= half + value + 1e-10)) for centre, axes, half in regions)
 
 
 def _primitive_extent_v1(kind, size, local_axes):
@@ -765,8 +1042,9 @@ def _inside_primitives_v1(env, a):
     regions = _interior_boxes_v1(_fx(env, a["fixture"]))
     m, d = env.sim.model, env.sim.data
     bodies = set(_subtree(m, env.obj_body_id[a["obj"]]))
-    gids = [g for g in range(m.ngeom) if int(m.geom_bodyid[g]) in bodies
-            and (m.geom_contype[g] or m.geom_conaffinity[g])]
+    gids = [
+        g for g in range(m.ngeom) if int(m.geom_bodyid[g]) in bodies and (m.geom_contype[g] or m.geom_conaffinity[g])
+    ]
     if not gids:
         raise ValueError("inside collision_primitives_v1: object has no collision geoms")
     primitives = []
@@ -779,37 +1057,82 @@ def _inside_primitives_v1(env, a):
         if kind not in (2, 3, 4, 5, 6):
             raise ValueError("inside collision_primitives_v1: unsupported collision shape")
         count = 1 if kind == 2 else 2 if kind in (3, 5) else 3
-        if (not np.isfinite(size).all() or np.any(size[:count] <= 0)
-                or not np.isfinite(pos).all() or not np.isfinite(rotation).all()
-                or not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-7, rtol=0)):
+        if (
+            not np.isfinite(size).all()
+            or np.any(size[:count] <= 0)
+            or not np.isfinite(pos).all()
+            or not np.isfinite(rotation).all()
+            or not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-7, rtol=0)
+        ):
             raise ValueError("inside collision_primitives_v1: invalid primitive geometry")
         primitives.append((kind, size, pos, rotation))
-    return any(all(np.all(np.abs((pos - centre) @ axes)
-                         + _primitive_extent_v1(kind, size, rotation.T @ axes)
-                         <= half + value + 1e-10)
-                   for kind, size, pos, rotation in primitives)
-               for centre, axes, half in regions)
+    return any(
+        all(
+            np.all(
+                np.abs((pos - centre) @ axes) + _primitive_extent_v1(kind, size, rotation.T @ axes)
+                <= half + value + 1e-10
+            )
+            for kind, size, pos, rotation in primitives
+        )
+        for centre, axes, half in regions
+    )
+
+
+def _refuse_flex(env, pred: str, *names) -> None:
+    """Geom-name contact checks (robosuite check_contact) never see a flex side (geom -1): for a deformable object
+    they would report no contact whatever touches it, which is missing evidence, not a negative measurement."""
+    sim = getattr(env, "sim", None)
+    m = getattr(sim.model, "_model", sim.model) if sim is not None else None
+    if m is None or not int(getattr(m, "nflex", 0) or 0):
+        return  # no flex in the model: the frozen geom-name checks are unchanged
+    for n in names:
+        if n in env.obj_body_id and object_flexes(m, env.obj_body_id[n]):
+            raise ValueError(f"{pred} does not measure deformable (flex) object {n!r}")
 
 
 def p_on_fixture(env, a):
+    _refuse_flex(env, "on_fixture", a["obj"])
     if "obj_geoms_v1" in a:
-        return bool(env.check_contact(_contact_geoms_v1(env, a["obj"], a["obj_geoms_v1"]),
-                                      _fx(env, a["fixture"])))
+        return bool(env.check_contact(_contact_geoms_v1(env, a["obj"], a["obj_geoms_v1"]), _fx(env, a["fixture"])))
     from robocasa.utils import object_utils as OU
 
     return OU.check_obj_fixture_contact(env, a["obj"], _fx(env, a["fixture"]))
 
 
+def object_body_contact(env, name_a: str, name_b: str) -> bool:
+    """Any native contact between the two objects' body subtrees, flex sides resolved to their vertex bodies
+    (`contact_bodies`). Geom-name groups cannot see a deformable object's flex, which has no collision geoms."""
+    m = env.sim.model._model
+    d = env.sim.data._data
+    A, B = set(_subtree(m, env.obj_body_id[name_a])), set(_subtree(m, env.obj_body_id[name_b]))
+    for i in range(d.ncon):
+        b1, b2 = contact_bodies(m, d.contact[i])
+        if (b1 in A and b2 in B) or (b1 in B and b2 in A):
+            return True
+    return False
+
+
 def p_in_receptacle(env, a):
+    m = env.sim.model._model
+    if any(object_flexes(m, env.obj_body_id[n]) for n in (a["obj"], a["receptacle"])):
+        # RoboCasa's test with the contact measured natively: contact and the object's root within 0.7 x the
+        # receptacle's horizontal radius of the receptacle's root (unchanged threshold)
+        pos = env.sim.data.body_xpos
+        th = env.objects[a["receptacle"]].horizontal_radius * 0.7
+        near = np.linalg.norm(pos[env.obj_body_id[a["obj"]]][:2] - pos[env.obj_body_id[a["receptacle"]]][:2]) < th
+        return bool(near and object_body_contact(env, a["obj"], a["receptacle"]))
     from robocasa.utils import object_utils as OU
 
     return OU.check_obj_in_receptacle(env, a["obj"], a["receptacle"])
 
 
 def p_contact(env, a):
+    _refuse_flex(env, "contact", a["a"], a["b"])
     if "a_geoms_v1" in a or "b_geoms_v1" in a:
-        sides = [_contact_geoms_v1(env, a[key], a[key + "_geoms_v1"])
-                 if key + "_geoms_v1" in a else env.objects[a[key]] for key in ("a", "b")]
+        sides = [
+            _contact_geoms_v1(env, a[key], a[key + "_geoms_v1"]) if key + "_geoms_v1" in a else env.objects[a[key]]
+            for key in ("a", "b")
+        ]
         return bool(env.check_contact(*sides))
     return bool(env.check_contact(env.objects[a["a"]], env.objects[a["b"]]))
 
@@ -821,9 +1144,12 @@ def _contact_geoms_v1(env, obj_name, local_names):
     is missing evidence, never a negative contact measurement. No material inference
     is made here: the versioned scene chooses its physical contact surfaces.
     """
-    if (not isinstance(local_names, list) or not local_names
-            or any(not isinstance(n, str) or not n for n in local_names)
-            or len(set(local_names)) != len(local_names)):
+    if (
+        not isinstance(local_names, list)
+        or not local_names
+        or any(not isinstance(n, str) or not n for n in local_names)
+        or len(set(local_names)) != len(local_names)
+    ):
         raise ValueError("contact geoms v1 requires a nonempty list of unique local geom names")
     obj = env.objects[obj_name]
     selected = [obj.naming_prefix + n for n in local_names]
@@ -834,10 +1160,63 @@ def _contact_geoms_v1(env, obj_name, local_names):
             gid = m.geom_name2id(name)
         except (ValueError, KeyError) as exc:
             raise ValueError(f"contact geoms v1: unknown geom {name}") from exc
-        if (gid < 0 or int(m.geom_bodyid[gid]) not in bodies
-                or not (m.geom_contype[gid] or m.geom_conaffinity[gid])):
+        if gid < 0 or int(m.geom_bodyid[gid]) not in bodies or not (m.geom_contype[gid] or m.geom_conaffinity[gid]):
             raise ValueError(f"contact geoms v1: not an object collision geom: {name}")
     return selected
+
+
+def check_geom_contact(sim, geoms_1, geoms_2=None) -> bool:
+    """robosuite's `check_contact` (geom-name groups, or a model's `contact_geoms`; `geoms_2` None = any other side)
+    with one change: a contact side without a geom (a flex side, geom -1) is never a member of a geom-name group
+    (it still counts as "any other side" when `geoms_2` is None).
+    Stock robosuite raises on such contacts ("No geom with id -1"), so in a scene with a deformable cloth every
+    geom-name check failed while the cloth touched anything; without flexes the result is identical. A flex
+    object's own contacts are therefore invisible to it; `_refuse_flex` keeps flex objects out of such checks."""
+
+    def names(g):
+        if isinstance(g, str):
+            return {g}
+        if hasattr(g, "contact_geoms"):
+            return set(g.contact_geoms)
+        return set(g)
+
+    g1 = names(geoms_1)
+    g2 = None if geoms_2 is None else names(geoms_2)
+    m = sim.model
+    for i in range(sim.data.ncon):
+        c = sim.data.contact[i]
+        a, b = int(c.geom1), int(c.geom2)
+        na = m.geom_id2name(a) if a >= 0 else None
+        nb = m.geom_id2name(b) if b >= 0 else None
+        a1, b1 = na is not None and na in g1, nb is not None and nb in g1
+        a2 = (na is not None and na in g2) if g2 is not None else True
+        b2 = (nb is not None and nb in g2) if g2 is not None else True
+        if (a1 and b2) or (a2 and b1):
+            return True
+    return False
+
+
+def contact_bodies(m, c) -> tuple[int, int]:
+    """The two bodies of a native contact. A flex side (geom -1) resolves to the body of its contacting vertex,
+    or of the contacting element's first vertex; never to a wrapped-around geom index."""
+    M = getattr(m, "_model", m)
+    out = []
+    geoms = c.geom if hasattr(c, "geom") else (c.geom1, c.geom2)
+    for k in (0, 1):
+        g = int(geoms[k])
+        if g >= 0:
+            out.append(int(M.geom_bodyid[g]))
+            continue
+        f = int(c.flex[k])
+        if f < 0:
+            raise ValueError("contact side has neither a geom nor a flex")
+        v = int(c.vert[k])
+        if v < 0:
+            e = int(c.elem[k])
+            dim = int(M.flex_dim[f])
+            v = int(M.flex_elem[int(M.flex_elemdataadr[f]) + e * (dim + 1)])
+        out.append(int(M.flex_vertbodyid[int(M.flex_vertadr[f]) + v]))
+    return out[0], out[1]
 
 
 def p_grasped(env, a):
@@ -853,7 +1232,7 @@ def p_supported_v1(env, a):
     (default .9). Side-wall, underside and inactive margin contacts do not count.
     Combine with inside, released_v1 and a consecutive monitor for storage.
     """
-    threshold = a.get("min_normal_z", .9)
+    threshold = a.get("min_normal_z", 0.9)
     if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 < threshold <= 1:
         raise ValueError("supported_v1 min_normal_z must be in (0, 1]")
     m, d = env.sim.model, env.sim.data
@@ -861,15 +1240,17 @@ def p_supported_v1(env, a):
     fx = _fx(env, a["fixture"])
     # Procedural cabinets assemble subcomponents after contact_geoms was built;
     # that list can be empty even though the compiled shelf supports the object.
-    fixture = {g for g in range(m.ngeom)
-               if (m.geom_id2name(g) or "").startswith(fx.naming_prefix)
-               and (m.geom_contype[g] or m.geom_conaffinity[g])}
+    fixture = {
+        g
+        for g in range(m.ngeom)
+        if (m.geom_id2name(g) or "").startswith(fx.naming_prefix) and (m.geom_contype[g] or m.geom_conaffinity[g])
+    }
     if not fixture:
         raise ValueError("supported_v1 fixture has no contact geoms")
-    for c in d.contact[:d.ncon]:
+    for c in d.contact[: d.ncon]:
         g1, g2 = int(c.geom1), int(c.geom2)
-        sign = (1 if int(m.geom_bodyid[g2]) in bodies and g1 in fixture else
-                -1 if int(m.geom_bodyid[g1]) in bodies and g2 in fixture else 0)
+        b1, b2 = contact_bodies(m, c)
+        sign = 1 if b2 in bodies and g1 in fixture else -1 if b1 in bodies and g2 in fixture else 0
         if sign and c.efc_address >= 0 and sign * float(c.frame[2]) >= threshold:
             return True
     return False
@@ -886,10 +1267,9 @@ def p_released_v1(env, a):
         robot_bodies.update(_subtree(m, m.body_name2id(robot.robot_model.root_body)))
     if not robot_bodies:
         raise ValueError("released_v1 requires robot bodies")
-    for c in d.contact[:d.ncon]:
-        b1, b2 = int(m.geom_bodyid[c.geom1]), int(m.geom_bodyid[c.geom2])
-        if c.efc_address >= 0 and ((b1 in bodies and b2 in robot_bodies) or
-                                   (b2 in bodies and b1 in robot_bodies)):
+    for c in d.contact[: d.ncon]:
+        b1, b2 = contact_bodies(m, c)
+        if c.efc_address >= 0 and ((b1 in bodies and b2 in robot_bodies) or (b2 in bodies and b1 in robot_bodies)):
             return False
     return True
 
@@ -969,35 +1349,48 @@ def cover_metrics(env, lid: str, pan: str) -> dict:
     This measures coverage/contact, not an airtight seal. Model region geometry is
     the same geometry used for sampling, and tolerances are explicit in covers().
     """
+
     def region(name, suffix):
         prefix = env.objects[name].naming_prefix
-        matches = [i for i, n in enumerate(env.sim.model.geom_names)
-                   if n and n.startswith(prefix) and n.endswith(suffix)]
+        matches = [
+            i for i, n in enumerate(env.sim.model.geom_names) if n and n.startswith(prefix) and n.endswith(suffix)
+        ]
         if len(matches) != 1:
             raise ValueError(f"{name}: expected one {suffix} geometry, got {len(matches)}")
         return matches[0]
+
     m, d = env.sim.model, env.sim.data
     rim, bbox = region(pan, "reg_int"), region(lid, "reg_bbox")
     pr, pl = np.array(d.geom_xpos[rim]), np.array(d.geom_xpos[bbox])
     zr = np.array(d.geom_xmat[rim]).reshape(3, 3)[:, 2]
     zl = np.array(d.geom_xmat[bbox]).reshape(3, 3)[:, 2]
     v = pl - pr
-    return {"contact": bool(env.check_contact(env.objects[lid], env.objects[pan])),
-            "offset_m": float(np.linalg.norm(v - np.dot(v, zr) * zr)),
-            "height_error_m": float(np.dot(v, zr) - m.geom_size[rim][1] - m.geom_size[bbox][2]),
-            "radius_ratio": float(min(m.geom_size[bbox][:2]) / m.geom_size[rim][0]),
-            "alignment": float(np.dot(zr, zl)), "upright": float(zr[2])}
+    return {
+        "contact": bool(env.check_contact(env.objects[lid], env.objects[pan])),
+        "offset_m": float(np.linalg.norm(v - np.dot(v, zr) * zr)),
+        "height_error_m": float(np.dot(v, zr) - m.geom_size[rim][1] - m.geom_size[bbox][2]),
+        "radius_ratio": float(min(m.geom_size[bbox][:2]) / m.geom_size[rim][0]),
+        "alignment": float(np.dot(zr, zl)),
+        "upright": float(zr[2]),
+    }
 
 
 def p_covers(env, a):
     g = cover_metrics(env, a["a"], a["b"])
-    return (g["contact"] and g["offset_m"] <= 0.02 and abs(g["height_error_m"]) <= 0.025
-            and 0.95 <= g["radius_ratio"] <= 1.55 and g["alignment"] >= 0.94 and g["upright"] >= 0.94)
+    return (
+        g["contact"]
+        and g["offset_m"] <= 0.02
+        and abs(g["height_error_m"]) <= 0.025
+        and 0.95 <= g["radius_ratio"] <= 1.55
+        and g["alignment"] >= 0.94
+        and g["upright"] >= 0.94
+    )
 
 
 def load_lid_seating():
     """The worker also loads scenario.py by path outside its package."""
     import importlib.util
+
     name = "robouse_robocasa_lid_seating"
     if name not in sys.modules:
         path = os.path.join(os.path.dirname(__file__), "lid_seating.py")
@@ -1027,10 +1420,12 @@ CONTENTS_TOL_M = 0.003  # a particle's centre may sit this far past the containe
 
 def _subtree(m, root: int) -> list[int]:
     """Bodies at or below `root` in the kinematic tree."""
+
     def under(b):
         while b > 0 and b != root:
             b = int(m.body_parentid[b])
         return b == root
+
     return [b for b in range(m.nbody) if under(b)]
 
 
@@ -1061,9 +1456,15 @@ def contents_metrics(env, obj: str, container, only: str | None = None) -> dict:
         R, c = np.array(d.geom_xmat[g]).reshape(3, 3), np.array(d.geom_xpos[g])
         radius, half_h = float(m.geom_size[g][0]), float(m.geom_size[g][1])
         loc = (pos - c) @ R
-        out &= (np.linalg.norm(loc[:, :2], axis=1) > radius + CONTENTS_TOL_M) | (np.abs(loc[:, 2]) > half_h + CONTENTS_TOL_M)
-    return {"bodies": len(bodies), "outside": int(out.sum()), "fraction": float(out.mean()),
-            "tilt_deg": _tilt_deg(env, names[0])}
+        out &= (np.linalg.norm(loc[:, :2], axis=1) > radius + CONTENTS_TOL_M) | (
+            np.abs(loc[:, 2]) > half_h + CONTENTS_TOL_M
+        )
+    return {
+        "bodies": len(bodies),
+        "outside": int(out.sum()),
+        "fraction": float(out.mean()),
+        "tilt_deg": _tilt_deg(env, names[0]),
+    }
 
 
 def p_contents_outside(env, a):
@@ -1071,7 +1472,8 @@ def p_contents_outside(env, a):
     given) are outside the container: a partial spill."""
     if "interior_v1" in a:
         metrics = load_interior().contents_metrics_v1(
-            env, a["obj"], a["container"], a.get("only"), a["interior_v1"], sys.modules[__name__])
+            env, a["obj"], a["container"], a.get("only"), a["interior_v1"], sys.modules[__name__]
+        )
         return metrics["fraction"] > float(a.get("fraction", 0.05))
     return contents_metrics(env, a["obj"], a["container"], a.get("only"))["fraction"] > float(a.get("fraction", 0.05))
 
@@ -1079,6 +1481,7 @@ def p_contents_outside(env, a):
 def load_interior():
     """Also usable by the standalone simulator worker's path-loaded scenario module."""
     import importlib.util
+
     name = "robouse_robocasa_interior"
     if name not in sys.modules:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "interior.py")
@@ -1100,11 +1503,18 @@ def _support_rects(env, fixture: str) -> list[tuple]:
     rectangle of its exterior sites."""
     m, d = env.sim.model, env.sim.data
     fx = _fx(env, fixture)
-    tops = [g for g in range(m.ngeom) if (m.geom(g).name or "").startswith(f"{fx.name}_top")
-            and m.geom_type[g] == 6 and m.geom_contype[g] | m.geom_conaffinity[g]]
+    tops = [
+        g
+        for g in range(m.ngeom)
+        if (m.geom(g).name or "").startswith(f"{fx.name}_top")
+        and m.geom_type[g] == 6
+        and m.geom_contype[g] | m.geom_conaffinity[g]
+    ]
     if tops:
-        return [(np.array(d.geom_xpos[g][:2]), np.array(d.geom_xmat[g]).reshape(3, 3)[:2, :2],
-                 np.array(m.geom_size[g][:2])) for g in tops]
+        return [
+            (np.array(d.geom_xpos[g][:2]), np.array(d.geom_xmat[g]).reshape(3, 3)[:2, :2], np.array(m.geom_size[g][:2]))
+            for g in tops
+        ]
     p0, px, py, _ = (np.asarray(p, dtype=float)[:2] for p in fx.get_ext_sites(relative=False))
     ex, ey = px - p0, py - p0
     lx, ly = float(np.linalg.norm(ex)), float(np.linalg.norm(ey))
@@ -1161,8 +1571,12 @@ def _obj_points(env, obj: str) -> np.ndarray:
     m, d = env.sim.model, env.sim.data
     bodies = set(_subtree(m, env.obj_body_id[obj]))
     signs = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], float)
-    pts = [np.array(d.geom_xpos[g]) + (m.geom_aabb[g][:3] + signs * m.geom_aabb[g][3:]) @ np.array(d.geom_xmat[g]).reshape(3, 3).T
-           for g in range(m.ngeom) if int(m.geom_bodyid[g]) in bodies]
+    pts = [
+        np.array(d.geom_xpos[g])
+        + (m.geom_aabb[g][:3] + signs * m.geom_aabb[g][3:]) @ np.array(d.geom_xmat[g]).reshape(3, 3).T
+        for g in range(m.ngeom)
+        if int(m.geom_bodyid[g]) in bodies
+    ]
     return np.concatenate(pts)
 
 
@@ -1193,8 +1607,9 @@ def near_fixture_m(env, obj: str, fixture: str, faces=("top", "left", "right", "
 def p_near_fixture(env, a):
     """The object is within `gap_m` (default 0.05) of one of the fixture's named `faces` (default top, left, right,
     back; e.g. an appliance's vents): its clearance zone."""
-    return near_fixture_m(env, a["obj"], a["fixture"], a.get("faces") or ("top", "left", "right", "back")) \
-        <= float(a.get("gap_m", 0.05))
+    return near_fixture_m(env, a["obj"], a["fixture"], a.get("faces") or ("top", "left", "right", "back")) <= float(
+        a.get("gap_m", 0.05)
+    )
 
 
 def lit_burner_gap_m(env, obj: str, fixture: str) -> float:
@@ -1249,11 +1664,19 @@ class ImpactTracker:
         self.body = {n: env.obj_body_id[n] for n in names}
         self.watch = {}  # geom -> watched object owning it (its root body or a descendant)
         for n, bid in self.body.items():
+            if object_flexes(m, bid):
+                raise ValueError(f"impact_speed does not measure deformable (flex) object {n!r}")
             for b in _subtree(m, bid):
                 for g in np.flatnonzero(m.geom_bodyid == b):
                     self.watch[int(g)] = n
-        self.robot = np.array([(m.body(int(m.geom_bodyid[g])).name or "").startswith(("robot0_", "gripper0_", "mobilebase0_"))
-                               or (m.geom(g).name or "").startswith(("robot0_", "gripper0_")) for g in range(m.ngeom)])
+        self.m = m
+        self.robot = np.array(
+            [
+                (m.body(int(m.geom_bodyid[g])).name or "").startswith(("robot0_", "gripper0_", "mobilebase0_"))
+                or (m.geom(g).name or "").startswith(("robot0_", "gripper0_"))
+                for g in range(m.ngeom)
+            ]
+        )
         self.geom_body = np.array(m.geom_bodyid)
         self.prev = {n: set() for n in names}
         self.t, self.win = None, {n: 0.0 for n in names}
@@ -1265,6 +1688,12 @@ class ImpactTracker:
         d, now = self.d, {n: set() for n in self.body}
         for i in range(d.ncon):
             g1, g2 = int(d.contact[i].geom1), int(d.contact[i].geom2)
+            if g1 < 0 or g2 < 0:  # a flex side (never watched, never the robot): the body of its touching vertex
+                g, k = (g2, 0) if g1 < 0 else (g1, 1)
+                n = self.watch.get(g) if g >= 0 else None
+                if n is not None:
+                    now[n].add(contact_bodies(self.m, d.contact[i])[k])
+                continue
             for mine, other in ((g1, g2), (g2, g1)):
                 n = self.watch.get(mine)
                 if n is not None and self.watch.get(other) != n and not self.robot[other]:
@@ -1369,8 +1798,11 @@ def contents_mass_g(env, obj, container, only: str | None = None) -> float:
     pat = re.compile(only) if only else None
     bodies = []
     for n in names:
-        bodies += [b for b in _subtree(m, env.obj_body_id[n]) if m.body_jntnum[b] > 0
-                   and (pat is None or pat.search(m.body(b).name or ""))]
+        bodies += [
+            b
+            for b in _subtree(m, env.obj_body_id[n])
+            if m.body_jntnum[b] > 0 and (pat is None or pat.search(m.body(b).name or ""))
+        ]
     if not bodies:
         raise ValueError(f"contents_mass: {obj!r} has no jointed bodies")
     cprefix = env.objects[container].naming_prefix
@@ -1381,7 +1813,9 @@ def contents_mass_g(env, obj, container, only: str | None = None) -> float:
     R, c = np.array(d.geom_xmat[g]).reshape(3, 3), np.array(d.geom_xpos[g])
     radius, half_h = float(m.geom_size[g][0]), float(m.geom_size[g][1])
     loc = (np.array(d.xpos[bodies]) - c) @ R
-    inside = (np.linalg.norm(loc[:, :2], axis=1) <= radius + CONTENTS_TOL_M) & (np.abs(loc[:, 2]) <= half_h + CONTENTS_TOL_M)
+    inside = (np.linalg.norm(loc[:, :2], axis=1) <= radius + CONTENTS_TOL_M) & (
+        np.abs(loc[:, 2]) <= half_h + CONTENTS_TOL_M
+    )
     return float(np.asarray(m.body_mass)[bodies][inside].sum() * 1000.0)
 
 
@@ -1425,10 +1859,17 @@ class MovingContactTracker:
         m = env.sim.model._model
         self.env, self.d = env, env.sim.data._data
         self.keys, self.mine, self.theirs, self.dof = [], [], [], []
-        robot = np.array([(m.body(int(m.geom_bodyid[g])).name or "").startswith(("robot0_", "gripper0_", "mobilebase0_"))
-                          or (m.geom(g).name or "").startswith(("robot0_", "gripper0_")) for g in range(m.ngeom)])
+        robot = np.array(
+            [
+                (m.body(int(m.geom_bodyid[g])).name or "").startswith(("robot0_", "gripper0_", "mobilebase0_"))
+                or (m.geom(g).name or "").startswith(("robot0_", "gripper0_"))
+                for g in range(m.ngeom)
+            ]
+        )
         for key in watched:
             obj, other, only, joint, with_robot = key
+            if any(o and object_flexes(m, env.obj_body_id[o]) for o in (obj, other)):
+                raise ValueError("moving_contact does not measure deformable (flex) objects")
             mine = np.zeros(m.ngeom, bool)
             if obj:
                 for b in _subtree(m, env.obj_body_id[obj]):
@@ -1454,8 +1895,10 @@ class MovingContactTracker:
         d = self.d
         if d.ncon == 0:
             return
-        g1 = np.array([c.geom1 for c in d.contact[:d.ncon]])
-        g2 = np.array([c.geom2 for c in d.contact[:d.ncon]])
+        g1 = np.array([c.geom1 for c in d.contact[: d.ncon]])
+        g2 = np.array([c.geom2 for c in d.contact[: d.ncon]])
+        rigid = (g1 >= 0) & (g2 >= 0)  # a flex side (geom -1) belongs to no watched object (checked at init)
+        g1, g2 = g1[rigid], g2[rigid]
         for i in range(len(self.keys)):
             mine, theirs = self.mine[i], self.theirs[i]
             if np.any((mine[g1] & theirs[g2]) | (mine[g2] & theirs[g1])):
@@ -1546,8 +1989,11 @@ def add_base_lock(env, spec: dict) -> None:
             continue
         if env.model.worldbody.find(f".//joint[@name='{j}']") is None:
             raise RuntimeError(f"robot_base locked: the robot has no joint {j!r}")
-        ET.SubElement(eq, "joint", {"name": name, "joint1": j, "polycoef": "0 0 0 0 0", "active": "false",
-                                    "solref": BASE_LOCK_SOLREF})
+        ET.SubElement(
+            eq,
+            "joint",
+            {"name": name, "joint1": j, "polycoef": "0 0 0 0 0", "active": "false", "solref": BASE_LOCK_SOLREF},
+        )
 
 
 def lock_base(env, spec: dict) -> None:
@@ -1604,9 +2050,17 @@ def add_attach_welds(env, spec: dict) -> None:
         wname = f"{ATTACH_PREFIX}{name}"
         if eq.find(f"./weld[@name='{wname}']") is not None:  # RoboCasa retries _load_model by recursing
             continue
-        ET.SubElement(eq, "weld", {"name": wname, "body1": env.objects[name].root_body,
-                                   "body2": env.objects[a["to"]].root_body, "relpose": "0 0 0 1 0 0 0",
-                                   "solref": a["solref"]})
+        ET.SubElement(
+            eq,
+            "weld",
+            {
+                "name": wname,
+                "body1": env.objects[name].root_body,
+                "body2": env.objects[a["to"]].root_body,
+                "relpose": "0 0 0 1 0 0 0",
+                "solref": a["solref"],
+            },
+        )
 
 
 def snap_attachments(env, spec: dict) -> None:
@@ -1646,7 +2100,7 @@ class AttachTracker:
 
     def force(self, name: str) -> float:
         d, i = self.d, self.items[name]["eq"]
-        rows = np.flatnonzero((d.efc_type[:d.nefc] == self.EQ) & (d.efc_id[:d.nefc] == i))
+        rows = np.flatnonzero((d.efc_type[: d.nefc] == self.EQ) & (d.efc_id[: d.nefc] == i))
         return float(np.linalg.norm(d.efc_force[rows[:3]])) if len(rows) else 0.0
 
     def substep(self):
@@ -1707,7 +2161,9 @@ def mixing_index(env, obj: str, a: str, b: str, radius_m: float = 0.01625) -> fl
 
 def p_contents_mixed(env, a):
     """The particles of `obj` named by the regexes `only` and `with` are mixed: mixing_index >= `min` (default 0.45)."""
-    return mixing_index(env, a["obj"], a["only"], a["with"], float(a.get("radius_m", 0.01625))) >= float(a.get("min", 0.45))
+    return mixing_index(env, a["obj"], a["only"], a["with"], float(a.get("radius_m", 0.01625))) >= float(
+        a.get("min", 0.45)
+    )
 
 
 ROBOT_PREFIXES = ("robot0_", "gripper0_", "mobilebase0_")
@@ -1723,8 +2179,13 @@ def p_contents_contact(env, a):
         mine[np.flatnonzero(np.asarray(m.geom_bodyid) == bid)] = True
     other = np.zeros(m.ngeom, bool)
     if a.get("robot"):
-        other |= np.array([(m.body(int(m.geom_bodyid[g])).name or "").startswith(ROBOT_PREFIXES)
-                           or (m.geom(g).name or "").startswith(ROBOT_PREFIXES[:2]) for g in range(m.ngeom)])
+        other |= np.array(
+            [
+                (m.body(int(m.geom_bodyid[g])).name or "").startswith(ROBOT_PREFIXES)
+                or (m.geom(g).name or "").startswith(ROBOT_PREFIXES[:2])
+                for g in range(m.ngeom)
+            ]
+        )
     if a.get("fixture") or a.get("fixtures"):
         for f in _fixture_names(a):
             for gname in _fx(env, f).contact_geoms:
@@ -1732,6 +2193,13 @@ def p_contents_contact(env, a):
                 other[g] = True
     for i in range(d.ncon):
         g1, g2 = int(d.contact[i].geom1), int(d.contact[i].geom2)
+        if g1 < 0 or g2 < 0:  # a flex side: one of `obj`'s particles if its touching vertex body is
+            b1, b2 = contact_bodies(m, d.contact[i])
+            if (g1 < 0 and b1 in bodies and g2 >= 0 and other[g2]) or (
+                g2 < 0 and b2 in bodies and g1 >= 0 and other[g1]
+            ):
+                return True
+            continue
         if (mine[g1] and other[g2]) or (mine[g2] and other[g1]):
             return True
     return False
@@ -1758,7 +2226,9 @@ class AdhereTracker:
         self.locks = {}  # eq id -> (obj, max_n, name)
         for name, max_n in adhesions(spec).items():
             pref = f"{name}_"
-            ids = [i for i in range(m.neq) if (m.equality(i).name or "").startswith(pref) and "lock" in m.equality(i).name]
+            ids = [
+                i for i in range(m.neq) if (m.equality(i).name or "").startswith(pref) and "lock" in m.equality(i).name
+            ]
             if not ids:
                 raise RuntimeError(f"adhere: {name!r} has no lock welds")
             for i in ids:
@@ -1771,7 +2241,7 @@ class AdhereTracker:
 
     def forces(self) -> dict[int, float]:
         d = self.d
-        typ, idx, f = d.efc_type[:d.nefc], d.efc_id[:d.nefc], d.efc_force[:d.nefc]
+        typ, idx, f = d.efc_type[: d.nefc], d.efc_id[: d.nefc], d.efc_force[: d.nefc]
         sel = np.flatnonzero(typ == self.EQ)
         out = {}
         for i in self.locks:
@@ -1794,8 +2264,10 @@ class AdhereTracker:
                 self.released[name][lname] = {"step": int(getattr(self.env, "timestep", 0)), "force_n": round(f, 4)}
 
     def summary(self) -> dict:
-        return {n: {"locks": self.count[n], "released": len(self.released[n]), "peak_locked_n": round(self.peak[n], 4)}
-                for n in self.count}
+        return {
+            n: {"locks": self.count[n], "released": len(self.released[n]), "peak_locked_n": round(self.peak[n], 4)}
+            for n in self.count
+        }
 
 
 class StreamTracker:
@@ -1806,7 +2278,9 @@ class StreamTracker:
         m = env.sim.model._model
         self.env, self.m, self.d = env, m, env.sim.data._data
         self.items = []
-        self.robot = np.array([(m.body(int(m.geom_bodyid[g])).name or "").startswith(STREAM_ROBOT_PREFIXES) for g in range(m.ngeom)])
+        self.robot = np.array(
+            [(m.body(int(m.geom_bodyid[g])).name or "").startswith(STREAM_ROBOT_PREFIXES) for g in range(m.ngeom)]
+        )
         for s in spec.get("streams") or []:
             import re
 
@@ -1821,13 +2295,26 @@ class StreamTracker:
                 bodies = [b for b in sub if m.body_jntnum[b] > 0 and pat.search(m.body(b).name or "")]
                 areas = []
                 for b in bodies:
-                    gs = [g for g in np.flatnonzero(np.asarray(m.geom_bodyid) == b) if m.geom_contype[g] or m.geom_conaffinity[g]]
+                    gs = [
+                        g
+                        for g in np.flatnonzero(np.asarray(m.geom_bodyid) == b)
+                        if m.geom_contype[g] or m.geom_conaffinity[g]
+                    ]
                     areas.append(np.pi * float(m.geom_size[gs[0]][0]) ** 2 if gs else 0.0)
-                self.items.append({"fx": fx, "site": site, "obj": obj, "bodies": np.array(bodies, int),
-                                   "force": float(s.get("pressure_pa", 500.0)) * np.array(areas),
-                                   "radius": float(s.get("radius_m", 0.04)), "skip": own | self.robot,
-                                   "clear": np.ones(len(bodies), bool), "pushed": np.zeros(len(bodies), int),
-                                   "first": {}})
+                self.items.append(
+                    {
+                        "fx": fx,
+                        "site": site,
+                        "obj": obj,
+                        "bodies": np.array(bodies, int),
+                        "force": float(s.get("pressure_pa", 500.0)) * np.array(areas),
+                        "radius": float(s.get("radius_m", 0.04)),
+                        "skip": own | self.robot,
+                        "clear": np.ones(len(bodies), bool),
+                        "pushed": np.zeros(len(bodies), int),
+                        "first": {},
+                    }
+                )
         self.t = None
         for it in self.items:
             self.d.xfrc_applied[it["bodies"]] = 0.0
@@ -1886,8 +2373,14 @@ class StreamTracker:
                 it["first"].setdefault(int(k), t)
 
     def summary(self) -> dict:
-        return {it["obj"]: {"particles": len(it["bodies"]), "ever_pushed": int((it["pushed"] > 0).sum()),
-                            "first_step": min(it["first"].values()) if it["first"] else None} for it in self.items}
+        return {
+            it["obj"]: {
+                "particles": len(it["bodies"]),
+                "ever_pushed": int((it["pushed"] > 0).sum()),
+                "first_step": min(it["first"].values()) if it["first"] else None,
+            }
+            for it in self.items
+        }
 
 
 def _wrap_steps(env):
@@ -1919,6 +2412,20 @@ def install_residue_trackers(env, spec):
     env.robouse_streams = StreamTracker(env, spec) if spec.get("streams") else None
 
 
+def load_contact_pairs():
+    """The standalone worker loads scenario.py without a robouse package import."""
+    import importlib.util
+
+    name = "robouse_contact_pairs"
+    if name not in sys.modules:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "contact_pairs.py")
+        module_spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(module)
+        sys.modules[name] = module
+    return sys.modules[name]
+
+
 def load_liquid(submodule: str | None = None):
     """The SPH liquid package (physics/liquid/), loaded once per process under one name (physics/__init__.py). This
     module is itself loaded by path in the worker, without the robouse package, so the loader is loaded by path too."""
@@ -1942,6 +2449,7 @@ def p_liquid(env, p):
 def load_rinse():
     """Load the optional geometry/history helper without importing the backend package."""
     import importlib.util
+
     name = "robouse_robocasa_rinse"
     if name not in sys.modules:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rinse.py")
@@ -1963,6 +2471,7 @@ def p_credit_valid_v1(env, a):
 def load_tare():
     """Standalone-worker-compatible loader for opt-in scale state."""
     import importlib.util
+
     name = "robouse_robocasa_tare"
     if name not in sys.modules:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tare.py")
@@ -2094,10 +2603,14 @@ def check_predicate(p, objects: set[str], fixtures: set[str], step_monitors: set
         return
     if not isinstance(p, dict) or p.get("pred") not in PREDICATES:
         raise ValueError(f"bad predicate {p!r}")
-    if p["pred"] in ("fired", "current_dwell_v1", "credit_valid_v1", "untared_pour_v1") and p.get("monitor") not in (step_monitors or set()):
-        raise ValueError(f"fired must name a step monitor of this spec (an earlier one, from a monitor): {p.get('monitor')!r}")
+    if p["pred"] in ("fired", "current_dwell_v1", "credit_valid_v1", "untared_pour_v1") and p.get("monitor") not in (
+        step_monitors or set()
+    ):
+        raise ValueError(
+            f"fired must name a step monitor of this spec (an earlier one, from a monitor): {p.get('monitor')!r}"
+        )
     for k in ("obj", "a", "b", "receptacle", "container", "target", "other"):
-        for name in ([p[k]] if isinstance(p.get(k), str) else p.get(k) or []):
+        for name in [p[k]] if isinstance(p.get(k), str) else p.get(k) or []:
             if name not in objects:
                 raise ValueError(f"predicate {p['pred']} names unknown object {name!r}")
     for f in ([p["fixture"]] if "fixture" in p else []) + list(p.get("fixtures") or []):
@@ -2151,14 +2664,21 @@ class Monitors:
         """
         out = [
             {"id": m["id"], "detail": m.get("detail", m["id"]), **self.state[m["id"]]}
-            for m in self.items if m.get("when", "step") == "step"
+            for m in self.items
+            if m.get("when", "step") == "step"
             and (self.state[m["id"]]["first_step"] is not None or self.state[m["id"]]["error"])
         ]
         for m in self.items:
             if m.get("when") != "end" or env is None:
                 continue
-            entry = {"id": m["id"], "detail": m.get("detail", m["id"]), "when": "end",
-                     "first_step": None, "steps": 0, "error": None}
+            entry = {
+                "id": m["id"],
+                "detail": m.get("detail", m["id"]),
+                "when": "end",
+                "first_step": None,
+                "steps": 0,
+                "error": None,
+            }
             try:
                 if evaluate(env, m["pred"]):
                     entry.update(first_step=step, steps=1)

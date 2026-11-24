@@ -63,7 +63,10 @@ def select_tasks(
 
 
 def resume_refusal(
-    job_dir: Path, harness: str, model: str, reasoning_effort: str | None = None,
+    job_dir: Path,
+    harness: str,
+    model: str,
+    reasoning_effort: str | None = None,
     robot_framing: str = "simulated",
 ) -> str | None:
     """Why `--resume` cannot add trials of (harness, model) to this job folder, or None. A job holds one pair: when its
@@ -125,6 +128,7 @@ def run_many(
     interface: str | None = None,
     reasoning_effort: str | None = None,
     robot_framing: str = "simulated",
+    max_turns: int | None = None,
 ) -> list[dict]:
     from ..harnesses import robot_framing_refusal
 
@@ -139,7 +143,9 @@ def run_many(
     if (
         resume
     ):  # skip (task, seed, epoch) already finished in this job (an unfinished trial dir is left as evidence and rerun)
-        if why := resume_refusal(job_dir, harness, model, reasoning_effort, robot_framing):  # only the same pair's trials count
+        if why := resume_refusal(
+            job_dir, harness, model, reasoning_effort, robot_framing
+        ):  # only the same pair's trials count
             raise ValueError(why)
         done = set()
         for rj in job_dir.glob("*/result.json"):
@@ -215,6 +221,7 @@ def run_many(
                     interface=interface,
                     reasoning_effort=reasoning_effort,
                     robot_framing=robot_framing,
+                    max_turns=max_turns,
                 )
                 if not r["exception"] or live:  # a live robot is never retried blind: a failed trial holds the batch
                     break

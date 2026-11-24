@@ -1,0 +1,46 @@
+{
+  "robocasa": {
+    "revision": "456174f62b89b8fca99eaaf33949c29fec9cfc2a",
+    "patch_sha256": "f1f391e9912e3918ec93128b6a4ef934c1902cb8125c076975eb2189d1f61eb2",
+    "files": {
+      "setup.py": {
+        "baseline": "9bb7055c345a50c69417c9978277f82a0d782ae17cb369939a35e5faaa6a83e5",
+        "candidate": "5388c0d2f26f88a3951544cc7c2b46f4c188e878bef20ee09cb47296680fb0d1"
+      },
+      "robocasa/__init__.py": {
+        "baseline": "5be2bcb2be1639d30747ff6382e23611e6e3038721bca7d20ea97fa69d4e36f8",
+        "candidate": "f4379811c538af9c3c2f0721209c3e40da72b5f45139698f09f9b741805acde0"
+      }
+    },
+    "python_tree_sha256": {
+      "baseline": "78c48a398034919b77c6c92b56f8738a54d7a6b300a3961029890f0361dd9a86",
+      "candidate": "8b2e70e7bd2e0a91ab34ee48a39234430e2fa5f06716f86a9e27c6a39336d1f1"
+    }
+  },
+  "robosuite": {
+    "revision": "5ce6643f3092639d08f7b0f90ed1c6a84f50552c",
+    "patch_sha256": "33f808006bfe8c92c1d521065811681787cd82313125ae6d2702b4be98322089",
+    "files": {
+      "setup.py": {
+        "baseline": "ea766f282e0b0e909ff1a0009890de4c5209e2665a403f3a982fc759674881bc",
+        "candidate": "ea413bcbd5106d148f081655071529634d9a6d0a20c9a32c26024fc64946ff81"
+      },
+      "robosuite/controllers/parts/controller.py": {
+        "baseline": "dabc92411886895be495ca920459c00433f17be7240510872a6fd5c005545e20",
+        "candidate": "f231e3498cfcb9acdb77dbda249740b5960612c027ad74d704af0e260ca24077"
+      },
+      "robosuite/utils/binding_utils.py": {
+        "baseline": "a3d2526fb2e60875e2c3a87b8828b8e3b512781708c80d0c96ee6024980896c8",
+        "candidate": "2acf3424d425bafb95568bc69520a7a1413d4254d120a0e9448f0e0fe5422987"
+      },
+      "robosuite/models/assets/base.xml": {
+        "baseline": "6b24417576ecc2300a52b1643da0c1e7edeac68d434fbdd4d11fc656dd302f9c",
+        "candidate": "d8fd22faca92f6e1458fa6ac0a151cdc93f24cbd8184ee0d862fdfced5b0e584"
+      }
+    },
+    "python_tree_sha256": {
+      "baseline": "618e8b21208f2636e9e7f53d330ff18961fbd19aed5ad70cbbba0b215799ff45",
+      "candidate": "59cb0d6d829ab4279eae9bd5c2701dab36b75942c42a63b1c7bae9d8af76e701"
+    }
+  }
+}

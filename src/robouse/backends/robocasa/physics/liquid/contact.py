@@ -3,6 +3,7 @@
 Absorption transfers resolved liquid particles to a separately accounted reservoir.
 It is a contact/capacity abstraction, not a textile capillarity or evaporation model.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -58,7 +59,7 @@ class MeshContact:
         ids = np.flatnonzero(np.all((x >= self.lo - distance) & (x <= self.hi + distance), axis=1))
         # Chunking limits allocations for detailed meshes and large wet areas.
         for start in range(0, len(ids), 128):
-            ix = ids[start:start + 128]
+            ix = ids[start : start + 128]
             candidates = self.tree.query_ball_point(x[ix], self.radius + distance + 1e-12)
             counts = np.asarray([len(c) for c in candidates])
             if not counts.sum():
@@ -98,9 +99,78 @@ class Absorber:
             self.contacts += 1
         return len(chosen)
 
+    def update_poses(self, fluid, poses):
+        """Uptake at the boundary poses {name: (pos, R, ...)}; the coupling and substep paths call this."""
+        pos, rotation = poses[self.name][:2]
+        return self.update(fluid, pos, rotation)
+
+    def pose_names(self):
+        return (self.name,)
+
     def report(self, particle_volume):
-        return {"absorbed_ml": self.particles * particle_volume * 1e6,
-                "capacity_ml": self.capacity_ml, "contact_updates": self.contacts}
+        return {
+            "absorbed_ml": self.particles * particle_volume * 1e6,
+            "capacity_ml": self.capacity_ml,
+            "contact_updates": self.contacts,
+        }
+
+
+class PatchAbsorber(Absorber):
+    """One finite reservoir whose contact geometry is several rigid patch meshes (contract 0.6.0 flex cloth).
+
+    The capacity is shared by the whole cloth, not divided between patches. A free particle within `contact_m` of
+    any patch is absorbed (lowest particle ids first, as `Absorber`). The patch split is attribution only: each
+    absorbed particle counts for the first patch, in fixed order, that touched it.
+    """
+
+    def __init__(self, name, patch_meshes: dict, capacity_ml, contact_m):
+        if not patch_meshes:
+            raise ValueError("a patch absorber needs at least one patch mesh")
+        self.patches = list(patch_meshes)
+        self.patch_meshes = dict(patch_meshes)
+        super().__init__(name, None, capacity_ml, contact_m)
+
+    def reset(self):
+        super().reset()
+        self.by_patch = {p: 0 for p in getattr(self, "patches", [])}
+
+    def pose_names(self):
+        return tuple(self.patches)
+
+    def update(self, fluid, pos, rotation):
+        raise TypeError("a patch absorber needs every patch pose: call update_poses")
+
+    def update_poses(self, fluid, poses):
+        ml = fluid.params.particle_volume * 1e6
+        remaining = int(np.floor(self.capacity_ml / ml + 1e-9)) - self.particles
+        if remaining <= 0:
+            return 0
+        ids = np.flatnonzero(fluid.free_mask)
+        x = fluid.positions()[ids]
+        first = np.full(len(ids), -1)
+        for k, name in enumerate(self.patches):
+            pos, rotation = poses[name][:2]
+            open_ = first < 0
+            if not open_.any():
+                break
+            hit = np.zeros(len(ids), bool)
+            hit[open_] = self.patch_meshes[name].within(x[open_], pos, rotation, self.contact_m)
+            first[hit] = k
+        touched = np.flatnonzero(first >= 0)[:remaining]
+        chosen = ids[touched]
+        if len(chosen):
+            fluid.absorb(chosen, self.name)
+            self.particles += len(chosen)
+            self.contacts += 1
+            for k in first[touched]:
+                self.by_patch[self.patches[int(k)]] += 1
+        return len(chosen)
+
+    def report(self, particle_volume):
+        out = super().report(particle_volume)
+        out["patches"] = len(self.patches)
+        out["by_patch_ml"] = {p: n * particle_volume * 1e6 for p, n in self.by_patch.items() if n}
+        return out
 
 
 class PuddleSleep:

@@ -335,7 +335,7 @@ class MobileManipBackend(EmbodiedBackend):
         o.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
         o.impratio = 10
         o.noslip_iterations = 3
-        o.enableflags |= mujoco.mjtEnableBit.mjENBL_MULTICCD
+        o.disableflags &= ~int(mujoco.mjtDisableBit.mjDSBL_MULTICCD)
         A.build_apartment(s, self.task["objects"])
         self.robot = r = ROBOTS[self.rkey]()
         x, y, yaw = self.task["start"]

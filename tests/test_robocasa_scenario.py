@@ -18,17 +18,40 @@ SPEC = {
     "kitchen": {"layout": 1, "style": 1},
     "instruction": "Warm up the leftovers.",
     "robot_anchor": "microwave",
-    "fixtures": {"microwave": {"type": "microwave"}, "counter": {"type": "counter", "ref": "microwave", "size": [0.3, 0.3]}},
+    "fixtures": {
+        "microwave": {"type": "microwave"},
+        "counter": {"type": "counter", "ref": "microwave", "size": [0.3, 0.3]},
+    },
     "fixture_states": [{"fixture": "microwave", "set": "door", "value": 1.0}],
     "objects": [
-        {"name": "tray", "category": "oven_tray",
-         "placement": {"fixture": "counter", "sample_region_kwargs": {"ref": "microwave"}, "size": [0.4, 0.3],
-                       "pos": ["ref", -1.0], "offset": [0.0, 0.0]}},
-        {"name": "box", "category": "tupperware",
-         "placement": {"fixture": "counter", "sample_region_kwargs": {"ref": "microwave"}, "size": [0.5, 0.3],
-                       "pos": ["ref", -1.0], "offset": [0.0, 0.15]}},
+        {
+            "name": "tray",
+            "category": "oven_tray",
+            "placement": {
+                "fixture": "counter",
+                "sample_region_kwargs": {"ref": "microwave"},
+                "size": [0.4, 0.3],
+                "pos": ["ref", -1.0],
+                "offset": [0.0, 0.0],
+            },
+        },
+        {
+            "name": "box",
+            "category": "tupperware",
+            "placement": {
+                "fixture": "counter",
+                "sample_region_kwargs": {"ref": "microwave"},
+                "size": [0.5, 0.3],
+                "pos": ["ref", -1.0],
+                "offset": [0.0, 0.15],
+            },
+        },
     ],
-    "goal": ["and", {"pred": "inside", "obj": "box", "fixture": "microwave"}, {"pred": "fixture_on", "fixture": "microwave"}],
+    "goal": [
+        "and",
+        {"pred": "inside", "obj": "box", "fixture": "microwave"},
+        {"pred": "fixture_on", "fixture": "microwave"},
+    ],
     "monitors": [{"id": "tray_in", "pred": {"pred": "inside", "obj": "tray", "fixture": "microwave"}}],
 }
 
@@ -47,6 +70,8 @@ SPEC = {
         (lambda s: s["fixture_states"].append({"fixture": "oven", "set": "door"}), "unknown fixture"),
         (lambda s: s["objects"][1].update(tint=[0.2, 0.5, 2.0, 1.0]), "tint"),
         (lambda s: s["objects"][1].update(tint=[0.2, 0.5, 0.9]), "tint"),
+        (lambda s: s["objects"][1].update(solimp=[0.95, 0.95, 0.001]), "solimp"),
+        (lambda s: s["objects"][1].update(solimp=[0.95, 1.0, 0.001, 0.5, 2]), "solimp"),
     ],
 )
 def test_check_spec_names_the_problem(edit, message) -> None:
@@ -55,6 +80,38 @@ def test_check_spec_names_the_problem(edit, message) -> None:
     edit(bad)
     with pytest.raises(ValueError, match=message):
         check_spec(bad)
+
+
+def test_an_object_solimp_replaces_only_robocasas_imposed_impedance() -> None:
+    mujoco = pytest.importorskip("mujoco")
+    from types import SimpleNamespace
+
+    from robouse.backends.robocasa.scenario import ROBOCASA_OBJECT_SOLIMP, apply_object_solimp
+
+    xml = """<mujoco><worldbody>
+      <body name="cup"><freejoint/>
+        <geom name="wall" size="0.02" solimp="0.998 0.998 0.001"/>
+        <geom name="look" size="0.02" contype="0" conaffinity="0" solimp="0.998 0.998 0.001"/>
+        <body name="part"><joint type="hinge"/><geom name="blade" size="0.01" solimp="0.9 0.95 0.001"/>
+          <geom name="pad" size="0.01" solimp="0.998 0.998 0.001"/></body>
+      </body>
+      <body name="plate" pos="1 0 0"><freejoint/><geom name="rim" size="0.02" solimp="0.998 0.998 0.001"/></body>
+    </worldbody></mujoco>"""
+    m = mujoco.MjModel.from_xml_string(xml)
+    env = SimpleNamespace(
+        sim=SimpleNamespace(model=SimpleNamespace(_model=m)), obj_body_id={n: m.body(n).id for n in ("cup", "plate")}
+    )
+    before = m.geom_solimp.copy()
+    apply_object_solimp(env, {"objects": [{"name": "cup"}, {"name": "plate"}]})
+    assert (m.geom_solimp == before).all()  # no key: unchanged
+    soft = [0.95, 0.95, 0.001, 0.5, 2.0]
+    for _ in range(2):  # a second reset leaves it as the first did
+        apply_object_solimp(env, {"objects": [{"name": "cup", "solimp": soft}, {"name": "plate"}]})
+        got = {n: m.geom(n).solimp.tolist() for n in ("wall", "look", "blade", "pad", "rim")}
+        assert got["wall"] == soft and got["pad"] == soft  # the object's own collision geoms, at any depth
+        assert got["look"] == list(ROBOCASA_OBJECT_SOLIMP)  # visual-only geom untouched
+        assert got["blade"] == pytest.approx([0.9, 0.95, 0.001, 0.5, 2.0])  # an impedance of its own is kept
+        assert got["rim"] == list(ROBOCASA_OBJECT_SOLIMP)  # another object without the key
 
 
 def _robocasa_python() -> str | None:
@@ -99,8 +156,10 @@ def test_an_object_can_start_inside_another() -> None:
     if not _robocasa_python():
         pytest.skip("no RoboCasa interpreter")
     spec = copy.deepcopy(SPEC) | {"id": "test-scenario-nested"}
-    spec["objects"] = [{"name": "tub", "category": "tupperware", "placement": SPEC["objects"][1]["placement"]},
-                       {"name": "drumstick", "category": "chicken_drumstick", "placement": {"object": "tub"}}]
+    spec["objects"] = [
+        {"name": "tub", "category": "tupperware", "placement": SPEC["objects"][1]["placement"]},
+        {"name": "drumstick", "category": "chicken_drumstick", "placement": {"object": "tub"}},
+    ]
     spec["goal"] = {"pred": "in_receptacle", "obj": "drumstick", "receptacle": "tub"}
     spec["monitors"] = []
     check_spec(spec)
@@ -113,18 +172,26 @@ def test_an_object_can_start_inside_another() -> None:
 
 def _on_burner(lit: bool) -> dict:
     """Food laid straight on a burner of a stock kitchen's stove, that burner lit or not."""
-    on = {"fixture": "stove", "sample_region_kwargs": {"locs": ["front_left"]}, "size": [0.02, 0.02],
-          "ensure_object_boundary_in_range": False}
+    on = {
+        "fixture": "stove",
+        "sample_region_kwargs": {"locs": ["front_left"]},
+        "size": [0.02, 0.02],
+        "ensure_object_boundary_in_range": False,
+    }
     food = {"pred": "touching_lit_burner", "obj": "shrimp", "fixture": "stove"}
     return {
-        "id": f"test-scenario-burner-{'lit' if lit else 'off'}", "kitchen": {"layout": 1, "style": 1},
-        "instruction": "Heat up the shrimp.", "robot_anchor": "stove",
+        "id": f"test-scenario-burner-{'lit' if lit else 'off'}",
+        "kitchen": {"layout": 1, "style": 1},
+        "instruction": "Heat up the shrimp.",
+        "robot_anchor": "stove",
         "fixtures": {"stove": {"type": "stove"}},
         "fixture_states": [{"fixture": "stove", "set": "burner", "loc": "front_left", "mode": "on"}] if lit else [],
         "objects": [{"name": "shrimp", "category": "shrimp", "placement": on}],
-        "goal": food, "monitors": [{"id": "shrimp_lit", "pred": food},
-                                   {"id": "shrimp_centred", "pred": {"pred": "on_lit_burner", "obj": "shrimp",
-                                                                     "fixture": "stove"}}],
+        "goal": food,
+        "monitors": [
+            {"id": "shrimp_lit", "pred": food},
+            {"id": "shrimp_centred", "pred": {"pred": "on_lit_burner", "obj": "shrimp", "fixture": "stove"}},
+        ],
     }
 
 
@@ -147,11 +214,17 @@ def test_a_toaster_oven_powered_on_runs_on_its_timer(on) -> None:
     if not _robocasa_python():
         pytest.skip("no RoboCasa interpreter")
     running = {"pred": "fixture_on", "fixture": "toaster_oven"}
-    spec = {"id": f"test-scenario-toaster-oven-{'on' if on else 'off'}", "kitchen": {"layout": 48, "style": 1},
-            "instruction": "Warm up the toast.", "robot_anchor": "toaster_oven",
-            "fixtures": {"toaster_oven": {"type": "toaster_oven"}},
-            "fixture_states": [{"fixture": "toaster_oven", "set": "power", "on": on}],
-            "objects": [], "goal": running, "monitors": [{"id": "running", "pred": running}]}
+    spec = {
+        "id": f"test-scenario-toaster-oven-{'on' if on else 'off'}",
+        "kitchen": {"layout": 48, "style": 1},
+        "instruction": "Warm up the toast.",
+        "robot_anchor": "toaster_oven",
+        "fixtures": {"toaster_oven": {"type": "toaster_oven"}},
+        "fixture_states": [{"fixture": "toaster_oven", "set": "power", "on": on}],
+        "objects": [],
+        "goal": running,
+        "monitors": [{"id": "running", "pred": running}],
+    }
     b = _build(spec)
     try:
         for _ in range(10):  # the timer runs down by 1/3000 per simulated second: still on
@@ -179,14 +252,22 @@ def test_a_box_resting_on_the_counter_is_upright_supported_and_off_the_floor() -
     if not _robocasa_python():
         pytest.skip("no RoboCasa interpreter")
     box, counter = {"obj": "box"}, {"obj": "box", "fixture": "counter"}
-    spec = copy.deepcopy(SPEC) | {"id": "test-scenario-support", "monitors": [], "goal": [
-        "and", {"pred": "upright", **box, "max_deg": 10}, ["not", {"pred": "on_floor", **box}],
-        ["not", {"pred": "overhang", **counter}],  # well inside the counter top
-        {"pred": "overhang", **counter, "max_m": -2.0},  # but it does rest on it (a negative margin always holds)
-        {"pred": "overhang", "obj": "box", "fixtures": ["counter", "microwave"], "max_m": -2.0},
-        ["not", {"pred": "displaced", **box}], {"pred": "displaced", **box, "min_m": -1.0},
-        ["not", {"pred": "near_fixture", "obj": "box", "fixture": "microwave", "gap_m": -1.0}],
-        ["not", {"pred": "overhang", "obj": "box", "fixture": "microwave", "max_m": -2.0}]]}  # not touching
+    spec = copy.deepcopy(SPEC) | {
+        "id": "test-scenario-support",
+        "monitors": [],
+        "goal": [
+            "and",
+            {"pred": "upright", **box, "max_deg": 10},
+            ["not", {"pred": "on_floor", **box}],
+            ["not", {"pred": "overhang", **counter}],  # well inside the counter top
+            {"pred": "overhang", **counter, "max_m": -2.0},  # but it does rest on it (a negative margin always holds)
+            {"pred": "overhang", "obj": "box", "fixtures": ["counter", "microwave"], "max_m": -2.0},
+            ["not", {"pred": "displaced", **box}],
+            {"pred": "displaced", **box, "min_m": -1.0},
+            ["not", {"pred": "near_fixture", "obj": "box", "fixture": "microwave", "gap_m": -1.0}],
+            ["not", {"pred": "overhang", "obj": "box", "fixture": "microwave", "max_m": -2.0}],
+        ],
+    }  # not touching
     check_spec(spec)
     b = _build(spec)
     try:
@@ -216,8 +297,11 @@ def test_a_dropped_box_strikes_the_counter_and_a_resting_one_does_not(drop) -> N
     if not _robocasa_python():
         pytest.skip("no RoboCasa interpreter")
     hit = {"pred": "impact_speed", "obj": "box", "min_mps": 1.0}
-    spec = copy.deepcopy(SPEC) | {"id": f"test-scenario-impact-{drop}", "goal": hit,
-                                  "monitors": [{"id": "struck", "pred": hit}]}
+    spec = copy.deepcopy(SPEC) | {
+        "id": f"test-scenario-impact-{drop}",
+        "goal": hit,
+        "monitors": [{"id": "struck", "pred": hit}],
+    }
     if drop:
         spec["probe_drops"] = {"box": drop}  # lifted after reset settling, then let go (about 1.7 m/s at impact)
     check_spec(spec)
@@ -245,8 +329,11 @@ def test_a_goal_can_require_that_a_step_monitor_fired() -> None:
     if not _robocasa_python():
         pytest.skip("no RoboCasa interpreter")
     rests = {"pred": "overhang", "obj": "box", "fixture": "counter", "max_m": -2.0}  # holds while it rests there
-    spec = copy.deepcopy(SPEC) | {"id": "test-scenario-fired", "goal": {"pred": "fired", "monitor": "rests"},
-                                  "monitors": [{"id": "rests", "pred": rests}]}
+    spec = copy.deepcopy(SPEC) | {
+        "id": "test-scenario-fired",
+        "goal": {"pred": "fired", "monitor": "rests"},
+        "monitors": [{"id": "rests", "pred": rests}],
+    }
     check_spec(spec)
     b = _build(spec)
     try:
@@ -272,8 +359,12 @@ def test_fired_names_a_step_monitor_from_the_goal(where, monitor) -> None:
 
 def test_a_monitor_may_use_fired_on_an_earlier_step_monitor() -> None:
     spec = copy.deepcopy(SPEC)
-    spec["monitors"].append({"id": "after_tray", "pred": ["and", spec["monitors"][0]["pred"],
-                                                          ["not", {"pred": "fired", "monitor": "tray_in"}]]})
+    spec["monitors"].append(
+        {
+            "id": "after_tray",
+            "pred": ["and", spec["monitors"][0]["pred"], ["not", {"pred": "fired", "monitor": "tray_in"}]],
+        }
+    )
     check_spec(spec)
 
 

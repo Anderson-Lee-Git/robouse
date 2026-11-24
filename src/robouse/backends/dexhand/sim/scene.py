@@ -217,7 +217,7 @@ def build(hand: str, task: dict):
         name="key",
         pos=[0.4, -0.6, 2.2],
         dir=[-0.15, 0.3, -1],
-        directional=True,
+        type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
         diffuse=[0.55, 0.55, 0.55],
         castshadow=True,
     )

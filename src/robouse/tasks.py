@@ -39,6 +39,9 @@ class Task:
         # an exported BenchFlow package (`robouse export`, the hub datasets) keeps the block under metadata
         s = dict(self.meta.get("robouse") or self.meta.get("metadata", {}).get("robouse", {}))
         s.setdefault("id", self.path.name)
+        # the task's folder, which a backend resolves relative paths in the block against (household `package:`);
+        # for the episode server only, never shown to the agent
+        s.setdefault("task_dir", str(self.path.resolve()))
         return s
 
     @property
@@ -48,6 +51,12 @@ class Task:
     @property
     def agent_timeout_s(self) -> float:
         return float(self.meta.get("agent", {}).get("timeout_sec", 900))
+
+    @property
+    def agent_max_turns(self) -> int | None:
+        """The task's agent turn cap (frontmatter `agent.max_turns`), or None: the harness's own."""
+        v = self.meta.get("agent", {}).get("max_turns")
+        return None if v is None else int(v)
 
     @property
     def metadata(self) -> dict:

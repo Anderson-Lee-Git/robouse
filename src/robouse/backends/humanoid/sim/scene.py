@@ -149,7 +149,7 @@ def new_scene(key: str):
         name="key",
         pos=[1.5, -1.0, 3.5],
         dir=[-0.3, 0.2, -1],
-        directional=True,
+        type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
         diffuse=[0.55, 0.55, 0.55],
         castshadow=True,
     )
@@ -157,7 +157,7 @@ def new_scene(key: str):
         name="fill",
         pos=[-1, 1.5, 3],
         dir=[0.3, -0.3, -1],
-        directional=True,
+        type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
         diffuse=[0.25, 0.25, 0.25],
         castshadow=False,
     )

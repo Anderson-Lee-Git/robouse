@@ -51,7 +51,7 @@ from .recording import VideoRecorder, record_size
 
 log = logging.getLogger(__name__)
 
-SETTLE_STEPS = 10  # after `done`, hold still this many steps before judging success
+SETTLE_STEPS = 10  # after `done`, hold still this many steps before judging success (a backend's `settle_steps` wins)
 MAX_REPEAT = 50
 MAX_SKILL_STEPS = 150
 INLINE_FORMATS = ("jpeg", "png")  # `observe` with `inline`: frames in the reply
@@ -83,6 +83,7 @@ class Episode:
         self.mode = str(getattr(self.backend, "mode", "sim"))  # sim | real | hil-mock (the sim/real axis)
         self.seed = int(spec.get("seed", 0) if seed is None else seed)
         self.max_steps = int(spec.get("max_steps", getattr(self.backend, "max_steps", 500)))
+        self.settle_steps = int(getattr(self.backend, "settle_steps", SETTLE_STEPS))
         self.frame_every = int(spec.get("frame_every", 2))
         self.skills_enabled = bool(spec.get("skills", True))
         # "final": judged after `robo done` and a settle period (default).
@@ -237,7 +238,13 @@ class Episode:
             resp = refusal if refusal is not None else self._dispatch(op, req, privileged)
         except Exception as e:  # noqa: BLE001 - a bounded error goes back to the agent
             resp = {"ok": False, "error": clip(f"{type(e).__name__}: {e}", 500)}
+        self._check_infrastructure()
         self._check_halt()
+        if op in MOTION_OPS and (notes := self._pop_notes()):
+            if resp.get("ok") and isinstance(resp.get("result"), dict):
+                resp["result"]["notes"] = notes
+            else:
+                resp["notes"] = notes
         if not self.finished and self.steps >= self.max_steps:
             self.finish("budget_exhausted", "")
         if self.finished and op in MOTION_OPS and resp.get("ok") and isinstance(resp.get("result"), dict):
@@ -301,6 +308,22 @@ class Episode:
         instead, which refuses and counts it like any other request that does not carry the token, so an agent
         process that outlived its phase cannot end the scored episode uncounted."""
         return self.lock is None or token_matches(token, self._unlock_token)
+
+    def _pop_notes(self) -> list:
+        """What the backend's controller changed in this request's rows (e.g. clipped joint targets), for its reply."""
+        pop = _hook(self.backend, "pop_notes")
+        return list(pop() or []) if pop else []
+
+    def _infrastructure_error(self) -> str | None:
+        hook = _hook(self.backend, "infrastructure_error")
+        return hook() if hook else None
+
+    def _check_infrastructure(self) -> None:
+        """A backend that reports an infrastructure error (a plugin that failed or broke a rule, a simulation that
+        diverged) ends the episode at once, unjudged (no settle steps). The detail stays in the backend's session
+        summary; the agent's reply says only what the backend's error said."""
+        if not self.finished and self._infrastructure_error():
+            self.finish("infrastructure_error", "", settle=False)
 
     def _check_halt(self) -> None:
         """Real robots: an e-stop, over-temperature or hardware fault ends the episode at once (no settle steps)."""
@@ -443,6 +466,12 @@ class Episode:
         if not _finite(tol) or tol <= 0:
             return {"ok": False, "error": "tol must be a positive number"}
         target = np.asarray(pos, dtype=float)
+        if start := _hook(self.backend, "start_move_to"):  # backends whose rows are absolute plan the move themselves
+            try:
+                gen = start(target, None if grip is None else float(grip), max(1, min(MAX_SKILL_STEPS, max_steps)), tol)
+            except ValueError as e:
+                return {"ok": False, "error": str(e)}
+            return self._run_generator(gen, None)
         g = float(getattr(self.backend, "_grip", -1.0) if grip is None else grip)
         n, stalled = 0, False
         recent: list[np.ndarray] = []
@@ -477,10 +506,12 @@ class Episode:
         if not _finite(value):
             return {"ok": False, "error": "the grip value must be a finite number"}
         n = 0
+        row_hook = _hook(self.backend, "grip_action")  # the backend's own row that only moves the gripper
+        row = row_hook(value) if row_hook else [0.0, 0.0, 0.0, max(-1.0, min(1.0, value))]
         for _ in range(max(1, min(self.max_repeat, steps))):
             if not self._budget_left():
                 break
-            self._env_step([0.0, 0.0, 0.0, max(-1.0, min(1.0, value))])
+            self._env_step(row)
             n += 1
         return {"ok": True, "result": {"executed_steps": n, "state": self._state(), "steps_used": self.steps}}
 
@@ -514,6 +545,9 @@ class Episode:
             gen = start(name, [str(a) for a in args])
         except ValueError as e:
             return {"ok": False, "error": str(e)}
+        return self._run_generator(gen, name)
+
+    def _run_generator(self, gen: Generator, name: str | None) -> dict:
         n, out = 0, {}
         while True:
             if not self._budget_left():
@@ -538,7 +572,7 @@ class Episode:
         return {
             "ok": True,
             "result": {
-                "skill": name,
+                **({"skill": name} if name is not None else {}),
                 **out,
                 "executed_steps": n,
                 "state": self._state(),
@@ -577,12 +611,14 @@ class Episode:
         live_hold = _hook(self.backend, "begin_settle") if settle else None
         if live_hold:
             live_hold()
-        for _ in range(SETTLE_STEPS if settle else 0):  # settle; success must still hold afterwards
+        for _ in range(self.settle_steps if settle else 0):  # settle; success must still hold afterwards
             try:
                 self.backend.step(self._hold() if live_hold else hold)
             except Exception:  # noqa: BLE001 - a backend that cannot step further is judged on its current state
                 break
             self._record_frame(force=True)
+        if outcome != "infrastructure_error" and self._infrastructure_error():
+            outcome, text = "infrastructure_error", ""  # e.g. a plugin failed during the settle steps
         if (halted := getattr(self.backend, "halted", None)) and outcome != "safety_stop":
             outcome, text = "safety_stop", clip(str(halted), 500)  # a real robot stopped, e.g. during the settle steps
         success, judge_error = self._verdict(outcome, text)

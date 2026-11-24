@@ -24,7 +24,9 @@ which act outside the sandbox.
 Program folders inside a denied folder that a harness runs from (`HOME_PROGRAMS`, e.g. Codex's standalone install in
 ~/.codex/packages, and `CACHE_PROGRAMS`, e.g. the `dream` client's virtualenv and Kinex's Python) stay readable, never
 writable, and so does the runner's Python (`interpreters`), which the episode server and the verifier run on, and every
-path a harness names as read-only (`Launch.read_only`, e.g. the Kinex install every Kinex trial runs from). The agent
+path a harness names as read-only (`Launch.read_only`, e.g. the Kinex install every Kinex trial runs from), and every
+path in $ROBOUSE_SANDBOX_ALLOW inside a denied folder (`config.sandbox_allowed_paths`: a launcher hides a checkout whole,
+so no inner folder's name shows in the agent's mount table, and gives back its Python environment). The agent
 keeps its own workspace, the episode socket and the network (model APIs). On macOS, TCP connections to this machine are refused except to `local_ports` (a harness's own local
 proxy); on Linux the agent runs in its own PID namespace, so it cannot see the episode server's process. Set
 ROBOUSE_SANDBOX=0 to run without a sandbox (unsafe: the agent can then read the reference solution).
@@ -214,6 +216,17 @@ def _denied(extra: list[Path]) -> list[str]:
     return _real([*paths, str(PKG), *libero_data(), *dotenv_files([*extra, PKG])])
 
 
+def _allowed(denied: list[str], workspace: str | Path | None) -> list[str]:
+    """$ROBOUSE_SANDBOX_ALLOW paths that exist inside a denied folder (`config.sandbox_allowed_paths`), without one
+    that holds the workspace."""
+    ws = _real([workspace]) if workspace else []
+    return [
+        p
+        for p in _real(config.sandbox_allowed_paths())
+        if os.path.exists(p) and _inside(p, denied) and not any(_inside(w, [p]) for w in ws)
+    ]
+
+
 def _programs() -> list[str]:
     folders = [*(Path.home() / rel for rel in HOME_PROGRAMS), *(config.cache_dir() / rel for rel in CACHE_PROGRAMS)]
     return [p for p in _real(folders) if os.path.isdir(p)]
@@ -223,12 +236,18 @@ def _inside(path: str, roots: list[str]) -> bool:
     return any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots)
 
 
-def _read_only(paths: Iterable[str | Path], workspace: str | Path | None, denied: list[str]) -> list[str]:
+def _read_only(
+    paths: Iterable[str | Path], workspace: str | Path | None, denied: list[str], own: list[str] | None = None
+) -> list[str]:
     """A harness's read-only paths (`Launch.read_only`) that exist, without one that holds the workspace (which stays
-    writable) or lies in a denied folder (which stays hidden)."""
+    writable) or lies in a denied folder (which stays hidden) other than inside the agent's own homes (e.g. the turn
+    cap's hooks.json in its Codex home)."""
     ws = _real([workspace]) if workspace else []
+    homes = _real(own or [])
     return [
-        p for p in _real(paths) if os.path.exists(p) and not _inside(p, denied) and not any(_inside(w, [p]) for w in ws)
+        p
+        for p in _real(paths)
+        if os.path.exists(p) and (not _inside(p, denied) or _inside(p, homes)) and not any(_inside(w, [p]) for w in ws)
     ]
 
 
@@ -276,15 +295,24 @@ def sandbox_profile(
         rules += f'(deny network-outbound (remote unix-socket (path-regex #"^{others}")))'
         rules += f'(allow file-read* file-write* (literal "{own_socket}"))'
         rules += f'(allow network-outbound (remote unix-socket (path-literal "{own_socket}")))'
+    allowed = _allowed(denied, workspace)
+    rules += "".join(f'(allow file-read* (subpath "{p}"))' for p in allowed)
+    rules += "".join(
+        f'(deny file-read* file-write* (subpath "{d}"))'
+        for d in denied
+        if any(d != a and _inside(d, [a]) for a in allowed)
+    )
     rules += '(deny file-read* (regex #"/site-packages/robouse(/|$)") (regex #"/src/robouse(/|$)"))'
     rules += '(deny file-read* file-write* (regex #"/robouse-ws-[^/]*(/|$)"))'
     rules += "".join(f'(allow file-read* (subpath "{p}"))' for p in _programs())
     for d in [*_real([workspace] if workspace else []), *_real(own or [])]:
         rules += f'(allow file-read* file-write* (subpath "{d}"))'
-    rules += "".join(f'(deny file-write* (subpath "{p}"))' for p in _read_only(read_only or [], workspace, denied))
-    # the folders above a home or program folder that sits inside a denied one: their metadata (stat), not their
+    # the agent's own homes may hold a Unix socket of its harness (the Codex turn cap's hooks talk to the runner there)
+    rules += "".join(f'(allow network-outbound (remote unix-socket (subpath "{h}")))' for h in _real(own or []))
+    rules += "".join(f'(deny file-write* (subpath "{p}"))' for p in _read_only(read_only or [], workspace, denied, own))
+    # the folders above a home, program or given-back folder that sits inside a denied one: their metadata (stat), not their
     # contents, so a program can resolve its own path there (Codex canonicalizes CODEX_HOME, inside robouse's cache)
-    above = sorted({a for p in [*_programs(), *_real(own or [])] for a in _ancestors(p)})
+    above = sorted({a for p in [*_programs(), *_real(own or []), *allowed] for a in _ancestors(p)})
     if above:
         rules += "(allow file-read-metadata " + " ".join(f'(literal "{a}")' for a in above) + ")"
     rules += "(deny process-exec " + " ".join(f'(literal "{p}")' for p in MACOS_ESCAPES) + ")"
@@ -298,7 +326,8 @@ def bwrap_args(
     workspace: Path, socket: str, deny: list[Path], own: list[str] | None = None, read_only: list[Path] | None = None
 ) -> list[str]:
     """The bubblewrap command prefix on Linux: the host file system as it is, a fresh /tmp holding only this trial's
-    workspace and socket, an empty folder over every denied folder and /dev/null over every denied file, the agent's
+    workspace and socket, an empty folder over every denied folder and /dev/null over every denied file (none for a
+    denied path inside a folder already hidden, whose mount would show its path), the agent's
     own homes and the program folders bound back in, the harness's read-only paths bound read-only, and a PID namespace
     of its own."""
     args = [
@@ -318,20 +347,35 @@ def bwrap_args(
     for p in interpreters():  # read-only, under the denied folders' mounts (a robouse install inside stays hidden)
         if not _inside(p, ["/tmp"]):
             args += ["--ro-bind", p, p]
-    for d in _denied(deny):
+    denied = _denied(deny)
+    hidden = [d for d in denied if os.path.isdir(d) and not str(workspace).startswith(d)]
+    for d in denied:
         if str(workspace).startswith(d):
             continue  # a folder holding the workspace stays
+        if any(d != h and _inside(d, [h]) for h in hidden):
+            # already hidden by the empty folder over a denied folder above it; a mount of its own would create its
+            # path inside that empty folder and list it in /proc/self/mountinfo, and a run folder's path can name
+            # the task (e.g. runs/eval/<date>-<task>-v<version>/...)
+            continue
         if os.path.isdir(d):
             args += ["--tmpfs", d]
         elif os.path.exists(d) and not _inside(d, ["/tmp"]):  # a file or socket; /tmp is fresh already
             args += ["--ro-bind", "/dev/null", d]
+    # paths given back read-only from inside a hidden folder, and the denied paths inside those (their mounts show
+    # only paths under a given-back folder)
+    allowed = _allowed(denied, workspace)
+    for p in allowed:
+        args += ["--ro-bind", p, p]
+    for d in denied:
+        if any(d != a and _inside(d, [a]) for a in allowed):
+            args += ["--tmpfs", d] if os.path.isdir(d) else ["--ro-bind", "/dev/null", d] if os.path.exists(d) else []
     args += ["--bind", str(workspace), str(workspace), "--bind", socket, socket]
     for p in _programs():
         args += ["--ro-bind", p, p]
     for h in _real(own or []):
         if os.path.isdir(h) and not h.startswith(str(workspace)):
             args += ["--bind", h, h]
-    for p in _read_only(read_only or [], workspace, _denied(deny)):
+    for p in _read_only(read_only or [], workspace, _denied(deny), own):
         args += ["--ro-bind", p, p]
     return [*args, "--chdir", str(workspace)]
 

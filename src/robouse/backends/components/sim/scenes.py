@@ -119,7 +119,7 @@ class Layout:
                       rgb1=[.82, .86, .92] if not self.walls else [.85, .86, .88], rgb2=[.97, .97, .98], width=64, height=64)
         w = s.worldbody
         light_dir = [[0, 0, -1], [.3, .2, -1], [-.25, .3, -1]][variant % 3]
-        w.add_light(name="sun", pos=[0, 0, 8], dir=light_dir, directional=True, diffuse=[.5, .5, .5], castshadow=False)
+        w.add_light(name="sun", pos=[0, 0, 8], dir=light_dir, type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL, diffuse=[.5, .5, .5], castshadow=False)
         cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
         w.add_geom(name="floor", type=mujoco.mjtGeom.mjGEOM_PLANE, pos=[cx, cy, 0], size=[(x1 - x0) / 2 + 3, (y1 - y0) / 2 + 3, .1],
                    material="floor", friction=[1, .005, .0001])

@@ -65,6 +65,10 @@ ENV: dict[str, str] = {
     # local runner sandbox
     "ROBOUSE_SANDBOX": "0 disables the sandbox around agent processes (macOS Seatbelt, Linux bubblewrap; default 1)",
     "ROBOUSE_SANDBOX_DENY": "extra colon-separated paths agents may neither read nor write",
+    "ROBOUSE_SANDBOX_ALLOW": "colon-separated paths inside a denied folder that agents may read (not write), such as "
+    "an interpreter or a runtime library inside a denied checkout",
+    "ROBOUSE_HOUSEHOLD_LIQUID_BACKEND": "folder holding the pinned household liquid (SPlisHSPlasH) backend; default "
+    "<cache>/household/liquid/<backend id>",
     "ROBOUSE_CLAUDE_TOKEN_FILE": "optional env file of Claude Code OAuth tokens (NAME=token lines), used in turn when "
     "neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set; denied to agents",
     "ROBOUSE_CODEX_AUTH_DIR": "optional folder of Codex logins (<account>.json, copies of a `codex login` auth.json), "
@@ -76,12 +80,20 @@ ENV: dict[str, str] = {
     "ROBOUSE_MANISKILL_PYTHON": "Python of the ManiSkill virtualenv (default <cache>/maniskill-venv/bin/python)",
     "ROBOUSE_METADRIVE_PYTHON": "Python of the MetaDrive virtualenv (default <cache>/metadrive-venv/bin/python)",
     "ROBOUSE_MYOSUITE_PYTHON": "Python of the MyoSuite virtualenv (default <cache>/myosuite-venv/bin/python)",
-    "ROBOUSE_ROBOCASA_PYTHON": "Python of the RoboCasa virtualenv (default <cache>/robocasa-venv/bin/python)",
+    "ROBOUSE_ROBOCASA_PYTHON": "Python of the RoboCasa virtualenv (default <cache>/mujoco4/robocasa-venv/bin/python)",
     "ROBOUSE_ROBOCASA_OBJECT_ROOT": "Directory of authored RoboCasa object bundles (needed for custom/... objects)",
+    "ROBOUSE_PHYSICS_CONDITION_FILE": "Private group receipt checked on every migrated scenario reset; never passed to policies",
+    "ROBOUSE_PHYSICS_CONDITION_RESUME": "1: require an existing group receipt and exact actual-condition match",
     "ROBOUSE_ROBOCASA_PLUGINS": "comma-separated importable modules that register scene-specific RoboCasa scenario "
     "predicates and liquid container kinds (each has register(scenario); robocasa_scenario backend and worker)",
     "ROBOUSE_LIQUID_WORK_ROOT": "host-side scratch folder for the SPH liquid's solver files (robocasa_scenario scenes "
     "with a liquid; default: a temporary folder)",
+    "ROBOUSE_STATE_TRACE": "0: robocasa_scenario and household episodes write no physical-state trace "
+    "(state-trace.jsonl.gz, researcher-only; default on; practice episodes never write one)",
+    "ROBOUSE_HOUSEHOLD_ASSETS": "Directory of the household backend's vendored robot models (default "
+    "<cache>/household/menagerie; `python -m robouse.backends.household.assets fetch` fills it)",
+    "ROBOUSE_HOUSEHOLD_PYTHON": "Interpreter (or wrapper, e.g. one that runs it on a compute allocation) of the household "
+    "simulation worker; unset: the simulation runs in the episode server's process",
     "ROBOUSE_RLEBENCH_PYTHON": "Python of the RLE-Bench virtualenv (default <cache>/rlebench-venv/bin/python)",
     "ROBOUSE_CAPX_PYTHON": "Python of the CaP-X virtualenv (default <cache>/capx-venv/bin/python)",
     "ROBOUSE_CAPX_LIBERO_PYTHON": "Python of the CaP-X LIBERO virtualenv (default <cache>/capx-libero-venv/bin/python)",
@@ -207,6 +219,7 @@ PUBLIC = frozenset(
         "ROBOUSE_RECORD_SIZE",
         "ROBOUSE_SANDBOX",
         "ROBOUSE_SANDBOX_DENY",
+        "ROBOUSE_SANDBOX_ALLOW",
         "ROBOUSE_SPEND_CAP_USD",
         "ROBOUSE_AGENT_IMAGES",
         "ROBOUSE_DEXJOCO_PYTHON",
@@ -219,6 +232,9 @@ PUBLIC = frozenset(
         "ROBOUSE_ROBOCASA_OBJECT_ROOT",
         "ROBOUSE_ROBOCASA_PLUGINS",
         "ROBOUSE_LIQUID_WORK_ROOT",
+        "ROBOUSE_STATE_TRACE",
+        "ROBOUSE_HOUSEHOLD_PYTHON",
+        "ROBOUSE_HOUSEHOLD_ASSETS",
         "ROBOUSE_RLEBENCH_PYTHON",
         "ROBOUSE_CAPX_PYTHON",
         "ROBOUSE_CAPX_LIBERO_PYTHON",
@@ -284,7 +300,8 @@ def operator_dir() -> Path:
 
 def sim_python(backend: str, venv: str | None = None) -> Path:
     """Interpreter of a simulator's own virtualenv: $ROBOUSE_<BACKEND>_PYTHON, else <cache>/<venv>-venv/bin/python."""
-    return path(f"ROBOUSE_{backend.upper()}_PYTHON", cache_dir() / f"{venv or backend}-venv" / "bin" / "python")
+    root = cache_dir() / "mujoco4" if backend == "robocasa" else cache_dir()
+    return path(f"ROBOUSE_{backend.upper()}_PYTHON", root / f"{venv or backend}-venv" / "bin" / "python")
 
 
 def remote_endpoints(name: str) -> Path | None:
@@ -318,3 +335,10 @@ def sandbox_denied_paths() -> list[str]:
     out += [v for k in MOVED_CACHE if (v := env(k))]
     out += [p for p in env("ROBOUSE_SANDBOX_DENY").split(":") if p]
     return out
+
+
+def sandbox_allowed_paths() -> list[str]:
+    """Paths inside a denied folder that agents may read but not write ($ROBOUSE_SANDBOX_ALLOW): a launcher hides a
+    checkout whole (one mount, so no inner folder's name shows in the agent's mount table) and gives back only what
+    agents need from it, such as its Python environment."""
+    return [p for p in env("ROBOUSE_SANDBOX_ALLOW").split(":") if p]
