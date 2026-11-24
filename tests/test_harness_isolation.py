@@ -880,3 +880,24 @@ def test_the_episode_server_and_verifier_get_no_provider_key(tmp_path, monkeypat
     for name, env in seen.items():
         assert not [k for k, v in env.items() if v == "LEAK"], name
         assert env["HF_TOKEN"] == "kept" and env["PATH"], name
+
+
+def test_claude_code_takes_its_prompt_on_stdin_not_its_command_line() -> None:
+    """A Code trial's agent ran `pkill -f "robo-dev run"` in its own shell and killed its own Claude Code, whose
+    command line carried the prompt (which names `robo-dev run`); exit 143, an infrastructure failure. The runner and
+    the program/ASPIRE driver now strip the `-p` prompt from Claude Code's command and write it to its stdin."""
+    cmd = harnesses._claude_cmd("TASK robo-dev run", "claude-opus-5-5", effort="medium")
+    stripped, prompt = harnesses.prompt_to_stdin(cmd)
+    assert prompt == harnesses.PROMPT_PREFIX + "TASK robo-dev run"
+    assert not any("robo-dev run" in str(a) for a in stripped)
+    assert stripped[:2] == ["claude", "-p"] and stripped[2] == "--model"
+    assert harnesses._flag(stripped, "--effort") == "medium" and harnesses._flag(stripped, "--max-turns") == "400"
+    other = ["codex", "exec", "--json", "p"]
+    assert harnesses.prompt_to_stdin(other) == (other, None)
+    path = Path(harnesses.__file__).parent / "aspire" / "workspace" / "driver.py"
+    src = path.read_text()
+    assert "def prompt_to_stdin(" in src
+    ns: dict = {"os": os}
+    start = src.index("def prompt_to_stdin(")
+    exec(src[start : src.index("\ndef ", start + 1)], ns)  # the driver's own copy behaves the same
+    assert ns["prompt_to_stdin"](cmd) == (stripped, prompt)

@@ -635,6 +635,21 @@ def check_max_turns(harness: str, launch: Launch, turns: int) -> None:
     launch.config["max_turns_enforced"] = method in ("claude-code --max-turns", turncap.METHOD_HOOKS)
 
 
+def prompt_to_stdin(cmd: list[str]) -> tuple[list[str], str | None]:
+    """A Claude Code command without its `-p` prompt argument, and the prompt, which the caller writes to the agent's
+    stdin (`claude -p` reads its prompt there when none is given). The prompt then never appears in the agent's
+    command line, so a process match in the agent's own shell (`pkill -f "robo-dev run"`) cannot hit the agent itself:
+    a Code trial killed its own Claude Code that way (exit 143). Applied last, where the process starts, because
+    framing, the interface swap and MCP flags rewrite the prompt argument in place before then. Other commands are
+    returned unchanged with None."""
+    if not cmd or Path(str(cmd[0])).name != "claude" or "-p" not in cmd:
+        return cmd, None
+    i = cmd.index("-p")
+    if i + 1 >= len(cmd) or str(cmd[i + 1]).startswith("--"):
+        return cmd, None
+    return [*cmd[: i + 1], *cmd[i + 2 :]], str(cmd[i + 1])
+
+
 def _flag(cmd: list[str], name: str) -> str | None:
     """The value after the last `name` in a command, or None."""
     i = max((j for j, a in enumerate(cmd[:-1]) if a == name), default=None)
