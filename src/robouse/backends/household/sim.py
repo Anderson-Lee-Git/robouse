@@ -38,6 +38,7 @@ from .robot import (
     HAND_PREFIX,
     SUBSTEPS,
     add_robot,
+    apply_near_clip,
     apply_render,
     gripper_ctrl,
     gripper_width,
@@ -251,6 +252,7 @@ class HouseholdSim:
             self.model = s.compile()
         except Exception as e:  # noqa: BLE001 - an authoring error, raised before the episode starts
             raise PackageError(f"scene does not compile with the robot: {str(e)[:200]}") from None
+        apply_near_clip(self.model)
         self.data = mujoco.MjData(self.model)
         m = self.model
         jid = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, ARM_PREFIX + j) for j in self.rs.arm_joints]

@@ -165,6 +165,7 @@ def test_physics_and_render_set_by_backend(tmp_path, pkg):
     assert m.opt.cone == mujoco.mjtCone.mjCONE_ELLIPTIC and m.opt.impratio == pytest.approx(100)
     assert m.opt.solver == mujoco.mjtSolver.mjSOL_NEWTON and m.opt.iterations == 100
     assert m.vis.quality.shadowsize == 4096 and m.vis.quality.offsamples == 4 and m.vis.headlight.active == 1
+    assert m.vis.map.znear * m.stat.extent == pytest.approx(0.01)  # 1 cm near clip, whatever the scene's size
     j7 = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, "robot/fr3_joint7")
     assert m.dof_armature[m.jnt_dofadr[j7]] == pytest.approx(0.2)
     b.close()
