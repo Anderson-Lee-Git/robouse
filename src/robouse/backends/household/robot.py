@@ -42,8 +42,18 @@ PHYSICS = {
     "gravity": [0.0, 0.0, -9.81],
     "wrist_armature": 0.2,
 }
-# Rendering, identical for policy views and recorded video: shadows on, 4x multisampling, 4096 shadow map, headlight.
-RENDER = {"shadows": True, "multisamples": 4, "shadow_map": 4096, "headlight": True, "width": 640, "height": 480}
+# Rendering, identical for policy views and recorded video: shadows on, 4x multisampling, 4096 shadow map, headlight,
+# and a fixed 1 cm near clipping distance. MuJoCo's default near plane is 1% of the model's extent, which in a room-sized
+# scene (extent 7-42 m) clipped surfaces 7-42 cm in front of the wrist camera as the hand approached them.
+RENDER = {
+    "shadows": True,
+    "multisamples": 4,
+    "shadow_map": 4096,
+    "headlight": True,
+    "width": 640,
+    "height": 480,
+    "near_clip_m": 0.01,
+}
 
 ARM_PREFIX = "robot/"
 HAND_PREFIX = "robot/hand/"
@@ -153,6 +163,11 @@ def apply_render(s) -> None:
     s.visual.quality.shadowsize = RENDER["shadow_map"]
     s.visual.quality.offsamples = RENDER["multisamples"]
     s.visual.headlight.active = 1 if RENDER["headlight"] else 0
+
+
+def apply_near_clip(m) -> None:
+    """The protocol's near clipping distance on a compiled model: MuJoCo stores it as a fraction of `stat.extent`."""
+    m.vis.map.znear = RENDER["near_clip_m"] / float(m.stat.extent)
 
 
 def _apply_physics(s) -> None:

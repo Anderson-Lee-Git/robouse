@@ -95,14 +95,38 @@ def on_signal(signum: int, frame: object) -> None:
     os._exit(128 + signum)
 
 
+def prompt_to_stdin(cmd: list) -> tuple[list, str | None]:
+    """Claude Code's command without its `-p` prompt argument, and the prompt for its stdin, so the prompt never
+    appears in the agent's command line and a process match in the agent's shell (`pkill -f "robo-dev run"`) cannot
+    hit the agent itself. A copy of robouse.harnesses.prompt_to_stdin: this driver imports nothing from robouse."""
+    if not cmd or os.path.basename(str(cmd[0])) != "claude" or "-p" not in cmd:
+        return cmd, None
+    i = cmd.index("-p")
+    if i + 1 >= len(cmd) or str(cmd[i + 1]).startswith("--"):
+        return cmd, None
+    return [*cmd[: i + 1], *cmd[i + 2 :]], str(cmd[i + 1])
+
+
 def practice(cfg: dict, scored_socket: str | None) -> tuple[int | None, bool]:
     """Run the agent until it exits or the practice deadline passes: (its exit code, whether it was stopped)."""
     global AGENT
     env = {k: v for k, v in os.environ.items() if k not in ("ROBOUSE_SOCKET", "ROBO_SOCKET")}
     deadline = float(cfg["practice_deadline"])
     say(f"practice: {' '.join(cfg['agent_cmd'][:1])} until {time.strftime('%H:%M:%S', time.localtime(deadline))}")
-    proc = subprocess.Popen(cfg["agent_cmd"], cwd=WORKSPACE, env=env, stdin=subprocess.DEVNULL, start_new_session=True)
+    cmd, prompt = prompt_to_stdin(cfg["agent_cmd"])
+    stdin = subprocess.DEVNULL if prompt is None else subprocess.PIPE
+    proc = subprocess.Popen(cmd, cwd=WORKSPACE, env=env, stdin=stdin, start_new_session=True)
     AGENT = proc
+    if proc.stdin is not None:
+        try:
+            proc.stdin.write(prompt.encode())
+        except (BrokenPipeError, OSError):
+            pass
+        finally:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
     stopped = False
     try:
         rc = proc.wait(timeout=max(1.0, deadline - time.time()))

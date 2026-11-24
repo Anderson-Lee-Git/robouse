@@ -395,6 +395,24 @@ def _wait_agent(
                 return None, True
 
 
+def _feed_stdin(proc: subprocess.Popen, text: str) -> None:
+    """Write `text` to the process's stdin and close it, from a thread: a prompt larger than the pipe buffer must not
+    block the runner before the agent reads it."""
+
+    def feed() -> None:
+        try:
+            proc.stdin.write(text.encode())
+        except (BrokenPipeError, OSError):
+            pass
+        finally:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+
+    threading.Thread(target=feed, daemon=True).start()
+
+
 def _kill_group(agent: subprocess.Popen) -> None:
     for sig, wait in ((signal.SIGTERM, 15), (signal.SIGKILL, None)):
         try:
@@ -738,6 +756,10 @@ def run_trial(
             launch.cmd, cfg["sandbox"] = sandbox.wrap(launch.cmd, ws, sock, deny, ports, own, launch.read_only)
             if cfg["sandbox"] != "none":  # PATH entries the agent cannot read (e.g. `uvx`'s, in the uv cache)
                 launch.env["PATH"] = sandbox.reachable_path(launch.env.get("PATH", ""), deny, own)
+        # Claude Code reads its prompt on stdin, never from its command line (harnesses.prompt_to_stdin)
+        launch.cmd, stdin_prompt = harnesses.prompt_to_stdin(launch.cmd)
+        if stdin_prompt is not None and unlock_token:
+            raise RuntimeError("a locked harness's top process cannot also take its prompt on stdin")
         # what the agent was given besides its prompt (the task.md body): the files in its workspace
         cfg["workspace_files"] = _workspace_files(ws)
         (tdir / "config.json").write_text(json.dumps(cfg, indent=2))
@@ -750,12 +772,11 @@ def run_trial(
                 env=launch.env,
                 stdout=out,
                 stderr=err,
-                stdin=subprocess.PIPE if unlock_token else subprocess.DEVNULL,
+                stdin=subprocess.PIPE if (unlock_token or stdin_prompt is not None) else subprocess.DEVNULL,
                 start_new_session=True,
             )
             if agent.stdin is not None:  # read once by the harness's top process, before it starts anything else
-                agent.stdin.write((unlock_token + "\n").encode())
-                agent.stdin.close()
+                _feed_stdin(agent, stdin_prompt if stdin_prompt is not None else unlock_token + "\n")
             _ACTIVE_AGENTS.add(agent.pid)
             try:
                 if INTERRUPTED.is_set():  # started just as another trial was interrupted
